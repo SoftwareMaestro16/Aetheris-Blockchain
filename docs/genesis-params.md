@@ -18,7 +18,7 @@ Genesis state:
 - `denoms`
 
 Validation:
-- Denom IDs must be canonical and collision-free.
+- Denom IDs must be canonical factory denoms and collision-free.
 - Admin addresses must decode with the chain address codec.
 - Denoms must use the `factory/<admin>/<subdenom>` prefix.
 - Subdenoms must not directly spoof native names: `norb`, `ORB`, or `Orbitalis`.

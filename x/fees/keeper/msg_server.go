@@ -19,6 +19,9 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 }
 
 func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
+	if msg == nil {
+		return nil, types.ErrInvalidParams.Wrap("empty request")
+	}
 	if msg.Authority != m.Authority() {
 		return nil, types.ErrUnauthorized.Wrap("invalid authority")
 	}

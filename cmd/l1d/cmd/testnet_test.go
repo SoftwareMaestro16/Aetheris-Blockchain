@@ -200,3 +200,11 @@ func requireDenomUnit(t *testing.T, metadata banktypes.Metadata, denom string, e
 	}
 	require.Failf(t, "missing denom unit", "denom %s", denom)
 }
+
+func TestTestnetStartDoesNotPrintMnemonicByDefault(t *testing.T) {
+	cmd := testnetStartCmd()
+	printMnemonic, err := cmd.Flags().GetBool(flagPrintMnemonic)
+	require.NoError(t, err)
+	require.False(t, printMnemonic)
+	require.Equal(t, "false", cmd.Flags().Lookup(flagPrintMnemonic).DefValue)
+}

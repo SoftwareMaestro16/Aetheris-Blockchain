@@ -25,6 +25,8 @@ Per module:
 
 ## Adversarial Tests
 
+Current attacker models and implemented adversarial/e2e coverage are documented in [Adversarial And E2E Coverage](adversarial-e2e-coverage.md) and [Custom Module Attacker Model](../tests/adversarial/ATTACKER_MODEL.md).
+
 Required cases:
 - Invalid signer and unauthorized admin calls.
 - Duplicate or replayed messages where applicable.
@@ -43,6 +45,8 @@ Required flows:
 - DEX pool creation using tokenfactory assets.
 - Protocol fee accrual through swaps.
 - Governance-controlled param update.
+- App and custom module genesis export/import round trips.
+- Module migrations from previous consensus version maps.
 
 ## Determinism Tests
 

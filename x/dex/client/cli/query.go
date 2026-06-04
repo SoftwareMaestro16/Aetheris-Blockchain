@@ -19,7 +19,7 @@ func GetQueryCmd() *cobra.Command {
 		SuggestionsMinimumDistance: 2,
 		RunE:                       client.ValidateCmd,
 	}
-	cmd.AddCommand(NewPoolCmd(), NewPoolsCmd())
+	cmd.AddCommand(NewPoolCmd(), NewPoolsCmd(), NewParamsCmd())
 	return cmd
 }
 
@@ -74,6 +74,27 @@ func NewPoolsCmd() *cobra.Command {
 		},
 	}
 	flags.AddPaginationFlagsToCmd(cmd, "pools")
+	flags.AddQueryFlagsToCmd(cmd)
+	return cmd
+}
+
+func NewParamsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "params",
+		Short: "Query DEX params",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			res, err := types.NewQueryClient(clientCtx).Params(cmd.Context(), &types.QueryParamsRequest{})
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
 	flags.AddQueryFlagsToCmd(cmd)
 	return cmd
 }

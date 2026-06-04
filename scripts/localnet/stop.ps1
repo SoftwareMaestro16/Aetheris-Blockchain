@@ -1,5 +1,6 @@
 param(
-  [string]$OutputDir = ""
+  [string]$OutputDir = "",
+  [int]$TimeoutSeconds = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +10,7 @@ $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localn
 Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 $pidDir = Join-Path $OutputDir "pids"
 
-if (!(Test-Path $pidDir)) {
+if (!(Test-Path -LiteralPath $pidDir)) {
   Write-Host "No pid directory found at $pidDir"
 }
 

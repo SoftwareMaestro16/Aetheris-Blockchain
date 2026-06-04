@@ -7,7 +7,7 @@ import (
 )
 
 func TestCalcSwapOutAppliesFee(t *testing.T) {
-	out := calcSwapOut(sdkmath.NewInt(1000), sdkmath.NewInt(1000), sdkmath.NewInt(100))
+	out := calcSwapOut(sdkmath.NewInt(1000), sdkmath.NewInt(1000), sdkmath.NewInt(100), 30)
 	if !out.Equal(sdkmath.NewInt(90)) {
 		t.Fatalf("unexpected output amount: %s", out)
 	}

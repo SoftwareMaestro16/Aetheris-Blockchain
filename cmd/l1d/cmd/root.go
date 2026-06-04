@@ -94,7 +94,10 @@ func NewRootCmd() *cobra.Command {
 			customAppTemplate, customAppConfig := initAppConfig()
 			customCMTConfig := initCometBFTConfig()
 
-			return server.InterceptConfigsPreRunHandler(cmd, customAppTemplate, customAppConfig, customCMTConfig)
+			if err := server.InterceptConfigsPreRunHandler(cmd, customAppTemplate, customAppConfig, customCMTConfig); err != nil {
+				return err
+			}
+			return startObservabilityMetrics(cmd)
 		},
 	}
 	rootCmd.SetContext(context.WithValue(context.Background(), version.ContextKey{}, extraVersionInfo))

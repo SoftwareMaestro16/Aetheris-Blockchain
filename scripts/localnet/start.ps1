@@ -63,6 +63,9 @@ $actualValidatorCount = $nodes.Count
 $pidDir = Join-Path $OutputDir "pids"
 $logDir = Join-Path $OutputDir "logs"
 New-Item -ItemType Directory -Force -Path $pidDir, $logDir | Out-Null
+if ($CleanLogs) {
+  Get-ChildItem -LiteralPath $logDir -Filter "*.log" -ErrorAction SilentlyContinue | Remove-Item -Force
+}
 
 Get-ChildItem -LiteralPath $pidDir -Filter *.pid -ErrorAction SilentlyContinue | ForEach-Object {
   $pidValue = [int](Get-Content -Raw -LiteralPath $_.FullName)

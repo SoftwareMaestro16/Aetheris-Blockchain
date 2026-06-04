@@ -44,3 +44,14 @@ func (k Keeper) Denoms(ctx context.Context, req *types.QueryDenomsRequest) (*typ
 	}
 	return &types.QueryDenomsResponse{Denoms: denoms, Pagination: page}, nil
 }
+
+func (k Keeper) Params(ctx context.Context, req *types.QueryParamsRequest) (*types.QueryParamsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	params, err := k.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &types.QueryParamsResponse{Params: params}, nil
+}

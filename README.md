@@ -48,18 +48,29 @@ buf lint
 
 `buf generate` writes verification output into ignored `.work\bufgen`; checked-in generated Go code lives under `x\*\types`. See [docs/proto-workflow.md](docs/proto-workflow.md) before changing proto contracts or generated files.
 
-## Local 3-Node Network
+## Local Multi-Validator Network
 
 ```powershell
-.\scripts\localnet\init.ps1
+.\scripts\localnet\init.ps1 -ValidatorCount 3
 .\scripts\localnet\start.ps1
 ```
 
-Ports:
+Port scheme is deterministic. P2P/RPC ports advance by `100` per validator; gRPC/REST advance by `1`.
 
 - node0: P2P `26656`, RPC `26657`, gRPC `9090`, REST `1317`
 - node1: P2P `26756`, RPC `26757`, gRPC `9091`, REST `1318`
 - node2: P2P `26856`, RPC `26857`, gRPC `9092`, REST `1319`
+
+For larger localnets:
+
+```powershell
+.\scripts\localnet\init.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+.\scripts\localnet\start.ps1 -OutputDir .localnet-5
+.\scripts\localnet\init.ps1 -OutputDir .localnet-10 -ValidatorCount 10
+.\scripts\localnet\start.ps1 -OutputDir .localnet-10
+```
+
+Each init writes `.localnet*\localnet.json` with node homes, RPC, REST, gRPC, CometBFT metrics, and Orbitalis app metrics URLs. Logs are under `.localnet*\logs`; CometBFT metrics are enabled at each node's manifest `metrics_url`, while app/module metrics are served at `app_metrics_url`.
 
 Stop or reset:
 

@@ -22,6 +22,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version 2.0
 
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")

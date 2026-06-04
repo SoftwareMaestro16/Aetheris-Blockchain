@@ -19,7 +19,7 @@ func GetQueryCmd() *cobra.Command {
 		SuggestionsMinimumDistance: 2,
 		RunE:                       client.ValidateCmd,
 	}
-	cmd.AddCommand(NewDenomCmd(), NewDenomsCmd())
+	cmd.AddCommand(NewDenomCmd(), NewDenomsCmd(), NewParamsCmd())
 	return cmd
 }
 
@@ -73,6 +73,30 @@ func NewDenomsCmd() *cobra.Command {
 		},
 	}
 	flags.AddPaginationFlagsToCmd(cmd, "factory denoms")
+	flags.AddQueryFlagsToCmd(cmd)
+	return cmd
+}
+
+func NewParamsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "params",
+		Short: "Query token factory params",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			res, err := types.NewQueryClient(clientCtx).Params(cmd.Context(), &types.QueryParamsRequest{})
+			if err != nil {
+				return err
+			}
+			if res == nil {
+				return fmt.Errorf("empty response")
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
 	flags.AddQueryFlagsToCmd(cmd)
 	return cmd
 }

@@ -20,7 +20,14 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 }
 
 func (m msgServer) CreateDenom(ctx context.Context, msg *types.MsgCreateDenom) (*types.MsgCreateDenomResponse, error) {
-	denom, err := m.FullDenom(msg.Creator, msg.Subdenom)
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.DenomCreationEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("denom creation is disabled")
+	}
+	denom, err := m.FullDenom(ctx, msg.Creator, msg.Subdenom)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +55,13 @@ func (m msgServer) CreateDenom(ctx context.Context, msg *types.MsgCreateDenom) (
 }
 
 func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMintResponse, error) {
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.MintingEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("minting is disabled")
+	}
 	sender, err := sdk.AccAddressFromBech32(msg.Sender)
 	if err != nil {
 		return nil, err
@@ -92,6 +106,13 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 }
 
 func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurnResponse, error) {
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.BurningEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("burning is disabled")
+	}
 	sender, err := sdk.AccAddressFromBech32(msg.Sender)
 	if err != nil {
 		return nil, err
@@ -168,4 +189,17 @@ func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (
 		sdk.NewAttribute(types.AttributeKeyNewAdmin, newAdmin.String()),
 	))
 	return &types.MsgChangeAdminResponse{}, nil
+}
+
+func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
+	if msg == nil {
+		return nil, types.ErrInvalidParams.Wrap("empty request")
+	}
+	if msg.Authority != m.Authority() {
+		return nil, types.ErrUnauthorized.Wrap("invalid authority")
+	}
+	if err := m.SetParams(ctx, msg.Params); err != nil {
+		return nil, err
+	}
+	return &types.MsgUpdateParamsResponse{}, nil
 }
