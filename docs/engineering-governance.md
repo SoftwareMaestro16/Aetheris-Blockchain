@@ -60,7 +60,9 @@ After implementation:
 - Use Conventional Commits with clear scope.
 - Include the reason and improvement in the implementation summary.
 - Run relevant checks before commit.
-- Push completed commits to `origin/main` unless explicitly told not to.
+- Push completed commits to the current working branch or owner-approved target branch.
+- Push directly to `main` only when the owner explicitly asks for a direct `main` update.
+- Do not commit local roadmap scratch files such as `STEP.md`, `STEP_V2.md`, or `STEP_V3.md` unless the owner explicitly converts them into tracked project docs.
 
 ## Required Response Order
 

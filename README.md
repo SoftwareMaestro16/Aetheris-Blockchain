@@ -2,6 +2,8 @@
 
 Orbitalis is a sovereign Cosmos SDK Layer 1 blockchain implemented in Go. The native token is Orbitalis with display ticker `ORB`; the staking and fee base denom is `norb`, with `1 ORB = 1,000,000,000 norb`.
 
+This repository is on the working prototype path. It is not mainnet-ready validator software: public validator onboarding, production governance economics, IBC/external bridges, exchange-grade DEX routing, and production release operations remain out of scope until the prototype gates say otherwise.
+
 ## Architecture
 
 ```mermaid
@@ -93,6 +95,17 @@ build\orbitalisd.exe query bank total-supply-of norb --node tcp://127.0.0.1:2665
 build\orbitalisd.exe query bank balance <orb1-address> norb --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
 .\scripts\localnet\health.ps1 -ValidatorCount 3
+```
+
+## Governance And Release Path
+
+Implementation work follows [docs/engineering-governance.md](docs/engineering-governance.md), [docs/security-testing.md](docs/security-testing.md), [docs/security/cosmos-security-checklist.md](docs/security/cosmos-security-checklist.md), and [docs/test-pyramid.md](docs/test-pyramid.md). Release packaging follows [docs/release/prototype-package.md](docs/release/prototype-package.md) and must include checksums, known limitations, test evidence, and the prototype audit summary.
+
+Fast local gate:
+
+```powershell
+.\tests\e2e\prototype_smoke.ps1
+.\scripts\security\prototype-audit.ps1 -Profile Fast
 ```
 
 ## External Databases
