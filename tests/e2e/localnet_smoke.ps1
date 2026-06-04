@@ -163,6 +163,24 @@ function Assert-CommandFails {
   throw "negative check failed: $Name"
 }
 
+function Assert-MetricsEndpoint {
+  param(
+    [Parameter(Mandatory = $true)][string]$Url,
+    [Parameter(Mandatory = $true)][string[]]$ExpectedNames
+  )
+
+  $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10
+  if ($response.StatusCode -ne 200) {
+    throw "metrics endpoint $Url returned status $($response.StatusCode)"
+  }
+  $text = [string]$response.Content
+  foreach ($name in $ExpectedNames) {
+    if (!$text.Contains($name)) {
+      throw "metrics endpoint $Url missing metric $name"
+    }
+  }
+}
+
 function Invoke-ModuleSmoke {
   param(
     [Parameter(Mandatory = $true)]$Manifest,
@@ -203,6 +221,14 @@ function Invoke-ModuleSmoke {
   Invoke-OrbitalisJson -Arguments @("query", "fees", "params", "--node", $node, "--output", "json") | Out-Null
   Invoke-OrbitalisJson -Arguments @("query", "fees", "accounting", "--node", $node, "--output", "json") | Out-Null
   Invoke-OrbitalisJson -Arguments @("query", "fees", "module-balances", "--node", $node, "--output", "json") | Out-Null
+
+  if ($Manifest.nodes[0].app_metrics_url) {
+    Assert-MetricsEndpoint -Url ([string]$Manifest.nodes[0].app_metrics_url) -ExpectedNames @(
+      "orbitalis_dex_swaps_total",
+      "orbitalis_fees_accepted_total",
+      "orbitalis_dex_pool_count"
+    )
+  }
   Write-Host "tx/module smoke passed on $($Manifest.validator_count)-validator localnet"
 }
 
@@ -235,6 +261,14 @@ function Run-LocalnetSmoke {
     $node = [string]$manifest.nodes[0].rpc_url
     $height = Wait-ForHeight -Node $node -TargetHeight $MinHeight -TimeoutSeconds $TimeoutSeconds
     Write-Host "$ValidatorCount-validator localnet reached height $height"
+    if ($manifest.nodes[0].app_metrics_url) {
+      Assert-MetricsEndpoint -Url ([string]$manifest.nodes[0].app_metrics_url) -ExpectedNames @(
+        "orbitalis_block_height",
+        "orbitalis_block_processing_seconds",
+        "orbitalis_localnet_health",
+        "orbitalis_process_memory_bytes"
+      )
+    }
 
     if (!$SkipTxFlow) {
       Invoke-ModuleSmoke -Manifest $manifest -OutputDir $runOutputDir -TimeoutSeconds $TimeoutSeconds

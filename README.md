@@ -68,7 +68,7 @@ For larger localnets:
 .\scripts\localnet\start.ps1 -OutputDir .localnet-10
 ```
 
-Each init writes `.localnet*\localnet.json` with node homes, RPC, REST, gRPC, and metrics URLs. Logs are under `.localnet*\logs`; CometBFT metrics are enabled at each node's manifest `metrics_url`.
+Each init writes `.localnet*\localnet.json` with node homes, RPC, REST, gRPC, CometBFT metrics, and Orbitalis app metrics URLs. Logs are under `.localnet*\logs`; CometBFT metrics are enabled at each node's manifest `metrics_url`, while app/module metrics are served at `app_metrics_url`.
 
 Stop or reset:
 
@@ -93,7 +93,9 @@ Snapshot and state-sync helpers:
 .\scripts\localnet\statesync.ps1 -OutputDir .localnet -TargetNodeIndex 2 -ResetData
 ```
 
-The scripts never print generated mnemonics by default. `init.ps1` stores command output only in ignored localnet logs; use `-DebugSecrets` only when you explicitly need to inspect generated secrets. Reset refuses paths outside the repository and paths that do not look like `.localnet*`.
+The scripts never print or log generated mnemonics by default. Use `init.ps1 -DebugSecrets` only when you explicitly need to inspect generated secrets. Reset refuses paths outside the repository and paths that do not look like `.localnet*`.
+
+Observability notes are in [docs/observability.md](docs/observability.md). App metrics are opt-in for `orbitalisd start` and localnet binds them to loopback.
 
 ## Example CLI
 

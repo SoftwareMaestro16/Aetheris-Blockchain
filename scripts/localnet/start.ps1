@@ -58,8 +58,13 @@ try {
     }
     $stdout = Join-Path $logDir "node$i.out.log"
     $stderr = Join-Path $logDir "node$i.err.log"
+    $appMetricsPort = $manifest.nodes[$i].ports.app_metrics
+    if (-not $appMetricsPort) {
+      $appMetricsPort = 27660 + ($i * 100)
+    }
+    $appMetricsAddr = "127.0.0.1:$appMetricsPort"
     $proc = Start-Process -FilePath $Binary `
-      -ArgumentList @("start", "--home", $nodeHome, "--log_level", "info") `
+      -ArgumentList @("start", "--home", $nodeHome, "--log_level", "info", "--observability-metrics", "--observability-metrics-addr", $appMetricsAddr) `
       -RedirectStandardOutput $stdout `
       -RedirectStandardError $stderr `
       -WindowStyle Hidden `

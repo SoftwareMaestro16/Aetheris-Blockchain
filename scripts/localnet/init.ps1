@@ -9,6 +9,7 @@ param(
   [int]$BaseRESTPort = 1317,
   [int]$BasePprofPort = 6060,
   [int]$BaseMetricsPort = 26660,
+  [int]$BaseAppMetricsPort = 27660,
   [switch]$DebugSecrets
 )
 
@@ -53,7 +54,7 @@ for ($i = 0; $i -lt $ValidatorCount; $i++) {
   $nodeHome = Get-NodeHome -OutputDir $OutputDir -Index $i
   $configToml = Join-Path $nodeHome "config\config.toml"
   $appToml = Join-Path $nodeHome "config\app.toml"
-  $ports = Get-NodePorts -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseGRPCPort $BaseGRPCPort -BaseRESTPort $BaseRESTPort -BasePprofPort $BasePprofPort -BaseMetricsPort $BaseMetricsPort
+  $ports = Get-NodePorts -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseGRPCPort $BaseGRPCPort -BaseRESTPort $BaseRESTPort -BasePprofPort $BasePprofPort -BaseMetricsPort $BaseMetricsPort -BaseAppMetricsPort $BaseAppMetricsPort
 
   $config = Get-Content -Raw -LiteralPath $configToml
   for ($j = 0; $j -lt $ValidatorCount; $j++) {
@@ -86,12 +87,13 @@ Write-LocalnetManifest `
   -BaseGRPCPort $BaseGRPCPort `
   -BaseRESTPort $BaseRESTPort `
   -BasePprofPort $BasePprofPort `
-  -BaseMetricsPort $BaseMetricsPort
+  -BaseMetricsPort $BaseMetricsPort `
+  -BaseAppMetricsPort $BaseAppMetricsPort
 
 Write-Host "Initialized $ValidatorCount-node localnet at $OutputDir"
 for ($i = 0; $i -lt $ValidatorCount; $i++) {
-  $ports = Get-NodePorts -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseGRPCPort $BaseGRPCPort -BaseRESTPort $BaseRESTPort -BasePprofPort $BasePprofPort -BaseMetricsPort $BaseMetricsPort
-  Write-Host ("node{0}: p2p {1}, rpc {2}, grpc {3}, rest {4}, metrics {5}" -f $i, $ports.p2p, $ports.rpc, $ports.grpc, $ports.rest, $ports.metrics)
+  $ports = Get-NodePorts -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseGRPCPort $BaseGRPCPort -BaseRESTPort $BaseRESTPort -BasePprofPort $BasePprofPort -BaseMetricsPort $BaseMetricsPort -BaseAppMetricsPort $BaseAppMetricsPort
+  Write-Host ("node{0}: p2p {1}, rpc {2}, grpc {3}, rest {4}, comet metrics {5}, app metrics {6}" -f $i, $ports.p2p, $ports.rpc, $ports.grpc, $ports.rest, $ports.metrics, $ports.app_metrics)
 }
 if (!$DebugSecrets) {
   Write-Host "Init output captured at $initLog; rerun with -DebugSecrets only when mnemonic output is explicitly needed."

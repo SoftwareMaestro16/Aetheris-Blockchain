@@ -234,10 +234,10 @@ func initTestnetFiles(
 	appConfig := srvconfig.DefaultConfig()
 	appConfig.MinGasPrices = args.minGasPrices
 	appConfig.API.Enable = true
-	appConfig.Telemetry.Enabled = true                                        //nolint:staticcheck // TODO: switch to OpenTelemetry
-	appConfig.Telemetry.PrometheusRetentionTime = 60                          //nolint:staticcheck // TODO: switch to OpenTelemetry
-	appConfig.Telemetry.EnableHostnameLabel = false                           //nolint:staticcheck // TODO: switch to OpenTelemetry
-	appConfig.Telemetry.GlobalLabels = [][]string{{"chain_id", args.chainID}} //nolint:staticcheck // TODO: switch to OpenTelemetry
+	appConfig.Telemetry.Enabled = true                                        //nolint:staticcheck // See docs/observability.md for OpenTelemetry migration plan.
+	appConfig.Telemetry.PrometheusRetentionTime = 60                          //nolint:staticcheck // See docs/observability.md for OpenTelemetry migration plan.
+	appConfig.Telemetry.EnableHostnameLabel = false                           //nolint:staticcheck // See docs/observability.md for OpenTelemetry migration plan.
+	appConfig.Telemetry.GlobalLabels = [][]string{{"chain_id", args.chainID}} //nolint:staticcheck // See docs/observability.md for OpenTelemetry migration plan.
 
 	var (
 		genAccounts []authtypes.GenesisAccount

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"cosmossdk.io/log/v2"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	appparams "github.com/sovereign-l1/l1/app/params"
+	"github.com/sovereign-l1/l1/observability"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
@@ -105,6 +107,21 @@ func TestAppGenesisExportImportRoundTripAndDeterminism(t *testing.T) {
 	require.NoError(t, target.BasicModuleManager.ValidateGenesis(target.AppCodec(), target.TxConfig(), reexportedState))
 }
 
+func TestTelemetryDoesNotChangeAppHash(t *testing.T) {
+	source, _ := setup(true, 5)
+	genesis := GenesisStateWithSingleValidator(t, source)
+	stateBytes, err := json.MarshalIndent(genesis, "", " ")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		observability.ResetForTesting()
+	})
+
+	enabledHash := runSingleBlockForTelemetryTest(t, stateBytes, true)
+	disabledHash := runSingleBlockForTelemetryTest(t, stateBytes, false)
+
+	require.Equal(t, enabledHash, disabledHash)
+}
+
 func TestCustomModuleMigrationsFromV1ToCurrent(t *testing.T) {
 	app := Setup(t, false)
 	ctx := app.NewContext(false)
@@ -118,4 +135,31 @@ func TestCustomModuleMigrationsFromV1ToCurrent(t *testing.T) {
 	require.Equal(t, uint64(2), updated[feestypes.ModuleName])
 	require.Equal(t, uint64(2), updated[tokenfactorytypes.ModuleName])
 	require.Equal(t, uint64(2), updated[dextypes.ModuleName])
+}
+
+func runSingleBlockForTelemetryTest(t *testing.T, stateBytes []byte, telemetryEnabled bool) []byte {
+	t.Helper()
+	observability.ResetForTesting()
+	observability.SetEnabled(telemetryEnabled)
+	app := NewL1App(
+		log.NewNopLogger(),
+		dbm.NewMemDB(),
+		true,
+		sims.AppOptionsMap{flags.FlagHome: DefaultNodeHome},
+	)
+	_, err := app.InitChain(&abci.RequestInitChain{
+		Validators:      []abci.ValidatorUpdate{},
+		ConsensusParams: sims.DefaultConsensusParams,
+		AppStateBytes:   stateBytes,
+	})
+	require.NoError(t, err)
+	_, err = app.FinalizeBlock(&abci.RequestFinalizeBlock{
+		Height: 1,
+		Hash:   app.LastCommitID().Hash,
+		Time:   time.Unix(1_700_000_000, 0).UTC(),
+	})
+	require.NoError(t, err)
+	_, err = app.Commit()
+	require.NoError(t, err)
+	return app.LastCommitID().Hash
 }

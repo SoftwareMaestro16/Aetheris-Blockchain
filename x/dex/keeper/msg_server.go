@@ -5,6 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/sovereign-l1/l1/observability"
 	"github.com/sovereign-l1/l1/x/dex/types"
 )
 
@@ -18,7 +19,8 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 	return msgServer{Keeper: k}
 }
 
-func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*types.MsgCreatePoolResponse, error) {
+func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (res *types.MsgCreatePoolResponse, err error) {
+	defer recordDexResult("create_pool", &err)
 	params, err := m.GetParams(ctx)
 	if err != nil {
 		return nil, err
@@ -80,10 +82,13 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 	if err := m.SetNextPoolID(ctx, id+1); err != nil {
 		return nil, err
 	}
+	observability.RecordDexPoolCreated()
+	recordNorbLiquidityDelta(token0, token1)
 	return &types.MsgCreatePoolResponse{PoolId: id, LpDenom: lp, MintedShares: shareCoin}, nil
 }
 
-func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity) (*types.MsgAddLiquidityResponse, error) {
+func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity) (res *types.MsgAddLiquidityResponse, err error) {
+	defer recordDexResult("add_liquidity", &err)
 	params, err := m.GetParams(ctx)
 	if err != nil {
 		return nil, err
@@ -139,10 +144,12 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	if err := m.SetPool(ctx, pool); err != nil {
 		return nil, err
 	}
+	recordNorbLiquidityDelta(token0, token1)
 	return &types.MsgAddLiquidityResponse{MintedShares: shareCoin}, nil
 }
 
-func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiquidity) (*types.MsgRemoveLiquidityResponse, error) {
+func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiquidity) (res *types.MsgRemoveLiquidityResponse, err error) {
+	defer recordDexResult("remove_liquidity", &err)
 	params, err := m.GetParams(ctx)
 	if err != nil {
 		return nil, err
@@ -192,10 +199,12 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	if err := m.SetPool(ctx, pool); err != nil {
 		return nil, err
 	}
+	recordNorbLiquidityDelta(negativeCoin(out0), negativeCoin(out1))
 	return &types.MsgRemoveLiquidityResponse{TokenA: out0, TokenB: out1}, nil
 }
 
-func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExactAmountIn) (*types.MsgSwapExactAmountInResponse, error) {
+func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExactAmountIn) (res *types.MsgSwapExactAmountInResponse, err error) {
+	defer recordDexResult("swap_exact_amount_in", &err)
 	params, err := m.GetParams(ctx)
 	if err != nil {
 		return nil, err
@@ -251,10 +260,13 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	if err := m.SetPool(ctx, pool); err != nil {
 		return nil, err
 	}
+	observability.RecordDexSwap()
+	recordNorbLiquidityDelta(msg.TokenIn, negativeCoin(out))
 	return &types.MsgSwapExactAmountInResponse{TokenOut: out}, nil
 }
 
-func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
+func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (res *types.MsgUpdateParamsResponse, err error) {
+	defer recordDexResult("update_params", &err)
 	if msg == nil {
 		return nil, types.ErrInvalidParams.Wrap("empty request")
 	}
@@ -265,4 +277,23 @@ func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams)
 		return nil, err
 	}
 	return &types.MsgUpdateParamsResponse{}, nil
+}
+
+func recordDexResult(action string, err *error) {
+	if err != nil && *err != nil {
+		observability.RecordModuleError(types.ModuleName, action, "error")
+	}
+}
+
+func recordNorbLiquidityDelta(coins ...sdk.Coin) {
+	for _, coin := range coins {
+		if coin.Denom != "norb" || !coin.Amount.IsInt64() {
+			continue
+		}
+		observability.RecordDexLiquidityNorbDelta(coin.Amount.Int64())
+	}
+}
+
+func negativeCoin(coin sdk.Coin) sdk.Coin {
+	return sdk.Coin{Denom: coin.Denom, Amount: coin.Amount.Neg()}
 }

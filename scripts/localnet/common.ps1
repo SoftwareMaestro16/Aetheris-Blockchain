@@ -98,17 +98,19 @@ function Get-NodePorts {
     [int]$BaseGRPCPort = 9090,
     [int]$BaseRESTPort = 1317,
     [int]$BasePprofPort = 6060,
-    [int]$BaseMetricsPort = 26660
+    [int]$BaseMetricsPort = 26660,
+    [int]$BaseAppMetricsPort = 27660
   )
 
   return [pscustomobject]@{
-    index   = $Index
-    p2p     = $BaseP2PPort + ($Index * 100)
-    rpc     = $BaseRPCPort + ($Index * 100)
-    grpc    = $BaseGRPCPort + $Index
-    rest    = $BaseRESTPort + $Index
-    pprof   = $BasePprofPort + $Index
-    metrics = $BaseMetricsPort + ($Index * 100)
+    index       = $Index
+    p2p         = $BaseP2PPort + ($Index * 100)
+    rpc         = $BaseRPCPort + ($Index * 100)
+    grpc        = $BaseGRPCPort + $Index
+    rest        = $BaseRESTPort + $Index
+    pprof       = $BasePprofPort + $Index
+    metrics     = $BaseMetricsPort + ($Index * 100)
+    app_metrics = $BaseAppMetricsPort + ($Index * 100)
   }
 }
 
@@ -136,12 +138,13 @@ function Write-LocalnetManifest {
     [int]$BaseGRPCPort = 9090,
     [int]$BaseRESTPort = 1317,
     [int]$BasePprofPort = 6060,
-    [int]$BaseMetricsPort = 26660
+    [int]$BaseMetricsPort = 26660,
+    [int]$BaseAppMetricsPort = 27660
   )
 
   $nodes = @()
   for ($i = 0; $i -lt $ValidatorCount; $i++) {
-    $ports = Get-NodePorts -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseGRPCPort $BaseGRPCPort -BaseRESTPort $BaseRESTPort -BasePprofPort $BasePprofPort -BaseMetricsPort $BaseMetricsPort
+    $ports = Get-NodePorts -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseGRPCPort $BaseGRPCPort -BaseRESTPort $BaseRESTPort -BasePprofPort $BasePprofPort -BaseMetricsPort $BaseMetricsPort -BaseAppMetricsPort $BaseAppMetricsPort
     $nodes += [pscustomobject]@{
       name    = "node$i"
       home    = Get-NodeHome -OutputDir $OutputDir -Index $i
@@ -150,6 +153,7 @@ function Write-LocalnetManifest {
       rest_url = "http://127.0.0.1:$($ports.rest)"
       grpc_url = "127.0.0.1:$($ports.grpc)"
       metrics_url = "http://127.0.0.1:$($ports.metrics)/metrics"
+      app_metrics_url = "http://127.0.0.1:$($ports.app_metrics)/metrics"
     }
   }
 

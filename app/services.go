@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -32,6 +33,8 @@ import (
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	protocolpooltypes "github.com/cosmos/cosmos-sdk/x/protocolpool/types"
+
+	"github.com/sovereign-l1/l1/observability"
 )
 
 func (app *L1App) Name() string { return app.BaseApp.Name() }
@@ -46,6 +49,17 @@ func (app *L1App) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
 
 func (app *L1App) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
 	return app.ModuleManager.EndBlock(ctx)
+}
+
+func (app *L1App) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
+	start := time.Now()
+	res, err := app.BaseApp.FinalizeBlock(req)
+	// Wall-clock timing is process telemetry only; it does not read or write consensus state.
+	observability.RecordFinalizeBlock(req.Height, req.Time, len(req.Txs), time.Since(start))
+	if err != nil {
+		observability.RecordModuleError("app", "finalize_block", "error")
+	}
+	return res, err
 }
 
 func (a *L1App) Configurator() module.Configurator {
