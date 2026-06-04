@@ -92,7 +92,15 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 		{
 			name:    "rejects malformed fee coin",
 			tx:      feeTx{fees: sdk.Coins{{Denom: "!", Amount: sdkmath.NewInt(1)}}},
-			wantErr: "fee coin must be valid",
+			wantErr: "fee coins must be valid",
+		},
+		{
+			name: "rejects duplicate fee denom entries",
+			tx: feeTx{fees: sdk.Coins{
+				sdk.NewInt64Coin(types.BondDenom, 1),
+				sdk.NewInt64Coin(types.BondDenom, 2),
+			}},
+			wantErr: "fee coins must be valid",
 		},
 		{
 			name:    "rejects transaction without fee interface",

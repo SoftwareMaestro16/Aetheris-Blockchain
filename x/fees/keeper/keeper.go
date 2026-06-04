@@ -24,7 +24,7 @@ func (k Keeper) Authority() string { return k.authority }
 
 func (k Keeper) SetParams(ctx context.Context, params types.Params) error {
 	if err := params.Validate(); err != nil {
-		return err
+		return types.ErrInvalidParams.Wrap(err.Error())
 	}
 	return k.storeService.OpenKVStore(ctx).Set(types.ParamsKey, k.cdc.MustMarshal(&params))
 }

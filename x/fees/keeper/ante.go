@@ -12,17 +12,8 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 		if !ok {
 			return ctx, types.ErrInvalidFee.Wrap("transaction must expose fees")
 		}
-		for _, fee := range feeTx.GetFee() {
-			if !fee.IsValid() {
-				return ctx, types.ErrInvalidFee.Wrap("fee coin must be valid")
-			}
-			allowed, err := k.IsAllowedFeeDenom(ctx, fee.Denom)
-			if err != nil {
-				return ctx, err
-			}
-			if !allowed {
-				return ctx, types.ErrInvalidFee.Wrapf("fee denom %s not accepted; use %s", fee.Denom, types.BondDenom)
-			}
+		if err := k.ValidateTxFees(ctx, feeTx.GetFee()); err != nil {
+			return ctx, err
 		}
 		return next(ctx, tx, simulate)
 	}

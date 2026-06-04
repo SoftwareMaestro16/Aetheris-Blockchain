@@ -54,7 +54,7 @@ func TestUpdateParamsRejectsInvalidParamsWithoutMutatingState(t *testing.T) {
 		Authority: app.FeesKeeper.Authority(),
 		Params:    invalid,
 	})
-	require.Error(t, err)
+	require.ErrorIs(t, err, types.ErrInvalidParams)
 
 	params, getErr := app.FeesKeeper.GetParams(ctx)
 	require.NoError(t, getErr)

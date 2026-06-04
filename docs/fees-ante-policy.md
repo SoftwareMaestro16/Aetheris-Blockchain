@@ -28,6 +28,7 @@ Rejected by `x/fees` policy:
 - `--fees 1000testtoken`
 - `--fees 1000norb,1testtoken`
 - malformed fee coins
+- malformed fee lists such as duplicate denom entries
 - transactions that do not expose the SDK `FeeTx` interface
 
 The localnet default `minimum-gas-prices = "0norb"` means empty and zero-fee transactions are accepted in the prototype localnet. Operator examples still use `1000000norb` so the fee path is exercised consistently. A public testnet can raise local validator min gas prices without changing the allowed-denom policy.
@@ -109,6 +110,7 @@ fee denom testtoken not accepted; use norb
 - Ante policy executes before the wrapped SDK ante handler.
 - Non-`FeeTx` transactions are rejected, so callers cannot bypass denom checks with a custom tx type.
 - Fee denom validation is deterministic and bounded. V1 params allow exactly one denom: `norb`.
+- Fee params are loaded once per tx; malformed fee lists are rejected before any wrapped ante handler can mutate state.
 - Empty allowed-denom lists, duplicate denoms, and multi-denom params are rejected by params validation.
 - `MsgUpdateParams` requires the governance module authority and validates params before writing state.
 - Wrong fee denoms return a stable error message without logging keys, mnemonics, env vars, or local paths.
