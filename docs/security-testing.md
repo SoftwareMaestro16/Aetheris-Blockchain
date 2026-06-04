@@ -67,4 +67,6 @@ The prototype release gate lives in [Prototype Security And Determinism Audit Ga
 
 The Cosmos-specific manual review lives in [Cosmos Security Audit Checklist](security/cosmos-security-checklist.md). It is mandatory for prototype changes touching app wiring, custom modules, proto/query surface, localnet scripts, or release artifacts.
 
+The transaction lifecycle matrix lives in [Prototype Transaction Lifecycle Matrix](transaction-lifecycle-matrix.md). It traces prototype txs from actor and signer through state writes, events, verification queries, negative cases, and test evidence.
+
 The explicit coverage matrix lives in [Prototype Test Pyramid](test-pyramid.md). It maps each module and working flow to unit, integration, adversarial, e2e, determinism, and benchmark coverage.

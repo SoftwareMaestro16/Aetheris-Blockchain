@@ -1,6 +1,6 @@
 # Prototype Test Pyramid
 
-This matrix makes the working L1 flows observable across unit, integration, adversarial, e2e, determinism, and benchmark layers. It is the coverage companion to [Security And Testing Strategy](security-testing.md), [Cosmos Security Audit Checklist](security/cosmos-security-checklist.md), and [Prototype Security And Determinism Audit Gate](security/prototype-audit-gate.md).
+This matrix makes the working L1 flows observable across unit, integration, adversarial, e2e, determinism, and benchmark layers. It is the coverage companion to [Security And Testing Strategy](security-testing.md), [Prototype Transaction Lifecycle Matrix](transaction-lifecycle-matrix.md), [Cosmos Security Audit Checklist](security/cosmos-security-checklist.md), and [Prototype Security And Determinism Audit Gate](security/prototype-audit-gate.md).
 
 Rule: define the target test layer before implementation where practical. No behavior change should merge without a targeted unit, integration, adversarial, e2e, determinism, or benchmark check, or a documented `MUST FIX` with owner and release decision.
 
@@ -12,6 +12,7 @@ Run locally before commit:
 go test ./...
 .\tests\scripts\test_pyramid_doc_test.ps1
 .\tests\scripts\cosmos_security_checklist_doc_test.ps1
+.\tests\scripts\transaction_lifecycle_matrix_doc_test.ps1
 .\tests\scripts\determinism_gate_test.ps1
 .\scripts\security\prototype-audit.ps1 -Profile Fast
 ```
@@ -43,7 +44,7 @@ go test -run '^$' -bench 'Benchmark(EmptyBlock|Dex)' ./app ./x/dex/keeper
 | Query surface CLI/gRPC/REST | `x/*/keeper/query_server_test.go` | app/localnet query composition through smoke helpers | nil request, malformed denom/id, not found, bounded list overflow | `tests/e2e/query_surface_smoke.ps1` | read-only; covered by no-state-write review in security checklist | MUST FIX before public API load: REST/gRPC high-cardinality pagination benchmark |
 | PoS and bank native flow | `app/pos_test.go`, `app/app_test.go` | staking delegation updates validator power | invalid validator address, wrong denom, insufficient funds | `tests/e2e/pos_smoke.ps1`, `tests/e2e/native_token_smoke.ps1` | app default genesis/export determinism | empty block benchmark covers app path; staking load benchmark is nightly/manual |
 | Localnet scripts and release artifacts | `tests/scripts/*_test.ps1` | `tests/e2e/localnet_smoke.ps1` | unsafe path deletion, local-only keyring docs, no mnemonic/private key output | `tests/e2e/prototype_acceptance.ps1` | reproducible single-run genesis/config review | `prototype-audit.ps1 -Profile Nightly` |
-| Security gates and docs | `tests/scripts/cosmos_security_checklist_doc_test.ps1`, `tests/scripts/test_pyramid_doc_test.ps1`, `tests/scripts/prototype_docs_path_test.ps1` | `scripts/security/prototype-audit.ps1 -Profile Fast` | untriaged Critical/High, secrets, generic scanner issues, Cosmos checklist gaps | release package tests | `scripts/security/determinism-gate.ps1` | Nightly audit profile |
+| Security gates and docs | `tests/scripts/cosmos_security_checklist_doc_test.ps1`, `tests/scripts/test_pyramid_doc_test.ps1`, `tests/scripts/transaction_lifecycle_matrix_doc_test.ps1`, `tests/scripts/prototype_docs_path_test.ps1` | `scripts/security/prototype-audit.ps1 -Profile Fast` | untriaged Critical/High, secrets, generic scanner issues, Cosmos checklist gaps, tx lifecycle gaps | release package tests | `scripts/security/determinism-gate.ps1` | Nightly audit profile |
 
 ## Priority Gaps
 

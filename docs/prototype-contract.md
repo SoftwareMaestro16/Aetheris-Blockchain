@@ -151,6 +151,7 @@ NICE TO HAVE:
 Primary docs:
 
 - [Operator Commands](operator-commands.md)
+- [Transaction Lifecycle Matrix](transaction-lifecycle-matrix.md)
 - [Bootstrap Profile](bootstrap-profile.md)
 - [Prototype Acceptance Suite](prototype-acceptance-suite.md)
 - [Query Surface](query-surface.md)

@@ -84,7 +84,7 @@ Prototype acceptance and targeted smoke tests:
 
 ## Operator CLI
 
-See [docs/prototype-contract.md](docs/prototype-contract.md) for the executable working-prototype contract, [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook, [docs/prototype-acceptance-suite.md](docs/prototype-acceptance-suite.md) for the one-command acceptance suite, [docs/security/prototype-audit-gate.md](docs/security/prototype-audit-gate.md) for the release security gate, [docs/release/prototype-package.md](docs/release/prototype-package.md) for prerelease packages, [docs/query-surface.md](docs/query-surface.md) for gRPC/REST endpoints, and [docs/observability.md](docs/observability.md) for health checks and diagnostics.
+See [docs/prototype-contract.md](docs/prototype-contract.md) for the executable working-prototype contract, [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook, [docs/transaction-lifecycle-matrix.md](docs/transaction-lifecycle-matrix.md) for tx actor/signer/state/query coverage, [docs/prototype-acceptance-suite.md](docs/prototype-acceptance-suite.md) for the one-command acceptance suite, [docs/security/prototype-audit-gate.md](docs/security/prototype-audit-gate.md) for the release security gate, [docs/release/prototype-package.md](docs/release/prototype-package.md) for prerelease packages, [docs/query-surface.md](docs/query-surface.md) for gRPC/REST endpoints, and [docs/observability.md](docs/observability.md) for health checks and diagnostics.
 
 The README keeps only the shortest probes. Use the operator runbook for the end-to-end build, init, start, query, tx, diagnose, and stop transcript.
 
@@ -99,7 +99,7 @@ build\orbitalisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecur
 
 ## Governance And Release Path
 
-Implementation work follows [docs/engineering-governance.md](docs/engineering-governance.md), [docs/security-testing.md](docs/security-testing.md), [docs/security/cosmos-security-checklist.md](docs/security/cosmos-security-checklist.md), and [docs/test-pyramid.md](docs/test-pyramid.md). Release packaging follows [docs/release/prototype-package.md](docs/release/prototype-package.md) and must include checksums, known limitations, test evidence, and the prototype audit summary.
+Implementation work follows [docs/engineering-governance.md](docs/engineering-governance.md), [docs/security-testing.md](docs/security-testing.md), [docs/security/cosmos-security-checklist.md](docs/security/cosmos-security-checklist.md), [docs/transaction-lifecycle-matrix.md](docs/transaction-lifecycle-matrix.md), and [docs/test-pyramid.md](docs/test-pyramid.md). Release packaging follows [docs/release/prototype-package.md](docs/release/prototype-package.md) and must include checksums, known limitations, test evidence, and the prototype audit summary.
 
 Fast local gate:
 
