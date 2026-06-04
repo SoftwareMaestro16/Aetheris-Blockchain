@@ -19,8 +19,14 @@ func DefaultGenesisState() *GenesisState {
 }
 
 func (p Params) Validate() error {
-	if len(p.AllowedFeeDenoms) != 1 || p.AllowedFeeDenoms[0] != BondDenom {
-		return fmt.Errorf("v1 only allows fee denom %s", BondDenom)
+	if len(p.AllowedFeeDenoms) == 0 {
+		return fmt.Errorf("allowed_fee_denoms must contain %s", BondDenom)
+	}
+	if len(p.AllowedFeeDenoms) > MaxAllowedFeeDenomsV1 {
+		return fmt.Errorf("v1 only allows %d fee denom: %s", MaxAllowedFeeDenomsV1, BondDenom)
+	}
+	if p.AllowedFeeDenoms[0] != BondDenom {
+		return fmt.Errorf("v1 only accepts fee denom %s", BondDenom)
 	}
 	validatorRatio, err := validateRatio("validator_rewards_ratio", p.ValidatorRewardsRatio)
 	if err != nil {

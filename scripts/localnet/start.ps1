@@ -84,6 +84,8 @@ Assert-LocalnetPortsAvailable `
   -EnableGRPC $EnableGRPC `
   -EnableRPC $EnableRPC
 
+Repair-LocalnetProcessPathEnvironment
+
 foreach ($node in $nodes) {
   $nodeName = $node.Name
   $nodeHome = Join-Path $node.FullName "orbitalisd"

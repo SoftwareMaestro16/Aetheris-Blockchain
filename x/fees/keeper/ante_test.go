@@ -1,8 +1,10 @@
 package keeper_test
 
 import (
+	"errors"
 	"testing"
 
+	sdkmath "cosmossdk.io/math"
 	protov2 "google.golang.org/protobuf/proto"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -40,33 +42,97 @@ func (tx feeTx) FeeGranter() []byte {
 	return nil
 }
 
-func TestAnteHandlerDecoratorRejectsNonNativeFeeDenom(t *testing.T) {
-	app := l1app.Setup(t, false)
-	ctx := app.NewContext(false)
+type noFeeTx struct{}
 
-	called := false
-	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
-		called = true
-		return ctx, nil
-	}
-
-	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin("uatom", 1))}, false)
-	require.ErrorIs(t, err, types.ErrInvalidFee)
-	require.False(t, called)
-	require.Contains(t, err.Error(), types.BondDenom)
+func (tx noFeeTx) GetMsgs() []sdk.Msg {
+	return nil
 }
 
-func TestAnteHandlerDecoratorAcceptsNativeFeeDenom(t *testing.T) {
+func (tx noFeeTx) GetMsgsV2() ([]protov2.Message, error) {
+	return nil, nil
+}
+
+func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
+	tests := []struct {
+		name         string
+		tx           sdk.Tx
+		wantErr      string
+		wantNextCall bool
+	}{
+		{
+			name:         "accepts native fee denom",
+			tx:           feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))},
+			wantNextCall: true,
+		},
+		{
+			name:         "accepts empty fee list",
+			tx:           feeTx{fees: sdk.Coins{}},
+			wantNextCall: true,
+		},
+		{
+			name:         "accepts nil fee list",
+			tx:           feeTx{},
+			wantNextCall: true,
+		},
+		{
+			name:         "accepts zero native fee coin",
+			tx:           feeTx{fees: sdk.Coins{sdk.NewInt64Coin(types.BondDenom, 0)}},
+			wantNextCall: true,
+		},
+		{
+			name:    "rejects non native fee denom",
+			tx:      feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin("uatom", 1))},
+			wantErr: "fee denom uatom not accepted; use norb",
+		},
+		{
+			name:    "rejects mixed native and non native fee denoms",
+			tx:      feeTx{fees: sdk.Coins{sdk.NewInt64Coin(types.BondDenom, 1), sdk.NewInt64Coin("testtoken", 1)}},
+			wantErr: "fee denom testtoken not accepted; use norb",
+		},
+		{
+			name:    "rejects malformed fee coin",
+			tx:      feeTx{fees: sdk.Coins{{Denom: "!", Amount: sdkmath.NewInt(1)}}},
+			wantErr: "fee coin must be valid",
+		},
+		{
+			name:    "rejects transaction without fee interface",
+			tx:      noFeeTx{},
+			wantErr: "transaction must expose fees",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app := l1app.Setup(t, false)
+			ctx := app.NewContext(false)
+
+			called := false
+			next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+				called = true
+				return ctx, nil
+			}
+
+			_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, tc.tx, false)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, types.ErrInvalidFee)
+				require.Contains(t, err.Error(), tc.wantErr)
+			}
+			require.Equal(t, tc.wantNextCall, called)
+		})
+	}
+}
+
+func TestAnteHandlerDecoratorPropagatesNextError(t *testing.T) {
 	app := l1app.Setup(t, false)
 	ctx := app.NewContext(false)
+	nextErr := errors.New("next failed")
 
-	called := false
 	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
-		called = true
-		return ctx, nil
+		return ctx, nextErr
 	}
 
 	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))}, false)
-	require.NoError(t, err)
-	require.True(t, called)
+	require.ErrorIs(t, err, nextErr)
 }

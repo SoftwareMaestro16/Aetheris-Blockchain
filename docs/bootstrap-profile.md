@@ -146,6 +146,15 @@ Run the native token lifecycle smoke documented in [native-token-lifecycle.md](n
 
 The native token smoke validates bank metadata, `norb` supply and balances, staking/fees/mint denom consistency, and a `bank send` transaction that pays fees in `norb`.
 
+Run the fees ante policy smoke documented in [fees-ante-policy.md](fees-ante-policy.md):
+
+```powershell
+.\tests\e2e\fees_ante_smoke.ps1
+.\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+```
+
+The fees ante smoke validates fee params, successful `norb` fees across bank/tokenfactory/DEX txs, wrong fee rejection, mixed-denom fee rejection, and explicit zero/empty fee behavior.
+
 Export state after the network has started:
 
 ```powershell
@@ -177,6 +186,8 @@ go build -o build/orbitalisd.exe ./cmd/l1d
 .\tests\e2e\pos_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\native_token_smoke.ps1
 .\tests\e2e\native_token_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+.\tests\e2e\fees_ante_smoke.ps1
+.\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
 Security baseline:

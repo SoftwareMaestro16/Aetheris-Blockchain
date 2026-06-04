@@ -16,11 +16,22 @@ func TestDefaultParamsValidate(t *testing.T) {
 	}
 }
 
-func TestParamsRejectNonNativeFeeDenom(t *testing.T) {
-	params := DefaultParams()
-	params.AllowedFeeDenoms = []string{"uatom"}
-	if err := params.Validate(); err == nil {
-		t.Fatal("expected non-native fee denom to fail")
+func TestParamsRejectInvalidAllowedFeeDenoms(t *testing.T) {
+	tests := map[string][]string{
+		"empty list":       {},
+		"non native denom": {"uatom"},
+		"duplicate native": {appparams.BaseDenom, appparams.BaseDenom},
+		"mixed denoms":     {appparams.BaseDenom, "testtoken"},
+	}
+
+	for name, denoms := range tests {
+		t.Run(name, func(t *testing.T) {
+			params := DefaultParams()
+			params.AllowedFeeDenoms = denoms
+			if err := params.Validate(); err == nil {
+				t.Fatal("expected invalid allowed fee denoms to fail")
+			}
+		})
 	}
 }
 

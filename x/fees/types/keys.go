@@ -10,4 +10,10 @@ const (
 
 var ParamsKey = []byte{0x01}
 
-const BondDenom = appparams.BaseDenom
+const (
+	BondDenom              = appparams.BaseDenom
+	MaxAllowedFeeDenomsV1  = 1
+	PrototypeBaseFeeAmount = "1000000"
+	PrototypeBaseFeeCoin   = PrototypeBaseFeeAmount + BondDenom
+	PrototypeMinGasPriceV1 = "0" + BondDenom
+)

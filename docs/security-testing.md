@@ -29,6 +29,7 @@ Required cases:
 - Invalid signer and unauthorized admin calls.
 - Duplicate or replayed messages where applicable.
 - Malformed denoms, addresses, metadata, pool IDs, and fee weights.
+- Wrong fee denom, mixed fee denoms, malformed fee coins, and non-`FeeTx` ante inputs.
 - Swap inputs targeting rounding edge cases.
 - Attempts to create zero-liquidity or insolvent pools.
 - Governance param values that disable safety bounds.

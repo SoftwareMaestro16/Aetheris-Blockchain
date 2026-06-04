@@ -72,6 +72,7 @@ Smoke test:
 ```powershell
 .\tests\e2e\localnet_smoke.ps1
 .\tests\e2e\native_token_smoke.ps1
+.\tests\e2e\fees_ante_smoke.ps1
 ```
 
 ## Example CLI
@@ -81,9 +82,9 @@ build\orbitalisd.exe query block --node tcp://127.0.0.1:26657
 build\orbitalisd.exe query bank denom-metadata norb --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe query bank total-supply-of norb --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe query bank balance <orb1-address> norb --node tcp://127.0.0.1:26657 --output json
+build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe tx bank send node0 <to-address> 100000000000norb --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
 build\orbitalisd.exe tx tokenfactory create-denom gold --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
-build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657
 ```
 
 ## External Databases

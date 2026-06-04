@@ -15,14 +15,16 @@ import (
 )
 
 func TestInitCmd(t *testing.T) {
+	homeDir := t.TempDir()
 	rootCmd := cmd.NewRootCmd()
 	rootCmd.SetArgs([]string{
 		"init",       // Test the init cmd
 		"l1app-test", // Moniker
 		fmt.Sprintf("--%s=%s", cli.FlagOverwrite, "true"), // Overwrite genesis.json, in case it already exists
+		fmt.Sprintf("--%s=%s", flags.FlagHome, homeDir),
 	})
 
-	require.NoError(t, svrcmd.Execute(rootCmd, "", l1app.DefaultNodeHome))
+	require.NoError(t, svrcmd.Execute(rootCmd, "", homeDir))
 }
 
 func TestRootCommandBranding(t *testing.T) {

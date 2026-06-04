@@ -44,6 +44,7 @@ Genesis state:
 
 Validation:
 - The only prototype fee denom is `norb`.
+- V1 fee policy requires exactly one allowed denom; empty, duplicate, or multi-denom lists are invalid.
 - Validator rewards ratio and community pool ratio must be valid decimals between `0` and `1`.
 - Fee split ratios must sum exactly to `1`.
 - Prototype default params are `allowed_fee_denoms = ["norb"]`, `validator_rewards_ratio = "0.98"`, and `community_pool_ratio = "0.02"`.
