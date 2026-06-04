@@ -100,6 +100,11 @@ function Assert-RestError {
   throw "REST $Path succeeded but status $ExpectedStatus was expected"
 }
 
+function Test-HasNextKey {
+  param($Response)
+  return ($Response.pagination.next_key -or $Response.pagination.nextKey)
+}
+
 function New-SignedTxArgs {
   param(
     [string[]]$ActionArgs,
@@ -223,10 +228,16 @@ try {
   if (@($emptyDenoms.denoms).Count -ne 0) {
     throw "fresh localnet tokenfactory denoms must be empty"
   }
+  if (-not $emptyDenoms.pagination) {
+    throw "fresh localnet tokenfactory denoms must include pagination"
+  }
 
   $emptyPools = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pools")
   if (@($emptyPools.pools).Count -ne 0) {
     throw "fresh localnet dex pools must be empty"
+  }
+  if (-not $emptyPools.pagination) {
+    throw "fresh localnet dex pools must include pagination"
   }
 
   $restBlock = Invoke-RestJson -Path "/cosmos/base/tendermint/v1beta1/blocks/latest"
@@ -258,14 +269,33 @@ try {
   if (@($restDenoms.denoms).Count -ne 0) {
     throw "REST tokenfactory denoms must be empty on fresh localnet"
   }
+  if (-not $restDenoms.pagination) {
+    throw "REST tokenfactory denoms must include pagination"
+  }
   $restPools = Invoke-RestJson -Path "/l1/dex/v1/pools"
   if (@($restPools.pools).Count -ne 0) {
     throw "REST dex pools must be empty on fresh localnet"
+  }
+  if (-not $restPools.pagination) {
+    throw "REST dex pools must include pagination"
   }
   Write-Host "REST base, bank, staking, fees, tokenfactory, and dex list queries passed"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
   $factoryDenom = "factory/$node0/$FactorySubdenom"
+  $factorySubdenom2 = "$FactorySubdenom-page"
+  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", $factorySubdenom2) -FromHome $node0Home | Out-Null
+  $factoryDenom2 = "factory/$node0/$factorySubdenom2"
+
+  $tfPageCli = Invoke-QueryGrpcJson -Arguments @("query", "tokenfactory", "denoms", "--limit", "1")
+  if (@($tfPageCli.denoms).Count -ne 1 -or -not (Test-HasNextKey -Response $tfPageCli)) {
+    throw "gRPC tokenfactory denoms --limit 1 must return one denom and next_key"
+  }
+  $tfPageRest = Invoke-RestJson -Path "/l1/tokenfactory/v1/denoms?pagination.limit=1"
+  if (@($tfPageRest.denoms).Count -ne 1 -or -not (Test-HasNextKey -Response $tfPageRest)) {
+    throw "REST tokenfactory denoms pagination.limit=1 must return one denom and next_key"
+  }
+
   $tfCli = Invoke-QueryGrpcJson -Arguments @("query", "tokenfactory", "denom", $factoryDenom)
   if ($tfCli.metadata.admin -ne $node0) {
     throw "tokenfactory denom admin mismatch"
@@ -279,7 +309,9 @@ try {
   Write-Host "tokenfactory gRPC/REST denom queries passed"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom2", $node0) -FromHome $node0Home | Out-Null
   Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom2") -FromHome $node0Home | Out-Null
 
   $poolCli = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pool", "1")
   if ($poolCli.pool.id -ne "1" -and [int64]$poolCli.pool.id -ne 1) {
@@ -289,9 +321,17 @@ try {
   if ($poolRest.pool.lp_denom -ne "lp/1") {
     throw "REST DEX pool must return lp/1"
   }
+  $poolsCli = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pools", "--limit", "1")
+  if (@($poolsCli.pools).Count -ne 1 -or -not (Test-HasNextKey -Response $poolsCli)) {
+    throw "gRPC DEX pools --limit 1 must return one pool and next_key"
+  }
   $poolsRest = Invoke-RestJson -Path "/l1/dex/v1/pools"
-  if (@($poolsRest.pools).Count -ne 1) {
-    throw "REST DEX pools must return one pool after create-pool"
+  if (@($poolsRest.pools).Count -ne 2) {
+    throw "REST DEX pools must return two pools after create-pool"
+  }
+  $poolsPageRest = Invoke-RestJson -Path "/l1/dex/v1/pools?pagination.limit=1"
+  if (@($poolsPageRest.pools).Count -ne 1 -or -not (Test-HasNextKey -Response $poolsPageRest)) {
+    throw "REST DEX pools pagination.limit=1 must return one pool and next_key"
   }
   Assert-RestError -Path "/l1/dex/v1/pools/0" -ExpectedStatus 400
   Assert-RestError -Path "/l1/dex/v1/pools/999" -ExpectedStatus 404

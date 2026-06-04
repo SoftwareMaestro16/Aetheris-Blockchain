@@ -2,11 +2,13 @@ package keeper
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/sovereign-l1/l1/x/dex/types"
+	queryutil "github.com/sovereign-l1/l1/x/internal/query"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -32,12 +34,12 @@ func (k Keeper) Pools(ctx context.Context, req *types.QueryPoolsRequest) (*types
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "empty request")
 	}
-	pools, hasMore, err := k.GetPools(ctx, types.MaxQueryPools)
+	pools, page, err := k.GetPoolsPage(ctx, req.Pagination)
 	if err != nil {
+		if errors.Is(err, queryutil.ErrInvalidPagination) {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid pagination: %v", err)
+		}
 		return nil, err
 	}
-	if hasMore {
-		return nil, status.Errorf(codes.ResourceExhausted, "too many pools; prototype query limit is %d", types.MaxQueryPools)
-	}
-	return &types.QueryPoolsResponse{Pools: pools}, nil
+	return &types.QueryPoolsResponse{Pools: pools, Pagination: page}, nil
 }

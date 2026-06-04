@@ -22,7 +22,7 @@ Prototype release is blocked when any `Critical` or `High` finding lacks one of:
 | --- | --- | --- |
 | Critical | Yes | nondeterministic state transition, ABCI panic from malformed tx/query/genesis, unauthorized mint/burn/admin, bank supply corruption |
 | High | Yes | missing denom validation, missing bank balance/accounting check, DEX reserve/LP supply desync, wrong fee denom bypass, unbounded state scan in tx path |
-| Medium | Owner required | unpaginated prototype query with bounded cap, dependency advisory without reachable symbol, localnet-only insecure default |
+| Medium | Owner required | dependency advisory without reachable symbol, missing query load evidence for high-cardinality public API, localnet-only insecure default |
 | Low | Track | docs inconsistency, noisy generated-code scanner result with narrow suppression |
 
 ## Local Command
@@ -88,7 +88,7 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | Denom validation | Native `norb`/`ORB` cannot be spoofed by tokenfactory or LP denoms. All user-provided denoms use SDK validation before bank movement. |
 | Balance checks | Bank sends/mints/burns propagate errors. DEX module balances equal recorded reserves. LP supply equals pool `total_shares`. |
 | Rounding | DEX math uses integer arithmetic only. Rounding favors protocol safety and slippage checks reject zero/tiny output surprises. |
-| State bloat DoS | Tx paths use direct key lookups. List queries are bounded or paginated. Prototype unpaginated list endpoints have explicit caps and MUST FIX before public high-cardinality use. |
+| State bloat DoS | Tx paths use direct key lookups. List queries use bounded pagination/default limits or are documented blockers before public high-cardinality use. |
 | Genesis/bootstrap | Genesis validates, native metadata is present, custom module defaults round-trip, validator stake is positive, and tracked files contain no secrets. |
 | Local scripts | Destructive operations validate resolved paths stay inside the workspace and never delete repository root or arbitrary paths. |
 | Observability | Health/diagnostic bundle excludes keyring and validator private material. |

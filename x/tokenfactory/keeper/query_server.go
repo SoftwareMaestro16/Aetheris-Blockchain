@@ -2,11 +2,13 @@ package keeper
 
 import (
 	"context"
+	"errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	queryutil "github.com/sovereign-l1/l1/x/internal/query"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
 
@@ -33,12 +35,12 @@ func (k Keeper) Denoms(ctx context.Context, req *types.QueryDenomsRequest) (*typ
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "empty request")
 	}
-	denoms, hasMore, err := k.GetDenoms(ctx, types.MaxQueryDenoms)
+	denoms, page, err := k.GetDenomsPage(ctx, req.Pagination)
 	if err != nil {
+		if errors.Is(err, queryutil.ErrInvalidPagination) {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid pagination: %v", err)
+		}
 		return nil, err
 	}
-	if hasMore {
-		return nil, status.Errorf(codes.ResourceExhausted, "too many denoms; prototype query limit is %d", types.MaxQueryDenoms)
-	}
-	return &types.QueryDenomsResponse{Denoms: denoms}, nil
+	return &types.QueryDenomsResponse{Denoms: denoms, Pagination: page}, nil
 }

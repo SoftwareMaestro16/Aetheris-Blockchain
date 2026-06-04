@@ -70,11 +70,11 @@ The Cosmos-specific review for every row must cover:
 
 MUST FIX before public release or high-cardinality testnet:
 
-- Tokenfactory and DEX list queries need production pagination or explicit enforced caps beyond the local prototype limits.
 - A reusable signed-tx replay/sequence e2e helper should be applied to bank, tokenfactory, and DEX txs, not only the current staking/PoS smoke path.
 
 SHOULD FIX for stronger operator observability:
 
+- Add high-cardinality query pagination load evidence for tokenfactory and DEX before public explorer/API load testing.
 - Add per-row transcript artifacts to release evidence so each lifecycle can be audited without rerunning the localnet.
 - Add targeted CLI negative tests for malformed Bech32 and malformed coin arguments at command construction boundaries where Cosmos SDK validation does not already cover the path.
 

@@ -14,8 +14,9 @@ var (
 )
 
 const (
-	LPDenomPrefix  = "lp"
-	PoolFeeBps     = int64(30)
-	BpsDenominator = int64(10_000)
-	MaxQueryPools  = 100
+	LPDenomPrefix     = "lp"
+	PoolFeeBps        = int64(30)
+	BpsDenominator    = int64(10_000)
+	DefaultQueryPools = 50
+	MaxQueryPools     = 100
 )

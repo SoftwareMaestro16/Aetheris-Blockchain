@@ -11,8 +11,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
+	queryutil "github.com/sovereign-l1/l1/x/internal/query"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
 
@@ -71,6 +73,32 @@ func (k Keeper) GetDenoms(ctx context.Context, limit int) ([]types.DenomAuthorit
 func (k Keeper) GetAllDenoms(ctx context.Context) ([]types.DenomAuthorityMetadata, error) {
 	denoms, _, err := k.GetDenoms(ctx, 0)
 	return denoms, err
+}
+
+func (k Keeper) GetDenomsPage(ctx context.Context, pageReq *sdkquery.PageRequest) ([]types.DenomAuthorityMetadata, *sdkquery.PageResponse, error) {
+	bounds, err := queryutil.ForwardPageBounds(pageReq, types.DenomPrefix, types.DefaultQueryDenoms, types.MaxQueryDenoms)
+	if err != nil {
+		return nil, nil, err
+	}
+	store := k.storeService.OpenKVStore(ctx)
+	iter, err := store.Iterator(bounds.Start, bounds.End)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer iter.Close()
+
+	var out []types.DenomAuthorityMetadata
+	for ; iter.Valid(); iter.Next() {
+		if uint64(len(out)) == bounds.Limit {
+			return out, queryutil.PageResponse(iter.Key()), nil
+		}
+		var meta types.DenomAuthorityMetadata
+		if err := k.cdc.Unmarshal(iter.Value(), &meta); err != nil {
+			return nil, nil, err
+		}
+		out = append(out, meta)
+	}
+	return out, queryutil.PageResponse(nil), nil
 }
 
 func (k Keeper) FullDenom(creator, subdenom string) (string, error) {

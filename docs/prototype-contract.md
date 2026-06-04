@@ -134,9 +134,8 @@ MUST FIX before declaring the prototype working:
 
 SHOULD FIX but not a blocker for local prototype declaration:
 
-- Tokenfactory pagination remains capped by the prototype query limit; larger indexed pagination is future hardening work.
 - 5-validator full profile is manual/nightly rather than mandatory on every PR.
-- Current unpaginated list query caps need pagination before public high-cardinality testnet use.
+- High-cardinality query load benchmarks should be added before public explorer/API load testing.
 - Known dependency advisories require reachability triage or upstream upgrade before release tagging.
 - Dummy vote-extension behavior remains unsuitable for public validator networks.
 

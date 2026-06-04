@@ -12,8 +12,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
 
 	"github.com/sovereign-l1/l1/x/dex/types"
+	queryutil "github.com/sovereign-l1/l1/x/internal/query"
 )
 
 type Keeper struct {
@@ -163,6 +165,32 @@ func (k Keeper) GetPools(ctx context.Context, limit int) ([]types.Pool, bool, er
 func (k Keeper) GetAllPools(ctx context.Context) ([]types.Pool, error) {
 	pools, _, err := k.GetPools(ctx, 0)
 	return pools, err
+}
+
+func (k Keeper) GetPoolsPage(ctx context.Context, pageReq *sdkquery.PageRequest) ([]types.Pool, *sdkquery.PageResponse, error) {
+	bounds, err := queryutil.ForwardPageBounds(pageReq, types.PoolPrefix, types.DefaultQueryPools, types.MaxQueryPools)
+	if err != nil {
+		return nil, nil, err
+	}
+	store := k.storeService.OpenKVStore(ctx)
+	iter, err := store.Iterator(bounds.Start, bounds.End)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer iter.Close()
+
+	var pools []types.Pool
+	for ; iter.Valid(); iter.Next() {
+		if uint64(len(pools)) == bounds.Limit {
+			return pools, queryutil.PageResponse(iter.Key()), nil
+		}
+		var pool types.Pool
+		if err := k.cdc.Unmarshal(iter.Value(), &pool); err != nil {
+			return nil, nil, err
+		}
+		pools = append(pools, pool)
+	}
+	return pools, queryutil.PageResponse(nil), nil
 }
 
 func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) {

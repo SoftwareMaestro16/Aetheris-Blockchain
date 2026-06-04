@@ -2,6 +2,7 @@ syntax = "proto3";
 package l1.tokenfactory.v1;
 
 import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
 import "gogoproto/gogo.proto";
 import "l1/tokenfactory/v1/genesis.proto";
 
@@ -30,8 +31,13 @@ message QueryDenomResponse {
   DenomAuthorityMetadata metadata = 1 [(gogoproto.nullable) = false];
 }
 
-message QueryDenomsRequest {}
+message QueryDenomsRequest {
+  // pagination bounds the factory denom list response.
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
 
 message QueryDenomsResponse {
   repeated DenomAuthorityMetadata denoms = 1 [(gogoproto.nullable) = false];
+  // pagination contains the next key when more denoms are available.
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }

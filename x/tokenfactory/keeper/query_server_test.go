@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -22,6 +24,8 @@ func TestDenomsQueryReturnsEmptyState(t *testing.T) {
 	res, err := app.TokenFactoryKeeper.Denoms(ctx, &types.QueryDenomsRequest{})
 	require.NoError(t, err)
 	require.Empty(t, res.Denoms)
+	require.NotNil(t, res.Pagination)
+	require.Empty(t, res.Pagination.NextKey)
 }
 
 func TestDenomQueryReturnsMetadata(t *testing.T) {
@@ -66,19 +70,70 @@ func TestDenomsQueryRejectsNilRequest(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
-func TestDenomsQueryEnforcesPrototypeLimit(t *testing.T) {
+func TestDenomsQueryPaginatesWithNextKey(t *testing.T) {
 	app := l1app.Setup(t, false)
 	ctx := app.NewContext(false)
 	admin := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
 
-	for i := 0; i < types.MaxQueryDenoms+1; i++ {
-		denom := fmt.Sprintf("factory/%s/querygold%d", admin.String(), i)
-		require.NoError(t, app.TokenFactoryKeeper.SetDenom(ctx, types.DenomAuthorityMetadata{
-			Denom: denom,
-			Admin: admin.String(),
-		}))
+	denoms := seedDenoms(t, app, ctx, admin.String(), 5)
+
+	first, err := app.TokenFactoryKeeper.Denoms(ctx, &types.QueryDenomsRequest{
+		Pagination: &sdkquery.PageRequest{Limit: 2},
+	})
+	require.NoError(t, err)
+	require.Len(t, first.Denoms, 2)
+	require.Equal(t, denoms[:2], []string{first.Denoms[0].Denom, first.Denoms[1].Denom})
+	require.NotEmpty(t, first.Pagination.NextKey)
+
+	next, err := app.TokenFactoryKeeper.Denoms(ctx, &types.QueryDenomsRequest{
+		Pagination: &sdkquery.PageRequest{Limit: 2, Key: first.Pagination.NextKey},
+	})
+	require.NoError(t, err)
+	require.Len(t, next.Denoms, 2)
+	require.Equal(t, denoms[2:4], []string{next.Denoms[0].Denom, next.Denoms[1].Denom})
+	require.NotEmpty(t, next.Pagination.NextKey)
+}
+
+func TestDenomsQueryDefaultLimitIsBoundedOnLargeState(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	admin := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
+	seedDenoms(t, app, ctx, admin.String(), types.MaxQueryDenoms+1)
+
+	res, err := app.TokenFactoryKeeper.Denoms(ctx, &types.QueryDenomsRequest{})
+	require.NoError(t, err)
+	require.Len(t, res.Denoms, types.DefaultQueryDenoms)
+	require.NotEmpty(t, res.Pagination.NextKey)
+}
+
+func TestDenomsQueryRejectsInvalidPagination(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+
+	cases := []sdkquery.PageRequest{
+		{Limit: types.MaxQueryDenoms + 1},
+		{Key: []byte("bad-key")},
+		{Offset: 1},
+		{CountTotal: true},
+		{Reverse: true},
 	}
 
-	_, err := app.TokenFactoryKeeper.Denoms(ctx, &types.QueryDenomsRequest{})
-	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+	for _, tc := range cases {
+		_, err := app.TokenFactoryKeeper.Denoms(ctx, &types.QueryDenomsRequest{Pagination: &tc})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	}
+}
+
+func seedDenoms(t *testing.T, app *l1app.L1App, ctx sdk.Context, admin string, count int) []string {
+	t.Helper()
+	out := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		denom := fmt.Sprintf("factory/%s/querygold%03d", admin, i)
+		require.NoError(t, app.TokenFactoryKeeper.SetDenom(ctx, types.DenomAuthorityMetadata{
+			Denom: denom,
+			Admin: admin,
+		}))
+		out = append(out, denom)
+	}
+	return out
 }

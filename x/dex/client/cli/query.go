@@ -58,13 +58,22 @@ func NewPoolsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := types.NewQueryClient(clientCtx).Pools(cmd.Context(), &types.QueryPoolsRequest{})
+			pageFlags, err := client.FlagSetWithPageKeyDecoded(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			pageReq, err := client.ReadPageRequest(pageFlags)
+			if err != nil {
+				return err
+			}
+			res, err := types.NewQueryClient(clientCtx).Pools(cmd.Context(), &types.QueryPoolsRequest{Pagination: pageReq})
 			if err != nil {
 				return err
 			}
 			return clientCtx.PrintProto(res)
 		},
 	}
+	flags.AddPaginationFlagsToCmd(cmd, "pools")
 	flags.AddQueryFlagsToCmd(cmd)
 	return cmd
 }

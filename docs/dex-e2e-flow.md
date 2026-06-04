@@ -159,7 +159,7 @@ build\orbitalisd.exe query bank balance $node0 lp/1 --node $node --output json
 - Keeper tests cover corrupted pool state without panic, wrong liquidity denoms, wrong LP denom, reserve/module-account balance consistency, LP supply consistency, tiny swap rounding, and slippage guards.
 - DEX reserves are checked against the `dex` module account balance in keeper tests.
 - LP denoms use `lp/<pool_id>` and are not aliases for native `norb` or display `ORB`.
-- Query `dex pools` currently returns all pools and has no pagination. This is acceptable for local prototype smoke but is MUST FIX before public testnet or any high-cardinality pool scenario.
+- Query `dex pools` uses bounded `next_key` pagination with default limit `50` and max limit `100`.
 - There is no external price oracle, sandwich protection, or production routing. Multi-hop swaps and exchange-grade routing are out of scope for this prototype.
 
 ## Required Checks

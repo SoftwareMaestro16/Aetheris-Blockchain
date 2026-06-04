@@ -9,7 +9,7 @@ This document defines the prototype tokenfactory user flow. It is localnet/testn
 - Admin controls create-time metadata, mint, burn from own account, and admin transfer.
 - Factory token bank metadata uses the full factory denom as base/display/symbol.
 - Factory denoms must not spoof native `norb`, `ORB`, `Orbitalis`, or LP denoms.
-- Query-all is capped by the prototype `MaxQueryDenoms` limit; production pagination is future hardening work.
+- `query tokenfactory denoms` uses bounded `next_key` pagination with default limit `50` and max limit `100`.
 
 ## One-Command Smoke
 

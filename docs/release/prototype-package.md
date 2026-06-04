@@ -102,7 +102,7 @@ Known `triage_required` findings from the audit gate are acceptable only when th
 - IBC, external bridge, explorer/indexer, production governance economics, and exchange-grade DEX routing are out of scope.
 - Localnet uses test keyrings under ignored directories.
 - Local minimum gas price is `0norb`; examples still use `1000000norb` fees to exercise the ante path.
-- Query list endpoints have prototype caps; pagination is a MUST FIX before high-cardinality public use.
+- Tokenfactory and DEX list endpoints use bounded `next_key` pagination; high-cardinality load evidence is still required before public explorer/API load testing.
 - The vote extension handler is dummy/test-oriented and must be replaced or disabled before a public validator network.
 - `govulncheck` dependency advisories and `go mod verify` cache integrity findings must be triaged for each release run.
 

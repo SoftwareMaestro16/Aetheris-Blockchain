@@ -163,6 +163,7 @@ Create a factory denom:
 build\orbitalisd.exe tx tokenfactory create-denom gold --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 $GOLD = "factory/$NODE0/gold"
 build\orbitalisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\orbitalisd.exe query tokenfactory denoms --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 Invoke-RestMethod "$REST/l1/tokenfactory/v1/denom/$GOLD"
 ```
 
@@ -206,7 +207,7 @@ Add liquidity, swap, and remove liquidity:
 build\orbitalisd.exe tx dex add-liquidity 1 1000000norb "1000000$DEXGOLD" 1000000 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 build\orbitalisd.exe tx dex swap-exact-in 1 100000norb $DEXGOLD 1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 build\orbitalisd.exe tx dex remove-liquidity 1 1000000lp/1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query dex pools --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\orbitalisd.exe query dex pools --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 ```
 
 Slippage examples:
