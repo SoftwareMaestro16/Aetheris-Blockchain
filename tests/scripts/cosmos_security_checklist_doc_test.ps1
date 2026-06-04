@@ -23,7 +23,6 @@ foreach ($heading in @(
     "Review Record",
     "App",
     "Tokenfactory",
-    "DEX",
     "Fees",
     "Localnet Scripts",
     "Proto And Query",
@@ -51,7 +50,7 @@ foreach ($term in @(
   Assert-Contains -Text $text -Pattern ([regex]::Escape($term)) -Message "checklist missing required term: $term"
 }
 
-foreach ($module in @("tokenfactory", "dex", "fees", "norb", "MsgUpdateParams", "buf lint")) {
+foreach ($module in @("tokenfactory", "fees", "norb", "MsgUpdateParams", "buf lint")) {
   Assert-Contains -Text $text -Pattern ([regex]::Escape($module)) -Message "checklist missing module/API coverage: $module"
 }
 
@@ -59,7 +58,6 @@ foreach ($testRef in @(
     "app/determinism_test.go",
     "scripts/security/determinism-gate.ps1",
     "x/tokenfactory/keeper/msg_server_test.go",
-    "x/dex/keeper/msg_server_test.go",
     "x/fees/keeper/ante_test.go",
     "tests/e2e/query_surface_smoke.ps1",
     "tests/scripts/prototype_release_package_test.ps1"

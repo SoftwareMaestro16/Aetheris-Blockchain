@@ -53,8 +53,7 @@ Expected result:
 - REST `/l1/fees/v1/params` returns only `norb` when the local REST gateway is healthy
 - bank send with `1000000norb` fee succeeds
 - tokenfactory create-denom with `1000000norb` fee succeeds
-- DEX create-pool with `1000000norb` fee succeeds
-- bank send, tokenfactory tx, and DEX tx with `testtoken` fee are rejected
+- bank send and tokenfactory tx with `testtoken` fee are rejected
 - mixed `norb,testtoken` fees are rejected
 - zero and empty fee txs match localnet policy and are accepted
 

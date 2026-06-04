@@ -13,7 +13,7 @@ flowchart LR
   P2P["CometBFT P2P Gossip"] --> CONS["CometBFT BFT PoS Consensus"]
   CONS --> APP
   APP --> CORE["x/auth x/bank x/staking x/mint x/distribution x/slashing x/gov"]
-  APP --> CUSTOM["x/tokenfactory x/dex x/fees"]
+  APP --> CUSTOM["x/tokenfactory x/fees"]
   CORE --> STORE["Module KVStores"]
   CUSTOM --> STORE
 ```
@@ -23,7 +23,6 @@ flowchart LR
 - `cmd/l1d`: Orbitalis node binary source and CLI.
 - `app`: direct Cosmos SDK `BaseApp` assembly pinned to Cosmos SDK `v0.54.3` and CometBFT `v0.39.3`.
 - `x/tokenfactory`: factory denoms, admin-controlled mint/burn, admin transfer, queries.
-- `x/dex`: constant-product AMM pools, liquidity add/remove, exact-input swaps, LP tokens.
 - `x/fees`: native fee-denom policy; v1 accepts only `norb` fees.
 - `scripts/localnet`: 3-validator localnet init/start/stop/reset, health, and diagnostics scripts.
 - Native token lifecycle: `norb` is the base transaction/staking/fee denom; `ORB` is display metadata only.
@@ -78,7 +77,6 @@ Prototype acceptance and targeted smoke tests:
 .\tests\e2e\native_token_smoke.ps1
 .\tests\e2e\tokenfactory_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1
-.\tests\e2e\dex_smoke.ps1
 .\tests\e2e\query_surface_smoke.ps1
 ```
 

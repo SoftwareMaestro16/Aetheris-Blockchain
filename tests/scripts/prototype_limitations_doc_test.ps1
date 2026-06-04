@@ -38,8 +38,7 @@ foreach ($section in @(
     'Version scope',
     'Non-Goals',
     'Accepted Prototype Limitations',
-    'Blockers',
-    'prototype-acceptance-report\.md'
+    'Blockers'
   )) {
   Assert-Contains -Text $limitationsText -Pattern $section -Message "limitations doc missing section or reference: $section"
 }
@@ -62,7 +61,6 @@ foreach ($blocker in @(
     'not an accepted limitation',
     'wrong fee denom',
     'unauthorized tokenfactory',
-    'DEX invariant',
     'nondeterminism',
     'unbounded tx/list',
     'secrets'

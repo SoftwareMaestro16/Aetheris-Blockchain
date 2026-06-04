@@ -54,7 +54,7 @@ For implementation or review tasks:
 
 ## Git Integration
 
-- Group changes into logical PR-sized commits.
+- Group changes into logical scoped commits.
 - Do not mix skill-policy changes with chain scaffold, module implementation, or generated code.
 - Use Conventional Commits with a clear scope.
 - Push completed commits to `origin/main` unless explicitly told not to.

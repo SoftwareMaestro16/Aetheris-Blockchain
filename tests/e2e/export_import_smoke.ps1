@@ -192,13 +192,6 @@ try {
   Assert-True ($tfQuery.metadata.admin -eq $node0) "tokenfactory admin query mismatch"
   Write-Host "tokenfactory create/mint flow committed for $factoryDenom"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
-  $poolQuery = Invoke-QueryCliJson -Arguments @("query", "dex", "pool", "1")
-  Assert-True ($poolQuery.pool.lp_denom -eq "lp/1") "DEX pool query did not return lp/1"
-  Assert-True ($poolQuery.pool.denom0 -eq $factoryDenom) "DEX pool denom0 mismatch"
-  Assert-True ($poolQuery.pool.denom1 -eq "norb") "DEX pool denom1 mismatch"
-  Write-Host "DEX create-pool flow committed"
-
   $feesParams = Invoke-QueryCliJson -Arguments @("query", "fees", "params")
   Assert-True (@($feesParams.params.allowed_fee_denoms).Count -eq 1) "fees params must export one allowed fee denom"
   Assert-True (@($feesParams.params.allowed_fee_denoms) -contains "norb") "fees params must include norb"
@@ -220,28 +213,19 @@ try {
   Assert-True ($exportedDenom.Count -eq 1) "exported tokenfactory denom missing"
   Assert-True ($exportedDenom[0].admin -eq $node0) "exported tokenfactory admin mismatch"
 
-  $exportedPool = @($genesis.app_state.dex.pools | Where-Object { [int64]$_.id -eq 1 } | Select-Object -First 1)
-  Assert-True ($exportedPool.Count -eq 1) "exported DEX pool 1 missing"
-  Assert-True ($exportedPool[0].denom0 -eq $factoryDenom) "exported DEX denom0 mismatch"
-  Assert-True ($exportedPool[0].denom1 -eq "norb") "exported DEX denom1 mismatch"
-  Assert-True ([int64]$exportedPool[0].reserve0 -eq 10000000) "exported DEX reserve0 mismatch"
-  Assert-True ([int64]$exportedPool[0].reserve1 -eq 10000000) "exported DEX reserve1 mismatch"
-  Assert-True ($exportedPool[0].lp_denom -eq "lp/1") "exported DEX lp denom mismatch"
-
-  Assert-CoinInBalance -Genesis $genesis -Address $node0 -Denom $factoryDenom -MinAmount 90000000
-  Assert-CoinInBalance -Genesis $genesis -Address $node0 -Denom "lp/1" -MinAmount 10000000
+  Assert-CoinInBalance -Genesis $genesis -Address $node0 -Denom $factoryDenom -MinAmount 100000000
   Assert-CoinInBalance -Genesis $genesis -Address $node1 -Denom "norb" -MinAmount 12345
 
   Assert-True ($genesis.app_state.staking.params.bond_denom -eq "norb") "exported staking bond denom mismatch"
   $exportedDelegation = @($genesis.app_state.staking.delegations | Where-Object { $_.delegator_address -eq $node0 -and $_.validator_address -eq $validator.operator_address } | Select-Object -First 1)
   Assert-True ($exportedDelegation.Count -eq 1) "exported staking delegation missing"
   Assert-True ($exportedDelegation[0].shares -match '^5000000(\.0+)?$') "exported staking delegation shares mismatch"
-  Write-Host "exported genesis preserves bank, staking, fees, tokenfactory, and DEX state"
+  Write-Host "exported genesis preserves bank, staking, fees, and tokenfactory state"
 
   $corruptPath = Join-Path $ExportDir "node0-export-corrupt.json"
-  $genesis.app_state.dex.pools[0].reserve0 = "not-an-int"
+  $genesis.app_state.tokenfactory.denoms[0].denom = "bad denom"
   $genesis | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $corruptPath -Encoding UTF8
-  Assert-NativeCommandFails -Arguments @("genesis", "validate-genesis", $corruptPath, "--home", $node0Home) -ExpectedText "reserve0|invalid"
+  Assert-NativeCommandFails -Arguments @("genesis", "validate-genesis", $corruptPath, "--home", $node0Home) -ExpectedText "denom|invalid"
   Write-Host "corrupted exported genesis is rejected by validate-genesis"
 
   Write-Host "state export/import smoke completed with export $exportPath"

@@ -43,7 +43,6 @@ Diagnostic bundles are written under ignored `.work\diagnostics`. They redact co
 | Wrong fee denom | Tx is rejected with `fee denom ... not accepted; use norb`. | `build\orbitalisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json`; inspect the failed tx command. | Use `--fees $FEES`, where `$FEES = "1000000norb"`. Do not use `ORB`, factory denoms, LP denoms, or multi-denom fees for prototype tx fees. |
 | Insufficient funds | Tx fails with `insufficient funds`, balance is too low for amount plus fee. | `$ADDR = build\orbitalisd.exe keys show $FROM -a --home $HOME --keyring-backend $KEYRING`; `build\orbitalisd.exe query bank balance $ADDR norb --node $NODE --output json` | Fund local accounts through normal local bank transfer: `.\scripts\localnet\fund.ps1 -OutputDir $OUTPUT -Binary build\orbitalisd.exe -ChainId $CHAIN_ID -RPCPort 26657 -Recipients @($ADDR) -Amount 1000000norb`. |
 | Sequence mismatch | Tx fails with `account sequence mismatch`, `account sequence`, or signature verification error after a retry. | `build\orbitalisd.exe query auth account $ADDR --node $NODE --output json`; wait for one new block with `.\scripts\localnet\health.ps1 -OutputDir $OUTPUT -ValidatorCount $VALIDATORS` | Wait one block and rebuild the tx from the CLI. Do not reuse old signed transaction bytes after a previous tx commits. |
-| DEX slippage | `dex add-liquidity` or `dex swap-exact-in` fails with `minted shares below minimum` or `amount out below minimum`. | `build\orbitalisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json`; query trader balances for both pool denoms. | Lower `min_shares` or `min_amount_out` for the local prototype test, or use current pool reserves to calculate a realistic bound. State should remain unchanged on rejection. |
 | Unauthorized tokenfactory | Mint, burn, or change-admin fails with an unauthorized/admin error. | `build\orbitalisd.exe query tokenfactory denom $DENOM --grpc-addr $GRPC --grpc-insecure --node $NODE --output json`; `build\orbitalisd.exe keys show $FROM -a --home $HOME --keyring-backend $KEYRING` | Use the current denom admin as `--from`. After `change-admin`, old admin txs should fail and new admin txs should pass. |
 | REST down | CLI gRPC queries may pass, but REST returns timeout, 404, or 503. | `Invoke-RestMethod "$REST/cosmos/base/tendermint/v1beta1/blocks/latest"`; `.\scripts\localnet\health.ps1 -OutputDir $OUTPUT -ValidatorCount $VALIDATORS -Json` | Confirm REST and gRPC ports match the generated node config. Restart localnet if the REST gateway started before gRPC readiness. For shifted ports, update `$REST` and `$GRPC`. |
 
@@ -74,7 +73,6 @@ Runbook commands are covered where practical by:
 - `tests\e2e\localnet_smoke.ps1` for start, health, peers, REST, and gRPC.
 - `tests\e2e\fees_ante_smoke.ps1` for wrong fee rejection.
 - `tests\e2e\mempool_negative_smoke.ps1` for wrong fee, insufficient funds, sequence mismatch, unauthorized mint, and malformed tx failures.
-- `tests\e2e\dex_smoke.ps1` for DEX slippage rejection.
 - `tests\scripts\observability_scripts_test.ps1` for redacted health and diagnostic bundles.
 
 Deep links:
@@ -83,5 +81,4 @@ Deep links:
 - [Prototype Observability](observability.md)
 - [Mempool And CheckTx Negative Flow](mempool-checktx-negative-flow.md)
 - [Fees Ante Policy](fees-ante-policy.md)
-- [DEX E2E Flow](dex-e2e-flow.md)
 - [Local Funding](local-funding.md)

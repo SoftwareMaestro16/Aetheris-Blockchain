@@ -61,7 +61,6 @@ foreach ($failure in @(
     "Wrong fee denom",
     "Insufficient funds",
     "Sequence mismatch",
-    "DEX slippage",
     "Unauthorized tokenfactory",
     "REST down"
   )) {
@@ -78,7 +77,6 @@ foreach ($command in @(
     'build\\orbitalisd\.exe query fees params',
     'build\\orbitalisd\.exe query bank balance',
     'build\\orbitalisd\.exe query auth account',
-    'build\\orbitalisd\.exe query dex pool',
     'build\\orbitalisd\.exe query tokenfactory denom',
     'Invoke-RestMethod'
   )) {
@@ -105,7 +103,6 @@ foreach ($evidence in @(
     'localnet_smoke\.ps1',
     'fees_ante_smoke\.ps1',
     'mempool_negative_smoke\.ps1',
-    'dex_smoke\.ps1',
     'observability_scripts_test\.ps1'
   )) {
   Assert-Contains -Text $runbookText -Pattern $evidence -Message "runbook missing evidence link: $evidence"

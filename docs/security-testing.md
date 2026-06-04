@@ -2,14 +2,13 @@
 
 ## Threat Model
 
-Assume malicious users, malicious validators, malformed transactions, mempool spam, governance abuse, corrupted imports, and adversarial liquidity operations.
+Assume malicious users, malicious validators, malformed transactions, mempool spam, governance abuse, and corrupted imports.
 
 Primary attack classes:
 - Replay attempts and nonce misuse.
 - Unauthorized token mint or burn.
 - Malformed Protobuf and invalid address encoding.
 - Double-spend attempts through cross-module flows.
-- AMM invariant manipulation.
 - Governance parameter abuse.
 - Unbounded loops and state bloat DoS.
 - Nondeterministic state transitions.
@@ -28,11 +27,8 @@ Per module:
 Required cases:
 - Invalid signer and unauthorized admin calls.
 - Duplicate or replayed messages where applicable.
-- Malformed denoms, addresses, metadata, pool IDs, and fee weights.
+- Malformed denoms, addresses, metadata, and fee weights.
 - Wrong fee denom, mixed fee denoms, malformed fee coins, and non-`FeeTx` ante inputs.
-- Swap inputs targeting rounding edge cases.
-- Duplicate DEX pairs, wrong LP denoms, reserve/module balance desync, LP supply mismatch, and excessive slippage minimums.
-- Attempts to create zero-liquidity or insolvent pools.
 - Governance param values that disable safety bounds.
 
 ## Integration Tests
@@ -40,8 +36,6 @@ Required cases:
 Required flows:
 - Full tx lifecycle from signing through state query.
 - Tokenfactory denom creation into bank supply.
-- DEX pool creation using tokenfactory assets.
-- Protocol fee accrual through swaps.
 - Governance-controlled param update.
 
 ## Determinism Tests

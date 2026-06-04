@@ -1,6 +1,6 @@
 # Executable Prototype Contract
 
-This document defines when the Orbitalis L1 prototype is considered working.
+This document defines when the tracked Orbitalis L1 prototype is considered working.
 
 The contract is intentionally narrower than a mainnet readiness checklist. It proves a local or CI operator can build `orbitalisd`, create a reproducible localnet, produce blocks, run core signed transactions, query state through CLI/gRPC/REST, stop the network cleanly, and collect enough evidence to debug failures.
 
@@ -14,34 +14,17 @@ Terms used across prototype docs:
 - `mainnet-ready`: production validator onboarding, economics, upgrade governance, public security posture, and operational SLOs; out of scope here.
 - `norb`: base transaction, staking, mint, and fee denom.
 - `ORB`: display metadata only, with exponent `9`; never use `ORB` as a tx fee, bank send, stake, or module accounting denom.
+- `ecosystem`: ignored local workspace for non-core experiments and tooling that are not part of the tracked L1 release artifact.
 
-Do not commit or package localnet homes, keyrings, validator keys, mnemonics, diagnostic bundles, `.work`, `.localnet`, or external database credentials. Orbitalis validator/full nodes do not require Redis, PostgreSQL, or another external database for consensus, mempool, or app state.
+Do not commit or package localnet homes, keyrings, validator keys, mnemonics, diagnostic bundles, `.work`, `.localnet`, `ecosystem`, or external database credentials. Orbitalis validator/full nodes do not require Redis, PostgreSQL, or another external database for consensus, mempool, or app state.
 
 ## Profiles
 
 | Profile | Command Shape | Contract |
 | --- | --- | --- |
 | Single-node dev | `-ValidatorCount 1` on localnet scripts | Boot/query/debug only. It does not satisfy the full prototype acceptance suite because bank and multi-validator PoS flows use node1 and peer checks. |
-| 3-validator smoke | default localnet and acceptance commands | Required prototype proof for PR/local development. Blocks, peers, validator set, txs, and queries must pass. |
+| 3-validator smoke | default localnet and acceptance commands | Required prototype proof for local development. Blocks, peers, validator set, txs, and queries must pass. |
 | 5-validator extended | `-OutputDir .localnet-5 -ValidatorCount 5` | Manual/nightly scale profile. Must not require copied scripts or hardcoded node0-only assumptions. |
-
-Default reusable variables:
-
-```powershell
-$CHAIN_ID = "orbitalis-local-1"
-$NODE = "tcp://127.0.0.1:26657"
-$GRPC = "127.0.0.1:9090"
-$REST = "http://127.0.0.1:1317"
-$HOME = ".localnet\node0\orbitalisd"
-$FROM = "node0"
-$KEYRING = "test"
-$FEES = "1000000norb"
-$NODE0 = build\orbitalisd.exe keys show $FROM -a --home $HOME --keyring-backend $KEYRING
-$NODE1_HOME = ".localnet\node1\orbitalisd"
-$NODE1 = build\orbitalisd.exe keys show node1 -a --home $NODE1_HOME --keyring-backend $KEYRING
-```
-
-For `.localnet-5`, set `$HOME` and `$NODE1_HOME` under `.localnet-5`. Keep `$NODE` on node0 unless testing another endpoint.
 
 ## MUST WORK Flows
 
@@ -52,16 +35,12 @@ For `.localnet-5`, set `$HOME` and `$NODE1_HOME` under `.localnet-5`. Keep `$NOD
 | Start validators | `.\scripts\localnet\start.ps1 -NoInit -Wait` | Validators listen on configured RPC/gRPC/REST ports, peers connect, and blocks are produced. | `scripts/localnet/health.ps1`, `tests/e2e/localnet_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
 | Wait height and health | `.\scripts\localnet\health.ps1 -ValidatorCount 3`; `Invoke-RestMethod http://127.0.0.1:26657/status` | Height is increasing, node status network is `orbitalis-local-1`, validator set size matches profile, REST and gRPC are reachable. | `docs/observability.md`, `tests/e2e/query_surface_smoke.ps1` |
 | Query block | `build\orbitalisd.exe query block --node $NODE --output json` | Output contains a latest block height/header. | `tests/e2e/prototype_acceptance.ps1`, `tests/e2e/query_surface_smoke.ps1` |
-| Bank send | `build\orbitalisd.exe tx bank send $FROM $NODE1 1000norb --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json`; then `query bank balance $NODE1 norb` | Tx commits with `code = 0`; node1 `norb` balance increases by `1000`. | `tests/e2e/prototype_acceptance.ps1`, `tests/e2e/native_token_smoke.ps1`, `tests/e2e/localnet_smoke.ps1` |
-| Tokenfactory create/mint/query | `tx tokenfactory create-denom gold`; `$GOLD = "factory/$NODE0/gold"`; `query tokenfactory denom $GOLD`; `tx tokenfactory mint "1000000$GOLD" $NODE0`; `query bank balance $NODE0 $GOLD` | Factory denom admin is node0, mint succeeds, bank balance and supply reflect minted amount. | `tests/e2e/prototype_acceptance.ps1`, `tests/e2e/tokenfactory_smoke.ps1`, `tests/e2e/query_surface_smoke.ps1`, `x/tokenfactory/keeper/msg_server_test.go` |
+| Bank send | `build\orbitalisd.exe tx bank send $FROM $NODE1 1000norb ... --fees 1000000norb`; then `query bank balance $NODE1 norb` | Tx commits with `code = 0`; node1 `norb` balance increases by `1000`. | `tests/e2e/prototype_acceptance.ps1`, `tests/e2e/native_token_smoke.ps1`, `tests/e2e/localnet_smoke.ps1` |
+| Tokenfactory create/mint/query | `tx tokenfactory create-denom gold`; `query tokenfactory denom $GOLD`; `tx tokenfactory mint "1000000$GOLD" $NODE0`; `query bank balance $NODE0 $GOLD` | Factory denom admin is node0, mint succeeds, bank balance and supply reflect minted amount. | `tests/e2e/prototype_acceptance.ps1`, `tests/e2e/tokenfactory_smoke.ps1`, `tests/e2e/query_surface_smoke.ps1`, `x/tokenfactory/keeper/msg_server_test.go` |
 | Tokenfactory burn/change-admin | `tx tokenfactory burn "1000$GOLD" $NODE0`; `tx tokenfactory change-admin $GOLD $NODE1`; `query tokenfactory denom $GOLD` | Burn by current admin from own address succeeds; admin changes to node1; old admin mint/burn is rejected and new admin mint succeeds. | `docs/tokenfactory-lifecycle.md`, `tests/e2e/tokenfactory_smoke.ps1`, `x/tokenfactory/keeper/msg_server_test.go` |
 | Fees wrong-denom rejection | `tx bank send $FROM $NODE1 1norb ... --fees 1000testtoken --output json` | Tx is rejected with `fee denom testtoken not accepted; use norb`; no state change. | `docs/fees-ante-policy.md`, `x/fees/keeper/ante_test.go`, `tests/e2e/fees_ante_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
-| Mempool/CheckTx negative flow | wrong fee, insufficient funds, invalid sequence replay, unauthorized mint, invalid DEX pool, malformed denom | Rejection phase and error are documented; target module state and balances remain unchanged, except normal SDK fees for failed DeliverTx. | `docs/mempool-checktx-negative-flow.md`, `tests/e2e/mempool_negative_smoke.ps1` |
-| DEX create pool/swap/query | Create/mint a factory denom; `tx dex create-pool 10000000norb "10000000$GOLD"`; `query dex pool 1`; `tx dex swap-exact-in 1 100000norb $GOLD 1`; query balances and pool. | Pool `1` has `lp/1`, reserves are non-zero, swap increases output balance, REST/gRPC pool query returns matching state. | `docs/dex-e2e-flow.md`, `x/dex/keeper/msg_server_test.go`, `tests/e2e/dex_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
-| DEX slippage failure | `tx dex swap-exact-in 1 100000norb $GOLD 1000000 ...` | Tx is rejected with `amount out below minimum`; balances/reserves are unchanged. | `tests/e2e/dex_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1 -Profile Full` |
-| Minimal load profile | `scripts/localnet/load-profile.ps1 -Scenario mixed -Count 12 -RatePerSecond 2` | Local-only summary records block progress, tx latency, successes, failures, failure rate, and per-operation counts for bank/tokenfactory/DEX mixed load. | `docs/minimal-load-profile.md`, `tests/e2e/load_profile_smoke.ps1` |
-| Guided demo | `scripts/demo/prototype-demo.ps1` | Human-readable local-only sequence builds/starts localnet, shows height, sends bank tx, creates/mints tokenfactory denom, swaps on DEX, queries REST, prints final balances, and stops. | `docs/prototype-demo.md`, `tests/scripts/prototype_demo_script_test.ps1`, e2e flows above |
-| Staking delegation and slashing query | `query staking validators`; select a bonded validator; `tx staking delegate <orbvaloper...> 5000000norb`; `query staking delegation <orb1...> <orbvaloper...>`; `query slashing params`; `query slashing signing-infos` | Validators are bonded, staking denom is `norb`, delegation commits, delegation query returns `norb`, total voting power increases, slashing params are positive. | `docs/pos-smoke-flow.md`, `app/pos_test.go`, `tests/e2e/pos_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
+| Mempool/CheckTx negative flow | wrong fee, insufficient funds, invalid sequence replay, unauthorized mint, malformed denom | Rejection phase and error are documented; target module state and balances remain unchanged, except normal SDK fees for failed DeliverTx. | `docs/mempool-checktx-negative-flow.md`, `tests/e2e/mempool_negative_smoke.ps1` |
+| Staking delegation and slashing query | `query staking validators`; select a bonded validator; `tx staking delegate <orbvaloper...> 5000000norb`; `query staking delegation <orb1...> <orbvaloper...>` | Validators are bonded, staking denom is `norb`, delegation commits, delegation query returns `norb`, total voting power increases, slashing params are positive. | `docs/pos-smoke-flow.md`, `app/pos_test.go`, `tests/e2e/pos_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
 | Stop/reset | `.\scripts\localnet\stop.ps1`; `.\scripts\localnet\reset.ps1` | Matching node processes stop; reset only deletes a resolved localnet directory inside the repo and never deletes repo root or arbitrary paths. | `scripts/localnet/common.ps1`, `tests/e2e/localnet_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
 
 One-command acceptance:
@@ -76,18 +55,17 @@ One-command acceptance:
 
 | Risk | Required Failure | Evidence |
 | --- | --- | --- |
-| Wrong fee denom | Any bank/tokenfactory/DEX tx using `testtoken`, factory denom, LP denom, or `ORB` as fee is rejected before state mutation. | `x/fees/keeper/ante_test.go`, `tests/e2e/fees_ante_smoke.ps1` |
+| Wrong fee denom | Any bank/tokenfactory tx using `testtoken`, factory denom, or `ORB` as fee is rejected before state mutation. | `x/fees/keeper/ante_test.go`, `tests/e2e/fees_ante_smoke.ps1` |
 | Malformed or non-FeeTx fee path | Ante returns an error instead of panic or bypass. | `x/fees/keeper/ante_test.go` |
 | Invalid delegation | Wrong denom, insufficient funds, or malformed validator address fails without changing validator power. | `app/pos_test.go` |
 | Unauthorized tokenfactory action | Non-admin mint/burn/change-admin and burn from another account are rejected; native `norb`/`ORB` spoofing is rejected. | `x/tokenfactory/keeper/msg_server_test.go`, `tests/e2e/tokenfactory_smoke.ps1` |
-| DEX accounting attack | Duplicate pair, wrong denom, wrong LP denom, tiny/zero liquidity, excessive slippage, corrupted pool, or reserve/module balance mismatch fails without panic. | `x/dex/keeper/msg_server_test.go`, `x/dex/keeper/math_test.go`, `tests/e2e/dex_smoke.ps1` |
-| Query malformed/not found | Custom query servers return gRPC status errors, not panics or local state dumps. | `x/tokenfactory/keeper/query_server_test.go`, `x/dex/keeper/query_server_test.go`, `tests/e2e/query_surface_smoke.ps1` |
+| Query malformed/not found | Custom query servers return gRPC status errors, not panics or local state dumps. | `x/tokenfactory/keeper/query_server_test.go`, `x/fees/keeper/query_server_test.go`, `tests/e2e/query_surface_smoke.ps1` |
 | Destructive script target | Reset/init refuses paths outside the workspace or the repository root. | `scripts/localnet/common.ps1`, `tests/e2e/localnet_smoke.ps1` |
 | Secret exposure | Staged/history scans and diagnostic bundle checks find no mnemonics, validator keys, keyrings, database URLs, or environment secrets in tracked artifacts. | `docs/security/prototype-audit-gate.md`, `scripts/security/prototype-audit.ps1`, `scripts/localnet/diagnostics.ps1` |
 
 ## Audit Gate
 
-Fast PR gate:
+Fast local gate:
 
 ```powershell
 .\scripts\security\prototype-audit.ps1 -Profile Fast
@@ -100,23 +78,15 @@ Release gate:
 .\tests\e2e\prototype_acceptance.ps1 -Profile Smoke
 ```
 
-Manual/nightly scale gate:
-
-```powershell
-.\scripts\security\prototype-audit.ps1 -Profile Nightly
-.\tests\e2e\prototype_acceptance.ps1 -Profile Full -OutputDir .localnet-5 -ValidatorCount 5
-```
-
 The Cosmos-specific manual review must cover:
 
 - no nondeterministic consensus state writes,
 - no ABCI/query/genesis panics on malformed input,
 - correct `Msg` signer and keeper authorization checks,
 - SDK denom validation for user-provided denoms,
-- bank supply, DEX reserves, and LP supply consistency,
-- integer-only DEX math and safe rounding,
+- bank supply and custom mint/burn consistency,
 - bounded tx paths and bounded or capped list queries,
-- no secrets in tracked files, logs, diagnostics, or release artifacts.
+- no secrets in tracked files, logs, diagnostics, release artifacts, or `ecosystem`.
 
 Critical or High audit findings block the prototype unless fixed, regression-tested, or explicitly triaged with owner and mitigation.
 
@@ -127,27 +97,19 @@ MUST FIX before declaring the prototype working:
 - `orbitalisd` does not build or cannot report version metadata.
 - Genesis validation fails or nodes in one localnet have different genesis hashes.
 - 3-validator localnet cannot produce blocks, form peers, or expose RPC/gRPC/REST health.
-- Bank, fees, tokenfactory create/mint/query, DEX create/swap/query, or PoS delegation flow fails in the 3-validator acceptance suite.
+- Bank, fees, tokenfactory create/mint/query, or PoS delegation flow fails in the 3-validator acceptance suite.
 - Wrong fee denom is accepted.
 - Unauthorized tokenfactory mint/burn/admin transfer succeeds.
-- DEX reserve, module balance, or LP supply invariant breaks.
 - Any malformed tx/query/genesis path creates an ABCI panic.
 - Any untriaged Critical/High security finding remains.
 - Secret material or external database credentials enter tracked files or release artifacts.
 
 SHOULD FIX but not a blocker for local prototype declaration:
 
-- 5-validator full profile is manual/nightly rather than mandatory on every PR.
-- Minimal load profile is a local prototype baseline, not a production performance claim.
+- 5-validator full profile is manual/nightly rather than mandatory on every local run.
 - High-cardinality query load benchmarks should be added before public explorer/API load testing.
 - Known dependency advisories require reachability triage or upstream upgrade before release tagging.
 - Dummy vote-extension behavior remains unsuitable for public validator networks.
-
-NICE TO HAVE:
-
-- More benchmarks for DEX math, query caps, and localnet startup.
-- Automated transcript attachment for release notes.
-- Multi-OS e2e localnet runs beyond build/package matrix.
 
 ## Evidence Index
 
@@ -174,10 +136,4 @@ buf lint
 go build -o build\orbitalisd.exe ./cmd/l1d
 .\tests\e2e\prototype_acceptance.ps1
 .\scripts\security\prototype-audit.ps1 -Profile Fast
-```
-
-Release-like local package:
-
-```powershell
-.\scripts\release\prototype-package.ps1 -Version prototype-local -TargetOS windows -TargetArch amd64
 ```

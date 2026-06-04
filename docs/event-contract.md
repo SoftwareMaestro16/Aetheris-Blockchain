@@ -6,7 +6,7 @@ Events are supporting evidence for e2e, CLI debugging, and future indexers. They
 
 - Event types and attribute keys are public prototype API.
 - Attribute order in code is deterministic and fixed; tests search by key so future SDK event additions do not break the contract.
-- Attributes may contain bounded user-controlled strings only after normal tx validation: Bech32 addresses, SDK denoms, integer amounts, and pool IDs.
+- Attributes may contain bounded user-controlled strings only after normal tx validation: Bech32 addresses, SDK denoms, and integer amounts.
 - Events must not include mnemonics, private keys, local paths, environment values, raw transaction bytes, logs, or unbounded payloads.
 - Events must not iterate maps or depend on wall clock, randomness, memory addresses, goroutines, or external APIs.
 - Failed tx paths must not emit success events. Rejected fee-denom txs are evidenced by stable error text and unchanged state, not by a committed custom event.
@@ -27,22 +27,6 @@ State query verification:
 - `query bank denom-metadata <denom>`
 - `query bank balance <addr> <denom>`
 - `query bank total-supply-of <denom>`
-
-## DEX Events
-
-| Tx | Event type | Attributes |
-| --- | --- | --- |
-| `MsgCreatePool` | `dex_create_pool` | `pool_id`, `creator`, `denom0`, `denom1`, `amount0`, `amount1`, `lp_denom`, `minted_shares` |
-| `MsgAddLiquidity` | `dex_add_liquidity` | `pool_id`, `depositor`, `denom0`, `denom1`, `amount0`, `amount1`, `lp_denom`, `minted_shares` |
-| `MsgRemoveLiquidity` | `dex_remove_liquidity` | `pool_id`, `withdrawer`, `lp_denom`, `shares`, `denom0`, `denom1`, `amount0`, `amount1` |
-| `MsgSwapExactAmountIn` | `dex_swap_exact_amount_in` | `pool_id`, `trader`, `token_in`, `token_out` |
-
-State query verification:
-
-- `query dex pool <pool_id>`
-- `query bank balance <addr> <lp_denom>`
-- `query bank balance <addr> <token_denom>`
-- keeper tests compare pool reserves with the DEX module account balances and LP supply.
 
 ## Fees Events
 
@@ -66,16 +50,15 @@ Fee-denom rejection:
 `scripts/localnet/lib/cli.ps1` exposes `Assert-LocalnetTxEvent` for committed tx query results. Current e2e assertions cover:
 
 - tokenfactory create/mint/burn/change-admin in `tests/e2e/tokenfactory_smoke.ps1`;
-- DEX create-pool/add-liquidity/swap/remove-liquidity in `tests/e2e/dex_smoke.ps1`;
 - fee rejection as error evidence in `tests/e2e/fees_ante_smoke.ps1` and `tests/e2e/prototype_acceptance.ps1`.
 
 ## Regression Tests
 
 | Layer | Evidence |
 | --- | --- |
-| Event constants | `x/tokenfactory/types/events.go`, `x/dex/types/events.go`, `x/fees/types/events.go` |
-| Integration/unit event assertions | `x/tokenfactory/keeper/msg_server_test.go`, `x/dex/keeper/msg_server_test.go`, `x/fees/keeper/msg_server_test.go` |
-| E2E event assertions | `tests/e2e/tokenfactory_smoke.ps1`, `tests/e2e/dex_smoke.ps1` |
+| Event constants | `x/tokenfactory/types/events.go`, `x/fees/types/events.go` |
+| Integration/unit event assertions | `x/tokenfactory/keeper/msg_server_test.go`, `x/fees/keeper/msg_server_test.go` |
+| E2E event assertions | `tests/e2e/tokenfactory_smoke.ps1` |
 | Event contract doc guard | `tests/scripts/event_contract_doc_test.ps1` |
 
 ## Change Control

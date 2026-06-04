@@ -104,7 +104,7 @@ The authoritative scope boundary is [prototype-limitations.md](prototype-limitat
 
 - Non-goals include mainnet launch, IBC/external bridge, production governance economics, exchange-grade DEX behavior, public faucet, full external audit, and explorer/API SLA.
 - Accepted limitations include local-only key material, local prototype min-gas behavior, bounded but not public-load-proven list queries, local-only load profiling, and prototype-only vote extension behavior.
-- Blockers include untriaged Critical/High Cosmos security findings, accepted wrong fee denoms, unauthorized mint/burn/admin actions, DEX invariant failures, nondeterministic AppHash divergence, public malformed-input panics, unbounded tx/list paths, secrets in tracked/release artifacts, and failed build/genesis/localnet/acceptance gates.
+- Blockers include untriaged Critical/High Cosmos security findings, accepted wrong fee denoms, unauthorized mint/burn/admin actions, nondeterministic AppHash divergence, public malformed-input panics, unbounded tx/list paths, secrets in tracked/release artifacts, and failed build/genesis/localnet/acceptance gates.
 
 ## Tagging
 

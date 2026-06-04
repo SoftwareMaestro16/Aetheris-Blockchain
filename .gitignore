@@ -1,6 +1,8 @@
 # Local workspace / research cache
 .work/
 .codex/
+ecosystem/
+STEP*.md
 
 # Secrets and private config
 .env

@@ -24,19 +24,6 @@ Validation:
 - Subdenoms must not directly spoof native names: `norb`, `ORB`, or `Orbitalis`.
 - Prototype default genesis starts with no factory denoms.
 
-## `x/dex`
-
-Genesis state:
-- `next_pool_id`
-- `pools`
-
-Validation:
-- Pool IDs must be unique and monotonic.
-- Asset pairs must be canonical sorted pairs.
-- Reserves and LP supply must be positive for active pools.
-- LP denom must match `lp/<pool_id>`.
-- Prototype default genesis starts with `next_pool_id = 1` and no pools.
-
 ## `x/fees`
 
 Genesis state:

@@ -55,7 +55,7 @@ After implementation:
 
 ## Git Workflow
 
-- Treat every change as a PR-sized increment.
+- Treat every change as a scoped increment.
 - Do not mix unrelated changes in one commit.
 - Use Conventional Commits with clear scope.
 - Include the reason and improvement in the implementation summary.

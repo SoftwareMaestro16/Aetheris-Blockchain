@@ -42,7 +42,6 @@ foreach ($heading in @(
     "Staking Tx",
     "Bank Tx",
     "Tokenfactory",
-    "DEX",
     "Diagnose",
     "Troubleshooting",
     "Required Command Checks"
@@ -68,17 +67,12 @@ foreach ($required in @(
     'build\\orbitalisd\.exe query staking validators',
     'build\\orbitalisd\.exe query fees params',
     'build\\orbitalisd\.exe query tokenfactory denom',
-    'build\\orbitalisd\.exe query dex pool',
     'build\\orbitalisd\.exe tx bank send',
     'build\\orbitalisd\.exe tx staking delegate',
     'build\\orbitalisd\.exe tx tokenfactory create-denom',
     'build\\orbitalisd\.exe tx tokenfactory mint',
     'build\\orbitalisd\.exe tx tokenfactory burn',
-    'build\\orbitalisd\.exe tx tokenfactory change-admin',
-    'build\\orbitalisd\.exe tx dex create-pool',
-    'build\\orbitalisd\.exe tx dex add-liquidity',
-    'build\\orbitalisd\.exe tx dex swap-exact-in',
-    'build\\orbitalisd\.exe tx dex remove-liquidity'
+    'build\\orbitalisd\.exe tx tokenfactory change-admin'
   )) {
   Assert-Contains -Text $guideText -Pattern $required -Message "operator guide missing command pattern: $required"
 }
