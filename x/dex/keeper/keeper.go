@@ -33,6 +33,14 @@ func poolKey(id uint64) []byte {
 	return key
 }
 
+func pairKey(denom0, denom1 string) []byte {
+	key := []byte{types.PairPrefix[0]}
+	key = append(key, []byte(denom0)...)
+	key = append(key, 0x00)
+	key = append(key, []byte(denom1)...)
+	return key
+}
+
 func parseInt(value string) sdkmath.Int {
 	out, ok := sdkmath.NewIntFromString(value)
 	if !ok {
@@ -109,6 +117,20 @@ func (k Keeper) SetPool(ctx context.Context, pool types.Pool) error {
 	return k.storeService.OpenKVStore(ctx).Set(poolKey(pool.Id), k.cdc.MustMarshal(&pool))
 }
 
+func (k Keeper) GetPoolIDByPair(ctx context.Context, denom0, denom1 string) (uint64, bool, error) {
+	bz, err := k.storeService.OpenKVStore(ctx).Get(pairKey(denom0, denom1))
+	if err != nil || bz == nil {
+		return 0, false, err
+	}
+	return binary.BigEndian.Uint64(bz), true, nil
+}
+
+func (k Keeper) SetPoolPairIndex(ctx context.Context, denom0, denom1 string, poolID uint64) error {
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, poolID)
+	return k.storeService.OpenKVStore(ctx).Set(pairKey(denom0, denom1), bz)
+}
+
 func (k Keeper) GetPool(ctx context.Context, id uint64) (types.Pool, bool, error) {
 	bz, err := k.storeService.OpenKVStore(ctx).Get(poolKey(id))
 	if err != nil || bz == nil {
@@ -144,6 +166,9 @@ func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) {
 	}
 	for _, pool := range gs.Pools {
 		if err := k.SetPool(ctx, pool); err != nil {
+			panic(err)
+		}
+		if err := k.SetPoolPairIndex(ctx, pool.Denom0, pool.Denom1, pool.Id); err != nil {
 			panic(err)
 		}
 	}

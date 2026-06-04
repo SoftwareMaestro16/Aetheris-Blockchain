@@ -31,6 +31,7 @@ Required cases:
 - Malformed denoms, addresses, metadata, pool IDs, and fee weights.
 - Wrong fee denom, mixed fee denoms, malformed fee coins, and non-`FeeTx` ante inputs.
 - Swap inputs targeting rounding edge cases.
+- Duplicate DEX pairs, wrong LP denoms, reserve/module balance desync, LP supply mismatch, and excessive slippage minimums.
 - Attempts to create zero-liquidity or insolvent pools.
 - Governance param values that disable safety bounds.
 

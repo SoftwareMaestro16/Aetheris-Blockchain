@@ -155,6 +155,15 @@ Run the fees ante policy smoke documented in [fees-ante-policy.md](fees-ante-pol
 
 The fees ante smoke validates fee params, successful `norb` fees across bank/tokenfactory/DEX txs, wrong fee rejection, mixed-denom fee rejection, and explicit zero/empty fee behavior.
 
+Run the DEX prototype smoke documented in [dex-e2e-flow.md](dex-e2e-flow.md):
+
+```powershell
+.\tests\e2e\dex_smoke.ps1
+.\tests\e2e\dex_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+```
+
+The DEX smoke creates a factory asset, creates a pool, adds liquidity, swaps exact input, removes liquidity, checks LP balances/reserves, and validates slippage and wrong-denom failures.
+
 Export state after the network has started:
 
 ```powershell
@@ -188,6 +197,8 @@ go build -o build/orbitalisd.exe ./cmd/l1d
 .\tests\e2e\native_token_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\fees_ante_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+.\tests\e2e\dex_smoke.ps1
+.\tests\e2e\dex_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
 Security baseline:
