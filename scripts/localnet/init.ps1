@@ -1,74 +1,74 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [int]$ValidatorCount = 3
+  [int]$ValidatorCount = 3,
+  [string]$ChainId = "orbitalis-local-1",
+  [int]$BaseP2PPort = 26656,
+  [int]$BaseRPCPort = 26657,
+  [int]$BaseRESTPort = 1317,
+  [int]$BaseGRPCPort = 9090,
+  [int]$BasePprofPort = 6060,
+  [int]$PortStride = 100,
+  [string]$TimeoutCommit = "1s",
+  [string]$LogLevel = "info",
+  [bool]$EnableAPI = $true,
+  [bool]$EnableGRPC = $true,
+  [bool]$EnableRPC = $true,
+  [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-if ($OutputDir -eq "") { $OutputDir = Join-Path $RepoRoot ".localnet" }
-if ($Binary -eq "") { $Binary = Join-Path $RepoRoot "build\orbitalisd.exe" }
+. (Join-Path $PSScriptRoot "common.ps1")
+
+$RepoRoot = Get-LocalnetRepoRoot
+$OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 if ($ValidatorCount -lt 1) { throw "ValidatorCount must be at least 1" }
+if ($PortStride -lt 1) { throw "PortStride must be at least 1" }
 
 $Go = Join-Path $RepoRoot ".work\tools\go1.25.11\go\bin\go.exe"
 if (!(Test-Path $Go)) { $Go = "go" }
 
-New-Item -ItemType Directory -Force -Path (Split-Path $Binary) | Out-Null
-& $Go build -o $Binary ./cmd/l1d
+if ($SkipBuild) {
+  if (!(Test-Path -LiteralPath $Binary)) {
+    throw "Binary not found at $Binary and -SkipBuild was specified"
+  }
+} else {
+  New-Item -ItemType Directory -Force -Path (Split-Path $Binary) | Out-Null
+  & $Go build -o $Binary ./cmd/l1d
+}
 
-if (Test-Path $OutputDir) { Remove-Item -LiteralPath $OutputDir -Recurse -Force }
+Remove-LocalnetDirectory -OutputDir $OutputDir
 & $Binary testnet init-files `
   --validator-count $ValidatorCount `
   --output-dir $OutputDir `
-  --chain-id orbitalis-local-1 `
+  --chain-id $ChainId `
   --staking-denom norb `
   --node-daemon-home orbitalisd `
   --node-dir-prefix node `
   --keyring-backend test `
   --single-host `
-  --commit-timeout 1s `
+  --commit-timeout $TimeoutCommit `
   --minimum-gas-prices 0norb
 
-function Get-PortProfile {
-  param([int]$Index)
+Set-LocalnetGeneratedPorts `
+  -OutputDir $OutputDir `
+  -ValidatorCount $ValidatorCount `
+  -BaseP2PPort $BaseP2PPort `
+  -BaseRPCPort $BaseRPCPort `
+  -BaseRESTPort $BaseRESTPort `
+  -BaseGRPCPort $BaseGRPCPort `
+  -BasePprofPort $BasePprofPort `
+  -PortStride $PortStride `
+  -EnableAPI $EnableAPI `
+  -EnableGRPC $EnableGRPC `
+  -EnableRPC $EnableRPC `
+  -MinimumGasPrices "0norb" `
+  -LogLevel $LogLevel
 
-  return @{
-    OldP2P  = 16656 + $Index
-    OldRPC  = 26657 + $Index
-    OldAPI  = 1317 + $Index
-    OldGRPC = 9090 + $Index
-    P2P     = 26656 + (100 * $Index)
-    RPC     = 26657 + (100 * $Index)
-    API     = 1317 + $Index
-    GRPC    = 9090 + $Index
-    Pprof   = 6060 + $Index
-  }
-}
-
+Write-Host "Initialized $ValidatorCount-node localnet for $ChainId at $OutputDir"
 for ($i = 0; $i -lt $ValidatorCount; $i++) {
-  $nodeHome = Join-Path $OutputDir "node$i\orbitalisd"
-  $configToml = Join-Path $nodeHome "config\config.toml"
-  $appToml = Join-Path $nodeHome "config\app.toml"
-  $p = Get-PortProfile -Index $i
-
-  $config = Get-Content -Raw -LiteralPath $configToml
-  for ($peer = 0; $peer -lt $ValidatorCount; $peer++) {
-    $peerPorts = Get-PortProfile -Index $peer
-    $config = $config -replace ":$($peerPorts.OldP2P)", ":$($peerPorts.P2P)"
-  }
-  $config = $config -replace ":$($p.OldRPC)", ":$($p.RPC)"
-  $config = $config -replace 'pprof_laddr = "localhost:\d+"', "pprof_laddr = `"localhost:$($p.Pprof)`""
-  Set-Content -LiteralPath $configToml -Value $config
-
-  $app = Get-Content -Raw -LiteralPath $appToml
-  $app = $app -replace ":$($p.OldAPI)", ":$($p.API)"
-  $app = $app -replace ":$($p.OldGRPC)", ":$($p.GRPC)"
-  $app = $app -replace 'minimum-gas-prices = ""', 'minimum-gas-prices = "0norb"'
-  Set-Content -LiteralPath $appToml -Value $app
-}
-
-Write-Host "Initialized $ValidatorCount-node localnet at $OutputDir"
-for ($i = 0; $i -lt $ValidatorCount; $i++) {
-  $p = Get-PortProfile -Index $i
-  Write-Host ("node{0}: p2p {1}, rpc {2}, grpc {3}, rest {4}" -f $i, $p.P2P, $p.RPC, $p.GRPC, $p.API)
+  $p = Get-LocalnetPortProfile -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
+  Write-Host ("node{0}: p2p {1}, rpc {2}, grpc {3}, rest {4}" -f $i, $p.P2P, $p.RPC, $p.GRPC, $p.REST)
 }

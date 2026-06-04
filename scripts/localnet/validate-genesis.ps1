@@ -2,25 +2,48 @@ param(
   [string]$OutputDir = "",
   [string]$Binary = "",
   [string]$ChainId = "orbitalis-local-1",
-  [int]$ValidatorCount = 3
+  [int]$ValidatorCount = 3,
+  [int]$BaseP2PPort = 26656,
+  [int]$BaseRPCPort = 26657,
+  [int]$BaseRESTPort = 1317,
+  [int]$BaseGRPCPort = 9090,
+  [int]$BasePprofPort = 6060,
+  [int]$PortStride = 100,
+  [string]$TimeoutCommit = "1s",
+  [string]$LogLevel = "info",
+  [bool]$EnableAPI = $true,
+  [bool]$EnableGRPC = $true,
+  [bool]$EnableRPC = $true
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "common.ps1")
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-if ($OutputDir -eq "") { $OutputDir = Join-Path $RepoRoot ".localnet" }
-if ($Binary -eq "") { $Binary = Join-Path $RepoRoot "build\orbitalisd.exe" }
+$OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 if ($ValidatorCount -lt 1) { throw "ValidatorCount must be at least 1" }
 
 if (!(Test-Path $Binary) -or !(Test-Path $OutputDir)) {
-  & (Join-Path $PSScriptRoot "init.ps1") -OutputDir $OutputDir -Binary $Binary -ValidatorCount $ValidatorCount
+  & (Join-Path $PSScriptRoot "init.ps1") `
+    -OutputDir $OutputDir `
+    -Binary $Binary `
+    -ValidatorCount $ValidatorCount `
+    -ChainId $ChainId `
+    -BaseP2PPort $BaseP2PPort `
+    -BaseRPCPort $BaseRPCPort `
+    -BaseRESTPort $BaseRESTPort `
+    -BaseGRPCPort $BaseGRPCPort `
+    -BasePprofPort $BasePprofPort `
+    -PortStride $PortStride `
+    -TimeoutCommit $TimeoutCommit `
+    -LogLevel $LogLevel `
+    -EnableAPI $EnableAPI `
+    -EnableGRPC $EnableGRPC `
+    -EnableRPC $EnableRPC
 }
 
-$nodes = Get-ChildItem -LiteralPath $OutputDir -Directory -Filter "node*" |
-  Where-Object { Test-Path (Join-Path $_.FullName "orbitalisd\config\genesis.json") } |
-  Sort-Object {
-    if ($_.Name -match '^node(\d+)$') { [int]$Matches[1] } else { [int]::MaxValue }
-  }
+$nodes = Get-LocalnetNodes -OutputDir $OutputDir
 
 if ($nodes.Count -ne $ValidatorCount) {
   throw "Expected $ValidatorCount validator nodes under $OutputDir, found $($nodes.Count)"

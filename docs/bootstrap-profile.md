@@ -17,6 +17,8 @@ The profile is structurally reproducible: the same commands create the same chai
 - Keyring backend: `test`
 - Minimum gas prices: `0norb`
 - Timeout commit: `1s`
+- Default log level: `info`
+- RPC, REST, and gRPC are enabled by default.
 
 Each generated validator account starts with:
 
@@ -27,7 +29,7 @@ Each validator gentx self-delegates:
 
 - `100000000norb`
 
-The default endpoint layout is formula-based:
+The default endpoint layout is formula-based and can be shifted with `-BaseP2PPort`, `-BaseRPCPort`, `-BaseRESTPort`, `-BaseGRPCPort`, and `-PortStride`:
 
 - P2P: `26656 + (100 * node_index)`
 - RPC: `26657 + (100 * node_index)`
@@ -79,6 +81,13 @@ Initialize a 5-validator profile without copying scripts:
 .\scripts\localnet\init.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
+Custom local profiles can override chain ID, timeout, log level, endpoint base ports, and endpoint toggles:
+
+```powershell
+.\scripts\localnet\init.ps1 -ChainId orbitalis-local-1 -TimeoutCommit 1s -LogLevel info -BaseRPCPort 27657 -ValidatorCount 3
+.\scripts\localnet\start.ps1 -BaseRPCPort 27657 -ValidatorCount 3 -Wait
+```
+
 Validate genesis and compare key fields:
 
 ```powershell
@@ -115,6 +124,8 @@ Run a smoke test against the default or 5-validator profile:
 .\tests\e2e\localnet_smoke.ps1 -ValidatorCount 5
 ```
 
+The smoke test validates RPC readiness, block height, CometBFT validator set size, peer count, REST `/blocks/latest`, gRPC TCP availability, `query block`, a `bank send` transaction, stop/start chain progress, and negative cases for invalid validator count, missing binary, timeout, and occupied port. The 5-validator run is the heavier profile and can be run with `-OutputDir .localnet-5` if the default 3-validator localnet should be preserved.
+
 Export state after the network has started:
 
 ```powershell
@@ -127,6 +138,8 @@ build\orbitalisd.exe genesis validate-genesis .work\genesis\node0-export.json --
 
 - Generated node homes are local artifacts and must stay out of git. Do not commit `.localnet`, `.localnet-*`, `key_seed.json`, keyring data, `priv_validator_key.json`, `priv_validator_state.json`, or `node_key.json`.
 - `genesis.json` must not contain mnemonics, private validator keys, node keys, keyring secrets, wallet seeds, or private local paths.
+- Localnet scripts must not print mnemonics by default. `testnet init-files` writes generated key seed files only under ignored node homes.
+- `reset.ps1` and `init.ps1` verify the resolved output path is inside the repository and refuse to recursively delete the repository root or paths outside it.
 - Initial stake is symmetric across validators in this prototype profile. Any non-symmetric validator distribution must be documented before use.
 - Consensus-critical checks for this profile: deterministic app-state writes during init/export, valid `norb` bank supply and staking denom, positive validator self-delegations, authorized tokenfactory mint/burn only, DEX reserves absent at genesis, and no panics on malformed custom module genesis.
 
@@ -139,6 +152,7 @@ buf lint
 go build -o build/orbitalisd.exe ./cmd/l1d
 .\scripts\localnet\validate-genesis.ps1
 .\tests\e2e\localnet_smoke.ps1
+.\tests\e2e\localnet_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
 Security baseline:

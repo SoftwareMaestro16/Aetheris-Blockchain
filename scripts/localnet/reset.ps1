@@ -3,11 +3,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-if ($OutputDir -eq "") { $OutputDir = Join-Path $RepoRoot ".localnet" }
+. (Join-Path $PSScriptRoot "common.ps1")
+
+$OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
+Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 
 & (Join-Path $PSScriptRoot "stop.ps1") -OutputDir $OutputDir
 if (Test-Path $OutputDir) {
-  Remove-Item -LiteralPath $OutputDir -Recurse -Force
+  Remove-LocalnetDirectory -OutputDir $OutputDir
   Write-Host "Removed $OutputDir"
 }
