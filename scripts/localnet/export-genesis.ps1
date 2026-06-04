@@ -43,11 +43,12 @@ $nodeHome = Join-Path $node.FullName "orbitalisd"
 $exportPath = Join-Path $ExportDir "$($node.Name)-export.json"
 $stderrPath = Join-Path $ExportDir "$($node.Name)-export.err.log"
 
-& $Binary export --home $nodeHome > $exportPath 2> $stderrPath
+$exportOutput = & $Binary export --home $nodeHome 2> $stderrPath
 if ($LASTEXITCODE -ne 0) {
   $err = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { "" }
   throw "genesis export failed for $($node.Name): $err"
 }
+[System.IO.File]::WriteAllText($exportPath, ($exportOutput -join "`n"), (New-Object System.Text.UTF8Encoding $false))
 
 & $Binary genesis validate-genesis $exportPath --home $nodeHome
 if ($LASTEXITCODE -ne 0) {
