@@ -172,37 +172,45 @@ func (k Keeper) GetAllPools(ctx context.Context) ([]types.Pool, error) {
 	return pools, nil
 }
 
-func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) {
+func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) error {
+	if err := gs.Validate(); err != nil {
+		return err
+	}
 	if err := k.SetParams(ctx, gs.Params); err != nil {
-		panic(err)
+		return err
 	}
 	if gs.NextPoolId == 0 {
 		gs.NextPoolId = types.DefaultNextPoolID
 	}
 	if err := k.SetNextPoolID(ctx, gs.NextPoolId); err != nil {
-		panic(err)
+		return err
 	}
 	for _, pool := range gs.Pools {
 		if err := k.SetPool(ctx, pool); err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }
 
-func (k Keeper) ExportGenesis(ctx context.Context) *types.GenesisState {
+func (k Keeper) ExportGenesis(ctx context.Context) (*types.GenesisState, error) {
 	next, err := k.GetNextPoolID(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	pools, err := k.GetAllPools(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	params, err := k.GetParams(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &types.GenesisState{NextPoolId: next, Pools: pools, Params: params}
+	gs := &types.GenesisState{NextPoolId: next, Pools: pools, Params: params}
+	if err := gs.Validate(); err != nil {
+		return nil, err
+	}
+	return gs, nil
 }
 
 func (k Keeper) SetParams(ctx context.Context, params types.Params) error {

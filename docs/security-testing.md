@@ -41,6 +41,8 @@ Required flows:
 - DEX pool creation using tokenfactory assets.
 - Protocol fee accrual through swaps.
 - Governance-controlled param update.
+- App and custom module genesis export/import round trips.
+- Module migrations from previous consensus version maps.
 
 ## Determinism Tests
 
@@ -60,3 +62,5 @@ After each implementation increment:
 - Next refactor proposal.
 
 The detailed governance loop lives in [Engineering Governance](engineering-governance.md) and is mandatory before code changes, after tests, and before commits.
+
+Genesis and upgrade rules live in [Genesis Export And Migration Contract](genesis-migrations.md).

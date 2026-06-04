@@ -87,27 +87,35 @@ func (k Keeper) FullDenom(ctx context.Context, creator, subdenom string) (string
 	return fmt.Sprintf("%s/%s/%s", types.FactoryDenomPrefix, creatorAddr.String(), subdenom), nil
 }
 
-func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) {
+func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) error {
+	if err := gs.Validate(); err != nil {
+		return err
+	}
 	if err := k.SetParams(ctx, gs.Params); err != nil {
-		panic(err)
+		return err
 	}
 	for _, meta := range gs.Denoms {
 		if err := k.SetDenom(ctx, meta); err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }
 
-func (k Keeper) ExportGenesis(ctx context.Context) *types.GenesisState {
+func (k Keeper) ExportGenesis(ctx context.Context) (*types.GenesisState, error) {
 	denoms, err := k.GetAllDenoms(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	params, err := k.GetParams(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &types.GenesisState{Denoms: denoms, Params: params}
+	gs := &types.GenesisState{Denoms: denoms, Params: params}
+	if err := gs.Validate(); err != nil {
+		return nil, err
+	}
+	return gs, nil
 }
 
 func (k Keeper) SetParams(ctx context.Context, params types.Params) error {

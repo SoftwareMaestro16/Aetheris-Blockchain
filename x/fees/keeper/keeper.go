@@ -78,25 +78,33 @@ func (k Keeper) GetParams(ctx context.Context) (types.Params, error) {
 	return params, nil
 }
 
-func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) {
+func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) error {
+	if err := gs.Validate(); err != nil {
+		return err
+	}
 	if err := k.SetParams(ctx, gs.Params); err != nil {
-		panic(err)
+		return err
 	}
 	if err := k.SetProtocolFeeState(ctx, gs.ProtocolFeeState); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
-func (k Keeper) ExportGenesis(ctx context.Context) *types.GenesisState {
+func (k Keeper) ExportGenesis(ctx context.Context) (*types.GenesisState, error) {
 	params, err := k.GetParams(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	state, err := k.GetProtocolFeeState(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &types.GenesisState{Params: params, ProtocolFeeState: state}
+	gs := &types.GenesisState{Params: params, ProtocolFeeState: state}
+	if err := gs.Validate(); err != nil {
+		return nil, err
+	}
+	return gs, nil
 }
 
 func (k Keeper) IsAllowedFeeDenom(ctx context.Context, denom string) (bool, error) {
