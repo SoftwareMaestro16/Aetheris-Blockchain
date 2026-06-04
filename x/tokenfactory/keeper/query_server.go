@@ -3,6 +3,8 @@ package keeper
 import (
 	"context"
 
+	errorsmod "cosmossdk.io/errors"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -17,6 +19,9 @@ func (k Keeper) Denom(ctx context.Context, req *types.QueryDenomRequest) (*types
 	}
 	meta, found, err := k.GetDenom(ctx, req.Denom)
 	if err != nil {
+		if errorsmod.IsOf(err, types.ErrInvalidAddress, types.ErrInvalidDenom) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		return nil, err
 	}
 	if !found {
@@ -25,10 +30,16 @@ func (k Keeper) Denom(ctx context.Context, req *types.QueryDenomRequest) (*types
 	return &types.QueryDenomResponse{Metadata: meta}, nil
 }
 
-func (k Keeper) Denoms(ctx context.Context, _ *types.QueryDenomsRequest) (*types.QueryDenomsResponse, error) {
-	denoms, err := k.GetAllDenoms(ctx)
-	if err != nil {
-		return nil, err
+func (k Keeper) Denoms(ctx context.Context, req *types.QueryDenomsRequest) (*types.QueryDenomsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
 	}
-	return &types.QueryDenomsResponse{Denoms: denoms}, nil
+	denoms, pagination, err := k.GetDenomsPaginated(ctx, req.Pagination)
+	if err != nil {
+		if errorsmod.IsOf(err, types.ErrInvalidPagination) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &types.QueryDenomsResponse{Denoms: denoms, Pagination: pagination}, nil
 }

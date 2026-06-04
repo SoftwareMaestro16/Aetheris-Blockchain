@@ -54,7 +54,11 @@ func NewDenomsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := types.NewQueryClient(clientCtx).Denoms(cmd.Context(), &types.QueryDenomsRequest{})
+			pageReq, err := client.ReadPageRequest(client.MustFlagSetWithPageKeyDecoded(cmd.Flags()))
+			if err != nil {
+				return err
+			}
+			res, err := types.NewQueryClient(clientCtx).Denoms(cmd.Context(), &types.QueryDenomsRequest{Pagination: pageReq})
 			if err != nil {
 				return err
 			}
@@ -65,5 +69,6 @@ func NewDenomsCmd() *cobra.Command {
 		},
 	}
 	flags.AddQueryFlagsToCmd(cmd)
+	flags.AddPaginationFlagsToCmd(cmd, "factory denoms")
 	return cmd
 }

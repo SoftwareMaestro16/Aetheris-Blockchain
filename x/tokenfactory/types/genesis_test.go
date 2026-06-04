@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenesisRejectsDuplicateDenom(t *testing.T) {
@@ -22,9 +23,13 @@ func TestGenesisRejectsDuplicateDenom(t *testing.T) {
 func TestGenesisRejectsInvalidDenomAuthorityMetadata(t *testing.T) {
 	admin := sdk.AccAddress(bytes.Repeat([]byte{1}, 20)).String()
 	tests := map[string]DenomAuthorityMetadata{
-		"invalid admin": {Denom: "factory/" + admin + "/foo", Admin: "not-an-address"},
-		"invalid denom": {Denom: "factory/" + admin + "/!", Admin: admin},
-		"wrong prefix":  {Denom: "other/" + admin + "/foo", Admin: admin},
+		"invalid admin":     {Denom: "factory/" + admin + "/foo", Admin: "not-an-address"},
+		"invalid denom":     {Denom: "factory/" + admin + "/!", Admin: admin},
+		"wrong prefix":      {Denom: "other/" + admin + "/foo", Admin: admin},
+		"malformed creator": {Denom: "factory/not-an-address/foo", Admin: admin},
+		"nested denom":      {Denom: "factory/" + admin + "/foo/bar", Admin: admin},
+		"native-like denom": {Denom: "factory/" + admin + "/norb", Admin: admin},
+		"lp-like subdenom":  {Denom: "factory/" + admin + "/lp-1", Admin: admin},
 	}
 
 	for name, meta := range tests {
@@ -35,4 +40,13 @@ func TestGenesisRejectsInvalidDenomAuthorityMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenesisAllowsRenouncedAdmin(t *testing.T) {
+	admin := sdk.AccAddress(bytes.Repeat([]byte{1}, 20)).String()
+	gs := GenesisState{Denoms: []DenomAuthorityMetadata{
+		{Denom: "factory/" + admin + "/foo", Admin: ""},
+	}}
+
+	require.NoError(t, gs.Validate())
 }

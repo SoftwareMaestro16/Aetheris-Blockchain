@@ -13,4 +13,6 @@ type BankKeeper interface {
 	SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
 	SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 	SetDenomMetaData(ctx context.Context, denomMetaData banktypes.Metadata)
+	GetDenomMetaData(ctx context.Context, denom string) (banktypes.Metadata, bool)
+	GetSupply(ctx context.Context, denom string) sdk.Coin
 }
