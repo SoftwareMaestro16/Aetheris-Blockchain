@@ -174,7 +174,12 @@ try {
     throw "fresh localnet tokenfactory denoms must be empty"
   }
 
-  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
+  $createTx = Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", $FactorySubdenom) -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $createTx -Type "tokenfactory_create_denom" -Attributes @{
+    denom   = $factoryDenom
+    creator = $node0
+    admin   = $node0
+  } | Out-Null
   $metadata = Get-FactoryDenomMetadata -Denom $factoryDenom
   Assert-FactoryMetadata -Metadata $metadata -Denom $factoryDenom -Admin $node0
   Write-Host "factory denom created with node0 admin"
@@ -194,7 +199,13 @@ try {
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", "norb") -FromHome $node0Home -ExpectFailure -ExpectedLog "native ORB/norb" | Out-Null
   Write-Host "duplicate and native-spoof denom creation rejected"
 
-  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "1000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
+  $mintTx = Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "1000000$factoryDenom", $node0) -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $mintTx -Type "tokenfactory_mint" -Attributes @{
+    denom           = $factoryDenom
+    sender          = $node0
+    amount          = "1000000"
+    mint_to_address = $node0
+  } | Out-Null
   if ((Get-BalanceAmount -Address $node0 -Denom $factoryDenom) -ne 1000000) {
     throw "node0 factory balance must be 1000000 after mint"
   }
@@ -204,7 +215,13 @@ try {
   Write-Host "mint updated node0 balance and bank supply"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "burn", "1$factoryDenom", $node1) -FromHome $node0Home -ExpectFailure -ExpectedLog "burn_from_address must match sender" | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "burn", "250000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
+  $burnTx = Send-SignedTx -ActionArgs @("tx", "tokenfactory", "burn", "250000$factoryDenom", $node0) -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $burnTx -Type "tokenfactory_burn" -Attributes @{
+    denom             = $factoryDenom
+    sender            = $node0
+    amount            = "250000"
+    burn_from_address = $node0
+  } | Out-Null
   if ((Get-BalanceAmount -Address $node0 -Denom $factoryDenom) -ne 750000) {
     throw "node0 factory balance must be 750000 after burn"
   }
@@ -214,13 +231,24 @@ try {
   Write-Host "burn reduced node0 balance and bank supply"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "change-admin", $factoryDenom, "not-an-address") -FromHome $node0Home -ExpectFailure | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "change-admin", $factoryDenom, $node1) -FromHome $node0Home | Out-Null
+  $changeAdminTx = Send-SignedTx -ActionArgs @("tx", "tokenfactory", "change-admin", $factoryDenom, $node1) -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $changeAdminTx -Type "tokenfactory_change_admin" -Attributes @{
+    denom     = $factoryDenom
+    sender    = $node0
+    new_admin = $node1
+  } | Out-Null
   $metadata = Get-FactoryDenomMetadata -Denom $factoryDenom
   Assert-FactoryMetadata -Metadata $metadata -Denom $factoryDenom -Admin $node1
   Write-Host "admin transferred to node1"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "1$factoryDenom", $node0) -FromHome $node0Home -ExpectFailure -ExpectedLog "only denom admin can mint" | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100$factoryDenom", $node1) -FromHome $node1Home -FromKey "node1" | Out-Null
+  $newAdminMintTx = Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100$factoryDenom", $node1) -FromHome $node1Home -FromKey "node1"
+  Assert-LocalnetTxEvent -Tx $newAdminMintTx -Type "tokenfactory_mint" -Attributes @{
+    denom           = $factoryDenom
+    sender          = $node1
+    amount          = "100"
+    mint_to_address = $node1
+  } | Out-Null
   if ((Get-BalanceAmount -Address $node1 -Denom $factoryDenom) -ne 100) {
     throw "new admin node1 must receive 100 factory tokens"
   }

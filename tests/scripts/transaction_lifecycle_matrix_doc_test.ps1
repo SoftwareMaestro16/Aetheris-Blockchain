@@ -73,7 +73,7 @@ foreach ($gap in @(
     'MUST FIX before public release',
     'reusable signed-tx replay/sequence e2e helper',
     'SHOULD FIX for stronger operator observability',
-    'Emit explicit domain events'
+    'per-row transcript artifacts'
   )) {
   Assert-Contains -Text $text -Pattern ([regex]::Escape($gap)) -Message "transaction lifecycle matrix missing gap marker: $gap"
 }

@@ -15,6 +15,22 @@ import (
 	"github.com/sovereign-l1/l1/x/dex/types"
 )
 
+func requireEvent(t *testing.T, ctx sdk.Context, eventType string, attrs map[string]string) {
+	t.Helper()
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != eventType {
+			continue
+		}
+		for key, expected := range attrs {
+			attr, found := event.GetAttribute(key)
+			require.Truef(t, found, "event %s missing attribute %s", eventType, key)
+			require.Equal(t, expected, attr.Value)
+		}
+		return
+	}
+	require.Failf(t, "missing event", "event type %s not emitted", eventType)
+}
+
 func fundAccount(t testing.TB, app *l1app.L1App, ctx sdk.Context, addr sdk.AccAddress, coins sdk.Coins) {
 	t.Helper()
 	require.NoError(t, app.BankKeeper.MintCoins(ctx, minttypes.ModuleName, coins))
@@ -81,6 +97,85 @@ func TestCreatePoolRejectsDuplicatePair(t *testing.T) {
 	nextID, err := app.DexKeeper.GetNextPoolID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, poolID+1, nextID)
+}
+
+func TestDexLifecycleEmitsStableEventsAndStateQueries(t *testing.T) {
+	app, ctx, msgServer, trader, poolID := setupDexPool(t)
+	pool, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	requireEvent(t, ctx, types.EventTypeCreatePool, map[string]string{
+		types.AttributeKeyPoolID:       "1",
+		types.AttributeKeyCreator:      trader.String(),
+		types.AttributeKeyDenom0:       pool.Denom0,
+		types.AttributeKeyDenom1:       pool.Denom1,
+		types.AttributeKeyAmount0:      "1000",
+		types.AttributeKeyAmount1:      "1000",
+		types.AttributeKeyLPDenom:      pool.LpDenom,
+		types.AttributeKeyMintedShares: "1000",
+	})
+	require.Equal(t, sdk.NewInt64Coin(pool.LpDenom, 1_000), app.BankKeeper.GetBalance(ctx, trader, pool.LpDenom))
+
+	fundAccount(t, app, ctx, trader, sdk.NewCoins(sdk.NewInt64Coin("uatom", 1_000)))
+	addRes, err := msgServer.AddLiquidity(ctx, &types.MsgAddLiquidity{
+		Depositor: trader.String(),
+		PoolId:    poolID,
+		TokenA:    sdk.NewInt64Coin("uatom", 100),
+		TokenB:    sdk.NewInt64Coin(appparams.BaseDenom, 100),
+		MinShares: "1",
+	})
+	require.NoError(t, err)
+	requireEvent(t, ctx, types.EventTypeAddLiquidity, map[string]string{
+		types.AttributeKeyPoolID:       "1",
+		types.AttributeKeyDepositor:    trader.String(),
+		types.AttributeKeyDenom0:       pool.Denom0,
+		types.AttributeKeyDenom1:       pool.Denom1,
+		types.AttributeKeyAmount0:      "100",
+		types.AttributeKeyAmount1:      "100",
+		types.AttributeKeyLPDenom:      pool.LpDenom,
+		types.AttributeKeyMintedShares: addRes.MintedShares.Amount.String(),
+	})
+	pool, found, err = app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "1100", pool.TotalShares)
+
+	swapRes, err := msgServer.SwapExactAmountIn(ctx, &types.MsgSwapExactAmountIn{
+		Trader:        trader.String(),
+		PoolId:        poolID,
+		TokenIn:       sdk.NewInt64Coin("uatom", 10),
+		TokenOutDenom: appparams.BaseDenom,
+		MinAmountOut:  "1",
+	})
+	require.NoError(t, err)
+	requireEvent(t, ctx, types.EventTypeSwapExactAmountIn, map[string]string{
+		types.AttributeKeyPoolID:   "1",
+		types.AttributeKeyTrader:   trader.String(),
+		types.AttributeKeyTokenIn:  "10uatom",
+		types.AttributeKeyTokenOut: swapRes.TokenOut.String(),
+	})
+	require.True(t, app.BankKeeper.GetBalance(ctx, trader, appparams.BaseDenom).Amount.IsPositive())
+
+	removeRes, err := msgServer.RemoveLiquidity(ctx, &types.MsgRemoveLiquidity{
+		Withdrawer: trader.String(),
+		PoolId:     poolID,
+		Shares:     sdk.NewInt64Coin(pool.LpDenom, 50),
+	})
+	require.NoError(t, err)
+	requireEvent(t, ctx, types.EventTypeRemoveLiquidity, map[string]string{
+		types.AttributeKeyPoolID:     "1",
+		types.AttributeKeyWithdrawer: trader.String(),
+		types.AttributeKeyLPDenom:    pool.LpDenom,
+		types.AttributeKeyShares:     "50",
+		types.AttributeKeyDenom0:     removeRes.TokenA.Denom,
+		types.AttributeKeyDenom1:     removeRes.TokenB.Denom,
+		types.AttributeKeyAmount0:    removeRes.TokenA.Amount.String(),
+		types.AttributeKeyAmount1:    removeRes.TokenB.Amount.String(),
+	})
+	updatedPool, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, sdk.NewCoin(updatedPool.LpDenom, mustIntFromString(t, updatedPool.TotalShares)), app.BankKeeper.GetSupply(ctx, updatedPool.LpDenom))
 }
 
 func TestInitGenesisRestoresPairIndex(t *testing.T) {

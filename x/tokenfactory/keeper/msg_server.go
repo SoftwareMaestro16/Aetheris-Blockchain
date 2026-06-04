@@ -37,6 +37,12 @@ func (m msgServer) CreateDenom(ctx context.Context, msg *types.MsgCreateDenom) (
 		return nil, err
 	}
 	m.bankKeeper.SetDenomMetaData(ctx, BankMetadata(denom))
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeCreateDenom,
+		sdk.NewAttribute(types.AttributeKeyDenom, denom),
+		sdk.NewAttribute(types.AttributeKeyCreator, creator.String()),
+		sdk.NewAttribute(types.AttributeKeyAdmin, creator.String()),
+	))
 	return &types.MsgCreateDenomResponse{NewTokenDenom: denom}, nil
 }
 
@@ -69,6 +75,13 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 	if err := m.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, to, coins); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeMint,
+		sdk.NewAttribute(types.AttributeKeyDenom, msg.Amount.Denom),
+		sdk.NewAttribute(types.AttributeKeySender, sender.String()),
+		sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.Amount.String()),
+		sdk.NewAttribute(types.AttributeKeyMintToAddress, to.String()),
+	))
 	return &types.MsgMintResponse{}, nil
 }
 
@@ -104,6 +117,13 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 	if err := m.bankKeeper.BurnCoins(ctx, types.ModuleName, coins); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeBurn,
+		sdk.NewAttribute(types.AttributeKeyDenom, msg.Amount.Denom),
+		sdk.NewAttribute(types.AttributeKeySender, sender.String()),
+		sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.Amount.String()),
+		sdk.NewAttribute(types.AttributeKeyBurnFromAddress, from.String()),
+	))
 	return &types.MsgBurnResponse{}, nil
 }
 
@@ -130,5 +150,11 @@ func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (
 	if err := m.SetDenom(ctx, meta); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeChangeAdmin,
+		sdk.NewAttribute(types.AttributeKeyDenom, msg.Denom),
+		sdk.NewAttribute(types.AttributeKeySender, sender.String()),
+		sdk.NewAttribute(types.AttributeKeyNewAdmin, newAdmin.String()),
+	))
 	return &types.MsgChangeAdminResponse{}, nil
 }

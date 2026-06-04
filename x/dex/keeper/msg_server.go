@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -69,6 +70,17 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 	if err := m.SetNextPoolID(ctx, id+1); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeCreatePool,
+		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(id, 10)),
+		sdk.NewAttribute(types.AttributeKeyCreator, creator.String()),
+		sdk.NewAttribute(types.AttributeKeyDenom0, pool.Denom0),
+		sdk.NewAttribute(types.AttributeKeyDenom1, pool.Denom1),
+		sdk.NewAttribute(types.AttributeKeyAmount0, pool.Reserve0),
+		sdk.NewAttribute(types.AttributeKeyAmount1, pool.Reserve1),
+		sdk.NewAttribute(types.AttributeKeyLPDenom, lp),
+		sdk.NewAttribute(types.AttributeKeyMintedShares, shares.String()),
+	))
 	return &types.MsgCreatePoolResponse{PoolId: id, LpDenom: lp, MintedShares: shareCoin}, nil
 }
 
@@ -121,6 +133,17 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	if err := m.SetPool(ctx, pool); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeAddLiquidity,
+		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
+		sdk.NewAttribute(types.AttributeKeyDepositor, depositor.String()),
+		sdk.NewAttribute(types.AttributeKeyDenom0, pool.Denom0),
+		sdk.NewAttribute(types.AttributeKeyDenom1, pool.Denom1),
+		sdk.NewAttribute(types.AttributeKeyAmount0, token0.Amount.String()),
+		sdk.NewAttribute(types.AttributeKeyAmount1, token1.Amount.String()),
+		sdk.NewAttribute(types.AttributeKeyLPDenom, pool.LpDenom),
+		sdk.NewAttribute(types.AttributeKeyMintedShares, shares.String()),
+	))
 	return &types.MsgAddLiquidityResponse{MintedShares: shareCoin}, nil
 }
 
@@ -167,6 +190,17 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	if err := m.SetPool(ctx, pool); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeRemoveLiquidity,
+		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
+		sdk.NewAttribute(types.AttributeKeyWithdrawer, withdrawer.String()),
+		sdk.NewAttribute(types.AttributeKeyLPDenom, msg.Shares.Denom),
+		sdk.NewAttribute(types.AttributeKeyShares, msg.Shares.Amount.String()),
+		sdk.NewAttribute(types.AttributeKeyDenom0, out0.Denom),
+		sdk.NewAttribute(types.AttributeKeyDenom1, out1.Denom),
+		sdk.NewAttribute(types.AttributeKeyAmount0, out0.Amount.String()),
+		sdk.NewAttribute(types.AttributeKeyAmount1, out1.Amount.String()),
+	))
 	return &types.MsgRemoveLiquidityResponse{TokenA: out0, TokenB: out1}, nil
 }
 
@@ -219,5 +253,12 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	if err := m.SetPool(ctx, pool); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeSwapExactAmountIn,
+		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
+		sdk.NewAttribute(types.AttributeKeyTrader, trader.String()),
+		sdk.NewAttribute(types.AttributeKeyTokenIn, msg.TokenIn.String()),
+		sdk.NewAttribute(types.AttributeKeyTokenOut, out.String()),
+	))
 	return &types.MsgSwapExactAmountInResponse{TokenOut: out}, nil
 }

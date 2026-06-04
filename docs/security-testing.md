@@ -69,4 +69,6 @@ The Cosmos-specific manual review lives in [Cosmos Security Audit Checklist](sec
 
 The transaction lifecycle matrix lives in [Prototype Transaction Lifecycle Matrix](transaction-lifecycle-matrix.md). It traces prototype txs from actor and signer through state writes, events, verification queries, negative cases, and test evidence.
 
+The tx event contract lives in [Prototype Tx Event Contract](event-contract.md). It defines stable custom event types and attributes for e2e evidence and future indexers without replacing state queries.
+
 The explicit coverage matrix lives in [Prototype Test Pyramid](test-pyramid.md). It maps each module and working flow to unit, integration, adversarial, e2e, determinism, and benchmark coverage.

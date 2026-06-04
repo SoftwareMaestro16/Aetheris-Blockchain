@@ -41,6 +41,7 @@ foreach ($link in @(
     'docs/prototype-contract\.md',
     'docs/operator-commands\.md',
     'docs/transaction-lifecycle-matrix\.md',
+    'docs/event-contract\.md',
     'docs/prototype-acceptance-suite\.md',
     'docs/security/prototype-audit-gate\.md',
     'docs/release/prototype-package\.md',
@@ -76,6 +77,7 @@ Assert-NotContains -Text $governanceText -Pattern 'Push completed commits to `or
 Assert-Contains -Text $securityText -Pattern 'Prototype Security And Determinism Audit Gate' -Message "security testing must link prototype audit gate"
 Assert-Contains -Text $securityText -Pattern 'Cosmos Security Audit Checklist' -Message "security testing must link Cosmos checklist"
 Assert-Contains -Text $securityText -Pattern 'Prototype Transaction Lifecycle Matrix' -Message "security testing must link transaction lifecycle matrix"
+Assert-Contains -Text $securityText -Pattern 'Prototype Tx Event Contract' -Message "security testing must link event contract"
 Assert-Contains -Text $securityText -Pattern 'Prototype Test Pyramid' -Message "security testing must link test pyramid"
 
 Write-Host "prototype docs path test passed"

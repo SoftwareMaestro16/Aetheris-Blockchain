@@ -3,6 +3,8 @@ package keeper
 import (
 	"context"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
 
@@ -23,5 +25,12 @@ func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams)
 	if err := m.SetParams(ctx, msg.Params); err != nil {
 		return nil, err
 	}
+	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeUpdateParams,
+		sdk.NewAttribute(types.AttributeKeyAuthority, msg.Authority),
+		sdk.NewAttribute(types.AttributeKeyAllowedFeeDenom, msg.Params.AllowedFeeDenoms[0]),
+		sdk.NewAttribute(types.AttributeKeyValidatorRewardsRatio, msg.Params.ValidatorRewardsRatio),
+		sdk.NewAttribute(types.AttributeKeyCommunityPoolRatio, msg.Params.CommunityPoolRatio),
+	))
 	return &types.MsgUpdateParamsResponse{}, nil
 }

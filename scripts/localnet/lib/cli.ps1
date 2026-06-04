@@ -152,6 +152,42 @@ function Assert-LocalnetTxFailure {
   return $Tx
 }
 
+function Assert-LocalnetTxEvent {
+  param(
+    [object]$Tx,
+    [string]$Type,
+    [hashtable]$Attributes = @{}
+  )
+
+  $events = @()
+  if ($Tx.tx_response -and $Tx.tx_response.events) {
+    $events = @($Tx.tx_response.events)
+  } elseif ($Tx.events) {
+    $events = @($Tx.events)
+  }
+
+  foreach ($event in $events) {
+    if ([string]$event.type -ne $Type) {
+      continue
+    }
+
+    foreach ($key in $Attributes.Keys) {
+      $matches = @($event.attributes | Where-Object { [string]$_.key -eq [string]$key })
+      if ($matches.Count -lt 1) {
+        throw "tx event $Type missing attribute $key"
+      }
+      $actual = [string]$matches[0].value
+      $expected = [string]$Attributes[$key]
+      if ($actual -ne $expected) {
+        throw "tx event $Type attribute $key mismatch: expected $expected, got $actual"
+      }
+    }
+    return $event
+  }
+
+  throw "tx missing event $Type"
+}
+
 function Wait-LocalnetTx {
   param(
     [string]$Binary,

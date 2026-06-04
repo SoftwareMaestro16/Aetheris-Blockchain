@@ -201,7 +201,17 @@ try {
   }
   Write-Host "minted factory liquidity asset to node0"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "$($initialNorb)norb", "$($initialFactory)$factoryDenom") -FromHome $node0Home | Out-Null
+  $createPoolTx = Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "$($initialNorb)norb", "$($initialFactory)$factoryDenom") -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $createPoolTx -Type "dex_create_pool" -Attributes @{
+    pool_id       = "$poolId"
+    creator       = $node0
+    denom0        = $factoryDenom
+    denom1        = "norb"
+    amount0       = "$initialFactory"
+    amount1       = "$initialNorb"
+    lp_denom      = $lpDenom
+    minted_shares = "$initialNorb"
+  } | Out-Null
   $pool = Get-DexPool
   Assert-Pool -Pool $pool -FactoryDenom $factoryDenom -ReserveNorb $initialNorb -ReserveFactory $initialFactory -TotalShares $initialNorb
   Write-Host "created DEX pool $poolId with LP denom $lpDenom"
@@ -218,7 +228,17 @@ try {
   Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)norb", "$($addFactory)$factoryDenom", "$($addNorb + 1)") -FromHome $node0Home -ExpectFailure -ExpectedLog "minted shares below minimum" | Out-Null
   Write-Host "add-liquidity slippage guard rejected excessive min_shares"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)norb", "$($addFactory)$factoryDenom", "$addNorb") -FromHome $node0Home | Out-Null
+  $addLiquidityTx = Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)norb", "$($addFactory)$factoryDenom", "$addNorb") -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $addLiquidityTx -Type "dex_add_liquidity" -Attributes @{
+    pool_id       = "$poolId"
+    depositor     = $node0
+    denom0        = $factoryDenom
+    denom1        = "norb"
+    amount0       = "$addFactory"
+    amount1       = "$addNorb"
+    lp_denom      = $lpDenom
+    minted_shares = "$addNorb"
+  } | Out-Null
   $expectedReserveNorb = $initialNorb + $addNorb
   $expectedReserveFactory = $initialFactory + $addFactory
   $expectedShares = $initialNorb + $addNorb
@@ -233,7 +253,12 @@ try {
   Write-Host "swap slippage guard rejected excessive min_amount_out"
 
   $factoryBeforeSwap = Get-BalanceAmount -Address $node0 -Denom $factoryDenom
-  Send-SignedTx -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "$($swapInNorb)norb", $factoryDenom, "1") -FromHome $node0Home | Out-Null
+  $swapTx = Send-SignedTx -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "$($swapInNorb)norb", $factoryDenom, "1") -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $swapTx -Type "dex_swap_exact_amount_in" -Attributes @{
+    pool_id  = "$poolId"
+    trader   = $node0
+    token_in = "$($swapInNorb)norb"
+  } | Out-Null
   $factoryAfterSwap = Get-BalanceAmount -Address $node0 -Denom $factoryDenom
   if ($factoryAfterSwap -le $factoryBeforeSwap) {
     throw "factory output balance must increase after swap, before=$factoryBeforeSwap after=$factoryAfterSwap"
@@ -251,7 +276,13 @@ try {
   Write-Host "remove-liquidity rejects wrong LP denom"
 
   $lpBeforeRemove = Get-BalanceAmount -Address $node0 -Denom $lpDenom
-  Send-SignedTx -ActionArgs @("tx", "dex", "remove-liquidity", "$poolId", "$($removeShares)$lpDenom") -FromHome $node0Home | Out-Null
+  $removeLiquidityTx = Send-SignedTx -ActionArgs @("tx", "dex", "remove-liquidity", "$poolId", "$($removeShares)$lpDenom") -FromHome $node0Home
+  Assert-LocalnetTxEvent -Tx $removeLiquidityTx -Type "dex_remove_liquidity" -Attributes @{
+    pool_id    = "$poolId"
+    withdrawer = $node0
+    lp_denom   = $lpDenom
+    shares     = "$removeShares"
+  } | Out-Null
   $lpAfterRemove = Get-BalanceAmount -Address $node0 -Denom $lpDenom
   if ($lpAfterRemove -ne ($lpBeforeRemove - $removeShares)) {
     throw "LP balance mismatch after remove-liquidity: expected $($lpBeforeRemove - $removeShares), got $lpAfterRemove"
