@@ -209,3 +209,62 @@ function Send-LocalnetTx {
     -ExpectFailure:$ExpectFailure `
     -ExpectedLog $ExpectedLog
 }
+
+function Assert-LocalnetSignedTxReplayFailure {
+  param(
+    [string]$Binary,
+    [string[]]$GenerateArguments,
+    [string]$FromKey,
+    [string]$FromHome,
+    [string]$ChainId,
+    [int]$RPCPort = 26657,
+    [string]$WorkDir,
+    [int]$TimeoutSeconds = 60
+  )
+
+  New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+  $unsignedPath = Join-Path $WorkDir "replay-unsigned.json"
+  $signedPath = Join-Path $WorkDir "replay-signed.json"
+  $node = "tcp://127.0.0.1:$RPCPort"
+
+  $unsigned = Invoke-LocalnetCliJson -Binary $Binary -Arguments ($GenerateArguments + @(
+      "--generate-only",
+      "--output", "json"
+    ))
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($unsignedPath, ($unsigned | ConvertTo-Json -Depth 100), $utf8NoBom)
+
+  $signArgs = @(
+    "tx", "sign", $unsignedPath,
+    "--from", $FromKey,
+    "--home", $FromHome,
+    "--chain-id", $ChainId,
+    "--keyring-backend", "test",
+    "--node", $node,
+    "--output", "json",
+    "--output-document", $signedPath
+  )
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $signOutput = & $Binary @signArgs 2>&1
+    $signExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($signExitCode -ne 0) {
+    throw "orbitalisd tx sign failed: $Binary $($signArgs -join ' ')`n$($signOutput -join "`n")"
+  }
+  if (-not (Test-Path -LiteralPath $signedPath)) {
+    throw "orbitalisd tx sign did not create signed tx file: $signedPath"
+  }
+
+  $broadcastArgs = @(
+    "tx", "broadcast", $signedPath,
+    "--node", $node,
+    "--broadcast-mode", "sync",
+    "--output", "json"
+  )
+  Send-LocalnetTx -Binary $Binary -Arguments $broadcastArgs -RPCPort $RPCPort -TimeoutSeconds $TimeoutSeconds | Out-Null
+  Send-LocalnetTx -Binary $Binary -Arguments $broadcastArgs -RPCPort $RPCPort -TimeoutSeconds $TimeoutSeconds -ExpectFailure | Out-Null
+}

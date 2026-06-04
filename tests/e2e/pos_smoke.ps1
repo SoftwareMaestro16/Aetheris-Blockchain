@@ -243,6 +243,17 @@ try {
     -Arguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "1norb" -FromHome $node0Home -FromKey "missing-delegator") | Out-Null
   Write-Host "invalid delegator key rejected"
 
+  Assert-LocalnetSignedTxReplayFailure `
+    -Binary $Binary `
+    -GenerateArguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "1norb" -FromHome $node0Home) `
+    -FromKey "node0" `
+    -FromHome $node0Home `
+    -ChainId $ChainId `
+    -RPCPort $node0Ports.RPC `
+    -WorkDir (Join-Path $OutputDir "replay") `
+    -TimeoutSeconds $TimeoutSeconds
+  Write-Host "signed delegation replay rejected"
+
   $height = Wait-LocalnetHeight -TargetHeight ([int64]$height + 1) -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds
   Write-Host "PoS smoke flow completed at height $height"
 } finally {
