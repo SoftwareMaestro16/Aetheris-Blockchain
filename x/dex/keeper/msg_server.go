@@ -7,6 +7,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/sovereign-l1/l1/x/dex/types"
+	txutil "github.com/sovereign-l1/l1/x/internal/tx"
 )
 
 var _ types.MsgServer = msgServer{}
@@ -42,16 +43,7 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 	if !shares.IsPositive() {
 		return nil, types.ErrInvalidLiquidity.Wrap("initial shares must be positive")
 	}
-	if err := m.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, sdk.NewCoins(token0, token1)); err != nil {
-		return nil, err
-	}
 	shareCoin := sdk.NewCoin(lp, shares)
-	if err := m.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(shareCoin)); err != nil {
-		return nil, err
-	}
-	if err := m.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, creator, sdk.NewCoins(shareCoin)); err != nil {
-		return nil, err
-	}
 	pool := types.Pool{
 		Id:          id,
 		Denom0:      token0.Denom,
@@ -61,26 +53,40 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 		TotalShares: intString(shares),
 		LpDenom:     lp,
 	}
-	if err := m.SetPool(ctx, pool); err != nil {
+	if err := txutil.AtomicStateChange(ctx, func(cacheCtx context.Context) error {
+		if err := m.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, creator, types.ModuleName, sdk.NewCoins(token0, token1)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.MintCoins(cacheCtx, types.ModuleName, sdk.NewCoins(shareCoin)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.SendCoinsFromModuleToAccount(cacheCtx, types.ModuleName, creator, sdk.NewCoins(shareCoin)); err != nil {
+			return err
+		}
+		if err := m.SetPool(cacheCtx, pool); err != nil {
+			return err
+		}
+		if err := m.SetPoolPairIndex(cacheCtx, pool.Denom0, pool.Denom1, pool.Id); err != nil {
+			return err
+		}
+		if err := m.SetNextPoolID(cacheCtx, id+1); err != nil {
+			return err
+		}
+		sdk.UnwrapSDKContext(cacheCtx).EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeCreatePool,
+			sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(id, 10)),
+			sdk.NewAttribute(types.AttributeKeyCreator, creator.String()),
+			sdk.NewAttribute(types.AttributeKeyDenom0, pool.Denom0),
+			sdk.NewAttribute(types.AttributeKeyDenom1, pool.Denom1),
+			sdk.NewAttribute(types.AttributeKeyAmount0, pool.Reserve0),
+			sdk.NewAttribute(types.AttributeKeyAmount1, pool.Reserve1),
+			sdk.NewAttribute(types.AttributeKeyLPDenom, lp),
+			sdk.NewAttribute(types.AttributeKeyMintedShares, shares.String()),
+		))
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	if err := m.SetPoolPairIndex(ctx, pool.Denom0, pool.Denom1, pool.Id); err != nil {
-		return nil, err
-	}
-	if err := m.SetNextPoolID(ctx, id+1); err != nil {
-		return nil, err
-	}
-	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
-		types.EventTypeCreatePool,
-		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(id, 10)),
-		sdk.NewAttribute(types.AttributeKeyCreator, creator.String()),
-		sdk.NewAttribute(types.AttributeKeyDenom0, pool.Denom0),
-		sdk.NewAttribute(types.AttributeKeyDenom1, pool.Denom1),
-		sdk.NewAttribute(types.AttributeKeyAmount0, pool.Reserve0),
-		sdk.NewAttribute(types.AttributeKeyAmount1, pool.Reserve1),
-		sdk.NewAttribute(types.AttributeKeyLPDenom, lp),
-		sdk.NewAttribute(types.AttributeKeyMintedShares, shares.String()),
-	))
 	return &types.MsgCreatePoolResponse{PoolId: id, LpDenom: lp, MintedShares: shareCoin}, nil
 }
 
@@ -117,33 +123,38 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	if !shares.IsPositive() || shares.LT(minShares) {
 		return nil, types.ErrSlippage.Wrap("minted shares below minimum")
 	}
-	if err := m.bankKeeper.SendCoinsFromAccountToModule(ctx, depositor, types.ModuleName, sdk.NewCoins(token0, token1)); err != nil {
-		return nil, err
-	}
 	shareCoin := sdk.NewCoin(pool.LpDenom, shares)
-	if err := m.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(shareCoin)); err != nil {
-		return nil, err
-	}
-	if err := m.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, depositor, sdk.NewCoins(shareCoin)); err != nil {
-		return nil, err
-	}
 	pool.Reserve0 = intString(reserve0.Add(token0.Amount))
 	pool.Reserve1 = intString(reserve1.Add(token1.Amount))
 	pool.TotalShares = intString(totalShares.Add(shares))
-	if err := m.SetPool(ctx, pool); err != nil {
+	if err := txutil.AtomicStateChange(ctx, func(cacheCtx context.Context) error {
+		if err := m.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, depositor, types.ModuleName, sdk.NewCoins(token0, token1)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.MintCoins(cacheCtx, types.ModuleName, sdk.NewCoins(shareCoin)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.SendCoinsFromModuleToAccount(cacheCtx, types.ModuleName, depositor, sdk.NewCoins(shareCoin)); err != nil {
+			return err
+		}
+		if err := m.SetPool(cacheCtx, pool); err != nil {
+			return err
+		}
+		sdk.UnwrapSDKContext(cacheCtx).EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeAddLiquidity,
+			sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
+			sdk.NewAttribute(types.AttributeKeyDepositor, depositor.String()),
+			sdk.NewAttribute(types.AttributeKeyDenom0, pool.Denom0),
+			sdk.NewAttribute(types.AttributeKeyDenom1, pool.Denom1),
+			sdk.NewAttribute(types.AttributeKeyAmount0, token0.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyAmount1, token1.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyLPDenom, pool.LpDenom),
+			sdk.NewAttribute(types.AttributeKeyMintedShares, shares.String()),
+		))
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
-		types.EventTypeAddLiquidity,
-		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
-		sdk.NewAttribute(types.AttributeKeyDepositor, depositor.String()),
-		sdk.NewAttribute(types.AttributeKeyDenom0, pool.Denom0),
-		sdk.NewAttribute(types.AttributeKeyDenom1, pool.Denom1),
-		sdk.NewAttribute(types.AttributeKeyAmount0, token0.Amount.String()),
-		sdk.NewAttribute(types.AttributeKeyAmount1, token1.Amount.String()),
-		sdk.NewAttribute(types.AttributeKeyLPDenom, pool.LpDenom),
-		sdk.NewAttribute(types.AttributeKeyMintedShares, shares.String()),
-	))
 	return &types.MsgAddLiquidityResponse{MintedShares: shareCoin}, nil
 }
 
@@ -174,33 +185,38 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	if !amount0.IsPositive() || !amount1.IsPositive() {
 		return nil, types.ErrInvalidLiquidity.Wrap("withdrawal amount rounds to zero")
 	}
-	if err := m.bankKeeper.SendCoinsFromAccountToModule(ctx, withdrawer, types.ModuleName, sdk.NewCoins(msg.Shares)); err != nil {
-		return nil, err
-	}
-	if err := m.bankKeeper.BurnCoins(ctx, types.ModuleName, sdk.NewCoins(msg.Shares)); err != nil {
-		return nil, err
-	}
 	out0, out1 := sdk.NewCoin(pool.Denom0, amount0), sdk.NewCoin(pool.Denom1, amount1)
-	if err := m.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, withdrawer, sdk.NewCoins(out0, out1)); err != nil {
-		return nil, err
-	}
 	pool.Reserve0 = intString(reserve0.Sub(amount0))
 	pool.Reserve1 = intString(reserve1.Sub(amount1))
 	pool.TotalShares = intString(totalShares.Sub(msg.Shares.Amount))
-	if err := m.SetPool(ctx, pool); err != nil {
+	if err := txutil.AtomicStateChange(ctx, func(cacheCtx context.Context) error {
+		if err := m.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, withdrawer, types.ModuleName, sdk.NewCoins(msg.Shares)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.BurnCoins(cacheCtx, types.ModuleName, sdk.NewCoins(msg.Shares)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.SendCoinsFromModuleToAccount(cacheCtx, types.ModuleName, withdrawer, sdk.NewCoins(out0, out1)); err != nil {
+			return err
+		}
+		if err := m.SetPool(cacheCtx, pool); err != nil {
+			return err
+		}
+		sdk.UnwrapSDKContext(cacheCtx).EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeRemoveLiquidity,
+			sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
+			sdk.NewAttribute(types.AttributeKeyWithdrawer, withdrawer.String()),
+			sdk.NewAttribute(types.AttributeKeyLPDenom, msg.Shares.Denom),
+			sdk.NewAttribute(types.AttributeKeyShares, msg.Shares.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyDenom0, out0.Denom),
+			sdk.NewAttribute(types.AttributeKeyDenom1, out1.Denom),
+			sdk.NewAttribute(types.AttributeKeyAmount0, out0.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyAmount1, out1.Amount.String()),
+		))
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
-		types.EventTypeRemoveLiquidity,
-		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
-		sdk.NewAttribute(types.AttributeKeyWithdrawer, withdrawer.String()),
-		sdk.NewAttribute(types.AttributeKeyLPDenom, msg.Shares.Denom),
-		sdk.NewAttribute(types.AttributeKeyShares, msg.Shares.Amount.String()),
-		sdk.NewAttribute(types.AttributeKeyDenom0, out0.Denom),
-		sdk.NewAttribute(types.AttributeKeyDenom1, out1.Denom),
-		sdk.NewAttribute(types.AttributeKeyAmount0, out0.Amount.String()),
-		sdk.NewAttribute(types.AttributeKeyAmount1, out1.Amount.String()),
-	))
 	return &types.MsgRemoveLiquidityResponse{TokenA: out0, TokenB: out1}, nil
 }
 
@@ -244,21 +260,26 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	if !out.Amount.IsPositive() || out.Amount.LT(minOut) {
 		return nil, types.ErrSlippage.Wrap("amount out below minimum")
 	}
-	if err := m.bankKeeper.SendCoinsFromAccountToModule(ctx, trader, types.ModuleName, sdk.NewCoins(msg.TokenIn)); err != nil {
+	if err := txutil.AtomicStateChange(ctx, func(cacheCtx context.Context) error {
+		if err := m.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, trader, types.ModuleName, sdk.NewCoins(msg.TokenIn)); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.SendCoinsFromModuleToAccount(cacheCtx, types.ModuleName, trader, sdk.NewCoins(out)); err != nil {
+			return err
+		}
+		if err := m.SetPool(cacheCtx, pool); err != nil {
+			return err
+		}
+		sdk.UnwrapSDKContext(cacheCtx).EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeSwapExactAmountIn,
+			sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
+			sdk.NewAttribute(types.AttributeKeyTrader, trader.String()),
+			sdk.NewAttribute(types.AttributeKeyTokenIn, msg.TokenIn.String()),
+			sdk.NewAttribute(types.AttributeKeyTokenOut, out.String()),
+		))
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	if err := m.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, trader, sdk.NewCoins(out)); err != nil {
-		return nil, err
-	}
-	if err := m.SetPool(ctx, pool); err != nil {
-		return nil, err
-	}
-	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
-		types.EventTypeSwapExactAmountIn,
-		sdk.NewAttribute(types.AttributeKeyPoolID, strconv.FormatUint(msg.PoolId, 10)),
-		sdk.NewAttribute(types.AttributeKeyTrader, trader.String()),
-		sdk.NewAttribute(types.AttributeKeyTokenIn, msg.TokenIn.String()),
-		sdk.NewAttribute(types.AttributeKeyTokenOut, out.String()),
-	))
 	return &types.MsgSwapExactAmountInResponse{TokenOut: out}, nil
 }

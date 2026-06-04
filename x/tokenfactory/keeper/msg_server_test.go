@@ -10,6 +10,7 @@ import (
 
 	l1app "github.com/sovereign-l1/l1/app"
 	appparams "github.com/sovereign-l1/l1/app/params"
+	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
@@ -28,6 +29,13 @@ func requireEvent(t *testing.T, ctx sdk.Context, eventType string, attrs map[str
 		return
 	}
 	require.Failf(t, "missing event", "event type %s not emitted", eventType)
+}
+
+func requireNoEvent(t *testing.T, ctx sdk.Context, eventType string) {
+	t.Helper()
+	for _, event := range ctx.EventManager().Events() {
+		require.NotEqual(t, eventType, event.Type)
+	}
 }
 
 func TestBurnRejectsBurnFromUnsignedAccount(t *testing.T) {
@@ -162,6 +170,33 @@ func TestAdminCanBurnOwnFactoryTokens(t *testing.T) {
 
 	balance := app.BankKeeper.GetBalance(ctx, admin, denom)
 	require.Equal(t, "60", balance.Amount.String())
+}
+
+func TestMintToBlockedModuleAddressDoesNotLeakSupply(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	admin := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
+	msgServer := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
+
+	createRes, err := msgServer.CreateDenom(ctx, &types.MsgCreateDenom{
+		Creator:  admin.String(),
+		Subdenom: "blockedmint",
+	})
+	require.NoError(t, err)
+
+	blockedRecipient := app.AccountKeeper.GetModuleAddress(dextypes.ModuleName)
+	require.NotNil(t, blockedRecipient)
+
+	_, err = msgServer.Mint(ctx, &types.MsgMint{
+		Sender:        admin.String(),
+		Amount:        sdk.NewInt64Coin(createRes.NewTokenDenom, 100),
+		MintToAddress: blockedRecipient.String(),
+	})
+	require.Error(t, err)
+
+	require.True(t, app.BankKeeper.GetSupply(ctx, createRes.NewTokenDenom).Amount.IsZero())
+	require.True(t, app.BankKeeper.GetBalance(ctx, blockedRecipient, createRes.NewTokenDenom).Amount.IsZero())
+	requireNoEvent(t, ctx, types.EventTypeMint)
 }
 
 func TestCreateDenomRejectsNativeTokenSpoofing(t *testing.T) {

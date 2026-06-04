@@ -5,6 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	txutil "github.com/sovereign-l1/l1/x/internal/tx"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
 
@@ -69,19 +70,24 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 		return nil, types.ErrInvalidDenom.Wrap("mint amount must be positive")
 	}
 	coins := sdk.NewCoins(msg.Amount)
-	if err := m.bankKeeper.MintCoins(ctx, types.ModuleName, coins); err != nil {
+	if err := txutil.AtomicStateChange(ctx, func(cacheCtx context.Context) error {
+		if err := m.bankKeeper.MintCoins(cacheCtx, types.ModuleName, coins); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.SendCoinsFromModuleToAccount(cacheCtx, types.ModuleName, to, coins); err != nil {
+			return err
+		}
+		sdk.UnwrapSDKContext(cacheCtx).EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeMint,
+			sdk.NewAttribute(types.AttributeKeyDenom, msg.Amount.Denom),
+			sdk.NewAttribute(types.AttributeKeySender, sender.String()),
+			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyMintToAddress, to.String()),
+		))
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	if err := m.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, to, coins); err != nil {
-		return nil, err
-	}
-	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
-		types.EventTypeMint,
-		sdk.NewAttribute(types.AttributeKeyDenom, msg.Amount.Denom),
-		sdk.NewAttribute(types.AttributeKeySender, sender.String()),
-		sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.Amount.String()),
-		sdk.NewAttribute(types.AttributeKeyMintToAddress, to.String()),
-	))
 	return &types.MsgMintResponse{}, nil
 }
 
@@ -111,19 +117,24 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 		return nil, types.ErrInvalidDenom.Wrap("burn amount must be positive")
 	}
 	coins := sdk.NewCoins(msg.Amount)
-	if err := m.bankKeeper.SendCoinsFromAccountToModule(ctx, from, types.ModuleName, coins); err != nil {
+	if err := txutil.AtomicStateChange(ctx, func(cacheCtx context.Context) error {
+		if err := m.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, from, types.ModuleName, coins); err != nil {
+			return err
+		}
+		if err := m.bankKeeper.BurnCoins(cacheCtx, types.ModuleName, coins); err != nil {
+			return err
+		}
+		sdk.UnwrapSDKContext(cacheCtx).EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeBurn,
+			sdk.NewAttribute(types.AttributeKeyDenom, msg.Amount.Denom),
+			sdk.NewAttribute(types.AttributeKeySender, sender.String()),
+			sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.Amount.String()),
+			sdk.NewAttribute(types.AttributeKeyBurnFromAddress, from.String()),
+		))
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	if err := m.bankKeeper.BurnCoins(ctx, types.ModuleName, coins); err != nil {
-		return nil, err
-	}
-	sdk.UnwrapSDKContext(ctx).EventManager().EmitEvent(sdk.NewEvent(
-		types.EventTypeBurn,
-		sdk.NewAttribute(types.AttributeKeyDenom, msg.Amount.Denom),
-		sdk.NewAttribute(types.AttributeKeySender, sender.String()),
-		sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount.Amount.String()),
-		sdk.NewAttribute(types.AttributeKeyBurnFromAddress, from.String()),
-	))
 	return &types.MsgBurnResponse{}, nil
 }
 

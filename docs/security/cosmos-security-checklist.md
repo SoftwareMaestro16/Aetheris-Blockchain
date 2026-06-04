@@ -39,12 +39,14 @@ Every change must record architecture, security, scalability, and test strategy 
 - Mint, burn, and admin transfer require the current denom admin signer. `MsgUpdateParams` requires the configured authority.
 - Native `norb`, staking, fees, and DEX LP denoms cannot be spoofed or overwritten.
 - Bank keeper mint/burn/send errors propagate without local bookkeeping changes after failure.
+- Module account and bank movement inventory is maintained in [module-bank-movement-audit.md](module-bank-movement-audit.md).
 - Denom list/query endpoints are paginated or explicitly capped; not found and malformed requests return status errors.
 
 ## DEX
 
 - Pool creation rejects duplicate unordered pairs, invalid denoms, same-denom pairs, zero liquidity, unsupported LP denoms, and params outside bounds.
 - Add/remove/swap paths check user balances through bank errors and keep recorded reserves, module balances, and LP supply synchronized.
+- Multi-step bank and DEX state updates use cached atomic writes so late bank failures do not leak partial direct-keeper state.
 - Constant-product math uses integer arithmetic only. Rounding and fee handling favor protocol safety, and slippage/min-out checks reject zero or tiny-output surprises.
 - Pool lookup and tx paths are direct-key or otherwise bounded. List queries are paginated or capped.
 - Corrupted pool, reserve desync, invalid pool id, malformed request, and not found cases return errors without panic.

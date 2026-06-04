@@ -305,6 +305,66 @@ func TestPoolAccountingMatchesBankBalancesAndLPSupply(t *testing.T) {
 	require.Equal(t, sdk.NewCoin(pool.LpDenom, totalShares), app.BankKeeper.GetSupply(ctx, pool.LpDenom))
 }
 
+func TestAddLiquidityInsufficientFundsLeavesPoolAndBalancesUnchanged(t *testing.T) {
+	app, ctx, msgServer, depositor, poolID := setupDexPool(t)
+
+	poolBefore, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	lpBefore := app.BankKeeper.GetBalance(ctx, depositor, poolBefore.LpDenom)
+
+	_, err = msgServer.AddLiquidity(ctx, &types.MsgAddLiquidity{
+		Depositor: depositor.String(),
+		PoolId:    poolID,
+		TokenA:    sdk.NewInt64Coin("uatom", 1_000_000),
+		TokenB:    sdk.NewInt64Coin(appparams.BaseDenom, 100),
+		MinShares: "1",
+	})
+	require.Error(t, err)
+
+	poolAfter, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, poolBefore, poolAfter)
+	require.Equal(t, lpBefore, app.BankKeeper.GetBalance(ctx, depositor, poolBefore.LpDenom))
+}
+
+func TestRemoveLiquidityReserveMismatchDoesNotBurnSharesOrUpdatePool(t *testing.T) {
+	app, ctx, msgServer, withdrawer, poolID := setupDexPool(t)
+
+	poolBefore, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NoError(t, app.DexKeeper.SetPool(ctx, types.Pool{
+		Id:          poolBefore.Id,
+		Denom0:      poolBefore.Denom0,
+		Denom1:      poolBefore.Denom1,
+		Reserve0:    "1000000000",
+		Reserve1:    "1000000000",
+		TotalShares: poolBefore.TotalShares,
+		LpDenom:     poolBefore.LpDenom,
+	}))
+	corruptedPool, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	lpBefore := app.BankKeeper.GetBalance(ctx, withdrawer, poolBefore.LpDenom)
+	supplyBefore := app.BankKeeper.GetSupply(ctx, poolBefore.LpDenom)
+
+	_, err = msgServer.RemoveLiquidity(ctx, &types.MsgRemoveLiquidity{
+		Withdrawer: withdrawer.String(),
+		PoolId:     poolID,
+		Shares:     sdk.NewInt64Coin(poolBefore.LpDenom, 10),
+	})
+	require.Error(t, err)
+
+	poolAfter, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, corruptedPool, poolAfter)
+	require.Equal(t, lpBefore, app.BankKeeper.GetBalance(ctx, withdrawer, poolBefore.LpDenom))
+	require.Equal(t, supplyBefore, app.BankKeeper.GetSupply(ctx, poolBefore.LpDenom))
+}
+
 func TestDexLifecycleRejectsSlippageAndWrongDenoms(t *testing.T) {
 	app, ctx, msgServer, trader, poolID := setupDexPool(t)
 	fundAccount(t, app, ctx, trader, sdk.NewCoins(sdk.NewInt64Coin("uatom", 1_000)))
