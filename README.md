@@ -67,9 +67,10 @@ Stop or reset:
 .\scripts\localnet\reset.ps1
 ```
 
-Smoke test:
+Prototype acceptance and targeted smoke tests:
 
 ```powershell
+.\tests\e2e\prototype_acceptance.ps1
 .\tests\e2e\localnet_smoke.ps1
 .\tests\e2e\native_token_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1
@@ -79,7 +80,7 @@ Smoke test:
 
 ## Example CLI
 
-See [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook, [docs/query-surface.md](docs/query-surface.md) for gRPC/REST endpoints, and [docs/observability.md](docs/observability.md) for health checks and diagnostics.
+See [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook, [docs/prototype-acceptance-suite.md](docs/prototype-acceptance-suite.md) for the one-command acceptance suite, [docs/query-surface.md](docs/query-surface.md) for gRPC/REST endpoints, and [docs/observability.md](docs/observability.md) for health checks and diagnostics.
 
 ```powershell
 build\orbitalisd.exe query block --node tcp://127.0.0.1:26657

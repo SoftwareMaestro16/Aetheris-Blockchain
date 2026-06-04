@@ -124,11 +124,13 @@ Start, stop, and reset:
 Run a smoke test against the default or 5-validator profile:
 
 ```powershell
+.\tests\e2e\prototype_acceptance.ps1
+.\tests\e2e\prototype_acceptance.ps1 -Profile Full -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\localnet_smoke.ps1
 .\tests\e2e\localnet_smoke.ps1 -ValidatorCount 5
 ```
 
-The smoke test validates RPC readiness, block height, CometBFT validator set size, peer count, REST `/blocks/latest`, gRPC TCP availability, `query block`, a `bank send` transaction, stop/start chain progress, and negative cases for invalid validator count, missing binary, timeout, and occupied port. The 5-validator run is the heavier profile and can be run with `-OutputDir .localnet-5` if the default 3-validator localnet should be preserved.
+The prototype acceptance suite is the default from-zero proof that build, genesis, localnet startup, block production, bank tx, fee policy, tokenfactory, DEX, PoS delegation, and query surfaces work together. See [prototype-acceptance-suite.md](prototype-acceptance-suite.md). The targeted localnet smoke validates RPC readiness, block height, CometBFT validator set size, peer count, REST `/blocks/latest`, gRPC TCP availability, `query block`, a `bank send` transaction, stop/start chain progress, and negative cases for invalid validator count, missing binary, timeout, and occupied port. The 5-validator run is the heavier profile and can be run with `-OutputDir .localnet-5` if the default 3-validator localnet should be preserved.
 
 Run the query surface and health checks documented in [query-surface.md](query-surface.md) and [observability.md](observability.md):
 
@@ -198,6 +200,8 @@ go vet ./...
 buf lint
 go build -o build/orbitalisd.exe ./cmd/l1d
 .\scripts\localnet\validate-genesis.ps1
+.\tests\e2e\prototype_acceptance.ps1
+.\tests\e2e\prototype_acceptance.ps1 -Profile Full -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\localnet_smoke.ps1
 .\tests\e2e\localnet_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\pos_smoke.ps1
