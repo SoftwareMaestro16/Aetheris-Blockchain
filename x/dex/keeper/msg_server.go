@@ -19,6 +19,13 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 }
 
 func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*types.MsgCreatePoolResponse, error) {
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.PoolCreationEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("pool creation is disabled")
+	}
 	creator, err := sdk.AccAddressFromBech32(msg.Creator)
 	if err != nil {
 		return nil, err
@@ -27,14 +34,26 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 	if err != nil {
 		return nil, err
 	}
+	if _, found, err := m.GetPoolIDByPair(ctx, token0.Denom, token1.Denom); err != nil {
+		return nil, err
+	} else if found {
+		return nil, types.ErrInvalidPool.Wrap("pool pair already exists")
+	}
 	id, err := m.GetNextPoolID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	lp := lpDenom(id)
 	shares := minInt(token0.Amount, token1.Amount)
+	minInitialLiquidity, err := parsePositiveInt("min_initial_liquidity", params.MinInitialLiquidity)
+	if err != nil {
+		return nil, err
+	}
 	if !shares.IsPositive() {
 		return nil, types.ErrInvalidLiquidity.Wrap("initial shares must be positive")
+	}
+	if shares.LT(minInitialLiquidity) {
+		return nil, types.ErrInvalidLiquidity.Wrap("initial shares below protocol minimum")
 	}
 	if err := m.bankKeeper.SendCoinsFromAccountToModule(ctx, creator, types.ModuleName, sdk.NewCoins(token0, token1)); err != nil {
 		return nil, err
@@ -65,6 +84,13 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 }
 
 func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity) (*types.MsgAddLiquidityResponse, error) {
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.LiquidityEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("liquidity operations are disabled")
+	}
 	depositor, err := sdk.AccAddressFromBech32(msg.Depositor)
 	if err != nil {
 		return nil, err
@@ -117,6 +143,13 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 }
 
 func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiquidity) (*types.MsgRemoveLiquidityResponse, error) {
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.LiquidityEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("liquidity operations are disabled")
+	}
 	withdrawer, err := sdk.AccAddressFromBech32(msg.Withdrawer)
 	if err != nil {
 		return nil, err
@@ -163,6 +196,13 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 }
 
 func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExactAmountIn) (*types.MsgSwapExactAmountInResponse, error) {
+	params, err := m.GetParams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !params.SwapsEnabled {
+		return nil, types.ErrOperationDisabled.Wrap("swaps are disabled")
+	}
 	trader, err := sdk.AccAddressFromBech32(msg.Trader)
 	if err != nil {
 		return nil, err
@@ -183,12 +223,12 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	}
 	var out sdk.Coin
 	if msg.TokenIn.Denom == pool.Denom0 && msg.TokenOutDenom == pool.Denom1 {
-		outAmt := calcSwapOut(reserve0, reserve1, msg.TokenIn.Amount)
+		outAmt := calcSwapOut(reserve0, reserve1, msg.TokenIn.Amount, params.SwapFeeBps)
 		out = sdk.NewCoin(pool.Denom1, outAmt)
 		pool.Reserve0 = intString(reserve0.Add(msg.TokenIn.Amount))
 		pool.Reserve1 = intString(reserve1.Sub(outAmt))
 	} else if msg.TokenIn.Denom == pool.Denom1 && msg.TokenOutDenom == pool.Denom0 {
-		outAmt := calcSwapOut(reserve1, reserve0, msg.TokenIn.Amount)
+		outAmt := calcSwapOut(reserve1, reserve0, msg.TokenIn.Amount, params.SwapFeeBps)
 		out = sdk.NewCoin(pool.Denom0, outAmt)
 		pool.Reserve1 = intString(reserve1.Add(msg.TokenIn.Amount))
 		pool.Reserve0 = intString(reserve0.Sub(outAmt))
@@ -212,4 +252,17 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 		return nil, err
 	}
 	return &types.MsgSwapExactAmountInResponse{TokenOut: out}, nil
+}
+
+func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
+	if msg == nil {
+		return nil, types.ErrInvalidParams.Wrap("empty request")
+	}
+	if msg.Authority != m.Authority() {
+		return nil, types.ErrUnauthorized.Wrap("invalid authority")
+	}
+	if err := m.SetParams(ctx, msg.Params); err != nil {
+		return nil, err
+	}
+	return &types.MsgUpdateParamsResponse{}, nil
 }
