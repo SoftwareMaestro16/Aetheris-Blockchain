@@ -12,23 +12,30 @@ $KEYRING = "test"
 $NODE0 = build\orbitalisd.exe keys show $FROM -a --home $HOME --keyring-backend $KEYRING
 ```
 
-## Required Endpoints
+## Endpoint Matrix
 
-| Surface | Query | Command or endpoint | Expected result |
-| --- | --- | --- | --- |
-| CometBFT RPC | node status | `Invoke-RestMethod http://127.0.0.1:26657/status` | `result.node_info.network = orbitalis-local-1` |
-| CometBFT RPC | peers | `Invoke-RestMethod http://127.0.0.1:26657/net_info` | peer count for multi-validator localnet |
-| CometBFT RPC | validator set | `Invoke-RestMethod http://127.0.0.1:26657/validators?per_page=100` | expected validator count with positive voting power |
-| CLI | latest block | `build\orbitalisd.exe query block --node $NODE --output json` | `header.height` |
-| REST | latest block | `Invoke-RestMethod "$REST/cosmos/base/tendermint/v1beta1/blocks/latest"` | `block.header.height` |
-| REST | node info | `Invoke-RestMethod "$REST/cosmos/base/tendermint/v1beta1/node_info"` | `default_node_info.network` |
-| CLI/REST | bank balance | `build\orbitalisd.exe query bank balance $NODE0 norb --node $NODE --output json` / `Invoke-RestMethod "$REST/cosmos/bank/v1beta1/balances/$NODE0"` | positive `norb` balance in the returned list |
-| CLI/REST | staking validators | `build\orbitalisd.exe query staking validators --node $NODE --output json` / `Invoke-RestMethod "$REST/cosmos/staking/v1beta1/validators"` | validator list |
-| CLI/gRPC/REST | fees params | `build\orbitalisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` / `Invoke-RestMethod "$REST/l1/fees/v1/params"` | `allowed_fee_denoms` contains `norb` |
-| CLI/gRPC/REST | factory denoms | `build\orbitalisd.exe query tokenfactory denoms --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` / `Invoke-RestMethod "$REST/l1/tokenfactory/v1/denoms"` | bounded denom list |
-| CLI/gRPC/REST | factory denom | `build\orbitalisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` / `Invoke-RestMethod "$REST/l1/tokenfactory/v1/denom/$GOLD"` | denom metadata and admin |
-| CLI/gRPC/REST | DEX pools | `build\orbitalisd.exe query dex pools --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` / `Invoke-RestMethod "$REST/l1/dex/v1/pools"` | bounded pool list |
-| CLI/gRPC/REST | DEX pool | `build\orbitalisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` / `Invoke-RestMethod "$REST/l1/dex/v1/pools/1"` | pool reserves and LP denom |
+All examples use JSON output and the default localnet values above. Sample responses are intentionally minimal; real responses include additional Cosmos SDK fields such as pagination and consensus metadata.
+
+| Query | CLI | gRPC method | REST path | Sample request | Sample response |
+| --- | --- | --- | --- | --- | --- |
+| Latest block | `build\orbitalisd.exe query block --node $NODE --output json` | `cosmos.base.tendermint.v1beta1.Service/GetLatestBlock` | `GET /cosmos/base/tendermint/v1beta1/blocks/latest` | `{}` | `{"block":{"header":{"height":"12","chain_id":"orbitalis-local-1"}}}` |
+| Node info | `build\orbitalisd.exe status --node $NODE --output json` | `cosmos.base.tendermint.v1beta1.Service/GetNodeInfo` | `GET /cosmos/base/tendermint/v1beta1/node_info` | `{}` | `{"default_node_info":{"network":"orbitalis-local-1"}}` |
+| Bank balance | `build\orbitalisd.exe query bank balance $NODE0 norb --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `cosmos.bank.v1beta1.Query/Balance` | `GET /cosmos/bank/v1beta1/balances/{address}/by_denom?denom=norb` | `{"address":"orb1...","denom":"norb"}` | `{"balance":{"denom":"norb","amount":"1000000"}}` |
+| Bank balances | `build\orbitalisd.exe query bank balances $NODE0 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `cosmos.bank.v1beta1.Query/AllBalances` | `GET /cosmos/bank/v1beta1/balances/{address}` | `{"address":"orb1...","pagination":{"limit":"100"}}` | `{"balances":[{"denom":"norb","amount":"1000000"}]}` |
+| Staking validators | `build\orbitalisd.exe query staking validators --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `cosmos.staking.v1beta1.Query/Validators` | `GET /cosmos/staking/v1beta1/validators?pagination.limit=100` | `{"pagination":{"limit":"100"}}` | `{"validators":[{"operator_address":"orbvaloper1...","status":"BOND_STATUS_BONDED"}]}` |
+| Fees params | `build\orbitalisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.fees.v1.Query/Params` | `GET /l1/fees/v1/params` | `{}` | `{"params":{"allowed_fee_denoms":["norb"],"validator_rewards_ratio":"0.98","community_pool_ratio":"0.02"}}` |
+| Factory denoms | `build\orbitalisd.exe query tokenfactory denoms --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.tokenfactory.v1.Query/Denoms` | `GET /l1/tokenfactory/v1/denoms` | `{}` | `{"denoms":[{"denom":"factory/orb1.../gold","admin":"orb1..."}]}` |
+| Factory denom | `build\orbitalisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.tokenfactory.v1.Query/Denom` | `GET /l1/tokenfactory/v1/denom/{denom}` | `{"denom":"factory/orb1.../gold"}` | `{"metadata":{"denom":"factory/orb1.../gold","admin":"orb1..."}}` |
+| DEX pools | `build\orbitalisd.exe query dex pools --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.dex.v1.Query/Pools` | `GET /l1/dex/v1/pools` | `{}` | `{"pools":[{"id":"1","denom0":"factory/orb1.../gold","denom1":"norb","lp_denom":"lp/1"}]}` |
+| DEX pool | `build\orbitalisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.dex.v1.Query/Pool` | `GET /l1/dex/v1/pools/{pool_id}` | `{"pool_id":"1"}` | `{"pool":{"id":"1","reserve0":"10000000","reserve1":"10000000","lp_denom":"lp/1"}}` |
+
+CometBFT RPC remains available for node-level checks that are not gRPC services:
+
+| Query | Endpoint | Expected result |
+| --- | --- | --- |
+| RPC status | `GET http://127.0.0.1:26657/status` | `result.node_info.network = orbitalis-local-1` |
+| RPC peers | `GET http://127.0.0.1:26657/net_info` | peer count for multi-validator localnet |
+| RPC validator set | `GET http://127.0.0.1:26657/validators?per_page=100` | expected validator count with positive voting power |
 
 ## Error Contract
 

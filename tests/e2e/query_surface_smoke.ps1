@@ -146,6 +146,30 @@ function Invoke-QueryGrpcJson {
   return Invoke-LocalnetCliJson -Binary $Binary -Arguments ($Arguments + @("--grpc-addr", $grpcAddr, "--grpc-insecure", "--node", $rpcNode, "--output", "json"))
 }
 
+function Assert-QueryGrpcFailure {
+  param(
+    [string[]]$Arguments,
+    [string]$ExpectedText
+  )
+
+  $fullArgs = $Arguments + @("--grpc-addr", $grpcAddr, "--grpc-insecure", "--node", $rpcNode, "--output", "json")
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & $Binary @fullArgs 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+  if ($exitCode -eq 0) {
+    throw "gRPC query succeeded but failure was expected: $Binary $($fullArgs -join ' ')"
+  }
+  $text = $output -join "`n"
+  if ($ExpectedText -and ($text -notmatch [regex]::Escape($ExpectedText))) {
+    throw "gRPC query failed, but output did not contain '$ExpectedText': $text"
+  }
+}
+
 Push-Location $RepoRoot
 try {
   & .\scripts\localnet\stop.ps1 -OutputDir $OutputDir
@@ -175,10 +199,18 @@ try {
   if ($balance.balance.denom -ne "norb" -or [int64]$balance.balance.amount -le 0) {
     throw "CLI bank balance must return positive norb balance"
   }
+  $balanceGrpc = Invoke-QueryGrpcJson -Arguments @("query", "bank", "balance", $node0, "norb")
+  if ($balanceGrpc.balance.denom -ne "norb" -or [int64]$balanceGrpc.balance.amount -le 0) {
+    throw "gRPC bank balance must return positive norb balance"
+  }
 
   $validators = Invoke-QueryCliJson -Arguments @("query", "staking", "validators")
   if (@($validators.validators).Count -ne $ValidatorCount) {
     throw "CLI staking validators count mismatch"
+  }
+  $validatorsGrpc = Invoke-QueryGrpcJson -Arguments @("query", "staking", "validators")
+  if (@($validatorsGrpc.validators).Count -ne $ValidatorCount) {
+    throw "gRPC staking validators count mismatch"
   }
 
   $feesParams = Invoke-QueryGrpcJson -Arguments @("query", "fees", "params")
@@ -209,6 +241,10 @@ try {
   $restNorb = @($restBalances.balances) | Where-Object { $_.denom -eq "norb" } | Select-Object -First 1
   if (-not $restNorb -or [int64]$restNorb.amount -le 0) {
     throw "REST bank balances must include positive norb"
+  }
+  $restBalanceByDenom = Invoke-RestJson -Path "/cosmos/bank/v1beta1/balances/$node0/by_denom?denom=norb"
+  if ($restBalanceByDenom.balance.denom -ne "norb" -or [int64]$restBalanceByDenom.balance.amount -le 0) {
+    throw "REST bank balance by denom must include positive norb"
   }
   $restValidators = Invoke-RestJson -Path "/cosmos/staking/v1beta1/validators"
   if (@($restValidators.validators).Count -ne $ValidatorCount) {
@@ -258,6 +294,8 @@ try {
     throw "REST DEX pools must return one pool after create-pool"
   }
   Assert-RestError -Path "/l1/dex/v1/pools/0" -ExpectedStatus 400
+  Assert-RestError -Path "/l1/dex/v1/pools/999" -ExpectedStatus 404
+  Assert-QueryGrpcFailure -Arguments @("query", "dex", "pool", "999") -ExpectedText "pool not found"
   Write-Host "DEX gRPC/REST pool queries passed"
 
   Write-Host "query surface smoke completed at height $(Get-LocalnetHeight -RPCPort $node0Ports.RPC)"
