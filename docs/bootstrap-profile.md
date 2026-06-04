@@ -71,7 +71,7 @@ Module account permissions are intentionally narrow:
 
 ## Commands
 
-For the full operator CLI runbook, including reusable endpoint variables, common tx flags, and troubleshooting, see [operator-commands.md](operator-commands.md).
+For the executable working-prototype contract, including required flows, gaps, blocker classification, and evidence links, see [prototype-contract.md](prototype-contract.md). For the full operator CLI runbook, including reusable endpoint variables, common tx flags, and troubleshooting, see [operator-commands.md](operator-commands.md).
 
 Initialize the default 3-validator localnet:
 
