@@ -9,26 +9,7 @@ function Write-AcceptanceStep {
 function Invoke-AcceptanceBuild {
   param([pscustomobject]$Context)
 
-  $go = Join-Path $Context.RepoRoot ".work\tools\go1.25.11\go\bin\go.exe"
-  if (!(Test-Path -LiteralPath $go)) {
-    $go = "go"
-  }
-
-  $goCache = Join-Path $Context.RepoRoot ".work\gocache"
-  New-Item -ItemType Directory -Force -Path $goCache | Out-Null
-  $env:GOCACHE = $goCache
-
-  $goTmp = Join-Path $Context.RepoRoot ".work\gotmp"
-  New-Item -ItemType Directory -Force -Path $goTmp | Out-Null
-  $env:GOTMPDIR = $goTmp
-
-  New-Item -ItemType Directory -Force -Path (Split-Path $Context.Binary) | Out-Null
-  & $go build -p=1 -o $Context.Binary ./cmd/l1d
-  if ($LASTEXITCODE -ne 0) {
-    throw "go build failed"
-  }
-
-  & $Context.Binary version | Out-Host
+  & (Join-Path $Context.RepoRoot "scripts\build-orbitalisd.ps1") -Binary $Context.Binary
 }
 
 function Invoke-AcceptanceLocalnetScript {

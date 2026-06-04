@@ -27,16 +27,12 @@ Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output director
 if ($ValidatorCount -lt 1) { throw "ValidatorCount must be at least 1" }
 if ($PortStride -lt 1) { throw "PortStride must be at least 1" }
 
-$Go = Join-Path $RepoRoot ".work\tools\go1.25.11\go\bin\go.exe"
-if (!(Test-Path $Go)) { $Go = "go" }
-
 if ($SkipBuild) {
   if (!(Test-Path -LiteralPath $Binary)) {
     throw "Binary not found at $Binary and -SkipBuild was specified"
   }
 } else {
-  New-Item -ItemType Directory -Force -Path (Split-Path $Binary) | Out-Null
-  & $Go build -o $Binary ./cmd/l1d
+  & (Join-Path $RepoRoot "scripts\build-orbitalisd.ps1") -Binary $Binary
 }
 
 Remove-LocalnetDirectory -OutputDir $OutputDir

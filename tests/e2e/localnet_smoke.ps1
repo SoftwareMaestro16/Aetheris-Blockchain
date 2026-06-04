@@ -16,6 +16,7 @@ param(
   [bool]$EnableAPI = $true,
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
+  [switch]$SkipBuild,
   [switch]$SkipBankTx,
   [switch]$SkipNegativeChecks
 )
@@ -112,7 +113,8 @@ function Test-LocalnetNegativeCases {
     -BaseGRPCPort $occupiedBaseGRPC `
     -SkipBuild | Out-Null
 
-  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), $occupiedBaseRPC)
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, $occupiedBaseRPC)
+  $listener.ExclusiveAddressUse = $true
   $listener.Start()
   try {
     Assert-Throws -Name "occupied RPC port" -Script {
@@ -137,7 +139,9 @@ function Test-LocalnetNegativeCases {
 Push-Location $RepoRoot
 try {
   & .\scripts\localnet\stop.ps1 -OutputDir $OutputDir
-  Invoke-WithCommonLocalnetArgs -ScriptPath ".\scripts\localnet\init.ps1"
+  $initExtra = @{}
+  if ($SkipBuild) { $initExtra.SkipBuild = $true }
+  Invoke-WithCommonLocalnetArgs -ScriptPath ".\scripts\localnet\init.ps1" -Extra $initExtra
   Invoke-WithCommonLocalnetArgs -ScriptPath ".\scripts\localnet\validate-genesis.ps1"
   Invoke-WithCommonLocalnetArgs -ScriptPath ".\scripts\localnet\start.ps1" -Extra @{ NoInit = $true }
 

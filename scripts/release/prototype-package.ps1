@@ -100,21 +100,13 @@ try {
     if (!(Test-Path -LiteralPath $Binary)) { throw "Binary not found: $Binary" }
     Copy-Item -LiteralPath $Binary -Destination $packageBinary -Force
   } else {
-    $go = Join-Path $RepoRoot ".work\tools\go1.25.11\go\bin\go.exe"
-    if (!(Test-Path -LiteralPath $go)) { $go = "go" }
-    $goCache = Join-Path $RepoRoot ".work\gocache"
-    $goTmp = Join-Path $RepoRoot ".work\gotmp"
-    New-Item -ItemType Directory -Force -Path $goCache, $goTmp | Out-Null
-    $env:GOCACHE = $goCache
-    $env:GOTMPDIR = $goTmp
-    $env:GOOS = $TargetOS
-    $env:GOARCH = $TargetArch
-    $env:CGO_ENABLED = "0"
-    $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $dirty = if ((git status --porcelain --untracked-files=no) -eq $null) { "false" } else { "true" }
-    $ldflags = "-X github.com/sovereign-l1/l1/cmd/l1d/cmd.appVersion=$Version -X github.com/sovereign-l1/l1/cmd/l1d/cmd.gitCommit=$Commit -X github.com/sovereign-l1/l1/cmd/l1d/cmd.buildDate=$buildDate -X github.com/sovereign-l1/l1/cmd/l1d/cmd.dirty=$dirty"
-    & $go build -trimpath -p=1 -ldflags $ldflags -o $packageBinary ./cmd/l1d
-    if ($LASTEXITCODE -ne 0) { throw "go build failed for $TargetOS/$TargetArch" }
+    & (Join-Path $RepoRoot "scripts\build-orbitalisd.ps1") `
+      -Version $Version `
+      -Commit $Commit `
+      -TargetOS $TargetOS `
+      -TargetArch $TargetArch `
+      -Binary $packageBinary `
+      -Force
   }
 
   foreach ($doc in @(
