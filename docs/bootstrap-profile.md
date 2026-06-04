@@ -201,6 +201,7 @@ buf lint
 go build -o build/orbitalisd.exe ./cmd/l1d
 .\scripts\localnet\validate-genesis.ps1
 .\tests\e2e\prototype_acceptance.ps1
+.\scripts\security\prototype-audit.ps1 -Profile Fast
 .\tests\e2e\prototype_acceptance.ps1 -Profile Full -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\localnet_smoke.ps1
 .\tests\e2e\localnet_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
@@ -217,6 +218,5 @@ go build -o build/orbitalisd.exe ./cmd/l1d
 Security baseline:
 
 ```powershell
-go mod verify
-gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --verbose
+.\scripts\security\prototype-audit.ps1 -Profile Full
 ```

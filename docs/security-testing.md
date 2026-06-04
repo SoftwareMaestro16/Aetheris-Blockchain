@@ -62,3 +62,5 @@ After each implementation increment:
 - Next refactor proposal.
 
 The detailed governance loop lives in [Engineering Governance](engineering-governance.md) and is mandatory before code changes, after tests, and before commits.
+
+The prototype release gate lives in [Prototype Security And Determinism Audit Gate](security/prototype-audit-gate.md). It is the mandatory runnable checklist for V2 prototype release readiness.
