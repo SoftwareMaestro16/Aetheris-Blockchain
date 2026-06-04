@@ -15,7 +15,7 @@ import (
 	"github.com/sovereign-l1/l1/x/dex/types"
 )
 
-func fundAccount(t *testing.T, app *l1app.L1App, ctx sdk.Context, addr sdk.AccAddress, coins sdk.Coins) {
+func fundAccount(t testing.TB, app *l1app.L1App, ctx sdk.Context, addr sdk.AccAddress, coins sdk.Coins) {
 	t.Helper()
 	require.NoError(t, app.BankKeeper.MintCoins(ctx, minttypes.ModuleName, coins))
 	require.NoError(t, app.BankKeeper.SendCoinsFromModuleToAccount(ctx, minttypes.ModuleName, addr, coins))

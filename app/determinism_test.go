@@ -72,7 +72,7 @@ func TestSameGenesisAndEmptyBlockSequenceExportDeterministically(t *testing.T) {
 	}
 }
 
-func deterministicGenesisWithValidator(t *testing.T) (*L1App, GenesisState, *cmttypes.ValidatorSet) {
+func deterministicGenesisWithValidator(t testing.TB) (*L1App, GenesisState, *cmttypes.ValidatorSet) {
 	t.Helper()
 
 	app, genesis := setup(true, 5)
@@ -95,7 +95,7 @@ func deterministicGenesisWithValidator(t *testing.T) (*L1App, GenesisState, *cmt
 	return app, genesis, valSet
 }
 
-func runEmptyBlocksAndExportAppState(t *testing.T, genesisBytes []byte, nextValidatorsHash []byte, blocks int64) []byte {
+func runEmptyBlocksAndExportAppState(t testing.TB, genesisBytes []byte, nextValidatorsHash []byte, blocks int64) []byte {
 	t.Helper()
 
 	appOptions := make(simtestutil.AppOptionsMap, 0)

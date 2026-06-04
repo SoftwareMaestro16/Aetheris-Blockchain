@@ -94,7 +94,7 @@ func NewSimappWithCustomOptions(t *testing.T, isCheckTx bool, options SetupOptio
 }
 
 // Setup initializes a new L1App. A Nop logger is set in L1App.
-func Setup(t *testing.T, isCheckTx bool) *L1App {
+func Setup(t testing.TB, isCheckTx bool) *L1App {
 	t.Helper()
 
 	privVal := mock.NewPV()
@@ -122,7 +122,7 @@ func Setup(t *testing.T, isCheckTx bool) *L1App {
 // that also act as delegators. For simplicity, each validator is bonded with a delegation
 // of one consensus engine unit in the default token of the l1app from first genesis
 // account. A Nop logger is set in L1App.
-func SetupWithGenesisValSet(t *testing.T, valSet *cmttypes.ValidatorSet, genAccs []authtypes.GenesisAccount, balances ...banktypes.Balance) *L1App {
+func SetupWithGenesisValSet(t testing.TB, valSet *cmttypes.ValidatorSet, genAccs []authtypes.GenesisAccount, balances ...banktypes.Balance) *L1App {
 	t.Helper()
 
 	app, genesisState := setup(true, 5)
