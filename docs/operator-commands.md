@@ -141,6 +141,14 @@ build\orbitalisd.exe query staking delegation $NODE0 $VALIDATOR --node $NODE --o
 
 ## Bank Tx
 
+Fund local prototype accounts from the genesis-funded `node0` account. This is local-only and uses normal `bank send`, not a faucet mint:
+
+```powershell
+$NODE1_HOME = ".localnet\node1\orbitalisd"
+$NODE1 = build\orbitalisd.exe keys show node1 -a --home $NODE1_HOME --keyring-backend $KEYRING
+.\scripts\localnet\fund.ps1 -OutputDir .localnet -Binary build\orbitalisd.exe -ChainId $CHAIN_ID -RPCPort 26657 -Recipients @($NODE1) -Amount 1000000norb
+```
+
 Get a recipient from node1:
 
 ```powershell

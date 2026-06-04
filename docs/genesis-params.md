@@ -55,4 +55,4 @@ The tracked local profile is `orbitalis-local-1`. Its operator-facing genesis, a
 
 ## Upgrade Policy
 
-Every module with persistent state must include a migrations package once implementation begins. Initial migrations may be no-ops, but the upgrade path must exist before testnet launch.
+Every module with persistent state must include a migrations package once implementation begins. Initial migrations may be no-ops, but the upgrade path must exist before testnet launch. See [upgrade-migrations.md](upgrade-migrations.md) for the dry-run and future migration checklist.

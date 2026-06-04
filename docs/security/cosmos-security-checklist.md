@@ -28,6 +28,7 @@ Every change must record architecture, security, scalability, and test strategy 
 ## App
 
 - InitGenesis and ExportGenesis validate module state, metadata, params, module accounts, and validator stake before state is trusted.
+- Upgrade handlers and future migrations follow [upgrade-migrations.md](../upgrade-migrations.md), including version-map sanity and export validation.
 - BeginBlocker, EndBlocker, ante decorators, vote extensions, and app wiring do not depend on wall time, randomness, map iteration order, floats, goroutines, select races, external APIs, pointer addresses, or platform-dependent serialization.
 - Panic is limited to impossible startup/wiring failures. Malformed tx, query, genesis input, and params input return errors.
 - Module accounts are registered with the minimum permissions required for tokenfactory, dex, fees, staking, bank, mint, and distribution interactions.
