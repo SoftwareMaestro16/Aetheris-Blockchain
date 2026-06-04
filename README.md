@@ -28,23 +28,29 @@ flowchart LR
 ## Build And Test
 
 ```powershell
-$env:PATH = "$PWD\.work\tools\go1.25.11\go\bin;$env:PATH"
-go test ./...
-go vet ./...
-go build -o build/orbitalisd.exe ./cmd/l1d
+$env:PATH = "$PWD\.work\tools\bin;$PWD\.work\tools\go1.25.11\go\bin;$env:PATH"
+$env:GOWORK = "off"
+go test -p 1 ./...
+go vet -p 1 ./...
+buf lint
+buf generate
+go build -p 1 -o build/orbitalisd.exe ./cmd/l1d
 ```
 
 If you already have Go `1.25.x` on PATH, the `.work` toolchain is not required.
 
-Proto checks:
-
-```powershell
-$env:PATH = "$PWD\.work\tools\bin;$env:PATH"
-buf lint
-buf generate
-```
-
 `buf generate` writes verification output into ignored `.work\bufgen`; checked-in generated Go code lives under `x\*\types`.
+
+CI runs the same quality gates as separate GitHub Actions jobs:
+
+- `unit`: `go test ./...`
+- `vet`: `go vet ./...`
+- `proto`: `buf lint` and generation into `.work/bufgen`
+- `build`: `go build -o build/orbitalisd ./cmd/l1d`
+- `e2e-localnet`: 3-validator localnet smoke and restart test
+- `ci-gate`: aggregate required check; any failed, skipped, or cancelled job fails the gate
+
+The workflow uses read-only repository permissions, pinned action revisions, Go module/build caching, and does not upload `.localnet`, validator keys, mnemonics, logs, or chain data as artifacts.
 
 ## Local 3-Node Network
 

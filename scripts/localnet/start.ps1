@@ -20,12 +20,18 @@ for ($i = 0; $i -lt 3; $i++) {
   $nodeHome = Join-Path $OutputDir "node$i\orbitalisd"
   $stdout = Join-Path $logDir "node$i.out.log"
   $stderr = Join-Path $logDir "node$i.err.log"
-  $proc = Start-Process -FilePath $Binary `
-    -ArgumentList @("start", "--home", $nodeHome) `
-    -RedirectStandardOutput $stdout `
-    -RedirectStandardError $stderr `
-    -WindowStyle Hidden `
-    -PassThru
+  $startArgs = @{
+    FilePath = $Binary
+    ArgumentList = @("start", "--home", $nodeHome)
+    RedirectStandardOutput = $stdout
+    RedirectStandardError = $stderr
+    PassThru = $true
+  }
+  if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    $startArgs.WindowStyle = "Hidden"
+  }
+
+  $proc = Start-Process @startArgs
   Set-Content -LiteralPath (Join-Path $pidDir "node$i.pid") -Value $proc.Id
   Write-Host "Started node$i pid=$($proc.Id)"
 }
