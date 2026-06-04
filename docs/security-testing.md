@@ -25,6 +25,8 @@ Per module:
 
 ## Adversarial Tests
 
+Current attacker models and implemented adversarial/e2e coverage are documented in [Adversarial And E2E Coverage](adversarial-e2e-coverage.md) and [Custom Module Attacker Model](../tests/adversarial/ATTACKER_MODEL.md).
+
 Required cases:
 - Invalid signer and unauthorized admin calls.
 - Duplicate or replayed messages where applicable.

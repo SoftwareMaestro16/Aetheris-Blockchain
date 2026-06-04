@@ -82,9 +82,13 @@ Smoke tests:
 ```powershell
 .\tests\e2e\localnet_smoke.ps1 -ValidatorCounts 3
 .\tests\e2e\localnet_smoke.ps1 -ValidatorCounts 3,5,10 -TimeoutSeconds 120
+.\tests\e2e\adversarial_smoke.ps1 -SpamCount 3 -TimeoutSeconds 120
 ```
 
 The smoke test checks block production, restart persistence, bank send, tokenfactory create/mint, DEX pool/swap, fee queries, and negative configuration paths.
+The adversarial smoke test checks malformed broadcasts, wrong-fee-denom mempool spam, DEX same-denom pool rejection, and continued block production after rejected inputs.
+
+Adversarial and cross-module coverage is documented in [docs/adversarial-e2e-coverage.md](docs/adversarial-e2e-coverage.md). Custom module attacker models live in [tests/adversarial/ATTACKER_MODEL.md](tests/adversarial/ATTACKER_MODEL.md).
 
 Snapshot and state-sync helpers:
 
