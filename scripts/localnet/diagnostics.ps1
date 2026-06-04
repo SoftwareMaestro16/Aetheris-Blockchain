@@ -11,7 +11,8 @@ param(
   [bool]$EnableAPI = $true,
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
-  [int]$TimeoutSeconds = 10
+  [int]$TimeoutSeconds = 10,
+  [int]$LogTailLines = 200
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,13 +42,19 @@ $meta = [ordered]@{
   created_at_utc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   output_dir     = $OutputDir
   node_count     = $nodes.Count
-  note           = "Excluded keyring data, priv_validator_key.json, priv_validator_state.json, and node_key.json."
+  note           = "Excluded keyring data, priv_validator_key.json, priv_validator_state.json, node_key.json, and redacted logs/config snapshots."
 }
 $meta | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $BundleDir "manifest.json")
 
 $logDir = Join-Path $OutputDir "logs"
 if (Test-Path -LiteralPath $logDir) {
-  Copy-Item -LiteralPath $logDir -Destination (Join-Path $BundleDir "logs") -Recurse -Force
+  $bundleLogDir = Join-Path $BundleDir "logs"
+  New-Item -ItemType Directory -Force -Path $bundleLogDir | Out-Null
+  foreach ($file in @(Get-ChildItem -LiteralPath $logDir -Filter "*.log" -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    $tail = @(Get-Content -LiteralPath $file.FullName -Tail $LogTailLines -ErrorAction SilentlyContinue)
+    ConvertTo-LocalnetRedactedText -Text ($tail -join "`n") |
+      Set-Content -LiteralPath (Join-Path $bundleLogDir $file.Name)
+  }
 }
 
 foreach ($node in $nodes) {
@@ -59,13 +66,19 @@ foreach ($node in $nodes) {
   foreach ($file in @("app.toml", "config.toml", "genesis.json")) {
     $source = Join-Path $nodeHome "config\$file"
     if (Test-Path -LiteralPath $source) {
-      Copy-Item -LiteralPath $source -Destination (Join-Path $safeConfigDir $file) -Force
+      Copy-LocalnetRedactedFile -Source $source -Destination (Join-Path $safeConfigDir $file)
     }
   }
 }
 
+ConvertTo-Json -InputObject @(Get-LocalnetProcessSnapshot -OutputDir $OutputDir) -Depth 5 |
+  Set-Content -LiteralPath (Join-Path $BundleDir "processes.json")
+ConvertTo-Json -InputObject @(Get-LocalnetRecentLogs -OutputDir $OutputDir -TailLines 40) -Depth 5 |
+  Set-Content -LiteralPath (Join-Path $BundleDir "recent-logs.json")
+
+$p = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
+
 if ($EnableRPC) {
-  $p = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
   $rpcDir = Join-Path $BundleDir "rpc"
   New-Item -ItemType Directory -Force -Path $rpcDir | Out-Null
 
@@ -82,25 +95,26 @@ if ($EnableRPC) {
       $_.Exception.Message | Set-Content -LiteralPath (Join-Path $rpcDir "$($item.Name).error.txt")
     }
   }
+}
 
-  try {
-    & (Join-Path $PSScriptRoot "health.ps1") `
-      -OutputDir $OutputDir `
-      -ValidatorCount $ValidatorCount `
-      -BaseP2PPort $BaseP2PPort `
-      -BaseRPCPort $BaseRPCPort `
-      -BaseRESTPort $BaseRESTPort `
-      -BaseGRPCPort $BaseGRPCPort `
-      -BasePprofPort $BasePprofPort `
-      -PortStride $PortStride `
-      -EnableAPI $EnableAPI `
-      -EnableGRPC $EnableGRPC `
-      -EnableRPC $EnableRPC `
-      -TimeoutSeconds $TimeoutSeconds `
-      -Json | Set-Content -LiteralPath (Join-Path $BundleDir "health.json")
-  } catch {
-    $_.Exception.Message | Set-Content -LiteralPath (Join-Path $BundleDir "health.error.txt")
-  }
+try {
+  & (Join-Path $PSScriptRoot "health.ps1") `
+    -OutputDir $OutputDir `
+    -ValidatorCount $ValidatorCount `
+    -BaseP2PPort $BaseP2PPort `
+    -BaseRPCPort $BaseRPCPort `
+    -BaseRESTPort $BaseRESTPort `
+    -BaseGRPCPort $BaseGRPCPort `
+    -BasePprofPort $BasePprofPort `
+    -PortStride $PortStride `
+    -EnableAPI $EnableAPI `
+    -EnableGRPC $EnableGRPC `
+    -EnableRPC $EnableRPC `
+    -LogTailLines 40 `
+    -TimeoutSeconds $TimeoutSeconds `
+    -Json | Set-Content -LiteralPath (Join-Path $BundleDir "health.json")
+} catch {
+  $_.Exception.Message | Set-Content -LiteralPath (Join-Path $BundleDir "health.error.txt")
 }
 
 Write-Host "Diagnostic bundle written to $BundleDir"

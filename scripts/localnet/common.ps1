@@ -7,7 +7,8 @@ foreach ($helper in @(
     "wait.ps1",
     "cli.ps1",
     "queries.ps1",
-    "process.ps1"
+    "process.ps1",
+    "observability.ps1"
   )) {
   . (Join-Path $localnetLib $helper)
 }

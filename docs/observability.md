@@ -21,6 +21,9 @@ The health command checks:
 - peer availability for multi-validator localnet
 - REST gateway `/cosmos/base/tendermint/v1beta1/blocks/latest`
 - gRPC TCP readiness
+- tracked `orbitalisd` process ids
+- generated telemetry mode from node `app.toml`
+- recent redacted node log tails
 
 Use `-Json` when a script or CI job needs machine-readable output:
 
@@ -69,16 +72,17 @@ Collect a local diagnostic bundle in an ignored `.work` path:
 The bundle includes:
 
 - localnet manifest
-- node logs
-- safe config files: `app.toml`, `config.toml`, `genesis.json`
+- recent redacted node logs
+- safe redacted config files: `app.toml`, `config.toml`, `genesis.json`
 - RPC snapshots: `status`, `net_info`, `validators`
 - health output
+- process list and recent-log JSON
 
-The bundle excludes keyring directories, `priv_validator_key.json`, `priv_validator_state.json`, and `node_key.json`. Do not attach bundles from non-local environments without a separate secret review.
+The bundle excludes keyring directories, `priv_validator_key.json`, `priv_validator_state.json`, and `node_key.json`. Log and config snapshots redact common mnemonic, private key, password, token, seed, and secret patterns. Do not attach bundles from non-local environments without a separate secret review.
 
-## Metrics Policy
+## Minimal Metrics Policy
 
-SDK telemetry is enabled in the generated app config for prototype diagnostics. CometBFT Prometheus export is not a release gate for this prototype profile. If Prometheus is enabled in a later profile, labels must stay bounded: do not add user addresses, tx hashes, denoms, pool ids, or other unbounded values as labels without an explicit metrics cardinality review.
+SDK telemetry mode is reported by `health.ps1` from generated app config. CometBFT Prometheus export is not a release gate for this prototype profile. If Prometheus is enabled in a later profile, labels must stay bounded: do not add user addresses, tx hashes, denoms, pool ids, or other unbounded values as labels without an explicit metrics cardinality review.
 
 ## Quick Triage
 

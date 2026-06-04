@@ -11,6 +11,7 @@ param(
   [bool]$EnableAPI = $true,
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
+  [int]$LogTailLines = 20,
   [switch]$Json
 )
 
@@ -43,7 +44,21 @@ $summary = [ordered]@{
   peers            = "unchecked"
   rest             = "disabled"
   grpc             = "disabled"
+  processes        = @()
+  telemetry        = @()
+  recent_logs      = @()
 }
+
+foreach ($node in $nodes) {
+  $nodeHome = Join-Path $node.FullName "orbitalisd"
+  $summary.telemetry += [ordered]@{
+    node      = $node.Name
+    telemetry = Get-LocalnetNodeTelemetry -NodeHome $nodeHome
+  }
+}
+
+$summary.processes = @(Get-LocalnetProcessSnapshot -OutputDir $OutputDir)
+$summary.recent_logs = @(Get-LocalnetRecentLogs -OutputDir $OutputDir -TailLines $LogTailLines)
 
 if ($EnableRPC) {
   $status = Wait-LocalnetRpc -RPCPort $p.RPC -TimeoutSeconds $TimeoutSeconds
@@ -78,6 +93,10 @@ if ($Json) {
   $summary | ConvertTo-Json -Depth 5
 } else {
   foreach ($item in $summary.GetEnumerator()) {
-    Write-Host "$($item.Key): $($item.Value)"
+    if ($item.Value -is [array]) {
+      Write-Host "$($item.Key): $($item.Value.Count) item(s)"
+    } else {
+      Write-Host "$($item.Key): $($item.Value)"
+    }
   }
 }

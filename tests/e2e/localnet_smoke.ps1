@@ -166,6 +166,25 @@ try {
     Write-Host "gRPC TCP endpoint is listening on port $($node0Ports.GRPC)"
   }
 
+  $health = & .\scripts\localnet\health.ps1 `
+    -OutputDir $OutputDir `
+    -ValidatorCount $ValidatorCount `
+    -BaseP2PPort $BaseP2PPort `
+    -BaseRPCPort $BaseRPCPort `
+    -BaseRESTPort $BaseRESTPort `
+    -BaseGRPCPort $BaseGRPCPort `
+    -BasePprofPort $BasePprofPort `
+    -PortStride $PortStride `
+    -EnableAPI $EnableAPI `
+    -EnableGRPC $EnableGRPC `
+    -EnableRPC $EnableRPC `
+    -Json | ConvertFrom-Json
+  if ($EnableRPC -and $health.rpc -ne "ok") { throw "health RPC check failed: $($health.rpc)" }
+  if ($EnableAPI -and $health.rest -ne "ok") { throw "health REST check failed: $($health.rest)" }
+  if ($EnableGRPC -and $health.grpc -ne "ok") { throw "health gRPC check failed: $($health.grpc)" }
+  if (@($health.processes).Count -lt $ValidatorCount) { throw "health process list has fewer entries than validators" }
+  Write-Host "health summary passed"
+
   Invoke-LocalnetCliJson -Binary $Binary -Arguments @("query", "block", "--node", $rpcNode, "--output", "json") | Out-Null
   Write-Host "query block succeeded"
 
