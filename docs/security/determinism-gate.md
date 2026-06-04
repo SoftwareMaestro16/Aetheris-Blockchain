@@ -9,7 +9,7 @@ Fast local scope:
 - `app`: ABCI wiring, genesis/export, keeper assembly, vote-extension hooks
 - `x/*/keeper`: msg servers, ante decorators, keepers, query/list iterators
 - `x/*/types`: params, genesis validation, deterministic integer math helpers
-- `cmd/l1d/cmd`: CLI/testnet findings are scanned and downgraded only when they do not affect AppHash
+- `cmd/l1d/cmd`: CLI/testnet/speedtest findings are scanned and downgraded only when they do not affect AppHash
 
 The gate scans for wall clock use, randomness, floats, unordered map iteration, goroutines, `select`, platform-dependent `int`/`uint`, external API calls, and `panic`.
 
@@ -32,6 +32,7 @@ Outputs are written under `.work\security\determinism-gate-*`:
 | --- | --- | --- |
 | `crypto/rand` in `app/abci.go` dummy vote extension | Medium | Does not write app state or AppHash. Replace or disable before public validators. |
 | `cmttime.Now()` in `cmd/l1d/cmd/testnet_genesis.go` | Low | Local genesis timestamp. One init run writes identical genesis to all local nodes. |
+| `time.Now()` and `math/rand` in `cmd/l1d/cmd/speedtest.go` | Low | CLI benchmark only; not consensus execution. |
 | `panic` in app/module wiring and export helpers | Medium | Startup/genesis/export paths only. Tx, ante, and query paths must return errors for malformed input. |
 | `app/test_helpers.go` nondeterminism | Low | Test/dev helper surface used by tests; not an operator command or consensus transition. |
 

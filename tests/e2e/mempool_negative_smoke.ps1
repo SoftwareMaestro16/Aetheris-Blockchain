@@ -168,6 +168,11 @@ function Get-TokenfactoryDenomCount {
   return @($res.denoms).Count
 }
 
+function Get-DexPoolCount {
+  $res = Invoke-QueryCliJson -Arguments @("query", "dex", "pools", "--limit", "50")
+  return @($res.pools).Count
+}
+
 function Invoke-NegativeTx {
   param(
     [string]$Name,
@@ -290,7 +295,8 @@ try {
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", "negasset") -FromHome $node0Home | Out-Null
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
-  Write-Host "baseline tokenfactory denom created"
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  Write-Host "baseline tokenfactory denom and DEX pool created"
 
   $node1Before = Get-BalanceAmount -Address $node1 -Denom "norb"
   $wrongFee = Invoke-NegativeTx `
@@ -344,6 +350,24 @@ try {
     -ExpectedText "subdenom|invalid|3-64" `
     -AllowedPhases @("CLI", "DeliverTx") | Out-Null
   Assert-True ((Get-TokenfactoryDenomCount) -eq $denomCountBefore) "malformed subdenom changed tokenfactory denom count"
+
+  $poolCountBefore = Get-DexPoolCount
+  $poolBefore = (Invoke-QueryCliJson -Arguments @("query", "dex", "pool", "1")).pool | ConvertTo-Json -Depth 20 -Compress
+  Invoke-NegativeTx `
+    -Name "duplicate DEX pool" `
+    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "dex", "create-pool", "1norb", "1$factoryDenom") -FromHome $node0Home) `
+    -ExpectedText "pool already exists" `
+    -AllowedPhases @("DeliverTx") | Out-Null
+  Assert-True ((Get-DexPoolCount) -eq $poolCountBefore) "duplicate pool changed pool count"
+  $poolAfter = (Invoke-QueryCliJson -Arguments @("query", "dex", "pool", "1")).pool | ConvertTo-Json -Depth 20 -Compress
+  Assert-True ($poolAfter -eq $poolBefore) "duplicate pool changed existing pool state"
+
+  Invoke-NegativeTx `
+    -Name "malformed DEX denom" `
+    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "dex", "create-pool", "1norb", "1!") -FromHome $node0Home) `
+    -ExpectedText "invalid coin|invalid denom|invalid" `
+    -AllowedPhases @("CLI", "DeliverTx") | Out-Null
+  Assert-True ((Get-DexPoolCount) -eq $poolCountBefore) "malformed DEX denom changed pool count"
 
   Write-Host "mempool negative smoke completed: wrong fee=$($wrongFee.Phase), insufficient=$($insufficient.Phase), replay=$($replay.Phase)"
 } finally {

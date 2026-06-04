@@ -232,6 +232,14 @@ try {
     throw "fresh localnet tokenfactory denoms must include pagination"
   }
 
+  $emptyPools = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pools")
+  if (@($emptyPools.pools).Count -ne 0) {
+    throw "fresh localnet dex pools must be empty"
+  }
+  if (-not $emptyPools.pagination) {
+    throw "fresh localnet dex pools must include pagination"
+  }
+
   $restBlock = Invoke-RestJson -Path "/cosmos/base/tendermint/v1beta1/blocks/latest"
   if (-not $restBlock.block.header.height) {
     throw "REST latest block must include block.header.height"
@@ -264,7 +272,14 @@ try {
   if (-not $restDenoms.pagination) {
     throw "REST tokenfactory denoms must include pagination"
   }
-  Write-Host "REST base, bank, staking, fees, and tokenfactory list queries passed"
+  $restPools = Invoke-RestJson -Path "/l1/dex/v1/pools"
+  if (@($restPools.pools).Count -ne 0) {
+    throw "REST dex pools must be empty on fresh localnet"
+  }
+  if (-not $restPools.pagination) {
+    throw "REST dex pools must include pagination"
+  }
+  Write-Host "REST base, bank, staking, fees, tokenfactory, and dex list queries passed"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
   $factoryDenom = "factory/$node0/$FactorySubdenom"
@@ -292,6 +307,36 @@ try {
   }
   Assert-RestError -Path "/l1/tokenfactory/v1/denom/factory/$node0/missing" -ExpectedStatus 404
   Write-Host "tokenfactory gRPC/REST denom queries passed"
+
+  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom2", $node0) -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom2") -FromHome $node0Home | Out-Null
+
+  $poolCli = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pool", "1")
+  if ($poolCli.pool.id -ne "1" -and [int64]$poolCli.pool.id -ne 1) {
+    throw "DEX pool query must return pool id 1"
+  }
+  $poolRest = Invoke-RestJson -Path "/l1/dex/v1/pools/1"
+  if ($poolRest.pool.lp_denom -ne "lp/1") {
+    throw "REST DEX pool must return lp/1"
+  }
+  $poolsCli = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pools", "--limit", "1")
+  if (@($poolsCli.pools).Count -ne 1 -or -not (Test-HasNextKey -Response $poolsCli)) {
+    throw "gRPC DEX pools --limit 1 must return one pool and next_key"
+  }
+  $poolsRest = Invoke-RestJson -Path "/l1/dex/v1/pools"
+  if (@($poolsRest.pools).Count -ne 2) {
+    throw "REST DEX pools must return two pools after create-pool"
+  }
+  $poolsPageRest = Invoke-RestJson -Path "/l1/dex/v1/pools?pagination.limit=1"
+  if (@($poolsPageRest.pools).Count -ne 1 -or -not (Test-HasNextKey -Response $poolsPageRest)) {
+    throw "REST DEX pools pagination.limit=1 must return one pool and next_key"
+  }
+  Assert-RestError -Path "/l1/dex/v1/pools/0" -ExpectedStatus 400
+  Assert-RestError -Path "/l1/dex/v1/pools/999" -ExpectedStatus 404
+  Assert-QueryGrpcFailure -Arguments @("query", "dex", "pool", "999") -ExpectedText "pool not found"
+  Write-Host "DEX gRPC/REST pool queries passed"
 
   Write-Host "query surface smoke completed at height $(Get-LocalnetHeight -RPCPort $node0Ports.RPC)"
 } finally {

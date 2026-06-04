@@ -194,6 +194,13 @@ try {
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", "badfee") -FromHome $node0Home -Fees $WrongFees -ExpectFailure -ExpectedLog $wrongFeeError | Out-Null
   Write-Host "tokenfactory tx with wrong fee denom is rejected"
 
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "1000norb", "1000testtoken") -FromHome $node0Home -Fees $AcceptedFees | Out-Null
+  Invoke-LocalnetCliJson -Binary $Binary -Arguments @("query", "dex", "pool", "1", "--node", $rpcNode, "--output", "json") | Out-Null
+  Write-Host "DEX create-pool with norb fee succeeded"
+
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10norb", "10testtoken") -FromHome $node0Home -Fees $WrongFees -ExpectFailure -ExpectedLog $wrongFeeError | Out-Null
+  Write-Host "DEX tx with wrong fee denom is rejected"
+
   $node0Balance = Get-LocalnetBankBalance -Binary $Binary -Address $node0 -Denom "norb" -RPCPort $node0Ports.RPC
   if ($node0Balance.denom -ne "norb" -or [int64]$node0Balance.amount -le 0) {
     throw "node0 must retain positive norb balance after fee smoke"

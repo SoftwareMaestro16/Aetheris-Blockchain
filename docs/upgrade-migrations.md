@@ -7,7 +7,7 @@ Prototype upgrades are consensus-critical. A migration must be deterministic, bo
 The current `UpgradeName` handler is a no-op migration pattern: it delegates to `ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)`. App tests verify:
 
 - the stored module version map includes every app module,
-- custom modules `tokenfactory` and `fees` have version `1`,
+- custom modules `tokenfactory`, `dex`, and `fees` have version `1`,
 - missing module versions and impossible future versions are rejected before migration,
 - the registered no-op upgrade handler can run from the current version map,
 - export after the dry-run upgrade produces valid genesis.

@@ -27,7 +27,11 @@ foreach ($row in @(
     'Tokenfactory mint',
     'Tokenfactory burn',
     'Tokenfactory change admin',
-    'Fees update params'
+    'Fees update params',
+    'DEX create pool',
+    'DEX add liquidity',
+    'DEX remove liquidity',
+    'DEX swap exact in'
   )) {
   Assert-Contains -Text $text -Pattern ([regex]::Escape($row)) -Message "transaction lifecycle matrix missing row: $row"
 }
@@ -55,8 +59,10 @@ foreach ($securityTerm in @(
 foreach ($evidence in @(
     'x/fees/keeper/ante_test.go',
     'x/tokenfactory/keeper/msg_server_test.go',
+    'x/dex/keeper/msg_server_test.go',
     'app/pos_test.go',
     'tests/e2e/tokenfactory_smoke.ps1',
+    'tests/e2e/dex_smoke.ps1',
     'tests/e2e/pos_smoke.ps1',
     'tests/e2e/prototype_acceptance.ps1'
   )) {

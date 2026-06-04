@@ -44,6 +44,7 @@ Client
 ## Custom Modules
 
 - `x/tokenfactory`: controlled custom denom creation, admin rights, minting, burning, and metadata.
+- `x/dex`: constant-product AMM with deterministic integer math.
 - `x/fees`: configurable protocol fee collection and distribution.
 - `x/bridge`: future interoperability module, disabled until a complete trust and verification model exists.
 

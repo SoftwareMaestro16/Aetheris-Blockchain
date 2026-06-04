@@ -48,5 +48,6 @@ Assert-True ($blocking.Count -eq 0) "untriaged High/Critical determinism finding
 
 $summary = Get-Content -Raw -LiteralPath $result.summary
 Assert-True ($summary -match "app\\abci.go") "expected vote extension triage missing"
+Assert-True ($summary -match "cmd\\l1d\\cmd\\speedtest.go") "expected speedtest triage missing"
 
 Write-Host "determinism gate test passed"

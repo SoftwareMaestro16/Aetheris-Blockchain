@@ -36,6 +36,10 @@ foreach ($eventType in @(
     'tokenfactory_mint',
     'tokenfactory_burn',
     'tokenfactory_change_admin',
+    'dex_create_pool',
+    'dex_add_liquidity',
+    'dex_remove_liquidity',
+    'dex_swap_exact_amount_in',
     'fees_update_params'
   )) {
   Assert-Contains -Text $text -Pattern ([regex]::Escape($eventType)) -Message "event contract missing event type: $eventType"
@@ -50,6 +54,11 @@ foreach ($attribute in @(
     'mint_to_address',
     'burn_from_address',
     'new_admin',
+    'pool_id',
+    'lp_denom',
+    'minted_shares',
+    'token_in',
+    'token_out',
     'allowed_fee_denom',
     'validator_rewards_ratio',
     'community_pool_ratio'

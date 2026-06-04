@@ -16,7 +16,7 @@ This document defines the prototype lifecycle contract for the native Orbitalis 
 
 Operators and scripts must use `norb` for balances, fees, staking, and transaction amounts. `ORB` is display metadata only; it is not used as a transaction denom.
 
-The local bootstrap profile also gives validator accounts `testtoken`. That denom is a local test asset for module experiments only. It is not a native token, staking denom, fee denom, or display unit for `ORB`.
+The local bootstrap profile also gives validator accounts `testtoken`. That denom is a local test asset for module and DEX experiments only. It is not a native token, staking denom, fee denom, or display unit for `ORB`.
 
 ## One-Command Smoke
 
@@ -133,12 +133,13 @@ Expected values:
 - `x/fees` v1 accepts only `norb`; wrong-denom fees are rejected by the custom ante decorator.
 - `x/staking` and `x/mint` use `norb` in genesis.
 - Tokenfactory denoms use `factory/<admin>/<subdenom>` and reject subdenoms that directly spoof native names: `norb`, `ORB`, or `Orbitalis`.
+- DEX LP tokens use `lp/<pool_id>` and are not display aliases for `ORB`.
 - `testtoken` is allowed only as a local bootstrap test asset and must not appear in fee, staking, mint, or native-token examples.
 
 ## Required Checks
 
 ```powershell
-go test ./app ./app/params ./x/fees/... ./x/tokenfactory/...
+go test ./app ./app/params ./x/fees/... ./x/tokenfactory/... ./x/dex/...
 go test ./...
 go vet ./...
 buf lint

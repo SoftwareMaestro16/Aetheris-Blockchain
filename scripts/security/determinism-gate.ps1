@@ -63,6 +63,14 @@ function Get-DeterminismClassification {
     }
   }
 
+  if ($normalized -eq "cmd\l1d\cmd\speedtest.go") {
+    return @{
+      Severity = "Low"
+      Status   = "triaged"
+      Impact   = "CLI benchmark path only; no consensus state or AppHash writes"
+    }
+  }
+
   if ($normalized -eq "cmd\l1d\cmd\testnet_genesis.go" -and $PatternName -eq "wall-clock") {
     return @{
       Severity = "Low"

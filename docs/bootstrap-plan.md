@@ -51,7 +51,16 @@ Deliverables:
 - Bank integration through keeper interfaces.
 - Tests for conservation, bounds, and governance authority.
 
-## Increment 5: Security And CI Hardening
+## Increment 5: DEX Module
+
+Commit: `feat(dex): add constant product amm module`
+
+Deliverables:
+- Pool lifecycle, swaps, LP accounting.
+- Integer-only invariant math.
+- Adversarial tests for rounding, reserve solvency, and slippage.
+
+## Increment 6: Security And CI Hardening
 
 Commit: `test(security): add adversarial and determinism test suites`
 

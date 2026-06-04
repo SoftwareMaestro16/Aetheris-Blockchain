@@ -26,6 +26,34 @@ Security invariants:
 - Total supply changes must match bank keeper mint/burn results.
 - Denom names and metadata lengths must be param-limited.
 
+## `x/dex`
+
+Purpose: deterministic constant-product AMM.
+
+State:
+- Pool registry keyed by pool ID.
+- Asset pair index.
+- LP share accounting.
+- Fee accumulator references.
+- Module params.
+
+Minimal Msg surface:
+- `MsgCreatePool`
+- `MsgAddLiquidity`
+- `MsgRemoveLiquidity`
+- `MsgSwapExactIn`
+- `MsgUpdateParams`
+
+Keeper dependencies:
+- Bank keeper interface for escrow, pool balances, and LP share movement.
+- Fees keeper interface for protocol fee accounting.
+
+Security invariants:
+- Integer math only.
+- No pool operation can create value.
+- LP shares must remain backed by pool reserves.
+- User-provided min-out and deadlines protect against stale execution and slippage.
+
 ## `x/fees`
 
 Purpose: centralize protocol fee policy and distribution.

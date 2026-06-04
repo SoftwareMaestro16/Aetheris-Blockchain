@@ -137,6 +137,10 @@ foreach ($node in $nodes) {
     throw "tokenfactory genesis is expected to start with no factory denoms"
   }
 
+  if ([int64]$appState.dex.next_pool_id -ne 1 -or @($appState.dex.pools).Count -ne 0) {
+    throw "dex genesis is expected to start with next_pool_id=1 and no pools"
+  }
+
   $genTxs = @($appState.genutil.gen_txs)
   if ($genTxs.Count -ne $ValidatorCount) {
     throw "expected $ValidatorCount gentxs, found $($genTxs.Count)"

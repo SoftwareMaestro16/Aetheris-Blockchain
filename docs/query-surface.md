@@ -26,6 +26,8 @@ All examples use JSON output and the default localnet values above. Sample respo
 | Fees params | `build\orbitalisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.fees.v1.Query/Params` | `GET /l1/fees/v1/params` | `{}` | `{"params":{"allowed_fee_denoms":["norb"],"validator_rewards_ratio":"0.98","community_pool_ratio":"0.02"}}` |
 | Factory denoms | `build\orbitalisd.exe query tokenfactory denoms --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.tokenfactory.v1.Query/Denoms` | `GET /l1/tokenfactory/v1/denoms?pagination.limit=50` | `{"pagination":{"limit":"50"}}` | `{"denoms":[{"denom":"factory/orb1.../gold","admin":"orb1..."}],"pagination":{"next_key":"..."}}` |
 | Factory denom | `build\orbitalisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.tokenfactory.v1.Query/Denom` | `GET /l1/tokenfactory/v1/denom/{denom}` | `{"denom":"factory/orb1.../gold"}` | `{"metadata":{"denom":"factory/orb1.../gold","admin":"orb1..."}}` |
+| DEX pools | `build\orbitalisd.exe query dex pools --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.dex.v1.Query/Pools` | `GET /l1/dex/v1/pools?pagination.limit=50` | `{"pagination":{"limit":"50"}}` | `{"pools":[{"id":"1","denom0":"factory/orb1.../gold","denom1":"norb","lp_denom":"lp/1"}],"pagination":{"next_key":"..."}}` |
+| DEX pool | `build\orbitalisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json` | `l1.dex.v1.Query/Pool` | `GET /l1/dex/v1/pools/{pool_id}` | `{"pool_id":"1"}` | `{"pool":{"id":"1","reserve0":"10000000","reserve1":"10000000","lp_denom":"lp/1"}}` |
 
 CometBFT RPC remains available for node-level checks that are not gRPC services:
 
@@ -39,16 +41,17 @@ CometBFT RPC remains available for node-level checks that are not gRPC services:
 
 Custom query servers return gRPC-status compatible errors:
 
-- `InvalidArgument`: nil request, malformed denom, invalid pagination key, unsupported offset/count/reverse mode, or limit above max
-- `NotFound`: valid tokenfactory denom does not exist
+- `InvalidArgument`: nil request, malformed denom, `pool_id = 0`, invalid pagination key, unsupported offset/count/reverse mode, or limit above max
+- `NotFound`: valid tokenfactory denom or DEX pool id does not exist
 
-REST gateway maps these to HTTP status codes, for example `404` for missing custom module objects.
+REST gateway maps these to HTTP status codes, for example `400` for invalid pool id and `404` for missing custom module objects.
 
 ## Bounded Lists
 
 The custom list endpoints use Cosmos `PageRequest` / `PageResponse` fields:
 
 - `tokenfactory Denoms`
+- `dex Pools`
 
 Prototype defaults:
 

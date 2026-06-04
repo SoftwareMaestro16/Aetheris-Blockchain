@@ -25,7 +25,7 @@ Each generated validator account starts with:
 - `1000000000testtoken`
 - `500000000norb`
 
-`testtoken` is a local bootstrap test asset for module experiments only. It is not the native token, staking denom, fee denom, or display unit for `ORB`.
+`testtoken` is a local bootstrap test asset for module and DEX experiments only. It is not the native token, staking denom, fee denom, or display unit for `ORB`.
 
 Each validator gentx self-delegates:
 
@@ -57,6 +57,7 @@ Custom module expectations:
 
 - `x/fees`: allowed fee denoms `["norb"]`, validator rewards ratio `0.98`, community pool ratio `0.02`.
 - `x/tokenfactory`: starts with no factory denoms.
+- `x/dex`: starts with `next_pool_id = 1` and no pools.
 
 Module account permissions are intentionally narrow:
 
@@ -65,6 +66,7 @@ Module account permissions are intentionally narrow:
 - `not_bonded_tokens_pool`: `burner`, `staking`
 - `gov`: `burner`
 - `tokenfactory`: `minter`, `burner`
+- `dex`: `minter`, `burner`
 - fee collector, distribution, protocol pool, protocol pool escrow, and fees module accounts have no special permissions.
 
 ## Commands
@@ -97,7 +99,7 @@ Validate genesis and compare key fields:
 .\scripts\localnet\validate-genesis.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
-The validation script checks the full local profile: chain ID, node count, node monikers, endpoint ports, minimum gas price, identical genesis hash across nodes, native metadata, staking/mint/fee denom, initial account balances, gentx self-delegations, and empty tokenfactory state.
+The validation script checks the full local profile: chain ID, node count, node monikers, endpoint ports, minimum gas price, identical genesis hash across nodes, native metadata, staking/mint/fee denom, initial account balances, gentx self-delegations, empty tokenfactory state, and DEX `next_pool_id`.
 
 If validation fails on an existing localnet after module genesis changes, reset and regenerate the ignored node homes:
 
@@ -130,7 +132,7 @@ Run a smoke test against the default or 5-validator profile:
 .\tests\e2e\localnet_smoke.ps1 -ValidatorCount 5
 ```
 
-The prototype acceptance suite is the default from-zero proof that build, genesis, localnet startup, block production, bank tx, fee policy, tokenfactory, PoS delegation, and query surfaces work together. See [prototype-acceptance-suite.md](prototype-acceptance-suite.md). The targeted localnet smoke validates RPC readiness, block height, CometBFT validator set size, peer count, REST `/blocks/latest`, gRPC TCP availability, `query block`, a `bank send` transaction, stop/start chain progress, and negative cases for invalid validator count, missing binary, timeout, and occupied port. The 5-validator run is the heavier profile and can be run with `-OutputDir .localnet-5` if the default 3-validator localnet should be preserved.
+The prototype acceptance suite is the default from-zero proof that build, genesis, localnet startup, block production, bank tx, fee policy, tokenfactory, DEX, PoS delegation, and query surfaces work together. See [prototype-acceptance-suite.md](prototype-acceptance-suite.md). The targeted localnet smoke validates RPC readiness, block height, CometBFT validator set size, peer count, REST `/blocks/latest`, gRPC TCP availability, `query block`, a `bank send` transaction, stop/start chain progress, and negative cases for invalid validator count, missing binary, timeout, and occupied port. The 5-validator run is the heavier profile and can be run with `-OutputDir .localnet-5` if the default 3-validator localnet should be preserved.
 
 Run the query surface and health checks documented in [query-surface.md](query-surface.md) and [observability.md](observability.md):
 
@@ -173,7 +175,16 @@ Run the fees ante policy smoke documented in [fees-ante-policy.md](fees-ante-pol
 .\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
-The fees ante smoke validates fee params, successful `norb` fees across bank/tokenfactory txs, wrong fee rejection, mixed-denom fee rejection, and explicit zero/empty fee behavior.
+The fees ante smoke validates fee params, successful `norb` fees across bank/tokenfactory/DEX txs, wrong fee rejection, mixed-denom fee rejection, and explicit zero/empty fee behavior.
+
+Run the DEX prototype smoke documented in [dex-e2e-flow.md](dex-e2e-flow.md):
+
+```powershell
+.\tests\e2e\dex_smoke.ps1
+.\tests\e2e\dex_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+```
+
+The DEX smoke creates a factory asset, creates a pool, adds liquidity, swaps exact input, removes liquidity, checks LP balances/reserves, and validates slippage and wrong-denom failures.
 
 Export state after the network has started:
 
@@ -192,7 +203,7 @@ Export state after the network has started:
 - Localnet scripts must not print mnemonics by default. `testnet init-files` writes generated key seed files only under ignored node homes.
 - `reset.ps1` and `init.ps1` verify the resolved output path is inside the repository and refuse to recursively delete the repository root or paths outside it.
 - Initial stake is symmetric across validators in this prototype profile. Any non-symmetric validator distribution must be documented before use.
-- Consensus-critical checks for this profile: deterministic app-state writes during init/export, valid `norb` bank supply and staking denom, positive validator self-delegations, authorized tokenfactory mint/burn only, and no panics on malformed custom module genesis.
+- Consensus-critical checks for this profile: deterministic app-state writes during init/export, valid `norb` bank supply and staking denom, positive validator self-delegations, authorized tokenfactory mint/burn only, DEX reserves absent at genesis, and no panics on malformed custom module genesis.
 
 ## Required Checks
 
@@ -215,6 +226,8 @@ go build -o build/orbitalisd.exe ./cmd/l1d
 .\tests\e2e\native_token_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 .\tests\e2e\fees_ante_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
+.\tests\e2e\dex_smoke.ps1
+.\tests\e2e\dex_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
 Security baseline:

@@ -10,7 +10,7 @@ import (
 
 	l1app "github.com/sovereign-l1/l1/app"
 	appparams "github.com/sovereign-l1/l1/app/params"
-	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
@@ -184,7 +184,7 @@ func TestMintToBlockedModuleAddressDoesNotLeakSupply(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	blockedRecipient := app.AccountKeeper.GetModuleAddress(feestypes.ModuleName)
+	blockedRecipient := app.AccountKeeper.GetModuleAddress(dextypes.ModuleName)
 	require.NotNil(t, blockedRecipient)
 
 	_, err = msgServer.Mint(ctx, &types.MsgMint{

@@ -32,8 +32,9 @@ If a limitation is later found to create fund loss, consensus halt, unauthorized
 | --- | --- | --- |
 | Local-only key material | Localnet uses ignored node homes and `--keyring-backend test`; scripts and diagnostics avoid printing mnemonics/private keys. | Public testnet/mainnet key-management plan and runbook. |
 | Localnet minimum gas price may be `0norb` | Docs and e2e examples still use `--fees 1000000norb`; `x/fees` ante enforces allowed fee denom. | Public network fee policy and validator min-gas configuration. |
-| Tokenfactory is a prototype module | Unit/e2e/adversarial tests cover signer, denom, balance, and negative flows. | External audit, expanded invariants, and production economics/risk model. |
-| Query/list endpoints are bounded but not public-load proven | List endpoints use bounded pagination and smoke tests record minimal local evidence. | High-cardinality API and explorer load tests with documented limits. |
+| Tokenfactory/DEX are prototype modules | Unit/e2e/adversarial tests cover signer, denom, balance, DEX accounting, and negative flows. | External audit, expanded invariants, and production economics/risk model. |
+| Query/list endpoints are bounded but not public-load proven | List endpoints use bounded pagination and smoke/load scripts record minimal local evidence. | High-cardinality API and explorer load tests with documented limits. |
+| Minimal load profile is local baseline only | `load-profile.ps1` records block progress, tx latency, and failures under small local mixed load. | Dedicated performance plan for public testnet/mainnet capacity. |
 | Vote extension behavior is prototype-only | Security docs flag dummy/test-oriented vote extension behavior as not production-ready. | Replace, disable, or formally specify vote extensions before any public validator network. |
 | Release package may include triage-required dependency/tool findings only when documented | Audit gate records triage-required findings; release notes must link evidence and owner decision. | Clean full audit gate or documented owner acceptance for each reachable/non-reachable finding. |
 
@@ -44,6 +45,7 @@ These are never accepted limitations:
 - untriaged Critical or High Cosmos security findings,
 - wrong fee denom accepted or fee policy bypass,
 - unauthorized tokenfactory mint, burn, or admin transfer,
+- DEX invariant failure, including reserve, module-balance, or LP-supply mismatch,
 - nondeterminism, nondeterministic consensus state write, or AppHash divergence,
 - ABCI/query/genesis panic reachable from malformed public input,
 - unbounded tx/list path, including any unbounded tx path or public list/query path without a cap,
@@ -51,4 +53,4 @@ These are never accepted limitations:
 - build, genesis validation, localnet startup, or acceptance smoke failure,
 - artifact produced from an unapproved dirty tree.
 
-A publishable prototype package must either show no blockers or link owner-approved blocker de-scoping with explicit release status in the release evidence.
+Current release-decision blockers, if any, are recorded in [Prototype Acceptance Report](prototype-acceptance-report.md). A publishable prototype package must either show no blockers or link owner-approved blocker de-scoping with explicit release status.

@@ -2,7 +2,7 @@
 
 This gate blocks an Orbitalis prototype release when consensus-critical or fund-safety risks are untriaged.
 
-Scope: custom modules `x/tokenfactory` and `x/fees`; app wiring and ABCI paths; genesis/bootstrap; fees ante policy; tokenfactory admin rights; localnet/prototype acceptance scripts.
+Scope: custom modules `x/tokenfactory`, `x/dex`, `x/fees`; app wiring and ABCI paths; genesis/bootstrap; fees ante policy; DEX math/accounting; tokenfactory admin rights; localnet/prototype acceptance scripts.
 
 The consensus node does not require Redis, PostgreSQL, or any external database. Do not commit database URLs, credentials, mnemonics, validator keys, localnet keyrings, or environment dumps. Off-chain indexers can use databases later through environment variables or a secret manager, outside this gate.
 
@@ -21,13 +21,13 @@ Prototype release is blocked when any `Critical` or `High` finding lacks one of:
 | Severity | Blocks Prototype | Examples |
 | --- | --- | --- |
 | Critical | Yes | nondeterministic state transition, ABCI panic from malformed tx/query/genesis, unauthorized mint/burn/admin, bank supply corruption |
-| High | Yes | missing denom validation, missing bank balance/accounting check, wrong fee denom bypass, unbounded state scan in tx path |
+| High | Yes | missing denom validation, missing bank balance/accounting check, DEX reserve/LP supply desync, wrong fee denom bypass, unbounded state scan in tx path |
 | Medium | Owner required | dependency advisory without reachable symbol, missing query load evidence for high-cardinality public API, localnet-only insecure default |
 | Low | Track | docs inconsistency, noisy generated-code scanner result with narrow suppression |
 
 ## Local Command
 
-Fast local gate:
+Fast PR gate:
 
 ```powershell
 .\scripts\security\prototype-audit.ps1 -Profile Fast
@@ -86,8 +86,8 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | ABCI panic | BeginBlocker/EndBlocker, InitGenesis, ExportGenesis, ante decorators, and msg servers return errors for malformed input instead of panicking. Panics are limited to impossible app wiring/module registration failures. |
 | Authorization | `Msg` signers match msg server sender/admin checks. Tokenfactory mint/burn/change-admin requires current admin. Fees params update requires governance authority. |
 | Denom validation | Native `norb`/`ORB` cannot be spoofed by tokenfactory or LP denoms. All user-provided denoms use SDK validation before bank movement. |
-| Balance checks | Bank sends/mints/burns propagate errors and no state update is committed after a failed bank movement. |
-| Rounding | Consensus code avoids floating point and uses deterministic integer arithmetic. |
+| Balance checks | Bank sends/mints/burns propagate errors. DEX module balances equal recorded reserves. LP supply equals pool `total_shares`. |
+| Rounding | DEX math uses integer arithmetic only. Rounding favors protocol safety and slippage checks reject zero/tiny output surprises. |
 | State bloat DoS | Tx paths use direct key lookups. List queries use bounded pagination/default limits or are documented blockers before public high-cardinality use. |
 | Genesis/bootstrap | Genesis validates, native metadata is present, custom module defaults round-trip, validator stake is positive, and tracked files contain no secrets. |
 | Local scripts | Destructive operations validate resolved paths stay inside the workspace and never delete repository root or arbitrary paths. |
@@ -103,6 +103,8 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | Wrong/malformed fee denom and non-FeeTx | `x/fees/keeper/ante_test.go`, `tests/e2e/fees_ante_smoke.ps1` |
 | Tokenfactory unauthorized mint/burn/admin/native spoofing and supply checks | `x/tokenfactory/keeper/msg_server_test.go`, `tests/e2e/tokenfactory_smoke.ps1` |
 | Tokenfactory query malformed/not found/bounded list | `x/tokenfactory/keeper/query_server_test.go` |
+| DEX duplicate pair, wrong denom, corrupted pool, LP accounting, slippage | `x/dex/keeper/msg_server_test.go`, `x/dex/keeper/math_test.go`, `tests/e2e/dex_smoke.ps1` |
+| DEX query malformed/not found/bounded list | `x/dex/keeper/query_server_test.go` |
 | Full prototype tx/query composition | `tests/e2e/prototype_acceptance.ps1` |
 
 ## Current Known Triage
@@ -118,9 +120,10 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | Localnet secrets in ignored directories | `.localnet*`, keyring, validator private files | Low if ignored | Full filesystem secret scans will find generated localnet material. Gate uses staged/history scans; diagnostic bundles exclude private material. |
 | `crypto/rand` in vote extension handler | `app/abci.go` determinism scan | Low/Medium | Current handler creates dummy vote-extension bytes and does not write consensus state. It is not production-ready and must be replaced or disabled before any public validator network. |
 | `cmttime.Now()` in local genesis generation | `cmd/l1d/cmd/testnet_genesis.go` determinism scan | Low | Genesis time differs per initialization by design; local profile requires identical `genesis.json` across nodes in one init run, not byte-identical fresh runs. |
+| `time.Now()`/`math/rand` in speedtest | `cmd/l1d/cmd/speedtest.go` determinism scan | Low | CLI benchmarking only; not in consensus tx/ABCI state path. |
 
 ## CI
 
-CodeQL and dependency scanning run through `.github/workflows/security.yml` when enabled by the repository owner.
+CodeQL and GitHub Dependency Review are required for PRs through `.github/workflows/security.yml`.
 
 CI does not replace manual Cosmos review. CodeQL catches general Go issues; dependency review catches new vulnerable dependencies; this gate covers Cosmos-specific determinism, authorization, denom, accounting, rounding, and state-bloat risks.

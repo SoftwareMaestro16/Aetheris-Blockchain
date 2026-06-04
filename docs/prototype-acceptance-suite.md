@@ -6,7 +6,7 @@ The suite proves that a local prototype can be built from the repository, initia
 
 ## Command
 
-Default local smoke profile:
+Default PR-friendly smoke profile:
 
 ```powershell
 .\tests\e2e\prototype_smoke.ps1
@@ -39,7 +39,7 @@ Shift ports or choose a specific node endpoint:
 
 ## Parameters
 
-- `-Profile Smoke|Full`: `Smoke` is the default local profile; `Full` adds a heavier restart check.
+- `-Profile Smoke|Full`: `Smoke` is the default PR profile; `Full` adds heavier restart/slippage checks.
 - `-ValidatorCount`: defaults to `3`; use `5` for the scale profile.
 - `-MinHeight`: first required block height before tx flows start.
 - `-TimeoutSeconds`: shared wait timeout for startup, tx inclusion, and health checks.
@@ -62,16 +62,18 @@ Shift ports or choose a specific node endpoint:
 7. Send `norb` by bank tx and verify balance change.
 8. Reject a tx with `testtoken` fee.
 9. Create a tokenfactory denom, mint it, and query it through gRPC/REST.
-10. Query staking/slashing state, delegate `norb`, and verify delegation and voting power update.
-11. Stop localnet.
+10. Create a DEX pool, swap exact input, and verify output balance plus pool query.
+11. Query staking/slashing state, delegate `norb`, and verify delegation and voting power update.
+12. Stop localnet.
 
 ## Full Profile
 
 `Full` includes all smoke steps and adds:
 
+- DEX slippage failure for excessive `min_amount_out`.
 - Stop/start restart check that proves height continues increasing after restart.
 
-The 5-validator full profile is intended for manual or nightly runs, not every local commit.
+The 5-validator full profile is intended for manual or nightly runs, not every PR.
 
 ## Failure Behavior
 
@@ -90,11 +92,11 @@ If `-KeepLogsOnFailure` is not set, the suite resets the localnet output directo
 - The suite uses local `--keyring-backend test` only under ignored localnet homes.
 - It does not print mnemonics, private keys, validator keys, node keys, or raw environment secrets.
 - Destructive operations go through localnet scripts that validate resolved paths stay inside the repository and are not the repository root.
-- The Cosmos consensus-risk checks covered here are integration smoke checks: deterministic startup/export assumptions, valid `norb` fee/staking denom, authorized tokenfactory mint path, and no panic on normal query/tx flows. Deeper ABCI/non-determinism review remains part of the module security baseline.
+- The Cosmos consensus-risk checks covered here are integration smoke checks: deterministic startup/export assumptions, valid `norb` fee/staking denom, authorized tokenfactory mint path, DEX reserve movement, and no panic on normal query/tx flows. Deeper ABCI/non-determinism review remains part of the module security baseline.
 
 ## CI Contract
 
-Recommended local check:
+Recommended PR check:
 
 ```powershell
 .\tests\e2e\prototype_smoke.ps1

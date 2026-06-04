@@ -13,9 +13,14 @@
   proto/
     l1/
       tokenfactory/
+      dex/
       fees/
   x/
     tokenfactory/
+      keeper/
+      types/
+      module.go
+    dex/
       keeper/
       types/
       module.go
@@ -45,4 +50,4 @@ Proto source and generated Go must follow [proto-workflow.md](proto-workflow.md)
 
 - Commit source, docs, proto, tests, and CI config.
 - Do not commit local node homes, validator keys, mnemonics, generated chain data, research caches, or private configuration.
-- Keep commits scoped and independently reviewable.
+- Keep commits PR-sized and independently reviewable.

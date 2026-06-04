@@ -175,6 +175,35 @@ try {
   }
   Write-Host "factory denom $factoryDenom minted to node0"
 
+  Write-AcceptanceStep "DEX create pool/swap/query"
+  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  $pool = Invoke-AcceptanceQueryGrpcJson -Context $ctx -Arguments @("query", "dex", "pool", "1")
+  if ($pool.pool.lp_denom -ne "lp/1") {
+    throw "DEX pool 1 returned unexpected lp denom $($pool.pool.lp_denom)"
+  }
+  if ($Profile -eq "Full") {
+    Send-AcceptanceTx `
+      -Context $ctx `
+      -ActionArgs @("tx", "dex", "swap-exact-in", "1", "100000norb", $factoryDenom, "1000000") `
+      -FromHome $node0Home `
+      -ExpectFailure `
+      -ExpectedLog "amount out below minimum" | Out-Null
+    Write-Host "DEX slippage guard rejected excessive min_amount_out"
+  }
+  $factoryBeforeSwap = Get-AcceptanceBalanceAmount -Context $ctx -Address $node0 -Denom $factoryDenom
+  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "dex", "swap-exact-in", "1", "100000norb", $factoryDenom, "1") -FromHome $node0Home | Out-Null
+  $factoryAfterSwap = Get-AcceptanceBalanceAmount -Context $ctx -Address $node0 -Denom $factoryDenom
+  if ($factoryAfterSwap -le $factoryBeforeSwap) {
+    throw "factory balance did not increase after DEX swap: before=$factoryBeforeSwap after=$factoryAfterSwap"
+  }
+  if ($EnableAPI) {
+    $poolRest = Invoke-AcceptanceRestJson -Context $ctx -Path "/l1/dex/v1/pools/1"
+    if ($poolRest.pool.lp_denom -ne "lp/1") {
+      throw "REST DEX pool query returned unexpected lp denom"
+    }
+  }
+  Write-Host "DEX swap increased factory balance from $factoryBeforeSwap to $factoryAfterSwap"
+
   Write-AcceptanceStep "PoS delegation/slashing queries"
   $stakingParams = Get-LocalnetStakingParams -Binary $Binary -RPCPort $node0Ports.RPC
   if ($stakingParams.bond_denom -ne "norb") {

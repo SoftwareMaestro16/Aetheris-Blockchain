@@ -18,7 +18,7 @@ function Assert-Contains {
 
 $text = Get-Content -Raw -LiteralPath $MatrixPath
 
-foreach ($heading in @("Fast Local Suite", "Nightly Or Manual", "Matrix", "Priority Gaps")) {
+foreach ($heading in @("Fast PR Suite", "Nightly Or Manual", "Matrix", "Priority Gaps")) {
   Assert-Contains -Text $text -Pattern "## $([regex]::Escape($heading))" -Message "test pyramid missing heading: $heading"
 }
 
@@ -30,6 +30,7 @@ foreach ($flow in @(
     "App genesis/export/module accounts",
     "Fees ante and params",
     "Tokenfactory denom lifecycle",
+    "DEX pool and swap lifecycle",
     "Query surface CLI/gRPC/REST",
     "PoS and bank native flow",
     "Localnet scripts and release artifacts",
@@ -42,7 +43,9 @@ foreach ($risk in @(
     "invalid signer",
     "unauthorized admin",
     "malformed denom",
+    "corrupted pool",
     "wrong denom",
+    "tiny rounding output",
     "invalid authority",
     "untriaged Critical/High"
   )) {
@@ -52,11 +55,14 @@ foreach ($risk in @(
 foreach ($testRef in @(
     "x/fees/keeper/ante_test.go",
     "x/tokenfactory/keeper/msg_server_test.go",
+    "x/dex/keeper/msg_server_test.go",
     "x/*/keeper/query_server_test.go",
     "app/determinism_test.go",
+    "tests/e2e/dex_smoke.ps1",
     "tests/e2e/query_surface_smoke.ps1",
     "scripts/security/prototype-audit.ps1 -Profile Fast",
-    "BenchmarkEmptyBlockFinalizeCommit"
+    "BenchmarkEmptyBlockFinalizeCommit",
+    "BenchmarkDexCreatePoolsAndSwap"
   )) {
   Assert-Contains -Text $text -Pattern ([regex]::Escape($testRef)) -Message "test pyramid missing test reference: $testRef"
 }
