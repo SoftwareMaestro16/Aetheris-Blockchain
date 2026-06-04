@@ -70,6 +70,7 @@ Use variables for reusable commands:
 ```powershell
 $CHAIN_ID = "orbitalis-local-1"
 $NODE = "tcp://127.0.0.1:26657"
+$GRPC = "127.0.0.1:9090"
 $REST = "http://127.0.0.1:1317"
 $HOME = ".localnet\node0\orbitalisd"
 $FROM = "node0"
@@ -116,7 +117,7 @@ build\orbitalisd.exe query bank balance $NODE0 norb --node $NODE --output json
 Fees:
 
 ```powershell
-build\orbitalisd.exe query fees params --node $NODE --output json
+build\orbitalisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 Invoke-RestMethod "$REST/l1/fees/v1/params"
 ```
 
@@ -152,7 +153,8 @@ Create a factory denom:
 ```powershell
 build\orbitalisd.exe tx tokenfactory create-denom gold --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 $GOLD = "factory/$NODE0/gold"
-build\orbitalisd.exe query tokenfactory denom $GOLD --node $NODE --output json
+build\orbitalisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+Invoke-RestMethod "$REST/l1/tokenfactory/v1/denom/$GOLD"
 ```
 
 Mint and burn:
@@ -184,7 +186,8 @@ Create pool and query LP balance:
 
 ```powershell
 build\orbitalisd.exe tx dex create-pool 10000000norb "10000000$DEXGOLD" --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query dex pool 1 --node $NODE --output json
+build\orbitalisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+Invoke-RestMethod "$REST/l1/dex/v1/pools/1"
 build\orbitalisd.exe query bank balance $NODE0 lp/1 --node $NODE --output json
 ```
 
@@ -194,7 +197,7 @@ Add liquidity, swap, and remove liquidity:
 build\orbitalisd.exe tx dex add-liquidity 1 1000000norb "1000000$DEXGOLD" 1000000 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 build\orbitalisd.exe tx dex swap-exact-in 1 100000norb $DEXGOLD 1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 build\orbitalisd.exe tx dex remove-liquidity 1 1000000lp/1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query dex pools --node $NODE --output json
+build\orbitalisd.exe query dex pools --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 ```
 
 Slippage examples:
@@ -211,7 +214,7 @@ Expected rejection logs include `minted shares below minimum` or `amount out bel
 - `account sequence mismatch`: wait one block or re-run the command after the previous tx is committed.
 - `fee denom testtoken not accepted; use norb`: use `--fees 1000000norb`.
 - `pool already exists`: query `dex pools` and use the existing `pool_id`.
-- `REST ... 503`: use CLI/gRPC/RPC first; the local REST gateway may lag during startup.
+- `REST ... 503`: run `.\scripts\localnet\health.ps1`; node gRPC must be reachable on `127.0.0.1:<grpc-port>`.
 - `Port ... is already in use`: run `.\scripts\localnet\stop.ps1`, choose a different base port, or stop the conflicting process.
 - `key not found`: check `$HOME`, `$FROM`, and `--keyring-backend test` for localnet commands.
 
@@ -220,10 +223,13 @@ Expected rejection logs include `minted shares below minimum` or `amount out bel
 ```powershell
 build\orbitalisd.exe --help
 build\orbitalisd.exe version --long --output json
-build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query dex pool 1 --node tcp://127.0.0.1:26657 --output json
+build\orbitalisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
+build\orbitalisd.exe query dex pool 1 --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
 .\tests\e2e\localnet_smoke.ps1
 .\tests\e2e\native_token_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1
 .\tests\e2e\dex_smoke.ps1
+.\tests\e2e\query_surface_smoke.ps1
 ```
+
+See also [Prototype Query Surface](query-surface.md) and [Prototype Observability](observability.md).

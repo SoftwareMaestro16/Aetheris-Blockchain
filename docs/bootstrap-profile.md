@@ -130,6 +130,13 @@ Run a smoke test against the default or 5-validator profile:
 
 The smoke test validates RPC readiness, block height, CometBFT validator set size, peer count, REST `/blocks/latest`, gRPC TCP availability, `query block`, a `bank send` transaction, stop/start chain progress, and negative cases for invalid validator count, missing binary, timeout, and occupied port. The 5-validator run is the heavier profile and can be run with `-OutputDir .localnet-5` if the default 3-validator localnet should be preserved.
 
+Run the query surface and health checks documented in [query-surface.md](query-surface.md) and [observability.md](observability.md):
+
+```powershell
+.\scripts\localnet\health.ps1 -ValidatorCount 3
+.\tests\e2e\query_surface_smoke.ps1
+```
+
 Run the proof-of-stake smoke flow documented in [pos-smoke-flow.md](pos-smoke-flow.md):
 
 ```powershell

@@ -141,20 +141,28 @@ func (k Keeper) GetPool(ctx context.Context, id uint64) (types.Pool, bool, error
 	return pool, true, nil
 }
 
-func (k Keeper) GetAllPools(ctx context.Context) ([]types.Pool, error) {
+func (k Keeper) GetPools(ctx context.Context, limit int) ([]types.Pool, bool, error) {
 	store := k.storeService.OpenKVStore(ctx)
 	iter, err := store.Iterator(types.PoolPrefix, storetypes.PrefixEndBytes(types.PoolPrefix))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer iter.Close()
 	var pools []types.Pool
 	for ; iter.Valid(); iter.Next() {
+		if limit > 0 && len(pools) >= limit {
+			return pools, true, nil
+		}
 		var pool types.Pool
 		k.cdc.MustUnmarshal(iter.Value(), &pool)
 		pools = append(pools, pool)
 	}
-	return pools, nil
+	return pools, false, nil
+}
+
+func (k Keeper) GetAllPools(ctx context.Context) ([]types.Pool, error) {
+	pools, _, err := k.GetPools(ctx, 0)
+	return pools, err
 }
 
 func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) {

@@ -17,4 +17,5 @@ const (
 	LPDenomPrefix  = "lp"
 	PoolFeeBps     = int64(30)
 	BpsDenominator = int64(10_000)
+	MaxQueryPools  = 100
 )

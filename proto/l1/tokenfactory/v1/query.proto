@@ -9,7 +9,12 @@ option go_package = "github.com/sovereign-l1/l1/x/tokenfactory/types";
 
 service Query {
   rpc Denom(QueryDenomRequest) returns (QueryDenomResponse) {
-    option (google.api.http).get = "/l1/tokenfactory/v1/denoms/{denom}";
+    option (google.api.http) = {
+      get: "/l1/tokenfactory/v1/denom/{denom=**}"
+      additional_bindings: {
+        get: "/l1/tokenfactory/v1/denoms/{denom}"
+      }
+    };
   }
 
   rpc Denoms(QueryDenomsRequest) returns (QueryDenomsResponse) {

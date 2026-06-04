@@ -151,7 +151,7 @@ function Set-LocalnetGeneratedPorts {
     $app = Set-TomlSectionValue -Content $app -Section "api" -Key "enable" -Value $apiEnable
     $app = Set-TomlSectionValue -Content $app -Section "api" -Key "address" -Value "`"tcp://0.0.0.0:$($p.REST)`""
     $app = Set-TomlSectionValue -Content $app -Section "grpc" -Key "enable" -Value $grpcEnable
-    $app = Set-TomlSectionValue -Content $app -Section "grpc" -Key "address" -Value "`"0.0.0.0:$($p.GRPC)`""
+    $app = Set-TomlSectionValue -Content $app -Section "grpc" -Key "address" -Value "`"127.0.0.1:$($p.GRPC)`""
     $app = $app -replace '(?m)^minimum-gas-prices = ".*"', "minimum-gas-prices = `"$MinimumGasPrices`""
     Set-Content -LiteralPath $appToml -Value $app
   }
@@ -392,6 +392,25 @@ function Invoke-LocalnetCliJson {
     throw "orbitalisd command did not return JSON: $Binary $($Arguments -join ' ')`n$text"
   }
   return $text.Substring($jsonStart) | ConvertFrom-Json
+}
+
+function Wait-LocalnetHeightIncreasing {
+  param(
+    [int]$RPCPort = 26657,
+    [int]$TimeoutSeconds = 60
+  )
+
+  $startHeight = Get-LocalnetHeight -RPCPort $RPCPort
+  return Wait-LocalnetCondition -TimeoutSeconds $TimeoutSeconds -Description "height greater than $startHeight on RPC $RPCPort" -Condition {
+    $height = Get-LocalnetHeight -RPCPort $RPCPort
+    if ($height -gt $startHeight) {
+      return @{
+        StartHeight   = $startHeight
+        CurrentHeight = $height
+      }
+    }
+    return $null
+  }
 }
 
 function Invoke-LocalnetCliJsonAllowFailure {
@@ -754,7 +773,7 @@ function Stop-LocalnetProcesses {
       $pidValue = [int](Get-Content -Raw -LiteralPath $_.FullName)
       $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
       if ($proc) {
-        Stop-Process -Id $pidValue -Force
+        Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
         Write-Host "Stopped pid=$pidValue"
       }
       Remove-Item -LiteralPath $_.FullName -Force
@@ -772,7 +791,7 @@ function Stop-LocalnetProcesses {
       $pidValue = [int]$_.ProcessId
       $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
       if ($proc) {
-        Stop-Process -Id $pidValue -Force
+        Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
         Write-Host "Stopped orphan localnet pid=$pidValue"
       }
     }

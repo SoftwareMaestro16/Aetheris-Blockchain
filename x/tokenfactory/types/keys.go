@@ -18,6 +18,8 @@ var (
 
 const FactoryDenomPrefix = "factory"
 
+const MaxQueryDenoms = 100
+
 func IsReservedNativeSubdenom(subdenom string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(subdenom))
 	for _, reserved := range []string{

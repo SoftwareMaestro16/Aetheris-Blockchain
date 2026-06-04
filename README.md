@@ -23,7 +23,7 @@ flowchart LR
 - `x/tokenfactory`: factory denoms, admin-controlled mint/burn, admin transfer, queries.
 - `x/dex`: constant-product AMM pools, liquidity add/remove, exact-input swaps, LP tokens.
 - `x/fees`: native fee-denom policy; v1 accepts only `norb` fees.
-- `scripts/localnet`: 3-validator localnet init/start/stop/reset scripts.
+- `scripts/localnet`: 3-validator localnet init/start/stop/reset, health, and diagnostics scripts.
 - Native token lifecycle: `norb` is the base transaction/staking/fee denom; `ORB` is display metadata only.
 
 ## Build And Test
@@ -74,22 +74,23 @@ Smoke test:
 .\tests\e2e\native_token_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1
 .\tests\e2e\dex_smoke.ps1
+.\tests\e2e\query_surface_smoke.ps1
 ```
 
 ## Example CLI
 
-See [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook.
+See [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook, [docs/query-surface.md](docs/query-surface.md) for gRPC/REST endpoints, and [docs/observability.md](docs/observability.md) for health checks and diagnostics.
 
 ```powershell
 build\orbitalisd.exe query block --node tcp://127.0.0.1:26657
 build\orbitalisd.exe query bank denom-metadata norb --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe query bank total-supply-of norb --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe query bank balance <orb1-address> norb --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657 --output json
+build\orbitalisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
 build\orbitalisd.exe tx bank send node0 <to-address> 100000000000norb --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
 build\orbitalisd.exe tx tokenfactory create-denom gold --from node0 --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
 build\orbitalisd.exe tx dex create-pool 10000000norb 10000000<factory-denom> --from node0 --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
-build\orbitalisd.exe query dex pool 1 --node tcp://127.0.0.1:26657 --output json
+build\orbitalisd.exe query dex pool 1 --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
 ```
 
 ## External Databases

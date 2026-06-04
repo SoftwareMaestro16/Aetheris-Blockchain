@@ -48,21 +48,29 @@ func (k Keeper) GetDenom(ctx context.Context, denom string) (types.DenomAuthorit
 	return meta, true, nil
 }
 
-func (k Keeper) GetAllDenoms(ctx context.Context) ([]types.DenomAuthorityMetadata, error) {
+func (k Keeper) GetDenoms(ctx context.Context, limit int) ([]types.DenomAuthorityMetadata, bool, error) {
 	store := k.storeService.OpenKVStore(ctx)
 	iter, err := store.Iterator(types.DenomPrefix, storetypes.PrefixEndBytes(types.DenomPrefix))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer iter.Close()
 
 	var out []types.DenomAuthorityMetadata
 	for ; iter.Valid(); iter.Next() {
+		if limit > 0 && len(out) >= limit {
+			return out, true, nil
+		}
 		var meta types.DenomAuthorityMetadata
 		k.cdc.MustUnmarshal(iter.Value(), &meta)
 		out = append(out, meta)
 	}
-	return out, nil
+	return out, false, nil
+}
+
+func (k Keeper) GetAllDenoms(ctx context.Context) ([]types.DenomAuthorityMetadata, error) {
+	denoms, _, err := k.GetDenoms(ctx, 0)
+	return denoms, err
 }
 
 func (k Keeper) FullDenom(creator, subdenom string) (string, error) {
