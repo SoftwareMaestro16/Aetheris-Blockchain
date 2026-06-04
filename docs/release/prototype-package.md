@@ -21,6 +21,7 @@ Each package produced by `scripts\release\prototype-package.ps1` contains:
   - `docs/query-surface.md`
   - `docs/observability.md`
   - `docs/release/prototype-package.md`
+  - `docs/release/prototype-limitations.md`
 - optional evidence under `evidence/`
 
 The script also creates:
@@ -92,19 +93,17 @@ A prototype prerelease should attach or link:
 - `tests\e2e\prototype_acceptance.ps1 -Profile Smoke` transcript,
 - checksums for each binary/archive.
 
-Known `triage_required` findings from the audit gate are acceptable only when they match [prototype-audit-gate.md](../security/prototype-audit-gate.md) and have an owner.
+Known `triage_required` findings from the audit gate are acceptable only when they match [prototype-audit-gate.md](../security/prototype-audit-gate.md) and have an owner. Untriaged Critical/High findings are blockers, not accepted limitations; see [prototype-limitations.md](prototype-limitations.md).
 
-`release-manifest.json` records `version`, `commit`, `dirty`, `target_os`, `target_arch`, required checks, checks executed by the script, copied evidence names, and excluded runtime/private material. `RELEASE-NOTES.md` repeats the commit, dirty flag, test evidence expectations, and known limitations so an operator can verify the artifact without reading CI logs first.
+`release-manifest.json` records `version`, `commit`, `dirty`, `target_os`, `target_arch`, required checks, checks executed by the script, copied evidence names, and excluded runtime/private material. `RELEASE-NOTES.md` repeats the commit, dirty flag, test evidence expectations, known limitations, non-goals, and blocker rule so an operator can verify the artifact without reading CI logs first.
 
 ## Known Limitations
 
-- Prototype only. No mainnet economics or validator onboarding guarantees.
-- IBC, external bridge, explorer/indexer, production governance economics, and exchange-grade DEX routing are out of scope.
-- Localnet uses test keyrings under ignored directories.
-- Local minimum gas price is `0norb`; examples still use `1000000norb` fees to exercise the ante path.
-- Tokenfactory and DEX list endpoints use bounded `next_key` pagination; high-cardinality load evidence is still required before public explorer/API load testing.
-- The vote extension handler is dummy/test-oriented and must be replaced or disabled before a public validator network.
-- `govulncheck` dependency advisories and `go mod verify` cache integrity findings must be triaged for each release run.
+The authoritative scope boundary is [prototype-limitations.md](prototype-limitations.md). Each prototype release must keep non-goals, accepted limitations, and blockers separate.
+
+- Non-goals include mainnet launch, IBC/external bridge, production governance economics, exchange-grade DEX behavior, public faucet, full external audit, and explorer/API SLA.
+- Accepted limitations include local-only key material, local prototype min-gas behavior, bounded but not public-load-proven list queries, local-only load profiling, and prototype-only vote extension behavior.
+- Blockers include untriaged Critical/High Cosmos security findings, accepted wrong fee denoms, unauthorized mint/burn/admin actions, DEX invariant failures, nondeterministic AppHash divergence, public malformed-input panics, unbounded tx/list paths, secrets in tracked/release artifacts, and failed build/genesis/localnet/acceptance gates.
 
 ## Tagging
 

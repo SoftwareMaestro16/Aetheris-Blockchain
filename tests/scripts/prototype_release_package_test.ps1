@@ -58,6 +58,7 @@ Assert-True (Test-Path -LiteralPath (Join-Path $packageDir "release-manifest.jso
 Assert-True (Test-Path -LiteralPath (Join-Path $packageDir "QUICKSTART.md")) "missing quickstart"
 Assert-True (Test-Path -LiteralPath (Join-Path $packageDir "RELEASE-NOTES.md")) "missing release notes"
 Assert-True (Test-Path -LiteralPath (Join-Path $packageDir "SHA256SUMS.txt")) "missing checksums"
+Assert-True (Test-Path -LiteralPath (Join-Path $packageDir "docs\release\prototype-limitations.md")) "missing limitations doc"
 Assert-True (Test-Path -LiteralPath $archive) "missing archive"
 Assert-True (Test-Path -LiteralPath $archiveSha) "missing archive checksum"
 
@@ -74,6 +75,7 @@ Assert-True ($checksumText -match "bin/orbitalisd.exe") "binary checksum missing
 Assert-True ($checksumText -match "release-manifest.json") "manifest checksum missing"
 Assert-True ($checksumText -match "QUICKSTART.md") "quickstart checksum missing"
 Assert-True ($checksumText -match "RELEASE-NOTES.md") "release notes checksum missing"
+Assert-True ($checksumText -match "docs/release/prototype-limitations.md") "limitations doc checksum missing"
 
 $binaryHash = (Get-FileHash -LiteralPath (Join-Path $packageDir "bin\orbitalisd.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
 Assert-True ($checksumText -match [regex]::Escape("$binaryHash  bin/orbitalisd.exe")) "binary checksum does not match packaged binary"
@@ -89,6 +91,8 @@ Assert-True (@($forbidden).Count -eq 0) "package contains forbidden local/privat
 $notes = Get-Content -Raw -LiteralPath (Join-Path $packageDir "RELEASE-NOTES.md")
 Assert-True ($notes -match "dirty tree at package time") "release notes must include dirty flag"
 Assert-True ($notes -match "Known Limitations") "release notes must include limitations"
+Assert-True ($notes -match "prototype-limitations\.md") "release notes must link limitations doc"
+Assert-True ($notes -match "Critical/High") "release notes must separate security blockers from limitations"
 Assert-True ($notes -match "prototype-audit") "release notes must list security evidence"
 
 Write-Host "prototype release package script test passed"

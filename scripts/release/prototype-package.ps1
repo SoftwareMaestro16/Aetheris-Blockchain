@@ -179,7 +179,8 @@ try {
       "docs\security\prototype-audit-gate.md",
       "docs\query-surface.md",
       "docs\observability.md",
-      "docs\release\prototype-package.md"
+      "docs\release\prototype-package.md",
+      "docs\release\prototype-limitations.md"
     )) {
     $source = Resolve-ReleasePath -Path $doc -DefaultRelativePath $doc
     $destination = Join-Path $packageDir (Normalize-ReleaseRelativePath $doc)
@@ -213,6 +214,7 @@ Use the repository operator guide for full localnet setup and command examples:
 - `docs/operator-commands.md`
 - `docs/observability.md`
 - `docs/security/prototype-audit-gate.md`
+- `docs/release/prototype-limitations.md`
 
 Prototype tx fees use `norb`, for example `--fees 1000000norb`.
 "@
@@ -266,11 +268,14 @@ Packaged evidence files are copied under `evidence/` when passed through `-Evide
 
 ## Known Limitations
 
-- Prototype only; no mainnet economics or validator onboarding guarantees.
+- See `docs/release/prototype-limitations.md` for the versioned non-goals, accepted limitations, and blockers.
+- Prototype only; no mainnet launch or validator onboarding guarantees.
+- IBC/external bridge, production governance economics, exchange-grade DEX behavior, public faucet, full external audit, and explorer/API SLA are non-goals.
 - Localnet uses local-only test keyrings under ignored directories.
 - Query list endpoints have prototype caps; pagination/load work remains before public high-cardinality use.
 - Vote extension behavior is prototype-only and must be replaced or disabled before a public validator network.
 - Current dependency/security triage must match `docs/security/prototype-audit-gate.md` for each release run.
+- Untriaged Critical/High security findings are release blockers, not accepted limitations.
 "@
   $notes | Set-Content -LiteralPath (Join-Path $packageDir "RELEASE-NOTES.md")
 

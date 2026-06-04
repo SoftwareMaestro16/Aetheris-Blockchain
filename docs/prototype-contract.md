@@ -162,6 +162,7 @@ Primary docs:
 - [Observability](observability.md)
 - [Security Audit Gate](security/prototype-audit-gate.md)
 - [Prototype Release Package](release/prototype-package.md)
+- [Prototype Non-Goals And Limitations](release/prototype-limitations.md)
 
 Required local checks:
 

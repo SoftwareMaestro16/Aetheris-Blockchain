@@ -45,6 +45,7 @@ foreach ($link in @(
     'docs/prototype-acceptance-suite\.md',
     'docs/security/prototype-audit-gate\.md',
     'docs/release/prototype-package\.md',
+    'docs/release/prototype-limitations\.md',
     'docs/query-surface\.md',
     'docs/observability\.md',
     'docs/engineering-governance\.md',
