@@ -27,6 +27,11 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 	if err != nil {
 		return nil, err
 	}
+	if existingID, found, err := m.GetPoolIDByPair(ctx, token0.Denom, token1.Denom); err != nil {
+		return nil, err
+	} else if found {
+		return nil, types.ErrPoolExists.Wrapf("pool already exists for pair %s/%s at id %d", token0.Denom, token1.Denom, existingID)
+	}
 	id, err := m.GetNextPoolID(ctx)
 	if err != nil {
 		return nil, err
@@ -56,6 +61,9 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (*t
 		LpDenom:     lp,
 	}
 	if err := m.SetPool(ctx, pool); err != nil {
+		return nil, err
+	}
+	if err := m.SetPoolPairIndex(ctx, pool); err != nil {
 		return nil, err
 	}
 	if err := m.SetNextPoolID(ctx, id+1); err != nil {

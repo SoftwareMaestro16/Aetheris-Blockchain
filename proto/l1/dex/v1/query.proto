@@ -2,6 +2,7 @@ syntax = "proto3";
 package l1.dex.v1;
 
 import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
 import "gogoproto/gogo.proto";
 import "l1/dex/v1/genesis.proto";
 
@@ -15,6 +16,10 @@ service Query {
   rpc Pools(QueryPoolsRequest) returns (QueryPoolsResponse) {
     option (google.api.http).get = "/l1/dex/v1/pools";
   }
+
+  rpc PoolByPair(QueryPoolByPairRequest) returns (QueryPoolByPairResponse) {
+    option (google.api.http).get = "/l1/dex/v1/pool_by_pair";
+  }
 }
 
 message QueryPoolRequest {
@@ -25,8 +30,25 @@ message QueryPoolResponse {
   Pool pool = 1 [(gogoproto.nullable) = false];
 }
 
-message QueryPoolsRequest {}
+// QueryPoolsRequest lists pools using bounded pagination.
+// If pagination is omitted, the server returns at most 100 pools.
+// The server caps limit at 500, caps offset at 500, rejects count_total,
+// and rejects reverse pagination to keep query latency bounded.
+message QueryPoolsRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
 
 message QueryPoolsResponse {
   repeated Pool pools = 1 [(gogoproto.nullable) = false];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+// QueryPoolByPairRequest resolves a pool through the deterministic pair index.
+message QueryPoolByPairRequest {
+  string denom_a = 1;
+  string denom_b = 2;
+}
+
+message QueryPoolByPairResponse {
+  Pool pool = 1 [(gogoproto.nullable) = false];
 }

@@ -78,8 +78,12 @@ Smoke test:
 build\orbitalisd.exe query block --node tcp://127.0.0.1:26657
 build\orbitalisd.exe tx bank send node0 <to-address> 100000000000norb --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
 build\orbitalisd.exe tx tokenfactory create-denom gold --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
+build\orbitalisd.exe query dex pools --limit 100 --node tcp://127.0.0.1:26657
+build\orbitalisd.exe query dex pool-by-pair norb uatom --node tcp://127.0.0.1:26657
 build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657
 ```
+
+DEX pool list queries are paginated by default: omitted pagination returns at most 100 pools, and a single page is capped at 500 pools. DEX v1 also caps offset at 500 and rejects `count_total`; use `next_key` pagination for large pool sets.
 
 ## External Databases
 
