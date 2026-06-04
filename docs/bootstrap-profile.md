@@ -99,6 +99,8 @@ Validate genesis and compare key fields:
 .\scripts\localnet\validate-genesis.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
+The validation script checks the full local profile: chain ID, node count, node monikers, endpoint ports, minimum gas price, identical genesis hash across nodes, native metadata, staking/mint/fee denom, initial account balances, gentx self-delegations, empty tokenfactory state, and DEX `next_pool_id`.
+
 If validation fails on an existing localnet after module genesis changes, reset and regenerate the ignored node homes:
 
 ```powershell
@@ -178,10 +180,12 @@ The DEX smoke creates a factory asset, creates a pool, adds liquidity, swaps exa
 Export state after the network has started:
 
 ```powershell
-New-Item -ItemType Directory -Force .work\genesis | Out-Null
-cmd /c "build\orbitalisd.exe export --home .localnet\node0\orbitalisd > .work\genesis\node0-export.json"
-build\orbitalisd.exe genesis validate-genesis .work\genesis\node0-export.json --home .localnet\node0\orbitalisd
+.\scripts\localnet\stop.ps1
+.\scripts\localnet\export-genesis.ps1
+.\scripts\localnet\export-genesis.ps1 -OutputDir .localnet-5 -NodeIndex 0
 ```
+
+`export-genesis.ps1` writes under ignored `.work\genesis`, validates the exported genesis with `orbitalisd genesis validate-genesis`, checks the expected chain ID, and refuses to export while the localnet process for that output directory is still running.
 
 ## Audit Notes
 
@@ -200,6 +204,7 @@ go vet ./...
 buf lint
 go build -o build/orbitalisd.exe ./cmd/l1d
 .\scripts\localnet\validate-genesis.ps1
+.\scripts\localnet\export-genesis.ps1
 .\tests\e2e\prototype_acceptance.ps1
 .\scripts\security\prototype-audit.ps1 -Profile Fast
 .\scripts\release\prototype-package.ps1 -Version prototype-local -TargetOS windows -TargetArch amd64

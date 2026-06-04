@@ -51,14 +51,46 @@ if ($nodes.Count -ne $ValidatorCount) {
 
 $firstHash = $null
 $secretPattern = '(?i)\b(mnemonic|private[_-]?key|priv_validator|secret|seed|wallet)\b'
+$expectedTestAssetAmount = "1000000000"
+$expectedNativeAmount = "500000000"
+$expectedSelfDelegation = "100000000"
 
 foreach ($node in $nodes) {
   $nodeHome = Join-Path $node.FullName "orbitalisd"
   $genesisPath = Join-Path $nodeHome "config\genesis.json"
+  $configToml = Join-Path $nodeHome "config\config.toml"
+  $appToml = Join-Path $nodeHome "config\app.toml"
+  $nodeIndex = [int]($node.Name -replace '^\D+', '')
+  $ports = Get-LocalnetPortProfile `
+    -Index $nodeIndex `
+    -BaseP2PPort $BaseP2PPort `
+    -BaseRPCPort $BaseRPCPort `
+    -BaseRESTPort $BaseRESTPort `
+    -BaseGRPCPort $BaseGRPCPort `
+    -BasePprofPort $BasePprofPort `
+    -PortStride $PortStride
 
   & $Binary genesis validate-genesis $genesisPath --home $nodeHome
   if ($LASTEXITCODE -ne 0) {
     throw "genesis validation failed for $genesisPath"
+  }
+
+  $configRaw = Get-Content -Raw -LiteralPath $configToml
+  $appRaw = Get-Content -Raw -LiteralPath $appToml
+  if ($configRaw -notmatch "(?m)^moniker = `"$([regex]::Escape($node.Name))`"$") {
+    throw "config moniker for $($node.Name) does not match node directory"
+  }
+  if ($EnableRPC -and $configRaw -notmatch [regex]::Escape("tcp://0.0.0.0:$($ports.RPC)")) {
+    throw "RPC port for $($node.Name) does not match profile port $($ports.RPC)"
+  }
+  if ($EnableAPI -and $appRaw -notmatch [regex]::Escape("tcp://0.0.0.0:$($ports.REST)")) {
+    throw "REST port for $($node.Name) does not match profile port $($ports.REST)"
+  }
+  if ($EnableGRPC -and $appRaw -notmatch [regex]::Escape("127.0.0.1:$($ports.GRPC)")) {
+    throw "gRPC port for $($node.Name) does not match profile port $($ports.GRPC)"
+  }
+  if ($appRaw -notmatch '(?m)^minimum-gas-prices = "0norb"$') {
+    throw "minimum-gas-prices for $($node.Name) must be 0norb"
   }
 
   $raw = Get-Content -Raw -LiteralPath $genesisPath
@@ -112,6 +144,32 @@ foreach ($node in $nodes) {
   $genTxs = @($appState.genutil.gen_txs)
   if ($genTxs.Count -ne $ValidatorCount) {
     throw "expected $ValidatorCount gentxs, found $($genTxs.Count)"
+  }
+
+  $balances = @($appState.bank.balances)
+  if ($balances.Count -ne $ValidatorCount) {
+    throw "expected $ValidatorCount initial bank balances, found $($balances.Count)"
+  }
+  foreach ($balance in $balances) {
+    $coins = @($balance.coins)
+    $testAsset = @($coins | Where-Object { $_.denom -eq "testtoken" })
+    $native = @($coins | Where-Object { $_.denom -eq "norb" })
+    if ($testAsset.Count -ne 1 -or $testAsset[0].amount -ne $expectedTestAssetAmount) {
+      throw "initial account $($balance.address) must have ${expectedTestAssetAmount}testtoken"
+    }
+    if ($native.Count -ne 1 -or $native[0].amount -ne $expectedNativeAmount) {
+      throw "initial account $($balance.address) must have ${expectedNativeAmount}norb"
+    }
+  }
+
+  foreach ($genTx in $genTxs) {
+    $genTxRaw = $genTx | ConvertTo-Json -Depth 100 -Compress
+    if ($genTxRaw -notmatch '"@type":"/cosmos.staking.v1beta1.MsgCreateValidator"') {
+      throw "gentx does not contain MsgCreateValidator"
+    }
+    if ($genTxRaw -notmatch '"denom":"norb"' -or $genTxRaw -notmatch "`"amount`":`"$expectedSelfDelegation`"") {
+      throw "gentx self-delegation must be ${expectedSelfDelegation}norb"
+    }
   }
 }
 

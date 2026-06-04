@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,8 +9,12 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
+	protocolpooltypes "github.com/cosmos/cosmos-sdk/x/protocolpool/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 
@@ -143,4 +148,88 @@ func TestCustomModuleGenesisInitExportRoundTrip(t *testing.T) {
 	require.Equal(t, dextypes.DefaultNextPoolID, dexGenState.NextPoolId)
 	require.Empty(t, dexGenState.Pools)
 	require.NoError(t, dexGenState.Validate())
+}
+
+func TestDefaultGenesisRejectsCorruptedPrototypeModuleState(t *testing.T) {
+	app, baseGenesis := setup(true, 5)
+	cdc := app.AppCodec()
+	admin := sdk.AccAddress(bytes.Repeat([]byte{1}, 20)).String()
+
+	tests := map[string]func(GenesisState){
+		"invalid native metadata": func(genesis GenesisState) {
+			var bankGenState banktypes.GenesisState
+			cdc.MustUnmarshalJSON(genesis[banktypes.ModuleName], &bankGenState)
+			bankGenState.DenomMetadata = []banktypes.Metadata{{Base: "bad denom", Display: appparams.DisplayDenom}}
+			genesis[banktypes.ModuleName] = cdc.MustMarshalJSON(&bankGenState)
+		},
+		"invalid staking denom": func(genesis GenesisState) {
+			stakingGenState := stakingtypes.GetGenesisStateFromAppState(cdc, genesis)
+			stakingGenState.Params.BondDenom = "bad denom"
+			genesis[stakingtypes.ModuleName] = cdc.MustMarshalJSON(stakingGenState)
+		},
+		"invalid fees params": func(genesis GenesisState) {
+			var feesGenState feestypes.GenesisState
+			cdc.MustUnmarshalJSON(genesis[feestypes.ModuleName], &feesGenState)
+			feesGenState.Params.AllowedFeeDenoms = []string{appparams.TestAssetDenom}
+			genesis[feestypes.ModuleName] = cdc.MustMarshalJSON(&feesGenState)
+		},
+		"invalid tokenfactory metadata": func(genesis GenesisState) {
+			tokenfactoryGenState := tokenfactorytypes.GenesisState{Denoms: []tokenfactorytypes.DenomAuthorityMetadata{{
+				Denom: "factory/" + admin + "/" + appparams.BaseDenom,
+				Admin: admin,
+			}}}
+			genesis[tokenfactorytypes.ModuleName] = cdc.MustMarshalJSON(&tokenfactoryGenState)
+		},
+		"duplicate dex pool pair": func(genesis GenesisState) {
+			dexGenState := dextypes.GenesisState{NextPoolId: 3, Pools: []dextypes.Pool{
+				{Id: 1, Denom0: "aaa", Denom1: appparams.BaseDenom, Reserve0: "1", Reserve1: "1", TotalShares: "1", LpDenom: "lp/1"},
+				{Id: 2, Denom0: "aaa", Denom1: appparams.BaseDenom, Reserve0: "1", Reserve1: "1", TotalShares: "1", LpDenom: "lp/2"},
+			}}
+			genesis[dextypes.ModuleName] = cdc.MustMarshalJSON(&dexGenState)
+		},
+	}
+
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			genesis := cloneGenesisState(baseGenesis)
+			mutate(genesis)
+			err := app.BasicModuleManager.ValidateGenesis(cdc, app.TxConfig(), genesis)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestPrototypeModuleAccountPermissionsAreNarrow(t *testing.T) {
+	expected := map[string][]string{
+		authtypes.FeeCollectorName:                  nil,
+		distrtypes.ModuleName:                       nil,
+		minttypes.ModuleName:                        {authtypes.Minter},
+		stakingtypes.BondedPoolName:                 {authtypes.Burner, authtypes.Staking},
+		stakingtypes.NotBondedPoolName:              {authtypes.Burner, authtypes.Staking},
+		govtypes.ModuleName:                         {authtypes.Burner},
+		protocolpooltypes.ModuleName:                nil,
+		protocolpooltypes.ProtocolPoolEscrowAccount: nil,
+		tokenfactorytypes.ModuleName:                {authtypes.Minter, authtypes.Burner},
+		dextypes.ModuleName:                         {authtypes.Minter, authtypes.Burner},
+		feestypes.ModuleName:                        nil,
+	}
+	require.Equal(t, expected, GetMaccPerms())
+
+	blocked := BlockedAddresses()
+	for moduleName := range expected {
+		addr := authtypes.NewModuleAddress(moduleName).String()
+		if moduleName == govtypes.ModuleName {
+			require.False(t, blocked[addr])
+			continue
+		}
+		require.True(t, blocked[addr], moduleName)
+	}
+}
+
+func cloneGenesisState(genesis GenesisState) GenesisState {
+	clone := make(GenesisState, len(genesis))
+	for moduleName, raw := range genesis {
+		clone[moduleName] = append(json.RawMessage(nil), raw...)
+	}
+	return clone
 }
