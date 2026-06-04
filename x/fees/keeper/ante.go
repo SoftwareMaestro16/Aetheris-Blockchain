@@ -12,15 +12,18 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 		if !ok {
 			return ctx, types.ErrInvalidFee.Wrap("transaction must expose fees")
 		}
-		for _, fee := range feeTx.GetFee() {
-			allowed, err := k.IsAllowedFeeDenom(ctx, fee.Denom)
-			if err != nil {
-				return ctx, err
-			}
-			if !allowed {
-				return ctx, types.ErrInvalidFee.Wrapf("fee denom %s not accepted; use %s", fee.Denom, types.BondDenom)
-			}
+		fees := feeTx.GetFee()
+		enforceMin := !simulate && ctx.BlockHeight() > 0
+		if err := k.ValidateFees(ctx, fees, enforceMin); err != nil {
+			return ctx, err
 		}
-		return next(ctx, tx, simulate)
+		newCtx, err := next(ctx, tx, simulate)
+		if err != nil || simulate {
+			return newCtx, err
+		}
+		if err := k.RecordCollectedFees(newCtx, fees); err != nil {
+			return newCtx, err
+		}
+		return newCtx, nil
 	}
 }

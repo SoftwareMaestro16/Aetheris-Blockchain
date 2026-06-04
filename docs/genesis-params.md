@@ -57,19 +57,24 @@ Validation:
 ## `x/fees`
 
 Params:
-- `collector_module_account`
-- `distribution_weights`
-- `min_distribution_amount`
-- `enabled`
+- `allowed_fee_denoms`
+- `validator_rewards_ratio`
+- `community_pool_ratio`
+- `min_fee_amount`
+- `fee_collector_module`
+- `validator_rewards_target`
+- `community_pool_target`
 
 Genesis state:
 - `params`
-- `accrued_fees`
+- `protocol_fee_state`
 
 Validation:
-- Distribution weights must sum exactly to the configured denominator.
-- Collector account must be a valid module account.
-- Disabled fees must not leave partially active distribution routes.
+- v1 allows only `norb` fees.
+- Minimum fee must be positive.
+- Split ratios must be decimals between `0` and `1` and sum exactly to `1`.
+- Fee collector and target routes are explicit and fixed to safe v1 module routes.
+- Protocol fee accounting must satisfy `total_collected == validator_rewards + community_pool`.
 
 ## Upgrade Policy
 

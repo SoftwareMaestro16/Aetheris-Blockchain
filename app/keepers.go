@@ -217,6 +217,9 @@ func (app *L1App) initKeepers(
 	app.FeesKeeper = feeskeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[feestypes.StoreKey]),
+		app.AccountKeeper,
+		app.BankKeeper,
+		app.DistrKeeper,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 	return txConfig

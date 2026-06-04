@@ -22,7 +22,7 @@ flowchart LR
 - `app`: direct Cosmos SDK `BaseApp` assembly pinned to Cosmos SDK `v0.54.3` and CometBFT `v0.39.3`.
 - `x/tokenfactory`: factory denoms, admin-controlled mint/burn, admin transfer, queries.
 - `x/dex`: constant-product AMM pools, liquidity add/remove, exact-input swaps, LP tokens.
-- `x/fees`: native fee-denom policy; v1 accepts only `norb` fees.
+- `x/fees`: native protocol fee policy, collection accounting, module balance queries, and `norb`-only fee enforcement.
 - `scripts/localnet`: 3-validator localnet init/start/stop/reset scripts.
 
 ## Build And Test
@@ -79,6 +79,8 @@ build\orbitalisd.exe query block --node tcp://127.0.0.1:26657
 build\orbitalisd.exe tx bank send node0 <to-address> 100000000000norb --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
 build\orbitalisd.exe tx tokenfactory create-denom gold --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb
 build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657
+build\orbitalisd.exe query fees accounting --node tcp://127.0.0.1:26657
+build\orbitalisd.exe query fees module-balances --node tcp://127.0.0.1:26657
 ```
 
 ## External Databases
