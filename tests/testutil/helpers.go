@@ -82,6 +82,20 @@ func EncodeSignedTx(
 	gas uint64,
 ) []byte {
 	t.Helper()
+	return EncodeSignedTxWithChainID(t, app, ctx, priv, msgs, fee, gas, app.ChainID())
+}
+
+func EncodeSignedTxWithChainID(
+	t *testing.T,
+	app *l1app.L1App,
+	ctx sdk.Context,
+	priv cryptotypes.PrivKey,
+	msgs []sdk.Msg,
+	fee sdk.Coins,
+	gas uint64,
+	chainID string,
+) []byte {
+	t.Helper()
 	addr := sdk.AccAddress(priv.PubKey().Address())
 	acc := app.AccountKeeper.GetAccount(ctx, addr)
 	require.NotNil(t, acc)
@@ -91,7 +105,7 @@ func EncodeSignedTx(
 		msgs,
 		fee,
 		gas,
-		app.ChainID(),
+		chainID,
 		[]uint64{acc.GetAccountNumber()},
 		[]uint64{acc.GetSequence()},
 		priv,

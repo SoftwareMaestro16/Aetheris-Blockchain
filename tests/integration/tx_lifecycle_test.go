@@ -24,6 +24,7 @@ func TestSignedBankTxReplayIsRejectedAfterSequenceIncrement(t *testing.T) {
 	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 
 	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
 	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), 200_000)
 
 	first := testutil.FinalizeBlock(t, app, 1, txBytes)
@@ -34,6 +35,8 @@ func TestSignedBankTxReplayIsRejectedAfterSequenceIncrement(t *testing.T) {
 	ctxAfterFirst := testutil.NewContext(app, 2)
 	recipientAfterFirst := app.BankKeeper.GetBalance(ctxAfterFirst, recipient, "norb")
 	require.Equal(t, sdkmath.NewInt(1_000_100), recipientAfterFirst.Amount)
+	_, sequenceAfterFirst := testutil.AccountNumberAndSequence(t, app, ctxAfterFirst, sender)
+	require.Equal(t, sequenceBefore+1, sequenceAfterFirst)
 
 	replay := testutil.FinalizeBlock(t, app, 2, txBytes)
 	require.Len(t, replay.TxResults, 1)
@@ -42,6 +45,8 @@ func TestSignedBankTxReplayIsRejectedAfterSequenceIncrement(t *testing.T) {
 
 	ctxAfterReplay := testutil.NewContext(app, 3)
 	require.Equal(t, recipientAfterFirst, app.BankKeeper.GetBalance(ctxAfterReplay, recipient, "norb"))
+	_, sequenceAfterReplay := testutil.AccountNumberAndSequence(t, app, ctxAfterReplay, sender)
+	require.Equal(t, sequenceAfterFirst, sequenceAfterReplay)
 }
 
 func TestInvalidSignerTxFailsBeforeBalanceMutation(t *testing.T) {
@@ -60,6 +65,121 @@ func TestInvalidSignerTxFailsBeforeBalanceMutation(t *testing.T) {
 
 	after := app.BankKeeper.GetBalance(testutil.NewContext(app, 1), recipient, "norb")
 	require.Equal(t, before, after)
+}
+
+func TestWrongChainIDSignedTxFailsBeforeBalanceMutation(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "orbitalis-integration-wrong-chain")
+	ctx := testutil.NewContext(app, 1)
+	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
+	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
+
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+	txBytes := testutil.EncodeSignedTxWithChainID(
+		t,
+		app,
+		ctx,
+		senderPriv,
+		[]sdk.Msg{msg},
+		sdk.NewCoins(sdk.NewInt64Coin("norb", 10)),
+		200_000,
+		"wrong-chain-id",
+	)
+	res := testutil.FinalizeBlock(t, app, 1, txBytes)
+	require.Len(t, res.TxResults, 1)
+	require.NotZero(t, res.TxResults[0].Code, "tx signed for a different chain-id must fail")
+
+	afterCtx := testutil.NewContext(app, 1)
+	require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
+	require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+	_, sequenceAfter := testutil.AccountNumberAndSequence(t, app, afterCtx, sender)
+	require.Equal(t, sequenceBefore, sequenceAfter)
+}
+
+func TestMissingAndInvalidFeeTxsFailBeforeBalanceMutation(t *testing.T) {
+	tests := []struct {
+		name  string
+		fee   sdk.Coins
+		chain string
+	}{
+		{name: "missing fee", fee: sdk.Coins{}, chain: "orbitalis-integration-missing-fee"},
+		{name: "invalid fee denom", fee: sdk.NewCoins(sdk.NewInt64Coin("uatom", 10)), chain: "orbitalis-integration-invalid-fee"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			app := testutil.NewInitializedApp(t, tc.chain)
+			ctx := testutil.NewContext(app, 1)
+			senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+			_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+			beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
+			beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+			beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
+			require.NoError(t, err)
+			_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
+
+			msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+			txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, tc.fee, 200_000)
+			res := testutil.FinalizeBlock(t, app, 1, txBytes)
+			require.Len(t, res.TxResults, 1)
+			require.NotZero(t, res.TxResults[0].Code)
+
+			afterCtx := testutil.NewContext(app, 1)
+			require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
+			require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+			afterFees, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
+			require.NoError(t, err)
+			require.Equal(t, beforeFees, afterFees)
+			_, sequenceAfter := testutil.AccountNumberAndSequence(t, app, afterCtx, sender)
+			require.Equal(t, sequenceBefore, sequenceAfter)
+		})
+	}
+}
+
+func TestInsufficientFeeFundsFailBeforeStateTransition(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "orbitalis-integration-insufficient-fee-funds")
+	ctx := testutil.NewContext(app, 1)
+	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1))
+	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
+	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
+	require.NoError(t, err)
+	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
+
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 1)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), 200_000)
+	res := testutil.FinalizeBlock(t, app, 1, txBytes)
+	require.Len(t, res.TxResults, 1)
+	require.NotZero(t, res.TxResults[0].Code, "fee payer without enough norb for fee must fail")
+
+	afterCtx := testutil.NewContext(app, 1)
+	require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
+	require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+	afterFees, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
+	require.NoError(t, err)
+	require.Equal(t, beforeFees, afterFees)
+	_, sequenceAfter := testutil.AccountNumberAndSequence(t, app, afterCtx, sender)
+	require.Equal(t, sequenceBefore, sequenceAfter)
+}
+
+func TestMalformedProtobufTxBytesFailWithoutFeeAccounting(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "orbitalis-integration-malformed-protobuf")
+	ctx := testutil.NewContext(app, 1)
+	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
+	require.NoError(t, err)
+
+	res := testutil.FinalizeBlock(t, app, 1, []byte{0xff}, []byte{0x0a, 0x80, 0x80}, []byte("not-a-protobuf-tx"))
+	require.Len(t, res.TxResults, 3)
+	for _, txResult := range res.TxResults {
+		require.NotZero(t, txResult.Code)
+	}
+
+	afterFees, err := app.FeesKeeper.GetProtocolFeeState(testutil.NewContext(app, 1))
+	require.NoError(t, err)
+	require.Equal(t, beforeFees, afterFees)
 }
 
 func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {

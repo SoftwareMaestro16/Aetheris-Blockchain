@@ -8,6 +8,7 @@ This document defines the prototype fee policy for Orbitalis.
 - Display token: `ORB`, display metadata only
 - Prototype example fee: `1000000norb`
 - Default localnet minimum gas price: `0norb`
+- Protocol `min_fee_amount`: `1`
 - V1 allowed fee denom list size: exactly one denom
 - Fee split params: validator rewards `0.98`, community pool `0.02`
 
@@ -15,23 +16,24 @@ This document defines the prototype fee policy for Orbitalis.
 
 ## Ante Behavior
 
-The `x/fees` ante decorator wraps the base Cosmos SDK ante handler. It enforces denom policy before the SDK signature and fee deduction chain continues.
+The `x/fees` ante decorator wraps the base Cosmos SDK ante handler. It enforces denom and minimum amount policy before the SDK signature and fee deduction chain continues.
 
 Accepted by `x/fees` policy:
 
 - `--fees 1000000norb`
-- `--fees 0norb`
-- an empty fee list
 
 Rejected by `x/fees` policy:
 
+- empty fee lists
+- zero native fee coins
+- fees below `min_fee_amount`
 - `--fees 1000testtoken`
 - `--fees 1000norb,1testtoken`
 - malformed fee coins
 - malformed fee lists such as duplicate denom entries
 - transactions that do not expose the SDK `FeeTx` interface
 
-The localnet default `minimum-gas-prices = "0norb"` means empty and zero-fee transactions are accepted in the prototype localnet. Operator examples still use `1000000norb` so the fee path is exercised consistently. A public testnet can raise local validator min gas prices without changing the allowed-denom policy.
+The localnet default `minimum-gas-prices = "0norb"` is a validator mempool setting. Orbitalis protocol fee policy is stricter: delivered transactions must include at least `1norb` unless they are height-0 genesis create-validator transactions.
 
 ## One-Command Smoke
 
@@ -56,7 +58,7 @@ Expected result:
 - DEX create-pool with `1000000norb` fee succeeds
 - bank send, tokenfactory tx, and DEX tx with `testtoken` fee are rejected
 - mixed `norb,testtoken` fees are rejected
-- zero and empty fee txs match localnet policy and are accepted
+- zero and empty fee txs are rejected by protocol fee policy
 
 Recovery:
 
@@ -110,7 +112,8 @@ fee denom testtoken not accepted; use norb
 - Ante policy executes before the wrapped SDK ante handler.
 - Non-`FeeTx` transactions are rejected, so callers cannot bypass denom checks with a custom tx type.
 - Fee denom validation is deterministic and bounded. V1 params allow exactly one denom: `norb`.
-- Fee params are loaded once per tx; malformed fee lists are rejected before any wrapped ante handler can mutate state.
+- Fee params are loaded once per tx; malformed, empty, zero, below-minimum, and wrong-denom fee lists are rejected before any wrapped ante handler can mutate state.
+- Protocol fee accounting is recorded only after wrapped SDK ante success, so invalid signer, wrong chain ID, stale sequence, insufficient fee funds, and malformed tx failures do not update fee accounting.
 - Empty allowed-denom lists, duplicate denoms, and multi-denom params are rejected by params validation.
 - `MsgUpdateParams` requires the governance module authority and validates params before writing state.
 - Wrong fee denoms return a stable error message without logging keys, mnemonics, env vars, or local paths.

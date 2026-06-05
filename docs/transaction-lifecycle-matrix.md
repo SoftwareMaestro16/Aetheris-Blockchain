@@ -42,17 +42,17 @@ The Cosmos-specific review for every row must cover:
 
 | Tx | Signer/auth failures | Field and denom failures | Balance/state failures | Replay/sequence coverage | Scale/scan note |
 | --- | --- | --- | --- | --- | --- |
-| Bank send | SDK rejects missing/wrong sender signature | invalid Bech32 receiver; invalid amount denom; wrong fee denom rejected by `x/fees` ante | insufficient funds fails in bank keeper without receiver mutation | SDK ante sequence; replay explicitly covered in PoS signed tx smoke and inherited by all SDK txs | direct account balance updates |
+| Bank send | SDK rejects missing/wrong sender signature | invalid Bech32 receiver; invalid amount denom; wrong fee denom rejected by `x/fees` ante | insufficient funds fails in bank keeper without receiver mutation | SDK ante sequence; replay explicitly covered by `tests/integration/tx_lifecycle_test.go` and inherited by all SDK txs | direct account balance updates |
 | Staking delegate | SDK requires delegator signature | malformed `orbvaloper`; wrong delegation denom | insufficient funds and invalid validator fail safely | `app/pos_test.go` and `tests/e2e/pos_smoke.ps1` cover signed replay/sequence | staking keeper direct validator/delegation keys |
-| Tokenfactory create denom | creator signer from tx `--from`; malformed creator rejected | invalid subdenom, duplicate denom, native/LP spoofing | duplicate denom state rejected before metadata write | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | denom key lookup; no denom list scan |
-| Tokenfactory mint | non-admin sender rejected | missing denom, invalid amount, invalid recipient address | bank mint/send errors returned; supply checked by bank query | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | denom metadata lookup only |
-| Tokenfactory burn | non-admin and burn-from mismatch rejected | missing denom, invalid amount, invalid burn address | insufficient balance fails on send-to-module; bank supply decreases only after successful transfer | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | denom metadata lookup only |
-| Tokenfactory change admin | non-admin sender rejected | missing denom, invalid new admin | metadata write only after checks | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | denom metadata lookup only |
+| Tokenfactory create denom | creator signer from tx `--from`; malformed creator rejected | invalid subdenom, duplicate denom, native/LP spoofing | duplicate denom state rejected before metadata write | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | denom key lookup; no denom list scan |
+| Tokenfactory mint | non-admin sender rejected | missing denom, invalid amount, invalid recipient address | bank mint/send errors returned; supply checked by bank query | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | denom metadata lookup only |
+| Tokenfactory burn | non-admin and burn-from mismatch rejected | missing denom, invalid amount, invalid burn address | insufficient balance fails on send-to-module; bank supply decreases only after successful transfer | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | denom metadata lookup only |
+| Tokenfactory change admin | non-admin sender rejected | missing denom, invalid new admin | metadata write only after checks | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | denom metadata lookup only |
 | Fees update params | invalid authority rejected | empty, duplicate, multi-denom, invalid denom params rejected | params write only after `Validate` | governance/SKD ante sequence inherited; no operator shortcut | single params key |
-| DEX create pool | creator signer from tx `--from`; malformed creator rejected | invalid coins, same denom, wrong/uncanonical denom pair | duplicate pair rejected before funds move; insufficient funds returned by bank keeper | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | pair-index lookup; no pool scan |
-| DEX add liquidity | depositor signer from tx `--from`; malformed depositor rejected | missing pool, wrong pool denoms, non-positive tokens, invalid `min_shares` | excessive `min_shares`, corrupted pool state, insufficient funds fail before final pool write | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | pool id lookup |
-| DEX remove liquidity | withdrawer signer from tx `--from`; malformed withdrawer rejected | missing pool, wrong LP denom, zero shares | shares exceed supply, withdrawal rounds to zero, insufficient LP balance fail safely | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | pool id lookup |
-| DEX swap exact in | trader signer from tx `--from`; malformed trader rejected | missing pool, wrong in/out denoms, invalid input, invalid `min_amount_out` | excessive slippage, tiny output, corrupted pool, insufficient input balance fail safely | SDK ante inherited; SHOULD FIX reusable replay e2e for custom module txs | pool id lookup |
+| DEX create pool | creator signer from tx `--from`; malformed creator rejected | invalid coins, same denom, wrong/uncanonical denom pair | duplicate pair rejected before funds move; insufficient funds returned by bank keeper | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | pair-index lookup; no pool scan |
+| DEX add liquidity | depositor signer from tx `--from`; malformed depositor rejected | missing pool, wrong pool denoms, non-positive tokens, invalid `min_shares` | excessive `min_shares`, corrupted pool state, insufficient funds fail before final pool write | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | pool id lookup |
+| DEX remove liquidity | withdrawer signer from tx `--from`; malformed withdrawer rejected | missing pool, wrong LP denom, zero shares | shares exceed supply, withdrawal rounds to zero, insufficient LP balance fail safely | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | pool id lookup |
+| DEX swap exact in | trader signer from tx `--from`; malformed trader rejected | missing pool, wrong in/out denoms, invalid input, invalid `min_amount_out` | excessive slippage, tiny output, corrupted pool, insufficient input balance fail safely | SDK ante inherited; replay/sequence covered at signed tx layer by `tests/integration/tx_lifecycle_test.go` | pool id lookup |
 
 ## Coverage Index
 
@@ -60,17 +60,13 @@ The Cosmos-specific review for every row must cover:
 | --- | --- |
 | CLI construction | `cmd/l1d/cmd/root_test.go`, `x/tokenfactory/client/cli/tx.go`, `x/dex/client/cli/tx.go`, `x/fees/client/cli/query.go` |
 | Msg server authorization and state writes | `x/tokenfactory/keeper/msg_server_test.go`, `x/dex/keeper/msg_server_test.go`, `x/fees/keeper/msg_server_test.go`, `app/pos_test.go` |
-| Fee ante policy | `x/fees/keeper/ante_test.go`, `tests/e2e/fees_ante_smoke.ps1` |
+| Fee ante policy | `x/fees/keeper/ante_test.go`, `tests/integration/tx_lifecycle_test.go`, `tests/e2e/fees_ante_smoke.ps1` |
 | Query verification | `x/tokenfactory/keeper/query_server_test.go`, `x/dex/keeper/query_server_test.go`, `x/fees/keeper/query_server_test.go`, `tests/e2e/query_surface_smoke.ps1` |
 | E2E lifecycle | `tests/e2e/native_token_smoke.ps1`, `tests/e2e/pos_smoke.ps1`, `tests/e2e/tokenfactory_smoke.ps1`, `tests/e2e/dex_smoke.ps1`, `tests/e2e/prototype_acceptance.ps1` |
 | Determinism and audit | `scripts/security/determinism-gate.ps1`, `scripts/security/prototype-audit.ps1`, `docs/security/cosmos-security-checklist.md` |
 | Bench/perf | `BenchmarkEmptyBlockFinalizeCommit`, `BenchmarkDexCreatePoolsAndSwap` |
 
 ## Gaps
-
-MUST FIX before public release or high-cardinality testnet:
-
-- A reusable signed-tx replay/sequence e2e helper should be applied to bank, tokenfactory, and DEX txs, not only the current staking/PoS smoke path.
 
 SHOULD FIX for stronger operator observability:
 
