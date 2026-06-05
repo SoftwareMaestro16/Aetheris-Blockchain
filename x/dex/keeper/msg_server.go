@@ -22,13 +22,10 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 	return msgServer{Keeper: k}
 }
 
-func parseNonZeroAccAddress(field, text string) (sdk.AccAddress, error) {
-	addr, err := orbitaladdress.ParseAccAddress(text)
+func parseDexAddress(field, text string) (sdk.AccAddress, error) {
+	addr, err := orbitaladdress.ParseUserAddress(field, text)
 	if err != nil {
-		return nil, err
-	}
-	if orbitaladdress.IsZeroAccAddress(addr) {
-		return nil, types.ErrInvalidAddress.Wrapf("%s must not be zero address", field)
+		return nil, types.ErrInvalidAddress.Wrap(err.Error())
 	}
 	return addr, nil
 }
@@ -42,7 +39,7 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (re
 	if !params.PoolCreationEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("pool creation is disabled")
 	}
-	creator, err := parseNonZeroAccAddress("creator", msg.Creator)
+	creator, err := parseDexAddress("creator", msg.Creator)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +127,7 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	if !params.LiquidityEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("liquidity operations are disabled")
 	}
-	depositor, err := parseNonZeroAccAddress("depositor", msg.Depositor)
+	depositor, err := parseDexAddress("depositor", msg.Depositor)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +205,7 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	if !params.LiquidityEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("liquidity operations are disabled")
 	}
-	withdrawer, err := parseNonZeroAccAddress("withdrawer", msg.Withdrawer)
+	withdrawer, err := parseDexAddress("withdrawer", msg.Withdrawer)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +277,7 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	if !params.SwapsEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("swaps are disabled")
 	}
-	trader, err := parseNonZeroAccAddress("trader", msg.Trader)
+	trader, err := parseDexAddress("trader", msg.Trader)
 	if err != nil {
 		return nil, err
 	}

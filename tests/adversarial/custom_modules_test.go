@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
+	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
 	testutil "github.com/sovereign-l1/l1/tests/testutil"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -184,6 +185,112 @@ func TestFeeAndGovernanceAbuseRejected(t *testing.T) {
 		Params:    tfParams,
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidParams)
+}
+
+func TestZeroAddressProtocolSafetyRules(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-zero-address")
+	ctx := testutil.NewContext(app, 1)
+	_, admin := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	_, trader := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	testutil.FundAccount(t, app, ctx, trader, sdk.NewCoins(sdk.NewInt64Coin("uatom", 10_000)))
+
+	tfMsgServer := tfkeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
+	dexMsgServer := dexkeeper.NewMsgServerImpl(app.DexKeeper)
+	feesMsgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
+
+	_, err := tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
+		Creator:  orbitaladdress.ZeroRawAddress,
+		Subdenom: "gold",
+	})
+	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+
+	createDenomRes, err := tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
+		Creator:  admin.String(),
+		Subdenom: "gold",
+	})
+	require.NoError(t, err)
+	denom := createDenomRes.NewTokenDenom
+
+	_, err = tfMsgServer.Mint(ctx, &tftypes.MsgMint{
+		Sender:        admin.String(),
+		Amount:        sdk.NewInt64Coin(denom, 10),
+		MintToAddress: orbitaladdress.ZeroUserFriendly,
+	})
+	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+	_, err = tfMsgServer.Burn(ctx, &tftypes.MsgBurn{
+		Sender:          admin.String(),
+		Amount:          sdk.NewInt64Coin(denom, 1),
+		BurnFromAddress: orbitaladdress.ZeroRawAddress,
+	})
+	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+	_, err = tfMsgServer.ChangeAdmin(ctx, &tftypes.MsgChangeAdmin{
+		Sender:   admin.String(),
+		Denom:    denom,
+		NewAdmin: orbitaladdress.ZeroRawAddress,
+	})
+	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+
+	_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
+		Creator: trader.String(),
+		TokenA:  sdk.NewInt64Coin("norb", 1_000),
+		TokenB:  sdk.NewInt64Coin("uatom", 1_000),
+	})
+	require.NoError(t, err)
+	_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
+		Creator: orbitaladdress.ZeroRawAddress,
+		TokenA:  sdk.NewInt64Coin("norb", 1),
+		TokenB:  sdk.NewInt64Coin("uatom", 1),
+	})
+	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+	_, err = dexMsgServer.AddLiquidity(ctx, &dextypes.MsgAddLiquidity{
+		Depositor: orbitaladdress.ZeroRawAddress,
+		PoolId:    1,
+		TokenA:    sdk.NewInt64Coin("norb", 1),
+		TokenB:    sdk.NewInt64Coin("uatom", 1),
+		MinShares: "1",
+	})
+	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+	_, err = dexMsgServer.RemoveLiquidity(ctx, &dextypes.MsgRemoveLiquidity{
+		Withdrawer: orbitaladdress.ZeroUserFriendly,
+		PoolId:     1,
+		Shares:     sdk.NewInt64Coin("lp/1", 1),
+	})
+	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+	_, err = dexMsgServer.SwapExactAmountIn(ctx, &dextypes.MsgSwapExactAmountIn{
+		Trader:        orbitaladdress.ZeroRawAddress,
+		PoolId:        1,
+		TokenIn:       sdk.NewInt64Coin("norb", 1),
+		TokenOutDenom: "uatom",
+		MinAmountOut:  "1",
+	})
+	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+
+	tfGenesis := tftypes.GenesisState{Denoms: []tftypes.DenomAuthorityMetadata{{
+		Denom: "factory/" + admin.String() + "/bad",
+		Admin: orbitaladdress.ZeroRawAddress,
+	}}}
+	require.Error(t, tfGenesis.Validate())
+	dexGenesis := dextypes.GenesisState{
+		NextPoolId: 2,
+		Pools: []dextypes.Pool{{
+			Id:          1,
+			Denom0:      "factory/" + orbitaladdress.ZeroRawAddress + "/bad",
+			Denom1:      "norb",
+			Reserve0:    "1",
+			Reserve1:    "1",
+			TotalShares: "1",
+			LpDenom:     "lp/1",
+		}},
+	}
+	require.Error(t, dexGenesis.Validate())
+
+	feesParams := feestypes.DefaultParams()
+	feesParams.FeeCollectorModule = orbitaladdress.ZeroRawAddress
+	_, err = feesMsgServer.UpdateParams(ctx, &feestypes.MsgUpdateParams{
+		Authority: app.FeesKeeper.Authority(),
+		Params:    feesParams,
+	})
+	require.ErrorIs(t, err, feestypes.ErrInvalidParams)
 }
 
 func TestRepeatedInvalidFeeSpamDoesNotAdvanceProtocolAccounting(t *testing.T) {

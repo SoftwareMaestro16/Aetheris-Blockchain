@@ -99,13 +99,16 @@ func (gs GenesisState) Validate() error {
 		if len(parts) != 3 || parts[1] == "" || parts[2] == "" {
 			return fmt.Errorf("denom %s must use factory/{admin}/{subdenom} format", denom.Denom)
 		}
+		if err := orbitaladdress.ValidateUserAddress("denom factory admin", parts[1]); err != nil {
+			return fmt.Errorf("invalid factory admin for denom %s: %w", denom.Denom, err)
+		}
 		if IsReservedNativeSubdenom(parts[2]) {
 			return fmt.Errorf("denom %s must not spoof native ORB/norb", denom.Denom)
 		}
 		if denom.Admin == "" {
 			return fmt.Errorf("empty admin for denom %s", denom.Denom)
 		}
-		if _, err := orbitaladdress.ParseAccAddress(denom.Admin); err != nil {
+		if err := orbitaladdress.ValidateUserAddress("admin", denom.Admin); err != nil {
 			return fmt.Errorf("invalid admin for denom %s: %w", denom.Denom, err)
 		}
 		if _, ok := seen[denom.Denom]; ok {

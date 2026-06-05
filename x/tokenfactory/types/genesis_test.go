@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
@@ -28,6 +30,8 @@ func TestGenesisRejectsInvalidDenomAuthorityMetadata(t *testing.T) {
 		"wrong prefix":       {Denom: "other/" + admin + "/foo", Admin: admin},
 		"missing admin path": {Denom: "factory/foo", Admin: admin},
 		"native spoof":       {Denom: "factory/" + admin + "/" + appparams.BaseDenom, Admin: admin},
+		"zero denom admin":   {Denom: "factory/" + orbitaladdress.ZeroRawAddress + "/foo", Admin: admin},
+		"zero admin":         {Denom: "factory/" + admin + "/foo", Admin: orbitaladdress.ZeroUserFriendly},
 	}
 
 	for name, meta := range tests {
@@ -37,6 +41,15 @@ func TestGenesisRejectsInvalidDenomAuthorityMetadata(t *testing.T) {
 				t.Fatal("expected invalid denom authority metadata")
 			}
 		})
+	}
+}
+
+func TestGenesisAcceptsLegacyBech32Admin(t *testing.T) {
+	admin := sdk.AccAddress(bytes.Repeat([]byte{1}, 20)).String()
+	gs := GenesisState{Denoms: []DenomAuthorityMetadata{{Denom: "factory/" + admin + "/foo", Admin: admin}}}
+
+	if err := gs.Validate(); err != nil {
+		t.Fatalf("expected valid bech32 admin: %v", err)
 	}
 }
 

@@ -109,12 +109,9 @@ func (k Keeper) GetDenomsPage(ctx context.Context, pageReq *sdkquery.PageRequest
 }
 
 func (k Keeper) FullDenom(ctx context.Context, creator, subdenom string) (string, error) {
-	creatorAddr, err := orbitaladdress.ParseAccAddress(creator)
+	creatorAddr, err := orbitaladdress.ParseUserAddress("creator", creator)
 	if err != nil {
-		return "", err
-	}
-	if orbitaladdress.IsZeroAccAddress(creatorAddr) {
-		return "", types.ErrInvalidAddress.Wrap("creator must not be zero address")
+		return "", types.ErrInvalidAddress.Wrap(err.Error())
 	}
 	params, err := k.GetParams(ctx)
 	if err != nil {

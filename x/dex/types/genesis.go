@@ -6,6 +6,8 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
 )
 
 func DefaultGenesisState() *GenesisState {
@@ -83,7 +85,13 @@ func (gs GenesisState) Validate() error {
 		if err := sdk.ValidateDenom(pool.Denom0); err != nil {
 			return fmt.Errorf("invalid denom0 for pool %d: %w", pool.Id, err)
 		}
+		if err := orbitaladdress.ValidateNoZeroFactoryDenomAdmin("denom0", pool.Denom0); err != nil {
+			return fmt.Errorf("invalid denom0 for pool %d: %w", pool.Id, err)
+		}
 		if err := sdk.ValidateDenom(pool.Denom1); err != nil {
+			return fmt.Errorf("invalid denom1 for pool %d: %w", pool.Id, err)
+		}
+		if err := orbitaladdress.ValidateNoZeroFactoryDenomAdmin("denom1", pool.Denom1); err != nil {
 			return fmt.Errorf("invalid denom1 for pool %d: %w", pool.Id, err)
 		}
 		if pool.Denom0 >= pool.Denom1 {

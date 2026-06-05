@@ -3,6 +3,7 @@ package types
 import (
 	"testing"
 
+	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
@@ -42,6 +43,10 @@ func TestGenesisValidateRejectsInvalidPoolState(t *testing.T) {
 		},
 		"non canonical denoms": func(gs *GenesisState) {
 			gs.Pools[0].Denom0 = "uatom"
+			gs.Pools[0].Denom1 = appparams.BaseDenom
+		},
+		"zero factory denom admin": func(gs *GenesisState) {
+			gs.Pools[0].Denom0 = "factory/" + orbitaladdress.ZeroRawAddress + "/foo"
 			gs.Pools[0].Denom1 = appparams.BaseDenom
 		},
 		"duplicate pair": func(gs *GenesisState) {

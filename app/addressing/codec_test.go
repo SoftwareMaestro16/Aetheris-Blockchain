@@ -72,6 +72,22 @@ func TestZeroAddressFormats(t *testing.T) {
 	require.True(t, addressing.IsZeroAccAddress(friendlyParsed))
 }
 
+func TestZeroAddressValidationPolicy(t *testing.T) {
+	valid := sdk.AccAddress(bytes20(0x33))
+
+	require.NoError(t, addressing.ValidateUserAddress("recipient", valid.String()))
+	require.NoError(t, addressing.ValidateAuthorityAddress("authority", valid.String()))
+
+	require.ErrorContains(t, addressing.ValidateUserAddress("recipient", addressing.ZeroRawAddress), "must not be zero address")
+	require.ErrorContains(t, addressing.ValidateUserAddress("recipient", addressing.ZeroUserFriendly), "must not be zero address")
+	require.ErrorContains(t, addressing.ValidateAuthorityAddress("authority", addressing.ZeroRawAddress), "must not be zero address")
+
+	_, present, err := addressing.ParseOptionalAdminAddress("admin", "")
+	require.NoError(t, err)
+	require.False(t, present)
+	require.ErrorContains(t, addressing.ValidateOptionalAdminAddress("admin", addressing.ZeroRawAddress), "must not be zero address")
+}
+
 func bytes20(fill byte) []byte {
 	out := make([]byte, 20)
 	for i := range out {

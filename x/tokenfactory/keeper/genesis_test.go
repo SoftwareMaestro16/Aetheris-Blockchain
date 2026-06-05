@@ -69,7 +69,7 @@ func TestMigrationRejectsCorruptedDenomMetadata(t *testing.T) {
 
 	err := tokenfactorykeeper.NewMigrator(app.TokenFactoryKeeper).Migrate1to2(ctx)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid admin")
+	require.Contains(t, err.Error(), "invalid factory admin")
 }
 
 func TestTokenfactoryMigrationSucceedsOnValidState(t *testing.T) {
