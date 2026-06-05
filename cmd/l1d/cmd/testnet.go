@@ -169,7 +169,7 @@ Example:
 
 	addTestnetFlagsToCmd(cmd)
 	cmd.Flags().String(flagNodeDirPrefix, "node", "Prefix for the name of per-validator subdirectories (to be number-suffixed like node0, node1, ...)")
-	cmd.Flags().String(flagNodeDaemonHome, "orbitalisd", "Home directory of the node's daemon configuration")
+	cmd.Flags().String(flagNodeDaemonHome, "aetherisd", "Home directory of the node's daemon configuration")
 	cmd.Flags().String(flagStartingIPAddress, "192.168.0.1", "Starting IP address (192.168.0.1 results in persistent peers list ID0@192.168.0.1:46656, ID1@192.168.0.2:46656, ...)")
 	cmd.Flags().String(flagListenIPAddress, "0.0.0.0", "TCP or UNIX socket IP address for the RPC server to listen on")
 	cmd.Flags().String(flags.FlagKeyringBackend, flags.DefaultKeyringBackend, "Select keyring's backend (os|file|test)")
@@ -220,6 +220,8 @@ Example:
 }
 
 const nodeDirPerm = 0o755
+
+const bootstrapTestAssetDenom = "testtoken"
 
 // initTestnetFiles initializes testnet files for a testnet to be run in a separate process
 func initTestnetFiles(
@@ -341,7 +343,7 @@ func initTestnetFiles(
 		accTokens := sdk.TokensFromConsensusPower(1000, sdk.DefaultPowerReduction)
 		accStakingTokens := sdk.TokensFromConsensusPower(500, sdk.DefaultPowerReduction)
 		coins := sdk.Coins{
-			sdk.NewCoin(appparams.TestAssetDenom, accTokens),
+			sdk.NewCoin(bootstrapTestAssetDenom, accTokens),
 			sdk.NewCoin(args.bondTokenDenom, accStakingTokens),
 		}
 

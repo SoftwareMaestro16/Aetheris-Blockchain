@@ -5,7 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	txutil "github.com/sovereign-l1/l1/x/internal/tx"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
@@ -21,7 +21,7 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 }
 
 func parseTokenfactoryAddress(field, text string) (sdk.AccAddress, error) {
-	addr, err := orbitaladdress.ParseUserAddress(field, text)
+	addr, err := aetherisaddress.ParseUserAddress(field, text)
 	if err != nil {
 		return nil, types.ErrInvalidAddress.Wrap(err.Error())
 	}
@@ -49,7 +49,7 @@ func (m msgServer) CreateDenom(ctx context.Context, msg *types.MsgCreateDenom) (
 	} else if found {
 		return nil, types.ErrDenomExists.Wrap(denom)
 	}
-	creatorText := orbitaladdress.FormatAccAddress(creator)
+	creatorText := aetherisaddress.FormatAccAddress(creator)
 	meta := types.DenomAuthorityMetadata{Denom: denom, Admin: creatorText}
 	if err := m.SetDenom(ctx, meta); err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 	if err != nil {
 		return nil, err
 	}
-	senderText := orbitaladdress.FormatAccAddress(sender)
+	senderText := aetherisaddress.FormatAccAddress(sender)
 	meta, found, err := m.GetDenom(ctx, msg.Amount.Denom)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 	if err != nil {
 		return nil, err
 	}
-	toText := orbitaladdress.FormatAccAddress(to)
+	toText := aetherisaddress.FormatAccAddress(to)
 	if !msg.Amount.IsValid() || !msg.Amount.IsPositive() {
 		return nil, types.ErrInvalidDenom.Wrap("mint amount must be positive")
 	}
@@ -129,7 +129,7 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 	if err != nil {
 		return nil, err
 	}
-	senderText := orbitaladdress.FormatAccAddress(sender)
+	senderText := aetherisaddress.FormatAccAddress(sender)
 	meta, found, err := m.GetDenom(ctx, msg.Amount.Denom)
 	if err != nil {
 		return nil, err
@@ -144,7 +144,7 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 	if err != nil {
 		return nil, err
 	}
-	fromText := orbitaladdress.FormatAccAddress(from)
+	fromText := aetherisaddress.FormatAccAddress(from)
 	if !from.Equals(sender) {
 		return nil, types.ErrUnauthorized.Wrap("burn_from_address must match sender")
 	}
@@ -178,7 +178,7 @@ func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (
 	if err != nil {
 		return nil, err
 	}
-	senderText := orbitaladdress.FormatAccAddress(sender)
+	senderText := aetherisaddress.FormatAccAddress(sender)
 	meta, found, err := m.GetDenom(ctx, msg.Denom)
 	if err != nil {
 		return nil, err
@@ -193,7 +193,7 @@ func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (
 	if err != nil {
 		return nil, err
 	}
-	newAdminText := orbitaladdress.FormatAccAddress(newAdmin)
+	newAdminText := aetherisaddress.FormatAccAddress(newAdmin)
 	meta.Admin = newAdminText
 	if err := m.SetDenom(ctx, meta); err != nil {
 		return nil, err
@@ -210,6 +210,9 @@ func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (
 func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
 	if msg == nil {
 		return nil, types.ErrInvalidParams.Wrap("empty request")
+	}
+	if err := aetherisaddress.ValidateAuthorityAddress("authority", msg.Authority); err != nil {
+		return nil, types.ErrUnauthorized.Wrap(err.Error())
 	}
 	if msg.Authority != m.Authority() {
 		return nil, types.ErrUnauthorized.Wrap("invalid authority")

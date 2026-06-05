@@ -58,7 +58,7 @@ foreach ($link in @(
 }
 
 foreach ($command in @(
-    '\.\\scripts\\build-orbitalisd\.ps1',
+    '\.\\scripts\\build-aetherisd\.ps1',
     '\.\\scripts\\localnet\\init\.ps1',
     '\.\\scripts\\localnet\\start\.ps1',
     '\.\\tests\\e2e\\prototype_smoke\.ps1',

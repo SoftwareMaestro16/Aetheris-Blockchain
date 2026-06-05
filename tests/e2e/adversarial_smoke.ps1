@@ -3,8 +3,8 @@ param(
   [int]$TimeoutSeconds = 90,
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
-  [string]$Fees = "1000000norb",
+  [string]$ChainId = "aetheris-local-1",
+  [string]$Fees = "1000000naet",
   [int]$BaseP2PPort = 26656,
   [int]$BaseRPCPort = 26657,
   [int]$BaseRESTPort = 1317,
@@ -19,7 +19,7 @@ Set-StrictMode -Version 2.0
 
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
   $OutputDir = Join-Path $RepoRoot ".localnet-adversarial"
 }
@@ -45,14 +45,14 @@ function Get-CliJson {
   return ($text.Substring($jsonStart) | ConvertFrom-Json)
 }
 
-function Invoke-OrbitalisJson {
+function Invoke-AetherisJson {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
-  $output = Invoke-ExternalChecked -FilePath $Binary -Arguments $Arguments -FailureMessage "orbitalisd command failed"
+  $output = Invoke-ExternalChecked -FilePath $Binary -Arguments $Arguments -FailureMessage "aetherisd command failed"
   return Get-CliJson -Output $output
 }
 
-function Invoke-OrbitalisRaw {
+function Invoke-AetherisRaw {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
   $previousErrorActionPreference = $ErrorActionPreference
@@ -79,7 +79,7 @@ function Wait-ForHeight {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
     try {
-      $block = Invoke-OrbitalisJson -Arguments @("query", "block", "--node", $Node, "--output", "json")
+      $block = Invoke-AetherisJson -Arguments @("query", "block", "--node", $Node, "--output", "json")
       $heightValue = $block.header.height
       if (-not $heightValue -and $block.block) {
         $heightValue = $block.block.header.height
@@ -109,7 +109,7 @@ function Wait-ForTxResult {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
     try {
-      $query = Invoke-OrbitalisJson -Arguments @("query", "tx", $TxHash, "--node", $Node, "--output", "json")
+      $query = Invoke-AetherisJson -Arguments @("query", "tx", $TxHash, "--node", $Node, "--output", "json")
       if ($query.tx_response) {
         return $query.tx_response
       }
@@ -140,7 +140,7 @@ function Assert-TxRejected {
     [int]$TimeoutSeconds = 45
   )
 
-  $raw = Invoke-OrbitalisRaw -Arguments $Arguments
+  $raw = Invoke-AetherisRaw -Arguments $Arguments
   if ($raw.ExitCode -ne 0) {
     Write-Host "adversarial tx rejected: $Name"
     return
@@ -204,7 +204,7 @@ try {
 
   for ($i = 0; $i -lt $SpamCount; $i++) {
     Assert-TxRejected -Name "wrong fee denom spam $i" -Arguments @(
-      "tx", "bank", "send", "node0", $addr1, "1norb",
+      "tx", "bank", "send", "node0", $addr1, "1naet",
       "--home", $home0,
       "--chain-id", $chainId,
       "--keyring-backend", "test",
@@ -218,7 +218,7 @@ try {
   }
 
   Assert-TxRejected -Name "DEX same-denom pool manipulation" -Arguments @(
-    "tx", "dex", "create-pool", "10norb", "10norb",
+    "tx", "dex", "create-pool", "10naet", "10naet",
     "--home", $home0,
     "--from", "node0",
     "--chain-id", $chainId,

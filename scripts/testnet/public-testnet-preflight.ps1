@@ -2,7 +2,7 @@ param(
   [ValidateSet("3", "5", "All")]
   [string]$ValidatorProfile = "All",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-testnet-preflight-1",
+  [string]$ChainId = "aetheris-testnet-preflight-1",
   [int]$TimeoutSeconds = 180,
   [switch]$SkipBuild,
   [switch]$SkipCosmWasmDisabledCheck
@@ -14,9 +14,9 @@ Set-StrictMode -Version 2.0
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 if (-not $SkipBuild) {
-  & (Join-Path $RepoRoot "scripts\build-orbitalisd.ps1") -Binary $Binary
+  & (Join-Path $RepoRoot "scripts\build-aetherisd.ps1") -Binary $Binary
 } elseif (-not (Test-Path -LiteralPath $Binary)) {
   throw "Binary not found at $Binary and -SkipBuild was specified"
 }

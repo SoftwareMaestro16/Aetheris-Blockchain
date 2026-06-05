@@ -10,13 +10,14 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 )
 
-func TestPoSCreateValidatorWithNorb(t *testing.T) {
+func TestPoSCreateValidatorWithNaet(t *testing.T) {
 	app := Setup(t, false)
 	ctx := app.NewContext(false).WithBlockTime(time.Now().UTC())
 
@@ -292,7 +293,31 @@ func TestStakingRewardsDistributionCanBeWithdrawn(t *testing.T) {
 	require.NoError(t, err)
 
 	balanceAfter := app.BankKeeper.GetBalance(ctx, delegator, BondDenom)
-	require.True(t, balanceAfter.Amount.GT(balanceBefore.Amount), "delegator must receive norb staking rewards")
+	require.True(t, balanceAfter.Amount.GT(balanceBefore.Amount), "delegator must receive naet staking rewards")
+}
+
+func TestPoSMintPolicyIsNaetAndUncappedWithBoundedInflation(t *testing.T) {
+	app := Setup(t, false)
+	ctx := app.NewContext(false)
+
+	params, err := app.MintKeeper.Params.Get(ctx)
+	require.NoError(t, err)
+	require.Equal(t, BondDenom, params.MintDenom)
+	require.True(t, params.MaxSupply.IsZero(), "zero max supply means uncapped PoS issuance in Cosmos SDK mint params")
+	require.NoError(t, params.Validate())
+	require.False(t, params.InflationRateChange.IsNegative())
+	require.False(t, params.InflationMin.IsNegative())
+	require.True(t, params.InflationMax.GTE(params.InflationMin))
+	require.True(t, params.GoalBonded.IsPositive())
+	require.True(t, params.GoalBonded.LTE(sdkmath.LegacyOneDec()))
+	require.Positive(t, params.BlocksPerYear)
+
+	defaults := minttypes.DefaultParams()
+	require.Equal(t, defaults.InflationRateChange, params.InflationRateChange)
+	require.Equal(t, defaults.InflationMin, params.InflationMin)
+	require.Equal(t, defaults.InflationMax, params.InflationMax)
+	require.Equal(t, defaults.GoalBonded, params.GoalBonded)
+	require.Equal(t, defaults.BlocksPerYear, params.BlocksPerYear)
 }
 
 func TestAddTestAddrsUsesBondDenom(t *testing.T) {

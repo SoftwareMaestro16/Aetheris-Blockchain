@@ -3,6 +3,8 @@
 .codex/
 ecosystem/
 STEP*.md
+ROADMAP.md
+Roadmap_v2.md
 
 # Secrets and private config
 .env

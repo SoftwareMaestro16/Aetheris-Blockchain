@@ -1,124 +1,159 @@
-# Orbitalis Blockchain
+# Aetheris Blockchain
 
-Orbitalis is a sovereign Cosmos SDK Layer 1 blockchain implemented in Go. The native token is Orbitalis with display ticker `ORB`; the staking and fee base denom is `norb`, with `1 ORB = 1,000,000,000 norb`.
+Aetheris is a sovereign Cosmos SDK Layer 1 blockchain implemented in Go. Its native token is Aetheris (`AET`), with base denom `naet` and `1 AET = 1,000,000,000 naet`. The PoS supply is uncapped: new `AET` can be issued through staking inflation and validator/delegator rewards.
 
-This repository is on the working prototype path. It is not mainnet-ready validator software: public validator onboarding, production governance economics, IBC/external bridges, exchange-grade DEX routing, and production release operations remain out of scope until the prototype gates say otherwise.
+This prototype is not mainnet-ready. Local Aetheris validator/full nodes do not require Redis or PostgreSQL for consensus, mempool, or app state.
 
-## Architecture
+## Current Surface
 
 ```mermaid
 flowchart LR
-  CLI["orbitalisd CLI"] --> RPC["gRPC / REST / CometBFT RPC"]
-  RPC --> APP["Cosmos SDK BaseApp"]
-  P2P["CometBFT P2P Gossip"] --> CONS["CometBFT BFT PoS Consensus"]
-  CONS --> APP
-  APP --> CORE["x/auth x/bank x/staking x/mint x/distribution x/slashing x/gov"]
-  APP --> CUSTOM["x/tokenfactory x/dex x/fees"]
-  CORE --> STORE["Module KVStores"]
-  CUSTOM --> STORE
+  CLI["aetherisd CLI"] --> RPC["gRPC / REST / CometBFT RPC"]
+  RPC --> APP["Aetheris app"]
+  APP --> CORE["auth / bank / staking / distribution / gov / mint"]
+  APP --> FEES["x/fees"]
+  APP --> TF["x/tokenfactory"]
+  APP --> DEX["x/dex"]
+  APP --> WASM["CosmWasm readiness gate"]
 ```
 
-## Implemented
+- `cmd/l1d`: Aetheris node binary and CLI.
+- `app`: Cosmos SDK app wiring, genesis policy, custom address codec, PoS and fee configuration.
+- `x/fees`: deterministic native fee-denom policy; v1 accepts only `naet` fees.
+- `x/tokenfactory`: factory asset creation, mint, burn, and admin lifecycle.
+- `x/dex`: local constant-product DEX module for pools, liquidity, swaps, and LP tokens.
+- `app/wasmconfig`: CosmWasm policy model. CosmWasm stays disabled until base-chain hardening passes.
 
-- `cmd/l1d`: Orbitalis node binary source and CLI.
-- `app`: direct Cosmos SDK `BaseApp` assembly pinned to Cosmos SDK `v0.54.3` and CometBFT `v0.39.3`.
-- `x/tokenfactory`: factory denoms, admin-controlled mint/burn, admin transfer, queries.
-- `x/dex`: constant-product AMM pools, liquidity add/remove, exact-input swaps, LP tokens.
-- `x/fees`: native fee-denom policy; v1 accepts only `norb` fees.
-- `scripts/localnet`: 3-validator localnet init/start/stop/reset, health, and diagnostics scripts.
-- Native token lifecycle: `norb` is the base transaction/staking/fee denom; `ORB` is display metadata only.
-
-## Build And Test
+## Build
 
 ```powershell
-.\scripts\build-orbitalisd.ps1
-go test ./...
-go vet ./...
+.\scripts\build-aetherisd.ps1
 ```
 
-The build script prefers the repo-local Go toolchain under `.work\tools\go1.25.11`, falls back to `go` on PATH, runs `go mod verify`, builds `build\orbitalisd.exe`, and prints version/build metadata. It keeps Go build, temp, and module caches under ignored `.work` so a modified global Go module cache does not make local builds non-reproducible.
+The build script uses the repo-local Go toolchain under `.work\tools\go1.25.11` when present, falls back to `go` on PATH, runs `go mod verify`, and builds `build\aetherisd.exe`.
 
-Proto checks:
+If disk space is tight, either free space on `C:\` or lower the local guard explicitly:
 
 ```powershell
-$env:PATH = "$PWD\.work\tools\bin;$env:PATH"
-buf lint
-.\scripts\proto\verify-generated.ps1 -Buf .\.work\tools\bin\buf.exe
+.\scripts\build-aetherisd.ps1 -MinFreeGB 2
 ```
 
-`buf generate` writes verification output into ignored `.work\bufgen`; checked-in generated Go code lives under `x\*\types`. See [docs/proto-workflow.md](docs/proto-workflow.md) before changing proto contracts or generated files.
+## Localnet
 
-## Local Multi-Validator Network
+Initialize and start a 3-validator localnet:
 
 ```powershell
-.\scripts\localnet\init.ps1 -ValidatorCount 3
-.\scripts\localnet\start.ps1
+.\scripts\localnet\init.ps1 -ChainId aetheris-local-1 -ValidatorCount 3
+.\scripts\localnet\start.ps1 -ChainId aetheris-local-1
 ```
 
-Port scheme is deterministic. P2P/RPC ports advance by `100` per validator; gRPC/REST advance by `1`.
-
-- node0: P2P `26656`, RPC `26657`, gRPC `9090`, REST `1317`
-- node1: P2P `26756`, RPC `26757`, gRPC `9091`, REST `1318`
-- node2: P2P `26856`, RPC `26857`, gRPC `9092`, REST `1319`
-
-For larger localnets:
-
-```powershell
-.\scripts\localnet\init.ps1 -OutputDir .localnet-5 -ValidatorCount 5
-.\scripts\localnet\start.ps1 -OutputDir .localnet-5
-.\scripts\localnet\init.ps1 -OutputDir .localnet-10 -ValidatorCount 10
-.\scripts\localnet\start.ps1 -OutputDir .localnet-10
-```
-
-Each init writes `.localnet*\localnet.json` with node homes, RPC, REST, gRPC, CometBFT metrics, and Orbitalis app metrics URLs. Logs are under `.localnet*\logs`; CometBFT metrics are enabled at each node's manifest `metrics_url`, while app/module metrics are served at `app_metrics_url`.
-
-Stop or reset:
-
-```powershell
-.\scripts\localnet\stop.ps1
-.\scripts\localnet\reset.ps1
-```
-
-Prototype acceptance and targeted smoke tests:
-
-```powershell
-.\tests\e2e\prototype_smoke.ps1
-.\tests\e2e\prototype_acceptance.ps1
-.\tests\e2e\localnet_smoke.ps1
-.\tests\e2e\pos_smoke.ps1
-.\tests\e2e\native_token_smoke.ps1
-.\tests\e2e\tokenfactory_smoke.ps1
-.\tests\e2e\fees_ante_smoke.ps1
-.\tests\e2e\dex_smoke.ps1
-.\tests\e2e\query_surface_smoke.ps1
-```
-
-## Operator CLI
-
-See [docs/prototype-contract.md](docs/prototype-contract.md) for the executable working-prototype contract, [docs/operator-commands.md](docs/operator-commands.md) for the full prototype operator command runbook, [docs/operator-troubleshooting.md](docs/operator-troubleshooting.md) for common failure triage, [docs/transaction-lifecycle-matrix.md](docs/transaction-lifecycle-matrix.md) for tx actor/signer/state/query coverage, [docs/event-contract.md](docs/event-contract.md) for custom tx event evidence, [docs/prototype-acceptance-suite.md](docs/prototype-acceptance-suite.md) for the one-command acceptance suite, [docs/security/prototype-audit-gate.md](docs/security/prototype-audit-gate.md) for the release security gate, [docs/release/prototype-package.md](docs/release/prototype-package.md) for prerelease packages, [docs/release/prototype-limitations.md](docs/release/prototype-limitations.md) for non-goals, limitations, and blocker classification, [docs/query-surface.md](docs/query-surface.md) for gRPC/REST endpoints, and [docs/observability.md](docs/observability.md) for health checks and diagnostics.
-
-The README keeps only the shortest probes. Use the operator runbook for the end-to-end build, init, start, query, tx, diagnose, and stop transcript.
-
-```powershell
-build\orbitalisd.exe query block --node tcp://127.0.0.1:26657
-build\orbitalisd.exe query bank denom-metadata norb --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query bank total-supply-of norb --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query bank balance <orb1-address> norb --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
-.\scripts\localnet\health.ps1 -ValidatorCount 3
-```
-
-## Governance And Release Path
-
-Implementation work follows [docs/engineering-governance.md](docs/engineering-governance.md), [docs/security-testing.md](docs/security-testing.md), [docs/security/cosmos-security-checklist.md](docs/security/cosmos-security-checklist.md), [docs/transaction-lifecycle-matrix.md](docs/transaction-lifecycle-matrix.md), [docs/event-contract.md](docs/event-contract.md), and [docs/test-pyramid.md](docs/test-pyramid.md). Release packaging follows [docs/release/prototype-package.md](docs/release/prototype-package.md) and [docs/release/prototype-limitations.md](docs/release/prototype-limitations.md), and must include checksums, known limitations, blockers, test evidence, and the prototype audit summary.
-
-Fast local gate:
+Short smoke and audit probes:
 
 ```powershell
 .\tests\e2e\prototype_smoke.ps1
 .\scripts\security\prototype-audit.ps1 -Profile Fast
 ```
 
-## External Databases
+Default node endpoints:
 
-Orbitalis validator/full nodes do not require Redis or PostgreSQL for consensus, mempool, or state. Use external databases only for off-chain services such as indexers, explorers, analytics, or API caching, and pass credentials through environment variables or secret managers.
+- node0: P2P `26656`, RPC `26657`, gRPC `9090`, REST `1317`
+- node1: P2P `26666`, RPC `26667`, gRPC `9100`, REST `1327`
+- node2: P2P `26676`, RPC `26677`, gRPC `9110`, REST `1337`
+
+Each init writes `.localnet*\localnet.json` with node homes, RPC, REST, gRPC, CometBFT metrics, and Aetheris app metrics URLs. Logs are under `.localnet*\logs`.
+
+README keeps only the shortest probes. Use [Operator Commands](docs/operator-commands.md) for the full build, localnet, query, staking, bank, tokenfactory, DEX, diagnostics, and release command runbook.
+
+Core runbooks:
+
+- [Prototype Contract](docs/prototype-contract.md)
+- [Operator Troubleshooting](docs/operator-troubleshooting.md)
+- [Transaction Lifecycle Matrix](docs/transaction-lifecycle-matrix.md)
+- [Event Contract](docs/event-contract.md)
+- [Prototype Acceptance Suite](docs/prototype-acceptance-suite.md)
+- [Prototype Audit Gate](docs/security/prototype-audit-gate.md)
+- [Prototype Release Package](docs/release/prototype-package.md)
+- [Prototype Limitations](docs/release/prototype-limitations.md)
+- [Query Surface](docs/query-surface.md)
+- [Observability](docs/observability.md)
+- [Engineering Governance](docs/engineering-governance.md)
+- [Security Testing](docs/security-testing.md)
+- [Cosmos Security Checklist](docs/security/cosmos-security-checklist.md)
+- [Test Pyramid](docs/test-pyramid.md)
+
+## Common Queries
+
+```powershell
+build\aetherisd.exe query block --node tcp://127.0.0.1:26657
+build\aetherisd.exe query bank denom-metadata naet --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query bank total-supply-of naet --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query dex params --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query tokenfactory params --node tcp://127.0.0.1:26657 --output json
+```
+
+Get local keys and send native funds:
+
+```powershell
+$node0 = build\aetherisd.exe keys show node0 -a --home .localnet\node0\aetherisd --keyring-backend test
+$node1 = build\aetherisd.exe keys show node1 -a --home .localnet\node1\aetherisd --keyring-backend test
+
+build\aetherisd.exe query bank balance $node0 naet --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe tx bank send node0 $node1 1000naet `
+  --home .localnet\node0\aetherisd `
+  --keyring-backend test `
+  --chain-id aetheris-local-1 `
+  --node tcp://127.0.0.1:26657 `
+  --fees 1000000naet `
+  -y
+```
+
+## Token
+
+- Name: `Aetheris`
+- Symbol/display denom: `AET`
+- Base denom: `naet`
+- Conversion: `1 AET = 1,000,000,000 naet`
+- Staking denom: `naet`
+- Fee denom: `naet`
+- Mint denom: `naet`
+- Supply: uncapped PoS supply through inflation and rewards
+
+Operators and scripts must use `naet` for balances, fees, staking, and tx amounts. `AET` is display metadata only.
+
+## Fee Model
+
+Base-chain transaction fees are native-only. In v1, `allowed_fee_denoms` must be exactly `["naet"]`, delivered transactions must pay at least `1naet`, and non-`naet` fees are rejected even when the fee payer owns the token.
+
+User-created tokens, DEX LP tokens, NFT/SBT assets, `testtoken`, and display denom `AET` cannot pay protocol fees. Gasless or user-friendly flows must use relayers that pay `naet` on-chain; any alternative token collection is outside the base-chain fee path.
+
+Localnet validator `minimum-gas-prices` may be `0naet` so development txs are not filtered before ante checks run. That mempool setting does not disable protocol fee validation for delivered transactions.
+
+## Addresses
+
+Aetheris uses a custom address codec for protocol-facing addresses:
+
+- raw: `4:` followed by 64 lowercase hex characters, total length 66
+- userfriendly: 48 base64url characters, starts with `AE`, alphabet `A-Z a-z 0-9 - _`
+- zero address: `4:0000000000000000000000000000000000000000000000000000000000000000`
+
+The zero address is protocol-invalid by default. It must not be a signer, admin, recipient, authority, genesis account, fee collector, DEX actor, or tokenfactory admin/recipient/source.
+
+## Security
+
+Aetheris currently prioritizes base-chain hardening before public testnet expansion:
+
+- deterministic genesis validation and export/import checks
+- zero-address rejection across custom modules and genesis policy
+- native fee policy restricted to `naet`
+- transaction replay, invalid signer, wrong chain-id, malformed tx, and insufficient funds tests
+- PoS staking lifecycle tests for validator creation, delegation, unbonding, redelegation, slashing, downtime, and restart persistence
+- security workflows for govulncheck, gosec, gitleaks, dependency review, and CodeQL
+
+## CosmWasm Readiness
+
+CosmWasm is the planned smart-contract VM direction, but it remains disabled by default. Enabling it requires explicit feature/config gating, upload and instantiate permissions, contract admin/migration policy, gas limits, contract size limits, memory/cache limits, and adversarial tests for unauthorized migrate/admin takeover.
+
+## Public Testnet
+
+Public testnet preparation lives in [Public Testnet Preparation](docs/public-testnet-preparation.md), with validator onboarding in [Validator Onboarding](docs/validator-onboarding.md). `ROADMAP.md` is a local operator planning file and is intentionally ignored.

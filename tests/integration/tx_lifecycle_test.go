@@ -9,7 +9,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	testutil "github.com/sovereign-l1/l1/tests/testutil"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -19,14 +19,14 @@ import (
 )
 
 func TestSignedBankTxReplayIsRejectedAfterSequenceIncrement(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-1")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-1")
 	ctx := testutil.NewContext(app, 1)
 	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 
-	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
 	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
-	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), 200_000)
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), 200_000)
 
 	first := testutil.FinalizeBlock(t, app, 1, txBytes)
 	require.Len(t, first.TxResults, 1)
@@ -34,7 +34,7 @@ func TestSignedBankTxReplayIsRejectedAfterSequenceIncrement(t *testing.T) {
 	testutil.Commit(t, app)
 
 	ctxAfterFirst := testutil.NewContext(app, 2)
-	recipientAfterFirst := app.BankKeeper.GetBalance(ctxAfterFirst, recipient, "norb")
+	recipientAfterFirst := app.BankKeeper.GetBalance(ctxAfterFirst, recipient, "naet")
 	require.Equal(t, sdkmath.NewInt(1_000_100), recipientAfterFirst.Amount)
 	_, sequenceAfterFirst := testutil.AccountNumberAndSequence(t, app, ctxAfterFirst, sender)
 	require.Equal(t, sequenceBefore+1, sequenceAfterFirst)
@@ -45,46 +45,46 @@ func TestSignedBankTxReplayIsRejectedAfterSequenceIncrement(t *testing.T) {
 	testutil.Commit(t, app)
 
 	ctxAfterReplay := testutil.NewContext(app, 3)
-	require.Equal(t, recipientAfterFirst, app.BankKeeper.GetBalance(ctxAfterReplay, recipient, "norb"))
+	require.Equal(t, recipientAfterFirst, app.BankKeeper.GetBalance(ctxAfterReplay, recipient, "naet"))
 	_, sequenceAfterReplay := testutil.AccountNumberAndSequence(t, app, ctxAfterReplay, sender)
 	require.Equal(t, sequenceAfterFirst, sequenceAfterReplay)
 }
 
 func TestInvalidSignerTxFailsBeforeBalanceMutation(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-2")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-2")
 	ctx := testutil.NewContext(app, 1)
 	_, victim := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	attackerPriv, _ := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
-	before := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+	before := app.BankKeeper.GetBalance(ctx, recipient, "naet")
 
-	msg := banktypes.NewMsgSend(victim, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
-	txBytes := testutil.EncodeSignedTx(t, app, ctx, attackerPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), 200_000)
+	msg := banktypes.NewMsgSend(victim, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, attackerPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), 200_000)
 	res := testutil.FinalizeBlock(t, app, 1, txBytes)
 	require.Len(t, res.TxResults, 1)
 	require.NotZero(t, res.TxResults[0].Code, "tx signed by non-msg signer must fail")
 
-	after := app.BankKeeper.GetBalance(testutil.NewContext(app, 1), recipient, "norb")
+	after := app.BankKeeper.GetBalance(testutil.NewContext(app, 1), recipient, "naet")
 	require.Equal(t, before, after)
 }
 
 func TestWrongChainIDSignedTxFailsBeforeBalanceMutation(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-wrong-chain")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-wrong-chain")
 	ctx := testutil.NewContext(app, 1)
 	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
-	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
-	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "naet")
+	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "naet")
 	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
 
-	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
 	txBytes := testutil.EncodeSignedTxWithChainID(
 		t,
 		app,
 		ctx,
 		senderPriv,
 		[]sdk.Msg{msg},
-		sdk.NewCoins(sdk.NewInt64Coin("norb", 10)),
+		sdk.NewCoins(sdk.NewInt64Coin("naet", 10)),
 		200_000,
 		"wrong-chain-id",
 	)
@@ -93,8 +93,8 @@ func TestWrongChainIDSignedTxFailsBeforeBalanceMutation(t *testing.T) {
 	require.NotZero(t, res.TxResults[0].Code, "tx signed for a different chain-id must fail")
 
 	afterCtx := testutil.NewContext(app, 1)
-	require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
-	require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+	require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "naet"))
+	require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "naet"))
 	_, sequenceAfter := testutil.AccountNumberAndSequence(t, app, afterCtx, sender)
 	require.Equal(t, sequenceBefore, sequenceAfter)
 }
@@ -105,8 +105,8 @@ func TestMissingAndInvalidFeeTxsFailBeforeBalanceMutation(t *testing.T) {
 		fee   sdk.Coins
 		chain string
 	}{
-		{name: "missing fee", fee: sdk.Coins{}, chain: "orbitalis-integration-missing-fee"},
-		{name: "invalid fee denom", fee: sdk.NewCoins(sdk.NewInt64Coin("uatom", 10)), chain: "orbitalis-integration-invalid-fee"},
+		{name: "missing fee", fee: sdk.Coins{}, chain: "aetheris-integration-missing-fee"},
+		{name: "invalid fee denom", fee: sdk.NewCoins(sdk.NewInt64Coin("uatom", 10)), chain: "aetheris-integration-invalid-fee"},
 	}
 
 	for _, tc := range tests {
@@ -115,21 +115,21 @@ func TestMissingAndInvalidFeeTxsFailBeforeBalanceMutation(t *testing.T) {
 			ctx := testutil.NewContext(app, 1)
 			senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 			_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
-			beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
-			beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+			beforeSender := app.BankKeeper.GetBalance(ctx, sender, "naet")
+			beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "naet")
 			beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
 			require.NoError(t, err)
 			_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
 
-			msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+			msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
 			txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, tc.fee, 200_000)
 			res := testutil.FinalizeBlock(t, app, 1, txBytes)
 			require.Len(t, res.TxResults, 1)
 			require.NotZero(t, res.TxResults[0].Code)
 
 			afterCtx := testutil.NewContext(app, 1)
-			require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
-			require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+			require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "naet"))
+			require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "naet"))
 			afterFees, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
 			require.NoError(t, err)
 			require.Equal(t, beforeFees, afterFees)
@@ -139,26 +139,70 @@ func TestMissingAndInvalidFeeTxsFailBeforeBalanceMutation(t *testing.T) {
 	}
 }
 
-func TestInsufficientFeeFundsFailBeforeStateTransition(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-insufficient-fee-funds")
+func TestUserCreatedTokenCannotPayProtocolFeesEvenWhenOwned(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "aetheris-integration-user-token-fee")
 	ctx := testutil.NewContext(app, 1)
-	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1))
+	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
-	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
-	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+	tfMsgServer := tfkeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
+
+	createDenom, err := tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
+		Creator:  sender.String(),
+		Subdenom: "feeasset",
+	})
+	require.NoError(t, err)
+	denom := createDenom.NewTokenDenom
+	_, err = tfMsgServer.Mint(ctx, &tftypes.MsgMint{
+		Sender:        sender.String(),
+		Amount:        sdk.NewInt64Coin(denom, 500),
+		MintToAddress: sender.String(),
+	})
+	require.NoError(t, err)
+
+	beforeSenderNative := app.BankKeeper.GetBalance(ctx, sender, "naet")
+	beforeSenderFactory := app.BankKeeper.GetBalance(ctx, sender, denom)
+	beforeRecipientNative := app.BankKeeper.GetBalance(ctx, recipient, "naet")
 	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
 	require.NoError(t, err)
 	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
 
-	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 1)))
-	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), 200_000)
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin(denom, 10)), 200_000)
 	res := testutil.FinalizeBlock(t, app, 1, txBytes)
 	require.Len(t, res.TxResults, 1)
-	require.NotZero(t, res.TxResults[0].Code, "fee payer without enough norb for fee must fail")
+	require.NotZero(t, res.TxResults[0].Code, "owned user-created token must not satisfy protocol fees")
 
 	afterCtx := testutil.NewContext(app, 1)
-	require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
-	require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+	require.Equal(t, beforeSenderNative, app.BankKeeper.GetBalance(afterCtx, sender, "naet"))
+	require.Equal(t, beforeSenderFactory, app.BankKeeper.GetBalance(afterCtx, sender, denom))
+	require.Equal(t, beforeRecipientNative, app.BankKeeper.GetBalance(afterCtx, recipient, "naet"))
+	afterFees, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
+	require.NoError(t, err)
+	require.Equal(t, beforeFees, afterFees)
+	_, sequenceAfter := testutil.AccountNumberAndSequence(t, app, afterCtx, sender)
+	require.Equal(t, sequenceBefore, sequenceAfter)
+}
+
+func TestInsufficientFeeFundsFailBeforeStateTransition(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "aetheris-integration-insufficient-fee-funds")
+	ctx := testutil.NewContext(app, 1)
+	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1))
+	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "naet")
+	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "naet")
+	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
+	require.NoError(t, err)
+	_, sequenceBefore := testutil.AccountNumberAndSequence(t, app, ctx, sender)
+
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 1)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), 200_000)
+	res := testutil.FinalizeBlock(t, app, 1, txBytes)
+	require.Len(t, res.TxResults, 1)
+	require.NotZero(t, res.TxResults[0].Code, "fee payer without enough naet for fee must fail")
+
+	afterCtx := testutil.NewContext(app, 1)
+	require.Equal(t, beforeSender, app.BankKeeper.GetBalance(afterCtx, sender, "naet"))
+	require.Equal(t, beforeRecipient, app.BankKeeper.GetBalance(afterCtx, recipient, "naet"))
 	afterFees, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
 	require.NoError(t, err)
 	require.Equal(t, beforeFees, afterFees)
@@ -167,7 +211,7 @@ func TestInsufficientFeeFundsFailBeforeStateTransition(t *testing.T) {
 }
 
 func TestMalformedProtobufTxBytesFailWithoutFeeAccounting(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-malformed-protobuf")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-malformed-protobuf")
 	ctx := testutil.NewContext(app, 1)
 	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
 	require.NoError(t, err)
@@ -184,37 +228,37 @@ func TestMalformedProtobufTxBytesFailWithoutFeeAccounting(t *testing.T) {
 }
 
 func TestNativeFeeDeductionUpdatesCollectorAndAccounting(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-fee-deduction")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-fee-deduction")
 	ctx := testutil.NewContext(app, 1)
 	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	feeCollector := app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName)
 	require.NotNil(t, feeCollector)
 
-	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
-	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
-	beforeCollector := app.BankKeeper.GetBalance(ctx, feeCollector, "norb")
+	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "naet")
+	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "naet")
+	beforeCollector := app.BankKeeper.GetBalance(ctx, feeCollector, "naet")
 	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
 	require.NoError(t, err)
 
-	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
-	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)), 200_000)
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)), 200_000)
 	res := testutil.FinalizeBlock(t, app, 1, txBytes)
 	require.Len(t, res.TxResults, 1)
 	require.Zero(t, res.TxResults[0].Code, res.TxResults[0].Log)
 	testutil.Commit(t, app)
 
 	afterCtx := testutil.NewContext(app, 2)
-	require.Equal(t, beforeSender.Sub(sdk.NewInt64Coin("norb", 200)), app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
-	require.Equal(t, beforeRecipient.Add(sdk.NewInt64Coin("norb", 100)), app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
-	collectorAfter := app.BankKeeper.GetBalance(afterCtx, feeCollector, "norb")
+	require.Equal(t, beforeSender.Sub(sdk.NewInt64Coin("naet", 200)), app.BankKeeper.GetBalance(afterCtx, sender, "naet"))
+	require.Equal(t, beforeRecipient.Add(sdk.NewInt64Coin("naet", 100)), app.BankKeeper.GetBalance(afterCtx, recipient, "naet"))
+	collectorAfter := app.BankKeeper.GetBalance(afterCtx, feeCollector, "naet")
 	require.True(t, collectorAfter.Amount.GTE(beforeCollector.Amount.AddRaw(100)), "fee collector balance must increase by at least the tx fee")
 
 	state, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
 	require.NoError(t, err)
-	require.Equal(t, beforeFees.TotalCollected.Add(sdk.NewInt64Coin("norb", 100)), state.TotalCollected)
-	require.Equal(t, beforeFees.ValidatorRewards.Add(sdk.NewInt64Coin("norb", 98)), state.ValidatorRewards)
-	require.Equal(t, beforeFees.CommunityPool.Add(sdk.NewInt64Coin("norb", 2)), state.CommunityPool)
+	require.Equal(t, beforeFees.TotalCollected.Add(sdk.NewInt64Coin("naet", 100)), state.TotalCollected)
+	require.Equal(t, beforeFees.ValidatorRewards.Add(sdk.NewInt64Coin("naet", 98)), state.ValidatorRewards)
+	require.Equal(t, beforeFees.CommunityPool.Add(sdk.NewInt64Coin("naet", 2)), state.CommunityPool)
 	require.NoError(t, state.Validate())
 
 	moduleBalances, err := app.FeesKeeper.ModuleBalances(afterCtx, &feestypes.QueryModuleBalancesRequest{})
@@ -225,14 +269,14 @@ func TestNativeFeeDeductionUpdatesCollectorAndAccounting(t *testing.T) {
 			continue
 		}
 		feeCollectorFound = true
-		require.Equal(t, orbitaladdress.FormatAccAddress(feeCollector), balance.Address)
+		require.Equal(t, aetherisaddress.FormatAccAddress(feeCollector), balance.Address)
 		require.Equal(t, app.BankKeeper.GetAllBalances(afterCtx, feeCollector), balance.Balance)
 	}
 	require.True(t, feeCollectorFound, "fee collector module balance must be exposed")
 }
 
 func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-3")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-3")
 	ctx := testutil.NewContext(app, 1)
 	adminPriv, admin := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(2_000_000))
 	_, trader := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(2_000_000))
@@ -251,14 +295,14 @@ func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {
 
 	createPool, err := dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 		Creator: admin.String(),
-		TokenA:  sdk.NewInt64Coin("norb", 1_000),
+		TokenA:  sdk.NewInt64Coin("naet", 1_000),
 		TokenB:  sdk.NewInt64Coin(denom, 1_000),
 	})
 	require.NoError(t, err)
 	_, err = dexMsgServer.SwapExactAmountIn(ctx, &dextypes.MsgSwapExactAmountIn{
 		Trader:        admin.String(),
 		PoolId:        createPool.PoolId,
-		TokenIn:       sdk.NewInt64Coin("norb", 10),
+		TokenIn:       sdk.NewInt64Coin("naet", 10),
 		TokenOutDenom: denom,
 		MinAmountOut:  "1",
 	})
@@ -266,13 +310,13 @@ func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {
 
 	denomQuery, err := app.TokenFactoryKeeper.Denom(ctx, &tftypes.QueryDenomRequest{Denom: denom})
 	require.NoError(t, err)
-	require.Equal(t, orbitaladdress.FormatAccAddress(admin), denomQuery.Metadata.Admin)
+	require.Equal(t, aetherisaddress.FormatAccAddress(admin), denomQuery.Metadata.Admin)
 	poolQuery, err := app.DexKeeper.Pool(ctx, &dextypes.QueryPoolRequest{PoolId: createPool.PoolId})
 	require.NoError(t, err)
 	testutil.AssertPoolAccounting(t, app, ctx, poolQuery.Pool)
 
-	msg := banktypes.NewMsgSend(admin, trader, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
-	txBytes := testutil.EncodeSignedTx(t, app, ctx, adminPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), 200_000)
+	msg := banktypes.NewMsgSend(admin, trader, sdk.NewCoins(sdk.NewInt64Coin("naet", 100)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, adminPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), 200_000)
 	block := testutil.FinalizeBlock(t, app, 1, txBytes)
 	require.Len(t, block.TxResults, 1)
 	require.Zero(t, block.TxResults[0].Code, block.TxResults[0].Log)
@@ -280,6 +324,6 @@ func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {
 
 	accounting, err := app.FeesKeeper.Accounting(testutil.NewContext(app, 2), &feestypes.QueryAccountingRequest{})
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin("norb", 10)), accounting.ProtocolFeeState.TotalCollected)
+	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), accounting.ProtocolFeeState.TotalCollected)
 	require.NoError(t, accounting.ProtocolFeeState.Validate())
 }

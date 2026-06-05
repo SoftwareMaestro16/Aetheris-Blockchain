@@ -50,7 +50,7 @@ import (
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -63,9 +63,9 @@ import (
 const appName = appparams.ChainName
 
 const (
-	AccountAddressPrefix   = "orb"
-	ValidatorAddressPrefix = "orbvaloper"
-	ConsensusAddressPrefix = "orbvalcons"
+	AccountAddressPrefix   = "ae"
+	ValidatorAddressPrefix = "aevaloper"
+	ConsensusAddressPrefix = "aevalcons"
 	BondDenom              = appparams.BaseDenom
 )
 
@@ -141,7 +141,7 @@ type L1App struct {
 
 func init() {
 	var err error
-	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory(".orbitalis")
+	DefaultNodeHome, err = clienthelpers.GetNodeHomeDirectory(".aetheris")
 	if err != nil {
 		panic(err)
 	}
@@ -163,8 +163,8 @@ func NewL1App(
 	interfaceRegistry, _ := types.NewInterfaceRegistryWithOptions(types.InterfaceRegistryOptions{
 		ProtoFiles: proto.HybridResolver,
 		SigningOptions: signing.Options{
-			AddressCodec:          orbitaladdress.Codec{},
-			ValidatorAddressCodec: orbitaladdress.Codec{},
+			AddressCodec:          aetherisaddress.Codec{},
+			ValidatorAddressCodec: aetherisaddress.Codec{},
 		},
 	})
 	appCodec := codec.NewProtoCodec(interfaceRegistry)

@@ -23,14 +23,16 @@ func TestNativeTokenMetadataContract(t *testing.T) {
 }
 
 func TestEnsureNativeTokenMetadataReplacesStaleEntry(t *testing.T) {
+	const fixtureDenom = "fixturetoken"
+
 	stale := banktypes.Metadata{
 		Base:    BaseDenom,
 		Display: "old",
 	}
 	other := banktypes.Metadata{
-		Base:       TestAssetDenom,
-		Display:    TestAssetDenom,
-		DenomUnits: []*banktypes.DenomUnit{{Denom: TestAssetDenom, Exponent: 0}},
+		Base:       fixtureDenom,
+		Display:    fixtureDenom,
+		DenomUnits: []*banktypes.DenomUnit{{Denom: fixtureDenom, Exponent: 0}},
 	}
 
 	metadata := EnsureNativeTokenMetadata([]banktypes.Metadata{stale, other})

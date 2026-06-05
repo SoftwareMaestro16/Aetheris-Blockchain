@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -28,7 +28,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 $rpcNode = "tcp://127.0.0.1:$($node0Ports.RPC)"
 
@@ -91,7 +91,7 @@ function Test-LocalnetNegativeCases {
   Assert-Throws -Name "missing binary with NoInit" -Script {
     & (Join-Path $RepoRoot "scripts\localnet\start.ps1") `
       -OutputDir (Join-Path $negativeRoot "missing-binary") `
-      -Binary (Join-Path $negativeRoot "missing\orbitalisd.exe") `
+      -Binary (Join-Path $negativeRoot "missing\aetherisd.exe") `
       -NoInit
   }
 
@@ -190,8 +190,8 @@ try {
   Write-Host "query block succeeded"
 
   if (-not $SkipBankTx -and $ValidatorCount -gt 1) {
-    $node0Home = Join-Path $OutputDir "node0\orbitalisd"
-    $node1Home = Join-Path $OutputDir "node1\orbitalisd"
+    $node0Home = Join-Path $OutputDir "node0\aetherisd"
+    $node1Home = Join-Path $OutputDir "node1\aetherisd"
     $recipient = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node1Home -KeyName "node1"
     Send-LocalnetBankTx -Binary $Binary -FromHome $node0Home -FromKey "node0" -ToAddress $recipient -ChainId $ChainId -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
     $height = Wait-LocalnetHeight -TargetHeight ([int64]$height + 1) -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds

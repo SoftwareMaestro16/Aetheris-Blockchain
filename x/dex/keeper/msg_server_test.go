@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	l1app "github.com/sovereign-l1/l1/app"
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	"github.com/sovereign-l1/l1/x/dex/types"
@@ -85,12 +85,45 @@ func TestDexRejectsZeroActorAddress(t *testing.T) {
 	msgServer := dexkeeper.NewMsgServerImpl(app.DexKeeper)
 
 	_, err := msgServer.CreatePool(ctx, &types.MsgCreatePool{
-		Creator: orbitaladdress.ZeroRawAddress,
+		Creator: aetherisaddress.ZeroRawAddress,
 		TokenA:  sdk.NewInt64Coin("uatom", 1_000),
 		TokenB:  sdk.NewInt64Coin(appparams.BaseDenom, 1_000),
 	})
 	require.ErrorIs(t, err, types.ErrInvalidAddress)
 	require.Contains(t, err.Error(), "creator must not be zero address")
+
+	app, ctx, msgServer, _, poolID := setupDexPool(t)
+	pool, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	_, err = msgServer.AddLiquidity(ctx, &types.MsgAddLiquidity{
+		Depositor: aetherisaddress.ZeroRawAddress,
+		PoolId:    poolID,
+		TokenA:    sdk.NewInt64Coin("uatom", 1),
+		TokenB:    sdk.NewInt64Coin(appparams.BaseDenom, 1),
+		MinShares: "1",
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "depositor must not be zero address")
+
+	_, err = msgServer.RemoveLiquidity(ctx, &types.MsgRemoveLiquidity{
+		Withdrawer: aetherisaddress.ZeroUserFriendly,
+		PoolId:     poolID,
+		Shares:     sdk.NewInt64Coin(pool.LpDenom, 1),
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "withdrawer must not be zero address")
+
+	_, err = msgServer.SwapExactAmountIn(ctx, &types.MsgSwapExactAmountIn{
+		Trader:        aetherisaddress.ZeroRawAddress,
+		PoolId:        poolID,
+		TokenIn:       sdk.NewInt64Coin("uatom", 1),
+		TokenOutDenom: appparams.BaseDenom,
+		MinAmountOut:  "1",
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "trader must not be zero address")
 }
 
 func TestCreatePoolRejectsDuplicatePair(t *testing.T) {
@@ -116,7 +149,7 @@ func TestCreatePoolRejectsDuplicatePair(t *testing.T) {
 
 func TestDexLifecycleEmitsStableEventsAndStateQueries(t *testing.T) {
 	app, ctx, msgServer, trader, poolID := setupDexPool(t)
-	traderText := orbitaladdress.FormatAccAddress(trader)
+	traderText := aetherisaddress.FormatAccAddress(trader)
 	pool, found, err := app.DexKeeper.GetPool(ctx, poolID)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -432,7 +465,7 @@ func TestDexLifecycleRejectsSlippageAndWrongDenoms(t *testing.T) {
 	})
 	require.ErrorIs(t, err, types.ErrInvalidPool)
 
-	norbBeforeSwap := app.BankKeeper.GetBalance(ctx, trader, appparams.BaseDenom)
+	naetBeforeSwap := app.BankKeeper.GetBalance(ctx, trader, appparams.BaseDenom)
 	swapRes, err := msgServer.SwapExactAmountIn(ctx, &types.MsgSwapExactAmountIn{
 		Trader:        trader.String(),
 		PoolId:        poolID,
@@ -442,7 +475,7 @@ func TestDexLifecycleRejectsSlippageAndWrongDenoms(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, swapRes.TokenOut.Amount.IsPositive())
-	require.True(t, app.BankKeeper.GetBalance(ctx, trader, appparams.BaseDenom).Amount.GT(norbBeforeSwap.Amount))
+	require.True(t, app.BankKeeper.GetBalance(ctx, trader, appparams.BaseDenom).Amount.GT(naetBeforeSwap.Amount))
 
 	_, err = msgServer.RemoveLiquidity(ctx, &types.MsgRemoveLiquidity{
 		Withdrawer: trader.String(),
@@ -478,4 +511,86 @@ func TestCreatePoolLPDenomCannotSpoofNativeToken(t *testing.T) {
 	require.NotEqual(t, appparams.BaseDenom, pool.LpDenom)
 	require.NotEqual(t, appparams.DisplayDenom, pool.LpDenom)
 	require.NotEqual(t, appparams.TokenSymbol, pool.LpDenom)
+}
+
+func TestCreatePoolRejectsNativeSpoofingThroughPoolDenoms(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	creator := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
+	fundAccount(t, app, ctx, creator, sdk.NewCoins(
+		sdk.NewInt64Coin("uatom", 10_000),
+		sdk.NewInt64Coin(appparams.DisplayDenom, 10_000),
+	))
+	msgServer := dexkeeper.NewMsgServerImpl(app.DexKeeper)
+
+	tests := []sdk.Coin{
+		sdk.NewInt64Coin(appparams.DisplayDenom, 1_000),
+		sdk.NewInt64Coin(appparams.TokenName, 1_000),
+		sdk.NewInt64Coin("factory/"+creator.String()+"/"+appparams.BaseDenom, 1_000),
+		sdk.NewInt64Coin("factory/"+creator.String()+"/"+appparams.DisplayDenom, 1_000),
+	}
+
+	for _, token := range tests {
+		t.Run(token.Denom, func(t *testing.T) {
+			nextIDBefore, err := app.DexKeeper.GetNextPoolID(ctx)
+			require.NoError(t, err)
+			_, err = msgServer.CreatePool(ctx, &types.MsgCreatePool{
+				Creator: creator.String(),
+				TokenA:  token,
+				TokenB:  sdk.NewInt64Coin("uatom", 1_000),
+			})
+			require.ErrorIs(t, err, types.ErrInvalidPool)
+			require.Contains(t, err.Error(), "native AET/naet")
+			nextIDAfter, err := app.DexKeeper.GetNextPoolID(ctx)
+			require.NoError(t, err)
+			require.Equal(t, nextIDBefore, nextIDAfter)
+		})
+	}
+}
+
+func TestSwapPreservesConstantProductAndAccountingInvariants(t *testing.T) {
+	app, ctx, msgServer, trader, poolID := setupDexPool(t)
+	fundAccount(t, app, ctx, trader, sdk.NewCoins(sdk.NewInt64Coin("uatom", 1_000)))
+
+	before, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	beforeReserve0 := mustIntFromString(t, before.Reserve0)
+	beforeReserve1 := mustIntFromString(t, before.Reserve1)
+	beforeProduct := beforeReserve0.Mul(beforeReserve1)
+
+	_, err = msgServer.SwapExactAmountIn(ctx, &types.MsgSwapExactAmountIn{
+		Trader:        trader.String(),
+		PoolId:        poolID,
+		TokenIn:       sdk.NewInt64Coin("uatom", 100),
+		TokenOutDenom: appparams.BaseDenom,
+		MinAmountOut:  "1",
+	})
+	require.NoError(t, err)
+
+	after, found, err := app.DexKeeper.GetPool(ctx, poolID)
+	require.NoError(t, err)
+	require.True(t, found)
+	afterReserve0 := mustIntFromString(t, after.Reserve0)
+	afterReserve1 := mustIntFromString(t, after.Reserve1)
+	require.True(t, afterReserve0.Mul(afterReserve1).GTE(beforeProduct))
+
+	moduleAddr := app.AccountKeeper.GetModuleAddress(types.ModuleName)
+	require.NotNil(t, moduleAddr)
+	require.Equal(t, sdk.NewCoin(after.Denom0, afterReserve0), app.BankKeeper.GetBalance(ctx, moduleAddr, after.Denom0))
+	require.Equal(t, sdk.NewCoin(after.Denom1, afterReserve1), app.BankKeeper.GetBalance(ctx, moduleAddr, after.Denom1))
+	require.Equal(t, sdk.NewCoin(after.LpDenom, mustIntFromString(t, after.TotalShares)), app.BankKeeper.GetSupply(ctx, after.LpDenom))
+}
+
+func TestUpdateParamsRejectsZeroAuthority(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	msgServer := dexkeeper.NewMsgServerImpl(app.DexKeeper)
+
+	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: aetherisaddress.ZeroRawAddress,
+		Params:    types.DefaultParams(),
+	})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	require.Contains(t, err.Error(), "authority must not be zero address")
 }

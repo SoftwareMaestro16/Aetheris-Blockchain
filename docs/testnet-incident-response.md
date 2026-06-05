@@ -38,9 +38,9 @@ Medium:
 Collect:
 
 ```powershell
-build\orbitalisd.exe status --node <rpc> --output json
-build\orbitalisd.exe query block --node <rpc> --output json
-build\orbitalisd.exe query tendermint-validator-set --node <rpc> --output json
+build\aetherisd.exe status --node <rpc> --output json
+build\aetherisd.exe query block --node <rpc> --output json
+build\aetherisd.exe query tendermint-validator-set --node <rpc> --output json
 ```
 
 Then:

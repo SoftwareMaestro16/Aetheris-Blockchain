@@ -23,12 +23,28 @@ func ValidateUserAddress(field, text string) error {
 	return err
 }
 
+func RejectZeroAddress(field string, bz []byte) error {
+	if IsZero(bz) {
+		return fmt.Errorf("%s must not be zero address", field)
+	}
+	return nil
+}
+
 func ParseAuthorityAddress(field, text string) (sdk.AccAddress, error) {
 	return ParseUserAddress(field, text)
 }
 
 func ValidateAuthorityAddress(field, text string) error {
 	_, err := ParseAuthorityAddress(field, text)
+	return err
+}
+
+func ParseContractAddress(field, text string) (sdk.AccAddress, error) {
+	return ParseUserAddress(field, text)
+}
+
+func ValidateContractAddress(field, text string) error {
+	_, err := ParseContractAddress(field, text)
 	return err
 }
 

@@ -1,24 +1,56 @@
-# PoS and staking correctness
+# PoS And Staking Correctness
 
-This document records the Phase 4 Orbitalis PoS/staking acceptance policy.
+This document records the Phase 6 Aetheris PoS and staking acceptance policy.
 
-## Native staking denom
+## Production Staking Policy
 
-Orbitalis staking uses only `norb` as the bond denom. Validator creation,
+The production staking track must keep the following policy explicit and
+testable before public testnet:
+
+- `bond_denom = "naet"` is the only valid staking denom.
+- validator self-delegation must be positive, in `naet`, and bounded by
+  genesis and message validation.
+- commission max rate, commission max change rate, and minimum commission must
+  be governance-bounded and validated.
+- unbonding time, max validators, max entries, historical entries, and
+  redelegation limits must be bounded.
+- jailed validators must not remain active producers until unjail rules pass.
+- validator edit, jail, unjail, unbond, redelegation, and removal paths must
+  preserve staking, slashing, distribution, and bank module invariants.
+
+Parameter validation must cover staking, slashing, distribution, mint, and fee params together because `naet` issuance, rewards, fee collection, and validator power are coupled.
+
+## Native Staking Denom
+
+Aetheris staking uses only `naet` as the bond denom. Validator creation,
 delegation, unbonding, redelegation, rewards, slashing, and localnet genesis
-tests must not rely on `stake`, `uatom`, display denom `ORB`, or factory denoms.
+tests must not rely on `stake`, `uatom`, display denom `AET`, factory denoms,
+LP denoms, or `testtoken`.
 
-## Validator lifecycle coverage
+## Uncapped PoS Supply
+
+AET has no fixed max supply. The base denom `naet` is issued through the
+configured Cosmos SDK mint inflation and reward policy. In v1, mint params must
+remain deterministic and governance-bounded:
+
+- `mint_denom = "naet"`
+- `max_supply = 0`, which means uncapped supply in SDK mint params
+- inflation rate change, min inflation, max inflation, goal bonded, and blocks
+  per year must pass SDK mint param validation
+- reward and distribution accounting must be deterministic and test-covered
+
+## Validator Lifecycle Coverage
 
 Unit tests in `app/pos_test.go` cover:
 
-- validator creation with `norb` self-delegation
+- validator creation with `naet` self-delegation
 - delegation increasing validator tokens and consensus power
 - unbonding entries and delayed balance return
 - redelegation entries between bonded validators
 - invalid delegation denom, funds, and address rejection
 - slashing params and downtime missed-block bitmap persistence
 - delegator reward withdrawal through the distribution module
+- `naet` mint params, uncapped max supply, and bounded inflation params
 
 Integration tests in `tests/integration/pos_lifecycle_test.go` cover:
 
@@ -26,27 +58,106 @@ Integration tests in `tests/integration/pos_lifecycle_test.go` cover:
 - validator-set updates returned to CometBFT after staking power changes
 - staking delegation state surviving export/import restart
 
-## Local 3-validator acceptance
+The next production-hardening test additions are:
+
+- validator edit, jail, unjail, and inactive validator removal
+- unbonding completion after the unbonding period
+- redelegation completion and redelegation limit rejection
+- downtime jailing behavior with missed block windows
+- rewards and commission accounting against distribution module balances
+- staking pool invariants for bonded, unbonded, and not-bonded funds
+
+## Localnet Acceptance
 
 The localnet acceptance path is:
 
 ```powershell
-.\scripts\build-orbitalisd.ps1
-.\tests\e2e\pos_smoke.ps1 -Binary .\build\orbitalisd.exe
+.\scripts\build-aetherisd.ps1
+.\tests\e2e\pos_smoke.ps1 -Binary .\build\aetherisd.exe
+.\tests\e2e\pos_smoke.ps1 -Binary .\build\aetherisd.exe -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
-`tests/e2e/pos_smoke.ps1` validates a 3-validator local network by default:
+`tests/e2e/pos_smoke.ps1` validates a 3-validator local network by default and
+supports a 5-validator profile:
 
 - initializes and validates localnet genesis
 - starts the network and waits for blocks
 - checks CometBFT validator count and bonded staking validators
-- confirms staking bond denom `norb`
+- confirms staking bond denom `naet`
 - checks slashing params and signing info
 - submits a delegation and confirms total voting power increases
 - confirms invalid delegation paths fail
 - confirms replayed signed tx fails
 
-`scripts/localnet/validate-genesis.ps1` is the genesis-specific guard for the
-3-node localnet. It asserts matching genesis hashes across nodes, exactly three
-gentxs by default, `MsgCreateValidator` self-delegation in `norb`, and empty
-prototype ecosystem state for tokenfactory and dex genesis.
+`scripts/localnet/validate-genesis.ps1` is the genesis-specific guard for local
+profiles. It asserts matching genesis hashes across nodes, exactly
+`ValidatorCount` gentxs and bank balances, `MsgCreateValidator`
+self-delegation in `naet`, `staking/mint/fees` denom consistency, and empty
+tokenfactory and DEX genesis state.
+
+## Production Localnet Profiles
+
+The localnet profile matrix for staking hardening is:
+
+| Profile | Validators | Purpose | Required before |
+| --- | ---: | --- | --- |
+| Dev | 1 | fast local module and CLI iteration | every developer smoke |
+| Smoke | 3 | normal validator-set and peer behavior | public testnet candidate |
+| Rehearsal | 5 | public-testnet validator topology rehearsal | public testnet launch |
+| Stress | 10 | staking, query, and localnet script scale evidence | production candidate |
+| Long run | 20 | long-running validator lifecycle and restart evidence | production candidate |
+
+3-validator and 5-validator profiles are mandatory before public testnet. The
+10-validator and 20-validator profiles are production-readiness gates and may
+run in scheduled or manual environments.
+
+## Restart, State-Sync, Snapshot, And Chaos
+
+Production staking readiness requires repeatable recovery drills:
+
+- stop/start after delegation;
+- stop/start after unbonding;
+- stop/start after slashing state changes;
+- state-sync join after staking changes;
+- snapshot restore after staking changes;
+- kill one validator in a 3-validator profile;
+- kill two validators in a 5-validator profile;
+- restart a validator with stale local state and verify safe failure;
+- corrupt local node data outside consensus state and verify diagnostics.
+
+State-sync and snapshot restore must produce the same staking state root for
+the restored height. Recovery evidence must not include validator keys,
+mnemonics, node keys, or keyring contents.
+
+## Invariants And Benchmarks
+
+Required staking invariants:
+
+- bonded, unbonded, and not-bonded pools match staking keeper state;
+- validator tokens and delegator shares are internally consistent;
+- distribution outstanding rewards match module balances;
+- total `naet` supply changes only through mint, reward, slash, and explicit
+  burn paths;
+- validator updates returned by `FinalizeBlock` match staking keeper power.
+
+Required benchmarks:
+
+- create validator;
+- delegate;
+- redelegate;
+- unbond;
+- validator set update;
+- reward withdrawal;
+- slashing missed-block window scan.
+
+## Acceptance
+
+- Local 3-validator network produces blocks.
+- Local 5-validator genesis validates with the same staking and denom policy.
+- Validator power updates after staking transactions and propagates through
+  `FinalizeBlock` validator updates.
+- Export/import restart preserves staking state and consensus progress.
+- 3-validator and 5-validator long-run smokes produce blocks without staking
+  invariant drift.
+- State-sync and snapshot restore preserve staking state roots.
+- No staking path accepts non-`naet` bond or fee denoms.

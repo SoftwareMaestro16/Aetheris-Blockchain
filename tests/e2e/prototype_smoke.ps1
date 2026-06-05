@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 4,
   [int]$TimeoutSeconds = 120,
@@ -17,10 +17,10 @@ param(
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
   [string]$Node = "",
-  [string]$Fees = "1000000norb",
+  [string]$Fees = "1000000naet",
   [string]$WrongFees = "1000testtoken",
   [string]$FactorySubdenom = "smokegold",
-  [string]$DelegationAmount = "5000000norb",
+  [string]$DelegationAmount = "5000000naet",
   [switch]$SkipBuild,
   [switch]$KeepLogsOnFailure
 )

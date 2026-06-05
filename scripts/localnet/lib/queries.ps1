@@ -62,7 +62,7 @@ function Get-LocalnetSigningInfos {
 function Get-LocalnetBankMetadata {
   param(
     [string]$Binary,
-    [string]$Denom = "norb",
+    [string]$Denom = "naet",
     [int]$RPCPort = 26657
   )
 
@@ -74,7 +74,7 @@ function Get-LocalnetBankMetadata {
 function Get-LocalnetBankSupplyOf {
   param(
     [string]$Binary,
-    [string]$Denom = "norb",
+    [string]$Denom = "naet",
     [int]$RPCPort = 26657
   )
 
@@ -88,7 +88,7 @@ function Get-LocalnetBankBalance {
   param(
     [string]$Binary,
     [string]$Address,
-    [string]$Denom = "norb",
+    [string]$Denom = "naet",
     [int]$RPCPort = 26657
   )
 
@@ -118,9 +118,9 @@ function Send-LocalnetDelegateTx {
     [string]$FromHome,
     [string]$FromKey = "node0",
     [string]$ValidatorAddress,
-    [string]$Amount = "5000000norb",
-    [string]$Fees = "1000000norb",
-    [string]$ChainId = "orbitalis-local-1",
+    [string]$Amount = "5000000naet",
+    [string]$Fees = "1000000naet",
+    [string]$ChainId = "aetheris-local-1",
     [int]$RPCPort = 26657,
     [int]$TimeoutSeconds = 60
   )
@@ -172,9 +172,9 @@ function Send-LocalnetBankTx {
     [string]$FromHome,
     [string]$FromKey = "node0",
     [string]$ToAddress,
-    [string]$Amount = "1000norb",
-    [string]$Fees = "1000000norb",
-    [string]$ChainId = "orbitalis-local-1",
+    [string]$Amount = "1000naet",
+    [string]$Fees = "1000000naet",
+    [string]$ChainId = "aetheris-local-1",
     [int]$RPCPort = 26657,
     [int]$TimeoutSeconds = 60
   )

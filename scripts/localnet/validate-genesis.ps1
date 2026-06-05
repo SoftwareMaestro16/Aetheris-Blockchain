@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$BaseP2PPort = 26656,
   [int]$BaseRPCPort = 26657,
@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 if ($ValidatorCount -lt 1) { throw "ValidatorCount must be at least 1" }
 
@@ -56,7 +56,7 @@ $expectedNativeAmount = "500000000"
 $expectedSelfDelegation = "100000000"
 
 foreach ($node in $nodes) {
-  $nodeHome = Join-Path $node.FullName "orbitalisd"
+  $nodeHome = Join-Path $node.FullName "aetherisd"
   $genesisPath = Join-Path $nodeHome "config\genesis.json"
   $configToml = Join-Path $nodeHome "config\config.toml"
   $appToml = Join-Path $nodeHome "config\app.toml"
@@ -89,8 +89,8 @@ foreach ($node in $nodes) {
   if ($EnableGRPC -and $appRaw -notmatch [regex]::Escape("127.0.0.1:$($ports.GRPC)")) {
     throw "gRPC port for $($node.Name) does not match profile port $($ports.GRPC)"
   }
-  if ($appRaw -notmatch '(?m)^minimum-gas-prices = "0norb"$') {
-    throw "minimum-gas-prices for $($node.Name) must be 0norb"
+  if ($appRaw -notmatch '(?m)^minimum-gas-prices = "0naet"$') {
+    throw "minimum-gas-prices for $($node.Name) must be 0naet"
   }
 
   $raw = Get-Content -Raw -LiteralPath $genesisPath
@@ -115,22 +115,22 @@ foreach ($node in $nodes) {
     throw "missing app_state for $($node.Name)"
   }
 
-  $bankMetadata = @($appState.bank.denom_metadata | Where-Object { $_.base -eq "norb" })
-  if ($bankMetadata.Count -ne 1 -or $bankMetadata[0].display -ne "ORB") {
-    throw "native token metadata for norb/ORB is missing or invalid"
+  $bankMetadata = @($appState.bank.denom_metadata | Where-Object { $_.base -eq "naet" })
+  if ($bankMetadata.Count -ne 1 -or $bankMetadata[0].display -ne "AET") {
+    throw "native token metadata for naet/AET is missing or invalid"
   }
 
-  if ($appState.staking.params.bond_denom -ne "norb") {
-    throw "staking bond denom is not norb"
+  if ($appState.staking.params.bond_denom -ne "naet") {
+    throw "staking bond denom is not naet"
   }
 
-  if ($appState.mint.params.mint_denom -ne "norb") {
-    throw "mint denom is not norb"
+  if ($appState.mint.params.mint_denom -ne "naet") {
+    throw "mint denom is not naet"
   }
 
   $feeDenoms = @($appState.fees.params.allowed_fee_denoms)
-  if ($feeDenoms.Count -ne 1 -or $feeDenoms[0] -ne "norb") {
-    throw "fees module does not restrict fees to norb"
+  if ($feeDenoms.Count -ne 1 -or $feeDenoms[0] -ne "naet") {
+    throw "fees module does not restrict fees to naet"
   }
 
   if (@($appState.tokenfactory.denoms).Count -ne 0) {
@@ -153,12 +153,12 @@ foreach ($node in $nodes) {
   foreach ($balance in $balances) {
     $coins = @($balance.coins)
     $testAsset = @($coins | Where-Object { $_.denom -eq "testtoken" })
-    $native = @($coins | Where-Object { $_.denom -eq "norb" })
+    $native = @($coins | Where-Object { $_.denom -eq "naet" })
     if ($testAsset.Count -ne 1 -or $testAsset[0].amount -ne $expectedTestAssetAmount) {
       throw "initial account $($balance.address) must have ${expectedTestAssetAmount}testtoken"
     }
     if ($native.Count -ne 1 -or $native[0].amount -ne $expectedNativeAmount) {
-      throw "initial account $($balance.address) must have ${expectedNativeAmount}norb"
+      throw "initial account $($balance.address) must have ${expectedNativeAmount}naet"
     }
   }
 
@@ -167,8 +167,8 @@ foreach ($node in $nodes) {
     if ($genTxRaw -notmatch '"@type":"/cosmos.staking.v1beta1.MsgCreateValidator"') {
       throw "gentx does not contain MsgCreateValidator"
     }
-    if ($genTxRaw -notmatch '"denom":"norb"' -or $genTxRaw -notmatch "`"amount`":`"$expectedSelfDelegation`"") {
-      throw "gentx self-delegation must be ${expectedSelfDelegation}norb"
+    if ($genTxRaw -notmatch '"denom":"naet"' -or $genTxRaw -notmatch "`"amount`":`"$expectedSelfDelegation`"") {
+      throw "gentx self-delegation must be ${expectedSelfDelegation}naet"
     }
   }
 }

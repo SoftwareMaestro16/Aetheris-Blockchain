@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = ".localnet-funding",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -64,7 +64,7 @@ function Assert-ScriptFails {
 }
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet-funding"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 
 Push-Location $RepoRoot
@@ -78,13 +78,13 @@ try {
   $height = Wait-LocalnetHeight -TargetHeight $MinHeight -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds
   Write-Host "localnet reached height $height"
 
-  $node1Home = Join-Path $OutputDir "node1\orbitalisd"
-  $node2Home = Join-Path $OutputDir "node2\orbitalisd"
+  $node1Home = Join-Path $OutputDir "node1\aetherisd"
+  $node2Home = Join-Path $OutputDir "node2\aetherisd"
   $node1 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node1Home -KeyName "node1"
   $node2 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node2Home -KeyName "node2"
 
-  $node1Before = Get-LocalnetBankBalance -Binary $Binary -Address $node1 -Denom "norb" -RPCPort $node0Ports.RPC
-  $node2Before = Get-LocalnetBankBalance -Binary $Binary -Address $node2 -Denom "norb" -RPCPort $node0Ports.RPC
+  $node1Before = Get-LocalnetBankBalance -Binary $Binary -Address $node1 -Denom "naet" -RPCPort $node0Ports.RPC
+  $node2Before = Get-LocalnetBankBalance -Binary $Binary -Address $node2 -Denom "naet" -RPCPort $node0Ports.RPC
 
   $funding = & .\scripts\localnet\fund.ps1 `
     -OutputDir $OutputDir `
@@ -92,9 +92,9 @@ try {
     -ChainId $ChainId `
     -RPCPort $node0Ports.RPC `
     -Recipients @($node1) `
-    -Transfers @("$node2=777norb") `
-    -Amount "1234norb" `
-    -Fees "1000000norb" `
+    -Transfers @("$node2=777naet") `
+    -Amount "1234naet" `
+    -Fees "1000000naet" `
     -TimeoutSeconds $TimeoutSeconds `
     -Json | ConvertFrom-Json
 
@@ -102,8 +102,8 @@ try {
     throw "funding flow must return two transfer results"
   }
 
-  $node1After = Get-LocalnetBankBalance -Binary $Binary -Address $node1 -Denom "norb" -RPCPort $node0Ports.RPC
-  $node2After = Get-LocalnetBankBalance -Binary $Binary -Address $node2 -Denom "norb" -RPCPort $node0Ports.RPC
+  $node1After = Get-LocalnetBankBalance -Binary $Binary -Address $node1 -Denom "naet" -RPCPort $node0Ports.RPC
+  $node2After = Get-LocalnetBankBalance -Binary $Binary -Address $node2 -Denom "naet" -RPCPort $node0Ports.RPC
   if ([int64]$node1After.amount -ne ([int64]$node1Before.amount + 1234)) {
     throw "node1 funding mismatch"
   }
@@ -113,13 +113,13 @@ try {
   Write-Host "local funding increased node1 and node2 balances"
 
   Assert-ScriptFails -ExpectedText "non-local chain-id" -Script {
-    & .\scripts\localnet\fund.ps1 -OutputDir $OutputDir -Binary $Binary -ChainId "orbitalis-main-1" -RPCPort $node0Ports.RPC -Recipients @($node1) -Amount "1norb"
+    & .\scripts\localnet\fund.ps1 -OutputDir $OutputDir -Binary $Binary -ChainId "aetheris-main-1" -RPCPort $node0Ports.RPC -Recipients @($node1) -Amount "1naet"
   }
-  Assert-ScriptFails -ExpectedText "RPC network $ChainId does not match requested local chain-id orbitalis-local-2" -Script {
-    & .\scripts\localnet\fund.ps1 -OutputDir $OutputDir -Binary $Binary -ChainId "orbitalis-local-2" -RPCPort $node0Ports.RPC -Recipients @($node1) -Amount "1norb"
+  Assert-ScriptFails -ExpectedText "RPC network $ChainId does not match requested local chain-id aetheris-local-2" -Script {
+    & .\scripts\localnet\fund.ps1 -OutputDir $OutputDir -Binary $Binary -ChainId "aetheris-local-2" -RPCPort $node0Ports.RPC -Recipients @($node1) -Amount "1naet"
   }
   Assert-ScriptFails -ExpectedText "key not found" -Script {
-    & .\scripts\localnet\fund.ps1 -OutputDir $OutputDir -Binary $Binary -ChainId $ChainId -RPCPort $node0Ports.RPC -FromKey "missing-funder" -Recipients @($node1) -Amount "1norb"
+    & .\scripts\localnet\fund.ps1 -OutputDir $OutputDir -Binary $Binary -ChainId $ChainId -RPCPort $node0Ports.RPC -FromKey "missing-funder" -Recipients @($node1) -Amount "1naet"
   }
 
   Write-Host "local funding safety failures passed"

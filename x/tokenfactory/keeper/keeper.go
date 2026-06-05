@@ -11,7 +11,7 @@ import (
 	sdkquery "github.com/cosmos/cosmos-sdk/types/query"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	queryutil "github.com/sovereign-l1/l1/x/internal/query"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
@@ -109,7 +109,7 @@ func (k Keeper) GetDenomsPage(ctx context.Context, pageReq *sdkquery.PageRequest
 }
 
 func (k Keeper) FullDenom(ctx context.Context, creator, subdenom string) (string, error) {
-	creatorAddr, err := orbitaladdress.ParseUserAddress("creator", creator)
+	creatorAddr, err := aetherisaddress.ParseUserAddress("creator", creator)
 	if err != nil {
 		return "", types.ErrInvalidAddress.Wrap(err.Error())
 	}
@@ -121,9 +121,9 @@ func (k Keeper) FullDenom(ctx context.Context, creator, subdenom string) (string
 		return "", types.ErrInvalidDenom.Wrap(err.Error())
 	}
 	if types.IsReservedNativeSubdenom(subdenom) {
-		return "", types.ErrInvalidDenom.Wrap("subdenom must not spoof native ORB/norb")
+		return "", types.ErrInvalidDenom.Wrap("subdenom must not spoof native AET/naet")
 	}
-	return fmt.Sprintf("%s/%s/%s", types.FactoryDenomPrefix, orbitaladdress.FormatAccAddress(creatorAddr), subdenom), nil
+	return fmt.Sprintf("%s/%s/%s", types.FactoryDenomPrefix, aetherisaddress.FormatAccAddress(creatorAddr), subdenom), nil
 }
 
 func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) error {

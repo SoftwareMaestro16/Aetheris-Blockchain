@@ -19,7 +19,7 @@ import (
 )
 
 func TestStakingTxReturnsValidatorSetUpdates(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-pos-updates")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-pos-updates")
 	ctx := testutil.NewContext(app, 1)
 	delegatorPriv, delegator := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(20_000_000))
 	validator := bondedValidator(t, app, ctx)
@@ -34,9 +34,9 @@ func TestStakingTxReturnsValidatorSetUpdates(t *testing.T) {
 		[]sdk.Msg{stakingtypes.NewMsgDelegate(
 			delegator.String(),
 			validator.OperatorAddress,
-			sdk.NewCoin("norb", delegation),
+			sdk.NewCoin("naet", delegation),
 		)},
-		sdk.NewCoins(sdk.NewInt64Coin("norb", 100)),
+		sdk.NewCoins(sdk.NewInt64Coin("naet", 100)),
 		250_000,
 	)
 
@@ -64,7 +64,7 @@ func TestStakingTxReturnsValidatorSetUpdates(t *testing.T) {
 }
 
 func TestStakingStateSurvivesExportImportRestart(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-integration-pos-restart")
+	app := testutil.NewInitializedApp(t, "aetheris-integration-pos-restart")
 	ctx := testutil.NewContext(app, 1)
 	delegatorPriv, delegator := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(20_000_000))
 	validator := bondedValidator(t, app, ctx)
@@ -80,9 +80,9 @@ func TestStakingStateSurvivesExportImportRestart(t *testing.T) {
 		[]sdk.Msg{stakingtypes.NewMsgDelegate(
 			delegator.String(),
 			validator.OperatorAddress,
-			sdk.NewCoin("norb", delegation),
+			sdk.NewCoin("naet", delegation),
 		)},
-		sdk.NewCoins(sdk.NewInt64Coin("norb", 100)),
+		sdk.NewCoins(sdk.NewInt64Coin("naet", 100)),
 		250_000,
 	)
 

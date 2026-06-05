@@ -7,7 +7,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 )
 
 const (
@@ -101,16 +101,16 @@ func (gs GenesisState) Validate() error {
 		if len(parts) != 3 || parts[1] == "" || parts[2] == "" {
 			return fmt.Errorf("denom %s must use factory/{admin}/{subdenom} format", denom.Denom)
 		}
-		if err := orbitaladdress.ValidateUserAddress("denom factory admin", parts[1]); err != nil {
+		if err := aetherisaddress.ValidateUserAddress("denom factory admin", parts[1]); err != nil {
 			return fmt.Errorf("invalid factory admin for denom %s: %w", denom.Denom, err)
 		}
 		if IsReservedNativeSubdenom(parts[2]) {
-			return fmt.Errorf("denom %s must not spoof native ORB/norb", denom.Denom)
+			return fmt.Errorf("denom %s must not spoof native AET/naet", denom.Denom)
 		}
 		if denom.Admin == "" {
 			return fmt.Errorf("empty admin for denom %s", denom.Denom)
 		}
-		if err := orbitaladdress.ValidateUserAddress("admin", denom.Admin); err != nil {
+		if err := aetherisaddress.ValidateUserAddress("admin", denom.Admin); err != nil {
 			return fmt.Errorf("invalid admin for denom %s: %w", denom.Denom, err)
 		}
 		if _, ok := seen[denom.Denom]; ok {

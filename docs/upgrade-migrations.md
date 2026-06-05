@@ -7,7 +7,8 @@ Prototype upgrades are consensus-critical. A migration must be deterministic, bo
 The current `UpgradeName` handler is a no-op migration pattern: it delegates to `ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)`. App tests verify:
 
 - the stored module version map includes every app module,
-- custom modules `tokenfactory`, `dex`, and `fees` have version `1`,
+- custom modules `tokenfactory`, `dex`, and `fees` have current consensus
+  version `2`,
 - missing module versions and impossible future versions are rejected before migration,
 - the registered no-op upgrade handler can run from the current version map,
 - export after the dry-run upgrade produces valid genesis.
@@ -26,6 +27,16 @@ Before adding a real migration:
 8. Export after migration and validate exported genesis.
 9. Add regression tests for malformed old state and the expected migrated state.
 10. Run `go test ./...`, `go vet ./...`, `buf lint`, proto generated verification if proto changed, and the prototype audit gate.
+
+## Legacy Format Rule
+
+Old Orbitalis public data formats (`ORB`, `norb`, `orb1`, and raw `0:`
+addresses) must not be reintroduced through normal upgrade handlers. Migration
+support for historical data is allowed only inside explicit migration-only
+tools or named upgrade handlers, and the output must be normalized to Aetheris
+formats before being accepted by normal app validation.
+
+Migration output must be normalized to Aetheris formats.
 
 ## Security Review
 

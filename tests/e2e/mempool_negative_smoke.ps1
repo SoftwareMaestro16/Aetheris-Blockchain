@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -13,7 +13,7 @@ param(
   [int]$PortStride = 100,
   [string]$TimeoutCommit = "1s",
   [string]$LogLevel = "info",
-  [string]$Fees = "1000000norb",
+  [string]$Fees = "1000000naet",
   [string]$WrongFees = "1000testtoken"
 )
 
@@ -27,7 +27,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet-mempool-negative"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 $rpcNode = "tcp://127.0.0.1:$($node0Ports.RPC)"
 
@@ -287,51 +287,51 @@ try {
   Write-Host "localnet reached height $height"
   Wait-LocalnetValidators -ExpectedCount $ValidatorCount -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
 
-  $node0Home = Join-Path $OutputDir "node0\orbitalisd"
-  $node1Home = Join-Path $OutputDir "node1\orbitalisd"
+  $node0Home = Join-Path $OutputDir "node0\aetherisd"
+  $node1Home = Join-Path $OutputDir "node1\aetherisd"
   $node0 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName "node0"
   $node1 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node1Home -KeyName "node1"
   $factoryDenom = "factory/$node0/negasset"
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", "negasset") -FromHome $node0Home | Out-Null
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000naet", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
   Write-Host "baseline tokenfactory denom and DEX pool created"
 
-  $node1Before = Get-BalanceAmount -Address $node1 -Denom "norb"
+  $node1Before = Get-BalanceAmount -Address $node1 -Denom "naet"
   $wrongFee = Invoke-NegativeTx `
     -Name "wrong fee bank send" `
-    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "bank", "send", "node0", $node1, "1norb") -FromHome $node0Home -TxFees $WrongFees) `
-    -ExpectedText "fee denom testtoken not accepted; use norb" `
+    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home -TxFees $WrongFees) `
+    -ExpectedText "fee denom testtoken not accepted; use naet" `
     -AllowedPhases @("CheckTx")
   Assert-True ($wrongFee.Phase -eq "CheckTx") "wrong fee must be rejected in CheckTx"
-  Assert-True ((Get-BalanceAmount -Address $node1 -Denom "norb") -eq $node1Before) "wrong fee bank send changed receiver balance"
+  Assert-True ((Get-BalanceAmount -Address $node1 -Denom "naet") -eq $node1Before) "wrong fee bank send changed receiver balance"
 
-  $node0Before = Get-BalanceAmount -Address $node0 -Denom "norb"
+  $node0Before = Get-BalanceAmount -Address $node0 -Denom "naet"
   $insufficient = Invoke-NegativeTx `
     -Name "insufficient funds bank send" `
-    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "bank", "send", "node1", $node0, "999999999999999999999norb") -FromHome $node1Home -FromKey "node1") `
+    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "bank", "send", "node1", $node0, "999999999999999999999naet") -FromHome $node1Home -FromKey "node1") `
     -ExpectedText "insufficient|spendable|funds" `
     -AllowedPhases @("DeliverTx")
   Assert-True ($insufficient.Phase -eq "DeliverTx") "insufficient bank send should reach DeliverTx after fee ante"
-  Assert-True ((Get-BalanceAmount -Address $node0 -Denom "norb") -eq $node0Before) "insufficient bank send changed receiver balance"
+  Assert-True ((Get-BalanceAmount -Address $node0 -Denom "naet") -eq $node0Before) "insufficient bank send changed receiver balance"
 
-  $node1BeforeStaleSequence = Get-BalanceAmount -Address $node1 -Denom "norb"
+  $node1BeforeStaleSequence = Get-BalanceAmount -Address $node1 -Denom "naet"
   $signedStaleSequence = New-SignedReplayTx `
-    -GenerateArguments (New-SignedTxArgs -ActionArgs @("tx", "bank", "send", "node0", $node1, "2norb") -FromHome $node0Home) `
+    -GenerateArguments (New-SignedTxArgs -ActionArgs @("tx", "bank", "send", "node0", $node1, "2naet") -FromHome $node0Home) `
     -FromKey "node0" `
     -FromHome $node0Home `
     -WorkDir (Join-Path $OutputDir "negative-replay")
-  Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1norb") -FromHome $node0Home | Out-Null
-  $node1AfterSequenceAdvance = Get-BalanceAmount -Address $node1 -Denom "norb"
-  Assert-True ($node1AfterSequenceAdvance -eq ($node1BeforeStaleSequence + 1)) "sequence-advancing tx did not send 1norb"
+  Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home | Out-Null
+  $node1AfterSequenceAdvance = Get-BalanceAmount -Address $node1 -Denom "naet"
+  Assert-True ($node1AfterSequenceAdvance -eq ($node1BeforeStaleSequence + 1)) "sequence-advancing tx did not send 1naet"
   $replay = Invoke-NegativeTx `
     -Name "invalid sequence replay" `
     -Arguments @("tx", "broadcast", $signedStaleSequence, "--node", $rpcNode, "--broadcast-mode", "sync", "--output", "json") `
     -ExpectedText "sequence|account sequence|signature verification failed" `
     -AllowedPhases @("CheckTx")
   Assert-True ($replay.Phase -eq "CheckTx") "signed replay must be rejected in CheckTx"
-  Assert-True ((Get-BalanceAmount -Address $node1 -Denom "norb") -eq $node1AfterSequenceAdvance) "stale sequence tx changed receiver balance"
+  Assert-True ((Get-BalanceAmount -Address $node1 -Denom "naet") -eq $node1AfterSequenceAdvance) "stale sequence tx changed receiver balance"
 
   $factorySupplyBefore = Get-SupplyAmount -Denom $factoryDenom
   $node1FactoryBefore = Get-BalanceAmount -Address $node1 -Denom $factoryDenom
@@ -355,7 +355,7 @@ try {
   $poolBefore = (Invoke-QueryCliJson -Arguments @("query", "dex", "pool", "1")).pool | ConvertTo-Json -Depth 20 -Compress
   Invoke-NegativeTx `
     -Name "duplicate DEX pool" `
-    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "dex", "create-pool", "1norb", "1$factoryDenom") -FromHome $node0Home) `
+    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "dex", "create-pool", "1naet", "1$factoryDenom") -FromHome $node0Home) `
     -ExpectedText "pool already exists" `
     -AllowedPhases @("DeliverTx") | Out-Null
   Assert-True ((Get-DexPoolCount) -eq $poolCountBefore) "duplicate pool changed pool count"
@@ -364,7 +364,7 @@ try {
 
   Invoke-NegativeTx `
     -Name "malformed DEX denom" `
-    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "dex", "create-pool", "1norb", "1!") -FromHome $node0Home) `
+    -Arguments (New-SignedTxArgs -ActionArgs @("tx", "dex", "create-pool", "1naet", "1!") -FromHome $node0Home) `
     -ExpectedText "invalid coin|invalid denom|invalid" `
     -AllowedPhases @("CLI", "DeliverTx") | Out-Null
   Assert-True ((Get-DexPoolCount) -eq $poolCountBefore) "malformed DEX denom changed pool count"

@@ -1,35 +1,41 @@
-# Fee model hardening
+# Fee Model Hardening
 
-Orbitalis v1 fee policy is intentionally narrow and deterministic.
+Aetheris v1 fee policy is intentionally narrow and deterministic.
 
-## Fixed native fee denom
+## Fixed Native Fee Denom
 
-The only accepted transaction fee denom is `norb`. The `allowed_fee_denoms`
+The only accepted transaction fee denom is `naet`. The `allowed_fee_denoms`
 parameter is validated as exactly one value in v1:
 
 ```text
-allowed_fee_denoms = ["norb"]
+allowed_fee_denoms = ["naet"]
 ```
 
-Factory denoms, LP denoms, display denom `ORB`, `testtoken`, and all other
-denoms are rejected before the wrapped SDK ante handler can mutate state.
+Factory denoms, token wallets, DEX LP denoms, NFT/SBT assets, display denom
+`AET`, `testtoken`, and all other denoms are rejected before the wrapped SDK
+ante handler can mutate state. Owning the non-native token does not make it a
+valid protocol fee.
 
-## Zero-fee policy
+Gasless or user-friendly flows must use relayers that pay `naet` on-chain. Any
+other token collection belongs off-chain or inside a separate contract flow and
+does not bypass base-chain fee policy.
 
-Localnet validator `minimum-gas-prices` can remain `0norb` for operator
-convenience, but Orbitalis protocol policy still requires delivered
-transactions to pay at least `1norb`.
+## Zero-Fee Policy
+
+Localnet validator `minimum-gas-prices` can remain `0naet` for operator
+convenience, but Aetheris protocol policy still requires delivered
+transactions to pay at least `1naet`.
 
 The only v1 exception is height-0 genesis `MsgCreateValidator` transactions.
-Public testnets should keep the protocol minimum at `>= 1norb` and may also set
+Public testnets should keep the protocol minimum at `>= 1naet` and may also set
 non-zero validator min-gas-prices for mempool filtering.
 
-## Bounded params
+## Bounded Params
 
 Governance cannot expand fee policy beyond the v1 bounds:
 
 - allowed fee denom count: exactly `1`
-- allowed fee denom value: `norb`
+- allowed fee denom value: `naet`
 - `min_fee_amount`: positive integer, capped at `1000000000000000000`
 - validator/community split ratios: each between `0` and `1`
 - split ratio sum: exactly `1`
@@ -37,13 +43,15 @@ Governance cannot expand fee policy beyond the v1 bounds:
 - validator rewards target: `distribution/validator_rewards`
 - community pool target: `protocolpool/community_pool`
 
-Invalid params are rejected before state writes.
+Invalid params are rejected before state writes. Valid governance updates also
+synchronize `community_pool_ratio` into `x/distribution` as `community_tax`.
 
-## Deduction and accounting model
+## Deduction And Accounting Model
 
 The `x/fees` ante decorator runs before the SDK ante handler:
 
-1. Reject missing, empty, malformed, below-minimum, and non-`norb` fees.
+1. Reject zero-address fee participants, missing, empty, malformed,
+   below-minimum, and non-`naet` fees.
 2. Call the wrapped SDK ante handler.
 3. After SDK ante succeeds and deducts fees into `fee_collector`, record
    protocol fee accounting.
@@ -55,4 +63,4 @@ The v1 split model records:
 
 Integer truncation applies to the community share, and the remainder goes to
 validator rewards, so `total_collected == validator_rewards + community_pool`
-always holds.
+always holds. Accounting state only supports `naet` in v1.

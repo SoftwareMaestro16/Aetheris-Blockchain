@@ -2,7 +2,7 @@
 
 Date: 2026-06-04
 
-Scope: final local prototype acceptance pass for current source commit `216b50ca6a43` on branch `build/one-command-orbitalisd`.
+Scope: final local prototype acceptance pass for current source commit `216b50ca6a43` on branch `build/one-command-aetherisd`.
 
 ## Release Decision
 
@@ -49,7 +49,7 @@ Observed module boundaries are acceptable for the current prototype:
 | --- | --- | --- |
 | Build/version | `prototype_acceptance.ps1 -Profile Full` and release dry-run package | pass, dirty |
 | CLI/gRPC/REST queries | Base query matrix in Full acceptance | pass |
-| Bank tx | `bank send updated node1 balance to 400001000norb` | pass |
+| Bank tx | `bank send updated node1 balance to 400001000naet` | pass |
 | Fees ante policy | `wrong fee denom rejected` | pass |
 | Tokenfactory | factory denom created and minted to node0 | pass |
 | DEX | slippage guard rejected, swap increased factory balance `90000000` to `90098715` | pass |
@@ -101,13 +101,13 @@ Baseline test results:
 This e2e transcript shows binary commit `27d88b54f069` because it ran before later docs/lifecycle commits landed. Current quick gates, full audit, determinism gate, and dry-run package were rerun at `216b50ca6a43`.
 
 ```text
-Binary: C:\Users\Ryzen\Desktop\L1\build\orbitalisd.exe
+Binary: C:\Users\Ryzen\Desktop\L1\build\aetherisd.exe
 Version: dev-27d88b54f069
 Commit: 27d88b54f069
 Dirty: true
 localnet healthy at height 4
 base CLI/gRPC/REST queries passed
-bank send updated node1 balance to 400001000norb
+bank send updated node1 balance to 400001000naet
 wrong fee denom rejected
 factory denom ... minted to node0
 DEX slippage guard rejected excessive min_amount_out

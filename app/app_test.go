@@ -25,7 +25,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/observability"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -33,15 +33,17 @@ import (
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
 
-func TestOrbitalisChainConstants(t *testing.T) {
-	require.Equal(t, "Orbitalis", appName)
-	require.Equal(t, "orb", AccountAddressPrefix)
-	require.Equal(t, "orbvaloper", ValidatorAddressPrefix)
-	require.Equal(t, "orbvalcons", ConsensusAddressPrefix)
+const fixtureTestAssetDenom = "testtoken"
+
+func TestAetherisChainConstants(t *testing.T) {
+	require.Equal(t, "Aetheris", appName)
+	require.Equal(t, "ae", AccountAddressPrefix)
+	require.Equal(t, "aevaloper", ValidatorAddressPrefix)
+	require.Equal(t, "aevalcons", ConsensusAddressPrefix)
 	require.Equal(t, appparams.BaseDenom, BondDenom)
 	require.Equal(t, appparams.BaseDenom, sdk.DefaultBondDenom)
 	require.Equal(t, int64(1_000_000_000), appparams.BaseUnitsPerDisplay)
-	require.True(t, strings.HasSuffix(DefaultNodeHome, ".orbitalis"), DefaultNodeHome)
+	require.True(t, strings.HasSuffix(DefaultNodeHome, ".aetheris"), DefaultNodeHome)
 }
 
 func TestDefaultGenesisIncludesNativeTokenMetadata(t *testing.T) {
@@ -179,7 +181,7 @@ func TestDefaultGenesisRejectsCorruptedPrototypeModuleState(t *testing.T) {
 		"invalid fees params": func(genesis GenesisState) {
 			var feesGenState feestypes.GenesisState
 			cdc.MustUnmarshalJSON(genesis[feestypes.ModuleName], &feesGenState)
-			feesGenState.Params.AllowedFeeDenoms = []string{appparams.TestAssetDenom}
+			feesGenState.Params.AllowedFeeDenoms = []string{fixtureTestAssetDenom}
 			genesis[feestypes.ModuleName] = cdc.MustMarshalJSON(&feesGenState)
 		},
 		"invalid tokenfactory metadata": func(genesis GenesisState) {
@@ -218,8 +220,8 @@ func TestInitChainRejectsZeroGenesisAccount(t *testing.T) {
 	authGenesis.Accounts = append(authGenesis.Accounts, zeroAny)
 	genesis[authtypes.ModuleName] = app.AppCodec().MustMarshalJSON(&authGenesis)
 
-	err = app.validateOrbitalisAuthGenesis(genesis)
-	require.ErrorContains(t, err, orbitaladdress.ZeroRawAddress)
+	err = app.validateAetherisAuthGenesis(genesis)
+	require.ErrorContains(t, err, aetherisaddress.ZeroRawAddress)
 
 	stateBytes, err := json.MarshalIndent(genesis, "", " ")
 	require.NoError(t, err)
@@ -249,7 +251,7 @@ func TestGenesisRejectsDuplicateAndMalformedAccounts(t *testing.T) {
 			mutate: func(app *L1App, genesis GenesisState) {
 				var authRaw map[string]json.RawMessage
 				require.NoError(t, json.Unmarshal(genesis[authtypes.ModuleName], &authRaw))
-				authRaw["accounts"] = json.RawMessage(`[{"@type":"/orbitalis.malformed.GenesisAccount"}]`)
+				authRaw["accounts"] = json.RawMessage(`[{"@type":"/aetheris.malformed.GenesisAccount"}]`)
 				raw, err := json.Marshal(authRaw)
 				require.NoError(t, err)
 				genesis[authtypes.ModuleName] = raw
@@ -286,12 +288,26 @@ func TestGenesisRejectsInvalidCoreBankAndStakingState(t *testing.T) {
 			mutate: func(app *L1App, genesis GenesisState) {
 				bankGenesis := banktypes.GetGenesisStateFromAppState(app.AppCodec(), genesis)
 				bankGenesis.Balances = append(bankGenesis.Balances, banktypes.Balance{
-					Address: "not-an-orb-address",
+					Address: "not-an-aetheris-address",
 					Coins:   sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 1)),
 				})
 				genesis[banktypes.ModuleName] = app.AppCodec().MustMarshalJSON(bankGenesis)
 			},
 			errMatch: "decoding bech32 failed",
+		},
+		"zero bank balance address": {
+			mutate: func(app *L1App, genesis GenesisState) {
+				zeroBech32, err := sdk.Bech32ifyAddressBytes(AccountAddressPrefix, bytes.Repeat([]byte{0}, 20))
+				require.NoError(t, err)
+				bankGenesis := banktypes.GetGenesisStateFromAppState(app.AppCodec(), genesis)
+				bankGenesis.Balances = append(bankGenesis.Balances, banktypes.Balance{
+					Address: zeroBech32,
+					Coins:   sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 1)),
+				})
+				bankGenesis.Supply = bankGenesis.Supply.Add(sdk.NewInt64Coin(appparams.BaseDenom, 1))
+				genesis[banktypes.ModuleName] = app.AppCodec().MustMarshalJSON(bankGenesis)
+			},
+			errMatch: "must not be zero address",
 		},
 		"bank supply mismatch": {
 			mutate: func(app *L1App, genesis GenesisState) {
@@ -304,19 +320,28 @@ func TestGenesisRejectsInvalidCoreBankAndStakingState(t *testing.T) {
 		"staking denom mismatch": {
 			mutate: func(app *L1App, genesis GenesisState) {
 				stakingGenesis := stakingtypes.GetGenesisStateFromAppState(app.AppCodec(), genesis)
-				stakingGenesis.Params.BondDenom = appparams.TestAssetDenom
+				stakingGenesis.Params.BondDenom = fixtureTestAssetDenom
 				genesis[stakingtypes.ModuleName] = app.AppCodec().MustMarshalJSON(stakingGenesis)
 			},
 			errMatch: "invalid staking denom",
+		},
+		"mint denom mismatch": {
+			mutate: func(app *L1App, genesis GenesisState) {
+				var mintGenesis minttypes.GenesisState
+				app.AppCodec().MustUnmarshalJSON(genesis[minttypes.ModuleName], &mintGenesis)
+				mintGenesis.Params.MintDenom = fixtureTestAssetDenom
+				genesis[minttypes.ModuleName] = app.AppCodec().MustMarshalJSON(&mintGenesis)
+			},
+			errMatch: "invalid mint denom",
 		},
 		"fees denom mismatch": {
 			mutate: func(app *L1App, genesis GenesisState) {
 				var feesGenesis feestypes.GenesisState
 				app.AppCodec().MustUnmarshalJSON(genesis[feestypes.ModuleName], &feesGenesis)
-				feesGenesis.Params.AllowedFeeDenoms = []string{appparams.TestAssetDenom}
+				feesGenesis.Params.AllowedFeeDenoms = []string{fixtureTestAssetDenom}
 				genesis[feestypes.ModuleName] = app.AppCodec().MustMarshalJSON(&feesGenesis)
 			},
-			errMatch: "v1 only accepts fee denom norb",
+			errMatch: "v1 only accepts fee denom naet",
 		},
 	}
 
@@ -398,7 +423,7 @@ func cloneGenesisState(genesis GenesisState) GenesisState {
 
 func requireGenesisValidationError(t *testing.T, app *L1App, genesis GenesisState, errMatch string) {
 	t.Helper()
-	appPolicyErr := app.validateOrbitalisGenesis(genesis)
+	appPolicyErr := app.validateAetherisGenesis(genesis)
 	moduleErr := app.BasicModuleManager.ValidateGenesis(app.AppCodec(), app.TxConfig(), genesis)
 	require.True(t, appPolicyErr != nil || moduleErr != nil, "expected app policy or module genesis validation error")
 	matched := appPolicyErr != nil && strings.Contains(appPolicyErr.Error(), errMatch)

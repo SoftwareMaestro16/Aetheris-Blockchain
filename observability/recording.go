@@ -28,8 +28,8 @@ func RecordDexPoolCreated() {
 	AddGauge(MetricDexPoolCount, nil, 1)
 }
 
-func RecordDexLiquidityNorbDelta(delta int64) {
-	AddGauge(MetricDexLiquidityNorb, Labels{"denom": "norb"}, float64(delta))
+func RecordDexLiquidityNaetDelta(delta int64) {
+	AddGauge(MetricDexLiquidityNaet, Labels{"denom": "naet"}, float64(delta))
 }
 
 func RecordDexSwap() {

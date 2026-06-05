@@ -1,6 +1,6 @@
 # Operator Commands
 
-This document is the prototype command runbook for `orbitalisd`.
+This document is the prototype command runbook for `aetherisd`.
 
 It is scoped to local prototype operation. Commands that use `--keyring-backend test` are for ignored localnet homes only. Do not use the test keyring, generated local validator keys, or localnet mnemonics for public networks.
 
@@ -9,7 +9,7 @@ It is scoped to local prototype operation. Commands that use `--keyring-backend 
 Build with the one-command wrapper:
 
 ```powershell
-.\scripts\build-orbitalisd.ps1
+.\scripts\build-aetherisd.ps1
 ```
 
 The wrapper uses ignored `.work\gocache`, `.work\gotmp`, and `.work\gomodcache` directories. This keeps local builds isolated from a modified global Go module cache.
@@ -17,15 +17,15 @@ The wrapper uses ignored `.work\gocache`, `.work\gotmp`, and `.work\gomodcache` 
 Check the binary:
 
 ```powershell
-build\orbitalisd.exe version
-build\orbitalisd.exe version --long --output json
-build\orbitalisd.exe --help
+build\aetherisd.exe version
+build\aetherisd.exe version --long --output json
+build\aetherisd.exe --help
 ```
 
 Expected version fields:
 
-- `name = Orbitalis`
-- `server_name = orbitalisd`
+- `name = Aetheris`
+- `server_name = aetherisd`
 - `version` is non-empty
 - `commit` is non-empty when built from a git checkout
 - `cosmos_sdk_version` is non-empty
@@ -36,7 +36,7 @@ Release-like builds can override the default metadata through the wrapper:
 
 ```powershell
 $commit = git rev-parse HEAD
-.\scripts\build-orbitalisd.ps1 -Version prototype-local -Commit $commit -Force
+.\scripts\build-aetherisd.ps1 -Version prototype-local -Commit $commit -Force
 ```
 
 ## Localnet
@@ -67,18 +67,18 @@ Stop or reset:
 Use variables for reusable commands:
 
 ```powershell
-$CHAIN_ID = "orbitalis-local-1"
+$CHAIN_ID = "aetheris-local-1"
 $NODE = "tcp://127.0.0.1:26657"
 $GRPC = "127.0.0.1:9090"
 $REST = "http://127.0.0.1:1317"
-$HOME = ".localnet\node0\orbitalisd"
+$HOME = ".localnet\node0\aetherisd"
 $FROM = "node0"
-$FEES = "1000000norb"
+$FEES = "1000000naet"
 $KEYRING = "test"
-$NODE0 = build\orbitalisd.exe keys show $FROM -a --home $HOME --keyring-backend $KEYRING
+$NODE0 = build\aetherisd.exe keys show $FROM -a --home $HOME --keyring-backend $KEYRING
 ```
 
-For `.localnet-5`, set `$HOME = ".localnet-5\node0\orbitalisd"` and keep `$NODE` on node0 unless you intentionally query another node RPC port.
+For `.localnet-5`, set `$HOME = ".localnet-5\node0\aetherisd"` and keep `$NODE` on node0 unless you intentionally query another node RPC port.
 
 ## Common Flags
 
@@ -94,39 +94,39 @@ Use JSON output for queries:
 --node $NODE --output json
 ```
 
-Prototype examples use `norb` fees. `ORB` is display metadata only and is not a transaction denom.
+Prototype examples use `naet` fees. `AET` is display metadata only and is not a transaction denom.
 
 ## Queries
 
 Node and block:
 
 ```powershell
-build\orbitalisd.exe status --node $NODE
-build\orbitalisd.exe query block --node $NODE --output json
+build\aetherisd.exe status --node $NODE
+build\aetherisd.exe query block --node $NODE --output json
 ```
 
 Native token:
 
 ```powershell
-build\orbitalisd.exe query bank denom-metadata norb --node $NODE --output json
-build\orbitalisd.exe query bank total-supply-of norb --node $NODE --output json
-build\orbitalisd.exe query bank balance $NODE0 norb --node $NODE --output json
+build\aetherisd.exe query bank denom-metadata naet --node $NODE --output json
+build\aetherisd.exe query bank total-supply-of naet --node $NODE --output json
+build\aetherisd.exe query bank balance $NODE0 naet --node $NODE --output json
 ```
 
 Fees:
 
 ```powershell
-build\orbitalisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\aetherisd.exe query fees params --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 Invoke-RestMethod "$REST/l1/fees/v1/params"
 ```
 
 Staking and slashing:
 
 ```powershell
-build\orbitalisd.exe query staking params --node $NODE --output json
-build\orbitalisd.exe query staking validators --node $NODE --output json
-build\orbitalisd.exe query slashing params --node $NODE --output json
-build\orbitalisd.exe query slashing signing-infos --node $NODE --output json
+build\aetherisd.exe query staking params --node $NODE --output json
+build\aetherisd.exe query staking validators --node $NODE --output json
+build\aetherisd.exe query slashing params --node $NODE --output json
+build\aetherisd.exe query slashing signing-infos --node $NODE --output json
 ```
 
 ## Staking Tx
@@ -134,9 +134,9 @@ build\orbitalisd.exe query slashing signing-infos --node $NODE --output json
 Delegate to any bonded validator returned by the validators query:
 
 ```powershell
-$VALIDATOR = (build\orbitalisd.exe query staking validators --node $NODE --output json | ConvertFrom-Json).validators[0].operator_address
-build\orbitalisd.exe tx staking delegate $VALIDATOR 5000000norb --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query staking delegation $NODE0 $VALIDATOR --node $NODE --output json
+$VALIDATOR = (build\aetherisd.exe query staking validators --node $NODE --output json | ConvertFrom-Json).validators[0].operator_address
+build\aetherisd.exe tx staking delegate $VALIDATOR 5000000naet --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query staking delegation $NODE0 $VALIDATOR --node $NODE --output json
 ```
 
 ## Bank Tx
@@ -144,23 +144,23 @@ build\orbitalisd.exe query staking delegation $NODE0 $VALIDATOR --node $NODE --o
 Fund local prototype accounts from the genesis-funded `node0` account. This is local-only and uses normal `bank send`, not a faucet mint:
 
 ```powershell
-$NODE1_HOME = ".localnet\node1\orbitalisd"
-$NODE1 = build\orbitalisd.exe keys show node1 -a --home $NODE1_HOME --keyring-backend $KEYRING
-.\scripts\localnet\fund.ps1 -OutputDir .localnet -Binary build\orbitalisd.exe -ChainId $CHAIN_ID -RPCPort 26657 -Recipients @($NODE1) -Amount 1000000norb
+$NODE1_HOME = ".localnet\node1\aetherisd"
+$NODE1 = build\aetherisd.exe keys show node1 -a --home $NODE1_HOME --keyring-backend $KEYRING
+.\scripts\localnet\fund.ps1 -OutputDir .localnet -Binary build\aetherisd.exe -ChainId $CHAIN_ID -RPCPort 26657 -Recipients @($NODE1) -Amount 1000000naet
 ```
 
 Get a recipient from node1:
 
 ```powershell
-$NODE1_HOME = ".localnet\node1\orbitalisd"
-$NODE1 = build\orbitalisd.exe keys show node1 -a --home $NODE1_HOME --keyring-backend $KEYRING
+$NODE1_HOME = ".localnet\node1\aetherisd"
+$NODE1 = build\aetherisd.exe keys show node1 -a --home $NODE1_HOME --keyring-backend $KEYRING
 ```
 
-Send `norb`:
+Send `naet`:
 
 ```powershell
-build\orbitalisd.exe tx bank send $FROM $NODE1 1000norb --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query bank balance $NODE1 norb --node $NODE --output json
+build\aetherisd.exe tx bank send $FROM $NODE1 1000naet --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query bank balance $NODE1 naet --node $NODE --output json
 ```
 
 ## Tokenfactory
@@ -168,26 +168,26 @@ build\orbitalisd.exe query bank balance $NODE1 norb --node $NODE --output json
 Create a factory denom:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory create-denom gold --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory create-denom gold --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 $GOLD = "factory/$NODE0/gold"
-build\orbitalisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
-build\orbitalisd.exe query tokenfactory denoms --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\aetherisd.exe query tokenfactory denom $GOLD --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\aetherisd.exe query tokenfactory denoms --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 Invoke-RestMethod "$REST/l1/tokenfactory/v1/denom/$GOLD"
 ```
 
 Mint and burn:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory mint "1000000$GOLD" $NODE0 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query bank balance $NODE0 $GOLD --node $NODE --output json
-build\orbitalisd.exe tx tokenfactory burn "1000$GOLD" $NODE0 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory mint "1000000$GOLD" $NODE0 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query bank balance $NODE0 $GOLD --node $NODE --output json
+build\aetherisd.exe tx tokenfactory burn "1000$GOLD" $NODE0 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 ```
 
 Transfer admin:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory change-admin $GOLD $NODE1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query tokenfactory denom $GOLD --node $NODE --output json
+build\aetherisd.exe tx tokenfactory change-admin $GOLD $NODE1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query tokenfactory denom $GOLD --node $NODE --output json
 ```
 
 ## DEX
@@ -195,34 +195,34 @@ build\orbitalisd.exe query tokenfactory denom $GOLD --node $NODE --output json
 Create and fund a DEX asset:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory create-denom dexgold --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory create-denom dexgold --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 $DEXGOLD = "factory/$NODE0/dexgold"
-build\orbitalisd.exe tx tokenfactory mint "100000000$DEXGOLD" $NODE0 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory mint "100000000$DEXGOLD" $NODE0 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 ```
 
 Create pool and query LP balance:
 
 ```powershell
-build\orbitalisd.exe tx dex create-pool 10000000norb "10000000$DEXGOLD" --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\aetherisd.exe tx dex create-pool 10000000naet "10000000$DEXGOLD" --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query dex pool 1 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 Invoke-RestMethod "$REST/l1/dex/v1/pools/1"
-build\orbitalisd.exe query bank balance $NODE0 lp/1 --node $NODE --output json
+build\aetherisd.exe query bank balance $NODE0 lp/1 --node $NODE --output json
 ```
 
 Add liquidity, swap, and remove liquidity:
 
 ```powershell
-build\orbitalisd.exe tx dex add-liquidity 1 1000000norb "1000000$DEXGOLD" 1000000 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe tx dex swap-exact-in 1 100000norb $DEXGOLD 1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe tx dex remove-liquidity 1 1000000lp/1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query dex pools --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
+build\aetherisd.exe tx dex add-liquidity 1 1000000naet "1000000$DEXGOLD" 1000000 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx dex swap-exact-in 1 100000naet $DEXGOLD 1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx dex remove-liquidity 1 1000000lp/1 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query dex pools --limit 50 --grpc-addr $GRPC --grpc-insecure --node $NODE --output json
 ```
 
 Slippage examples:
 
 ```powershell
-build\orbitalisd.exe tx dex add-liquidity 1 1000000norb "1000000$DEXGOLD" 1000001 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe tx dex swap-exact-in 1 100000norb $DEXGOLD 1000000 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx dex add-liquidity 1 1000000naet "1000000$DEXGOLD" 1000001 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx dex swap-exact-in 1 100000naet $DEXGOLD 1000000 --from $FROM --home $HOME --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 ```
 
 Expected rejection logs include `minted shares below minimum` or `amount out below minimum`.
@@ -249,7 +249,7 @@ Diagnostic bundles include logs, safe config files, RPC status snapshots, and he
 Use [Operator Troubleshooting Runbook](operator-troubleshooting.md) for symptom-specific commands and fixes. Quick local reminders:
 
 - `account sequence mismatch`: wait one block or re-run the command after the previous tx is committed.
-- `fee denom testtoken not accepted; use norb`: use `--fees 1000000norb`.
+- `fee denom testtoken not accepted; use naet`: use `--fees 1000000naet`.
 - `pool already exists`: query `dex pools` and use the existing `pool_id`.
 - `REST ... 503`: run `.\scripts\localnet\health.ps1`; node gRPC must be reachable on `127.0.0.1:<grpc-port>`.
 - `Port ... is already in use`: run `.\scripts\localnet\stop.ps1`, choose a different base port, or stop the conflicting process.
@@ -258,10 +258,10 @@ Use [Operator Troubleshooting Runbook](operator-troubleshooting.md) for symptom-
 ## Required Command Checks
 
 ```powershell
-build\orbitalisd.exe --help
-build\orbitalisd.exe version --long --output json
-build\orbitalisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query dex pool 1 --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe --help
+build\aetherisd.exe version --long --output json
+build\aetherisd.exe query fees params --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query dex pool 1 --grpc-addr 127.0.0.1:9090 --grpc-insecure --node tcp://127.0.0.1:26657 --output json
 .\tests\scripts\operator_commands_doc_test.ps1
 .\tests\scripts\prototype_smoke_wrapper_test.ps1
 .\tests\e2e\prototype_smoke.ps1

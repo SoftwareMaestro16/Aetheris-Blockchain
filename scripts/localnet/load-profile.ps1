@@ -1,14 +1,14 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [ValidateSet("bank", "tokenfactory", "dex", "mixed")]
   [string]$Scenario = "mixed",
   [int]$Count = 12,
   [decimal]$RatePerSecond = 2,
   [int]$RPCPort = 26657,
   [int]$TimeoutSeconds = 90,
-  [string]$Fees = "1000000norb",
+  [string]$Fees = "1000000naet",
   [string]$FactorySubdenom = "loadasset",
   [switch]$Json
 )
@@ -28,12 +28,12 @@ if ($RPCPort -lt 1 -or $RPCPort -gt 65535) {
 if ($ChainId -notmatch '(^|-)local($|-)' -and $ChainId -notmatch 'local') {
   throw "load-profile is local/test-only; ChainId must contain 'local'"
 }
-if ($Fees -notmatch '^[0-9]+norb$') {
-  throw "Fees must be a norb coin for the local prototype profile"
+if ($Fees -notmatch '^[0-9]+naet$') {
+  throw "Fees must be a naet coin for the local prototype profile"
 }
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 
 if (!(Test-Path -LiteralPath $Binary)) {
@@ -46,8 +46,8 @@ if ($status.result.node_info.network -ne $ChainId) {
   throw "connected chain-id mismatch: expected $ChainId, got $($status.result.node_info.network)"
 }
 
-$node0Home = Join-Path $OutputDir "node0\orbitalisd"
-$node1Home = Join-Path $OutputDir "node1\orbitalisd"
+$node0Home = Join-Path $OutputDir "node0\aetherisd"
+$node1Home = Join-Path $OutputDir "node1\aetherisd"
 if (!(Test-Path -LiteralPath $node0Home) -or !(Test-Path -LiteralPath $node1Home)) {
   throw "load-profile requires local node0 and node1 homes under $OutputDir"
 }
@@ -152,12 +152,12 @@ function Ensure-DexPool {
   Ensure-TokenfactoryAsset
   try {
     $pool = Invoke-QueryCliJson -Arguments @("query", "dex", "pool", "$poolId")
-    if ($pool.pool.denom0 -eq $factoryDenom -and $pool.pool.denom1 -eq "norb") {
+    if ($pool.pool.denom0 -eq $factoryDenom -and $pool.pool.denom1 -eq "naet") {
       return
     }
   } catch {
   }
-  $res = Send-ProfileTx -Operation "setup_dex_create_pool" -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom")
+  $res = Send-ProfileTx -Operation "setup_dex_create_pool" -ActionArgs @("tx", "dex", "create-pool", "10000000naet", "10000000$factoryDenom")
   if (-not $res.ok) {
     throw "failed to create load DEX pool: $($res.error)"
   }
@@ -193,13 +193,13 @@ for ($i = 0; $i -lt $Count; $i++) {
   $op = Get-ScenarioOperation -Index $i
   switch ($op) {
     "bank" {
-      $result = Send-ProfileTx -Operation "bank_send" -ActionArgs @("tx", "bank", "send", "node0", $node1, "1norb")
+      $result = Send-ProfileTx -Operation "bank_send" -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet")
     }
     "tokenfactory" {
       $result = Send-ProfileTx -Operation "tokenfactory_mint" -ActionArgs @("tx", "tokenfactory", "mint", "10$factoryDenom", $node0)
     }
     "dex" {
-      $result = Send-ProfileTx -Operation "dex_swap" -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "1000norb", $factoryDenom, "1")
+      $result = Send-ProfileTx -Operation "dex_swap" -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "1000naet", $factoryDenom, "1")
     }
   }
   $results += [pscustomobject]$result

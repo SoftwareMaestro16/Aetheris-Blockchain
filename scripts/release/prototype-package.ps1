@@ -142,7 +142,7 @@ try {
 
   $OutputRoot = Resolve-ReleasePath -Path $OutputRoot -DefaultRelativePath "dist\prototype"
   Assert-ReleaseWorkspacePath -Path $OutputRoot -Purpose "release output root"
-  $packageName = "orbitalis-$Version-$TargetOS-$TargetArch"
+  $packageName = "aetheris-$Version-$TargetOS-$TargetArch"
   $packageRoot = Join-Path $OutputRoot $Version
   $packageDir = Join-Path $packageRoot $packageName
   Assert-ReleaseWorkspacePath -Path $packageRoot -Purpose "release package root"
@@ -155,15 +155,15 @@ try {
   New-Item -ItemType Directory -Force -Path (Join-Path $packageDir "docs") | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $packageDir "evidence") | Out-Null
 
-  $binName = if ($TargetOS -eq "windows") { "orbitalisd.exe" } else { "orbitalisd" }
+  $binName = if ($TargetOS -eq "windows") { "aetherisd.exe" } else { "aetherisd" }
   $packageBinary = Join-Path (Join-Path $packageDir "bin") $binName
 
   if ($SkipBuild) {
-    $Binary = Resolve-ReleasePath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+    $Binary = Resolve-ReleasePath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
     if (!(Test-Path -LiteralPath $Binary)) { throw "Binary not found: $Binary" }
     Copy-Item -LiteralPath $Binary -Destination $packageBinary -Force
   } else {
-    & (Join-Path $RepoRoot "scripts\build-orbitalisd.ps1") `
+    & (Join-Path $RepoRoot "scripts\build-aetherisd.ps1") `
       -Version $Version `
       -Commit $Commit `
       -TargetOS $TargetOS `
@@ -196,7 +196,7 @@ try {
   }
 
   $quickstart = @"
-# Orbitalis Prototype Quickstart
+# Aetheris Prototype Quickstart
 
 This is a prerelease prototype artifact, not mainnet validator software.
 
@@ -218,12 +218,12 @@ Use the repository operator guide for full localnet setup and command examples:
 - `docs/security/prototype-audit-gate.md`
 - `docs/release/prototype-limitations.md`
 
-Prototype tx fees use `norb`, for example `--fees 1000000norb`.
+Prototype tx fees use `naet`, for example `--fees 1000000naet`.
 "@
   $quickstart | Set-Content -LiteralPath (Join-Path $packageDir "QUICKSTART.md")
 
   $manifest = [ordered]@{
-    name            = "Orbitalis prototype release package"
+    name            = "Aetheris prototype release package"
     version         = $Version
     commit          = $Commit
     dirty           = $dirty
@@ -249,7 +249,7 @@ Prototype tx fees use `norb`, for example `--fees 1000000norb`.
   $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $packageDir "release-manifest.json")
 
   $notes = @"
-# Orbitalis $Version Prototype Release Notes
+# Aetheris $Version Prototype Release Notes
 
 - commit: `$Commit`
 - dirty tree at package time: `$dirty`

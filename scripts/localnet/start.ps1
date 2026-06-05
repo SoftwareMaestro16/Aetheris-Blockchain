@@ -2,7 +2,7 @@ param(
   [string]$OutputDir = "",
   [string]$Binary = "",
   [int]$ValidatorCount = 0,
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$BaseP2PPort = 26656,
   [int]$BaseRPCPort = 26657,
   [int]$BaseRESTPort = 1317,
@@ -23,8 +23,14 @@ param(
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
 
+$startupStartedAt = Get-Date
+$startupTimer = [System.Diagnostics.Stopwatch]::StartNew()
+$initElapsedMs = 0
+$launchElapsedMs = 0
+$waitElapsedMs = 0
+
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "localnet output directory"
 
 if (!(Test-Path $Binary) -or !(Test-Path $OutputDir)) {
@@ -48,7 +54,10 @@ if (!(Test-Path $Binary) -or !(Test-Path $OutputDir)) {
     EnableRPC      = $EnableRPC
   }
   if ($ValidatorCount -gt 0) { $initArgs.ValidatorCount = $ValidatorCount }
+  $initTimer = [System.Diagnostics.Stopwatch]::StartNew()
   & (Join-Path $PSScriptRoot "init.ps1") @initArgs
+  $initTimer.Stop()
+  $initElapsedMs = [int64]$initTimer.ElapsedMilliseconds
 }
 
 $nodes = Get-LocalnetNodes -OutputDir $OutputDir
@@ -91,9 +100,10 @@ Assert-LocalnetPortsAvailable `
 
 Repair-LocalnetProcessPathEnvironment
 
+$launchTimer = [System.Diagnostics.Stopwatch]::StartNew()
 foreach ($node in $nodes) {
   $nodeName = $node.Name
-  $nodeHome = Join-Path $node.FullName "orbitalisd"
+  $nodeHome = Join-Path $node.FullName "aetherisd"
   $stdout = Join-Path $logDir "$nodeName.out.log"
   $stderr = Join-Path $logDir "$nodeName.err.log"
   $proc = Start-Process -FilePath $Binary `
@@ -105,10 +115,13 @@ foreach ($node in $nodes) {
   Set-Content -LiteralPath (Join-Path $pidDir "$nodeName.pid") -Value $proc.Id
   Write-Host "Started $nodeName pid=$($proc.Id)"
 }
+$launchTimer.Stop()
+$launchElapsedMs = [int64]$launchTimer.ElapsedMilliseconds
 
 Write-Host "Logs: $logDir"
 
 if ($Wait) {
+  $waitTimer = [System.Diagnostics.Stopwatch]::StartNew()
   $p = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
   if ($EnableRPC) {
     Wait-LocalnetRpc -RPCPort $p.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
@@ -120,4 +133,25 @@ if ($Wait) {
   if ($EnableGRPC) {
     Wait-LocalnetGrpc -GRPCPort $p.GRPC -TimeoutSeconds $TimeoutSeconds | Out-Null
   }
+  $waitTimer.Stop()
+  $waitElapsedMs = [int64]$waitTimer.ElapsedMilliseconds
 }
+
+$startupTimer.Stop()
+$timing = [ordered]@{
+  script                 = "localnet/start.ps1"
+  chain_id               = $ChainId
+  validators             = $actualValidatorCount
+  wait                   = [bool]$Wait
+  started_at_utc         = $startupStartedAt.ToUniversalTime().ToString("o")
+  total_ms               = [int64]$startupTimer.ElapsedMilliseconds
+  init_ms                = $initElapsedMs
+  process_launch_ms      = $launchElapsedMs
+  health_wait_ms         = $waitElapsedMs
+  output_dir             = $OutputDir
+  logs_dir               = $logDir
+}
+$timingPath = Join-Path $logDir "startup-timing.json"
+$timing | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $timingPath
+Write-Host "Startup timing: total_ms=$($timing.total_ms) init_ms=$($timing.init_ms) process_launch_ms=$($timing.process_launch_ms) health_wait_ms=$($timing.health_wait_ms)"
+Write-Host "Startup timing summary: $timingPath"

@@ -1,4 +1,4 @@
-# Orbitalis Custom Module Attacker Model
+# Aetheris Custom Module Attacker Model
 
 ## Tokenfactory
 
@@ -19,7 +19,7 @@
 - Attacker-controlled input: tx fee coins, fee denom, fee amount, fee payer/granter, governance param update payloads, genesis fee accounting state.
 - Assets at risk: native fee collection, distribution accounting, validator/community fee split, node mempool resources.
 - Main abuse cases: zero fee, non-native fee, below-min fee, duplicate fee denoms, malformed ratios, unsafe fee collector targets, repeated invalid fee spam.
-- Required invariants: v1 accepts only `norb`, minimum fee applies outside simulation after height 0, accounting totals equal validator plus community targets, unauthorized params updates fail, failed ante checks do not call the next ante handler.
+- Required invariants: v1 accepts only `naet`, minimum fee applies outside simulation after height 0, accounting totals equal validator plus community targets, unauthorized params updates fail, failed ante checks do not call the next ante handler.
 
 ## Cross-Module / App
 

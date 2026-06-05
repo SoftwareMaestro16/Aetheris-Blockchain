@@ -40,14 +40,14 @@ Assert-Contains -Text $scriptText -Pattern 'REST pool 1' -Message "demo script m
 Assert-Contains -Text $scriptText -Pattern 'stop\.ps1' -Message "demo script must stop localnet by default"
 
 $checkOutput = & $scriptPath -Check 2>&1
-if ($LASTEXITCODE -ne 0) {
+if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
   throw "prototype demo -Check failed: $($checkOutput -join "`n")"
 }
 $checkText = $checkOutput -join "`n"
 foreach ($needle in @(
-    "Orbitalis prototype demo check",
+    "Aetheris prototype demo check",
     "local-only: true",
-    "build orbitalisd",
+    "build aetherisd",
     "start 3-validator localnet",
     "send bank tx",
     "create and mint tokenfactory denom",

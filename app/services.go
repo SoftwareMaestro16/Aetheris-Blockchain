@@ -36,7 +36,8 @@ import (
 	protocolpooltypes "github.com/cosmos/cosmos-sdk/x/protocolpool/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/observability"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 )
@@ -79,7 +80,7 @@ func (app *L1App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 	if err != nil {
 		return nil, err
 	}
-	if err := app.validateOrbitalisGenesis(genesisState); err != nil {
+	if err := app.validateAetherisGenesis(genesisState); err != nil {
 		return nil, err
 	}
 	res, err := app.ModuleManager.InitGenesis(ctx, app.appCodec, genesisState)
@@ -92,20 +93,23 @@ func (app *L1App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 	return res, nil
 }
 
-func (app *L1App) validateOrbitalisGenesis(genesisState GenesisState) error {
-	if err := app.validateOrbitalisAuthGenesis(genesisState); err != nil {
+func (app *L1App) validateAetherisGenesis(genesisState GenesisState) error {
+	if err := app.validateAetherisAuthGenesis(genesisState); err != nil {
 		return err
 	}
-	if err := app.validateOrbitalisBankGenesis(genesisState); err != nil {
+	if err := app.validateAetherisBankGenesis(genesisState); err != nil {
 		return err
 	}
-	if err := app.validateOrbitalisStakingGenesis(genesisState); err != nil {
+	if err := app.validateAetherisStakingGenesis(genesisState); err != nil {
 		return err
 	}
-	return app.validateOrbitalisFeeGenesis(genesisState)
+	if err := app.validateAetherisMintGenesis(genesisState); err != nil {
+		return err
+	}
+	return app.validateAetherisFeeGenesis(genesisState)
 }
 
-func (app *L1App) validateOrbitalisAuthGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetherisAuthGenesis(genesisState GenesisState) error {
 	var authGenesis authtypes.GenesisState
 	if genesisState[authtypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", authtypes.ModuleName)
@@ -122,17 +126,17 @@ func (app *L1App) validateOrbitalisAuthGenesis(genesisState GenesisState) error 
 		addr := account.GetAddress()
 		addrText := addr.String()
 		if _, found := seenAccounts[addrText]; found {
-			return fmt.Errorf("duplicate auth genesis account: %s", orbitaladdress.FormatAccAddress(addr))
+			return fmt.Errorf("duplicate auth genesis account: %s", aetherisaddress.FormatAccAddress(addr))
 		}
 		seenAccounts[addrText] = struct{}{}
-		if orbitaladdress.IsZeroAccAddress(addr) {
-			return fmt.Errorf("auth genesis account %s must not be zero address", orbitaladdress.ZeroRawAddress)
+		if aetherisaddress.IsZeroAccAddress(addr) {
+			return fmt.Errorf("auth genesis account %s must not be zero address", aetherisaddress.ZeroRawAddress)
 		}
 	}
 	return nil
 }
 
-func (app *L1App) validateOrbitalisBankGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetherisBankGenesis(genesisState GenesisState) error {
 	var bankGenesis banktypes.GenesisState
 	if genesisState[banktypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", banktypes.ModuleName)
@@ -143,10 +147,19 @@ func (app *L1App) validateOrbitalisBankGenesis(genesisState GenesisState) error 
 	if err := bankGenesis.Validate(); err != nil {
 		return err
 	}
+	for _, balance := range bankGenesis.Balances {
+		addr, err := aetherisaddress.ParseAccAddress(balance.Address)
+		if err != nil {
+			return fmt.Errorf("invalid bank balance address %s: %w", balance.Address, err)
+		}
+		if aetherisaddress.IsZeroAccAddress(addr) {
+			return fmt.Errorf("bank balance address %s must not be zero address", aetherisaddress.ZeroRawAddress)
+		}
+	}
 	return nil
 }
 
-func (app *L1App) validateOrbitalisStakingGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetherisStakingGenesis(genesisState GenesisState) error {
 	var stakingGenesis stakingtypes.GenesisState
 	if genesisState[stakingtypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", stakingtypes.ModuleName)
@@ -160,7 +173,21 @@ func (app *L1App) validateOrbitalisStakingGenesis(genesisState GenesisState) err
 	return nil
 }
 
-func (app *L1App) validateOrbitalisFeeGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetherisMintGenesis(genesisState GenesisState) error {
+	var mintGenesis minttypes.GenesisState
+	if genesisState[minttypes.ModuleName] == nil {
+		return fmt.Errorf("missing %s genesis state", minttypes.ModuleName)
+	}
+	if err := app.appCodec.UnmarshalJSON(genesisState[minttypes.ModuleName], &mintGenesis); err != nil {
+		return fmt.Errorf("invalid %s genesis state: %w", minttypes.ModuleName, err)
+	}
+	if mintGenesis.Params.MintDenom != appparams.BaseDenom {
+		return fmt.Errorf("invalid mint denom: expected %s, got %s", appparams.BaseDenom, mintGenesis.Params.MintDenom)
+	}
+	return nil
+}
+
+func (app *L1App) validateAetherisFeeGenesis(genesisState GenesisState) error {
 	var feesGenesis feestypes.GenesisState
 	if genesisState[feestypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", feestypes.ModuleName)
@@ -171,8 +198,8 @@ func (app *L1App) validateOrbitalisFeeGenesis(genesisState GenesisState) error {
 	if err := feesGenesis.Validate(); err != nil {
 		return err
 	}
-	if len(feesGenesis.Params.AllowedFeeDenoms) != 1 || feesGenesis.Params.AllowedFeeDenoms[0] != BondDenom {
-		return fmt.Errorf("allowed fee denom must be exactly %s", BondDenom)
+	if err := appparams.ValidateNativeFeeDenomsV1(feesGenesis.Params.AllowedFeeDenoms, feestypes.MaxAllowedFeeDenomsV1); err != nil {
+		return err
 	}
 	return nil
 }
@@ -259,9 +286,9 @@ func (app *L1App) AutoCliOpts() autocli.AppOptions {
 	return autocli.AppOptions{
 		Modules:               modules,
 		ModuleOptions:         runtimeservices.ExtractAutoCLIOptions(app.ModuleManager.Modules),
-		AddressCodec:          orbitaladdress.Codec{},
-		ValidatorAddressCodec: orbitaladdress.Codec{},
-		ConsensusAddressCodec: orbitaladdress.Codec{},
+		AddressCodec:          aetherisaddress.Codec{},
+		ValidatorAddressCodec: aetherisaddress.Codec{},
+		ConsensusAddressCodec: aetherisaddress.Codec{},
 	}
 }
 

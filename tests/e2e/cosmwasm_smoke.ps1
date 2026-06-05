@@ -1,12 +1,16 @@
 param(
-  [string]$Binary = "build\orbitalisd.exe",
+  [string]$Binary = "build\aetherisd.exe",
   [string]$Node = "tcp://127.0.0.1:26657",
-  [string]$ChainId = "orbitalis-local-1",
-  [string]$AppHome = ".localnet\node0\orbitalisd",
+  [string]$ChainId = "aetheris-local-1",
+  [string]$AppHome = ".localnet\node0\aetherisd",
   [string]$From = "node0",
   [string]$ContractWasm = "",
   [string]$InstantiateMsg = "{}",
-  [string]$Label = "orbitalis-smoke",
+  [string]$ExecuteMsg = "{}",
+  [string]$QueryMsg = "{}",
+  [string]$MigrateWasm = "",
+  [string]$MigrateMsg = "{}",
+  [string]$Label = "aetheris-smoke",
   [string]$Admin = "",
   [int]$TxWaitSeconds = 4,
   [switch]$EnableWasm
@@ -24,7 +28,7 @@ function Resolve-SmokePath {
 
 $binaryPath = Resolve-SmokePath $Binary
 if (-not (Test-Path -LiteralPath $binaryPath)) {
-  throw "orbitalisd binary not found: $binaryPath"
+  throw "aetherisd binary not found: $binaryPath"
 }
 
 if (-not $EnableWasm) {
@@ -62,7 +66,7 @@ $storeOutputText = & $binaryPath tx wasm store $contractPath `
   --keyring-backend test `
   --chain-id $ChainId `
   --node $Node `
-  --fees 1000000norb `
+  --fees 1000000naet `
   --output json `
   -y
 if ($LASTEXITCODE -ne 0) {
@@ -107,11 +111,100 @@ if ([string]::IsNullOrWhiteSpace($codeId)) {
   --keyring-backend test `
   --chain-id $ChainId `
   --node $Node `
-  --fees 1000000norb `
+  --fees 1000000naet `
   --output json `
   -y
 if ($LASTEXITCODE -ne 0) {
   throw "wasm instantiate failed for code_id $codeId"
 }
 
-Write-Host "CosmWasm deployment smoke passed with code_id=$codeId admin=$Admin"
+Start-Sleep -Seconds $TxWaitSeconds
+
+$contractsOutputText = & $binaryPath query wasm list-contract-by-code $codeId --node $Node --output json
+if ($LASTEXITCODE -ne 0) {
+  throw "failed to query contracts for code_id $codeId"
+}
+$contractsOutput = $contractsOutputText | ConvertFrom-Json
+$contractAddress = $null
+if ($contractsOutput.contracts -and $contractsOutput.contracts.Count -gt 0) {
+  $contractAddress = $contractsOutput.contracts[0]
+}
+if ([string]::IsNullOrWhiteSpace($contractAddress)) {
+  throw "wasm instantiate did not create a queryable contract address"
+}
+
+& $binaryPath tx wasm execute $contractAddress $ExecuteMsg `
+  --from $From `
+  --home $AppHome `
+  --keyring-backend test `
+  --chain-id $ChainId `
+  --node $Node `
+  --fees 1000000naet `
+  --output json `
+  -y
+if ($LASTEXITCODE -ne 0) {
+  throw "wasm execute failed for contract $contractAddress"
+}
+
+Start-Sleep -Seconds $TxWaitSeconds
+
+& $binaryPath query wasm contract-state smart $contractAddress $QueryMsg --node $Node --output json *>$null
+if ($LASTEXITCODE -ne 0) {
+  throw "wasm smart query failed for contract $contractAddress"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($MigrateWasm)) {
+  $migratePath = Resolve-SmokePath $MigrateWasm
+  if (-not (Test-Path -LiteralPath $migratePath)) {
+    throw "migrate wasm not found: $migratePath"
+  }
+  $migrateStoreOutputText = & $binaryPath tx wasm store $migratePath `
+    --from $From `
+    --home $AppHome `
+    --keyring-backend test `
+    --chain-id $ChainId `
+    --node $Node `
+    --fees 1000000naet `
+    --output json `
+    -y
+  if ($LASTEXITCODE -ne 0) {
+    throw "wasm migrate code store failed"
+  }
+  $migrateStoreOutput = $migrateStoreOutputText | ConvertFrom-Json
+  $migrateTxHash = $migrateStoreOutput.txhash
+  Start-Sleep -Seconds $TxWaitSeconds
+  $migrateTxOutputText = & $binaryPath query tx $migrateTxHash --node $Node --output json
+  if ($LASTEXITCODE -ne 0) {
+    throw "failed to query wasm migrate code store tx $migrateTxHash"
+  }
+  $migrateTxOutput = $migrateTxOutputText | ConvertFrom-Json
+  $migrateCodeId = $null
+  foreach ($event in $migrateTxOutput.events) {
+    foreach ($attr in $event.attributes) {
+      if ($attr.key -eq "code_id") {
+        $migrateCodeId = $attr.value
+        break
+      }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($migrateCodeId)) {
+      break
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($migrateCodeId)) {
+    throw "wasm migrate code store tx did not emit code_id"
+  }
+  & $binaryPath tx wasm migrate $contractAddress $migrateCodeId $MigrateMsg `
+    --from $From `
+    --home $AppHome `
+    --keyring-backend test `
+    --chain-id $ChainId `
+    --node $Node `
+    --fees 1000000naet `
+    --output json `
+    -y
+  if ($LASTEXITCODE -ne 0) {
+    throw "wasm migrate failed for contract $contractAddress"
+  }
+}
+
+Write-Host "CosmWasm deployment smoke passed with code_id=$codeId contract=$contractAddress admin=$Admin"

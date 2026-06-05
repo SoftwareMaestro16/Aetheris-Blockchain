@@ -1,6 +1,6 @@
 # Tokenfactory Lifecycle
 
-This document defines the prototype tokenfactory user flow. It is localnet/testnet functionality for factory assets and must not be confused with the native `ORB/norb` token.
+This document defines the prototype tokenfactory user flow. It is localnet/testnet functionality for factory assets and must not be confused with the native `AET/naet` token.
 
 ## Contract
 
@@ -8,7 +8,7 @@ This document defines the prototype tokenfactory user flow. It is localnet/testn
 - Default local example subdenom: `gold`
 - Admin controls create-time metadata, mint, burn from own account, and admin transfer.
 - Factory token bank metadata uses the full factory denom as base/display/symbol.
-- Factory denoms must not spoof native `norb`, `ORB`, `Orbitalis`, or LP denoms.
+- Factory denoms must not spoof native `naet`, `AET`, `Aetheris`, or LP denoms.
 - `query tokenfactory denoms` uses bounded `next_key` pagination with default limit `50` and max limit `100`.
 
 ## One-Command Smoke
@@ -30,8 +30,8 @@ Expected result:
 - fresh localnet starts with no factory denoms
 - node0 creates `factory/<node0>/gold`
 - CLI and REST denom queries return node0 as admin
-- factory bank metadata does not use native `norb` or `ORB`
-- duplicate `gold` and native-spoof `norb` subdenoms are rejected
+- factory bank metadata does not use native `naet` or `AET`
+- duplicate `gold` and native-spoof `naet` subdenoms are rejected
 - node0 mints `gold`, then bank balance and supply increase
 - burn from another account is rejected
 - node0 burns own `gold`, then bank balance and supply decrease
@@ -55,41 +55,41 @@ Set local variables:
 ```powershell
 $NODE = "tcp://127.0.0.1:26657"
 $REST = "http://127.0.0.1:1317"
-$CHAIN_ID = "orbitalis-local-1"
+$CHAIN_ID = "aetheris-local-1"
 $KEYRING = "test"
-$HOME0 = ".localnet\node0\orbitalisd"
-$HOME1 = ".localnet\node1\orbitalisd"
-$NODE0 = build\orbitalisd.exe keys show node0 -a --home $HOME0 --keyring-backend $KEYRING
-$NODE1 = build\orbitalisd.exe keys show node1 -a --home $HOME1 --keyring-backend $KEYRING
+$HOME0 = ".localnet\node0\aetherisd"
+$HOME1 = ".localnet\node1\aetherisd"
+$NODE0 = build\aetherisd.exe keys show node0 -a --home $HOME0 --keyring-backend $KEYRING
+$NODE1 = build\aetherisd.exe keys show node1 -a --home $HOME1 --keyring-backend $KEYRING
 $GOLD = "factory/$NODE0/gold"
-$FEES = "1000000norb"
+$FEES = "1000000naet"
 ```
 
 Create and query:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory create-denom gold --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query tokenfactory denom $GOLD --node $NODE --output json
+build\aetherisd.exe tx tokenfactory create-denom gold --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query tokenfactory denom $GOLD --node $NODE --output json
 Invoke-RestMethod "$REST/l1/tokenfactory/v1/denom/$GOLD"
-build\orbitalisd.exe query bank denom-metadata $GOLD --node $NODE --output json
+build\aetherisd.exe query bank denom-metadata $GOLD --node $NODE --output json
 ```
 
 Mint, query balance and supply, then burn:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory mint "1000000$GOLD" $NODE0 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query bank balance $NODE0 $GOLD --node $NODE --output json
-build\orbitalisd.exe query bank total-supply-of $GOLD --node $NODE --output json
-build\orbitalisd.exe tx tokenfactory burn "250000$GOLD" $NODE0 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory mint "1000000$GOLD" $NODE0 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query bank balance $NODE0 $GOLD --node $NODE --output json
+build\aetherisd.exe query bank total-supply-of $GOLD --node $NODE --output json
+build\aetherisd.exe tx tokenfactory burn "250000$GOLD" $NODE0 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 ```
 
 Transfer admin and prove authorization:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory change-admin $GOLD $NODE1 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe query tokenfactory denom $GOLD --node $NODE --output json
-build\orbitalisd.exe tx tokenfactory mint "1$GOLD" $NODE0 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
-build\orbitalisd.exe tx tokenfactory mint "100$GOLD" $NODE1 --from node1 --home $HOME1 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory change-admin $GOLD $NODE1 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe query tokenfactory denom $GOLD --node $NODE --output json
+build\aetherisd.exe tx tokenfactory mint "1$GOLD" $NODE0 --from node0 --home $HOME0 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
+build\aetherisd.exe tx tokenfactory mint "100$GOLD" $NODE1 --from node1 --home $HOME1 --chain-id $CHAIN_ID --keyring-backend $KEYRING --fees $FEES --yes --broadcast-mode sync --node $NODE --output json
 ```
 
 The old-admin mint command must fail with an authorization error; the new-admin mint command must commit.
@@ -100,7 +100,7 @@ The old-admin mint command must fail with an authorization error; the new-admin 
 - `MsgMint`, `MsgBurn`, and `MsgChangeAdmin` require the current admin signer.
 - `MsgBurn` only burns from the signer account, so an admin cannot burn another account's factory balance.
 - Bank keeper mint/burn/send errors are returned directly; local supply bookkeeping is not duplicated.
-- Factory bank metadata uses the full factory denom and must not replace native `norb` metadata.
+- Factory bank metadata uses the full factory denom and must not replace native `naet` metadata.
 - The e2e smoke checks bank balance and `total-supply-of` after mint and burn.
 
 ## Required Checks

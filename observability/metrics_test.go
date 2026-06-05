@@ -24,7 +24,7 @@ func TestMetricNamesSnapshot(t *testing.T) {
 		MetricTxLatency,
 		MetricModuleErrors,
 		MetricDexPoolCount,
-		MetricDexLiquidityNorb,
+		MetricDexLiquidityNaet,
 		MetricDexSwaps,
 		MetricFeesAccepted,
 		MetricFeesRejected,
@@ -102,7 +102,7 @@ func (r *Registry) RecordTestSamples() {
 	r.Observe(MetricTxLatency, Labels{"result": "finalized"}, 0.001)
 	r.IncCounter(MetricModuleErrors, Labels{"module": "dex", "action": "swap", "reason": "invalid"}, 1)
 	r.AddGauge(MetricDexPoolCount, nil, 1)
-	r.AddGauge(MetricDexLiquidityNorb, Labels{"denom": "norb"}, 100)
+	r.AddGauge(MetricDexLiquidityNaet, Labels{"denom": "naet"}, 100)
 	r.IncCounter(MetricDexSwaps, Labels{"result": "success"}, 1)
 	r.IncCounter(MetricFeesAccepted, Labels{"result": "accepted"}, 1)
 	r.IncCounter(MetricFeesRejected, Labels{"reason": "invalid_fee"}, 1)

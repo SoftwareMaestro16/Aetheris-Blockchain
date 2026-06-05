@@ -5,10 +5,11 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	testutil "github.com/sovereign-l1/l1/tests/testutil"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -19,7 +20,7 @@ import (
 )
 
 func TestMalformedTxBytesFailSafely(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-1")
+	app := testutil.NewInitializedApp(t, "aetheris-adversarial-1")
 
 	for _, bz := range [][]byte{{0xff}, {0x0a, 0x80, 0x80}, []byte("not-a-protobuf-tx")} {
 		require.NotPanics(t, func() {
@@ -30,7 +31,7 @@ func TestMalformedTxBytesFailSafely(t *testing.T) {
 }
 
 func TestTokenfactoryAdminTakeoverAndSupplyMismatchAttempts(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-2")
+	app := testutil.NewInitializedApp(t, "aetheris-adversarial-2")
 	ctx := testutil.NewContext(app, 1)
 	adminPriv, admin := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, attacker := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
@@ -85,7 +86,7 @@ func TestTokenfactoryAdminTakeoverAndSupplyMismatchAttempts(t *testing.T) {
 }
 
 func TestDexManipulationAndCorruptedStateDoNotMutateSuccessfulPool(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-3")
+	app := testutil.NewInitializedApp(t, "aetheris-adversarial-3")
 	ctx := testutil.NewContext(app, 1)
 	_, trader := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	testutil.FundAccount(t, app, ctx, trader, sdk.NewCoins(sdk.NewInt64Coin("uatom", 10_000)))
@@ -93,7 +94,7 @@ func TestDexManipulationAndCorruptedStateDoNotMutateSuccessfulPool(t *testing.T)
 
 	createRes, err := msgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 		Creator: trader.String(),
-		TokenA:  sdk.NewInt64Coin("norb", 1_000),
+		TokenA:  sdk.NewInt64Coin("naet", 1_000),
 		TokenB:  sdk.NewInt64Coin("uatom", 1_000),
 	})
 	require.NoError(t, err)
@@ -104,21 +105,21 @@ func TestDexManipulationAndCorruptedStateDoNotMutateSuccessfulPool(t *testing.T)
 
 	_, err = msgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 		Creator: trader.String(),
-		TokenA:  sdk.NewInt64Coin("norb", 1),
-		TokenB:  sdk.NewInt64Coin("norb", 1),
+		TokenA:  sdk.NewInt64Coin("naet", 1),
+		TokenB:  sdk.NewInt64Coin("naet", 1),
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidPool)
 	_, err = msgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 		Creator: trader.String(),
 		TokenA:  sdk.NewInt64Coin("uatom", 1),
-		TokenB:  sdk.NewInt64Coin("norb", 1),
+		TokenB:  sdk.NewInt64Coin("naet", 1),
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidPool)
 	_, err = msgServer.SwapExactAmountIn(ctx, &dextypes.MsgSwapExactAmountIn{
 		Trader:        trader.String(),
 		PoolId:        createRes.PoolId,
 		TokenIn:       sdk.NewInt64Coin("uatom", 10),
-		TokenOutDenom: "norb",
+		TokenOutDenom: "naet",
 		MinAmountOut:  "999999999999",
 	})
 	require.ErrorIs(t, err, dextypes.ErrSlippage)
@@ -131,7 +132,7 @@ func TestDexManipulationAndCorruptedStateDoNotMutateSuccessfulPool(t *testing.T)
 
 	require.NoError(t, app.DexKeeper.SetPool(ctx, dextypes.Pool{
 		Id:          99,
-		Denom0:      "norb",
+		Denom0:      "naet",
 		Denom1:      "uatom",
 		Reserve0:    "corrupted",
 		Reserve1:    "1",
@@ -143,7 +144,7 @@ func TestDexManipulationAndCorruptedStateDoNotMutateSuccessfulPool(t *testing.T)
 			Trader:        trader.String(),
 			PoolId:        99,
 			TokenIn:       sdk.NewInt64Coin("uatom", 1),
-			TokenOutDenom: "norb",
+			TokenOutDenom: "naet",
 			MinAmountOut:  "1",
 		})
 	})
@@ -151,14 +152,14 @@ func TestDexManipulationAndCorruptedStateDoNotMutateSuccessfulPool(t *testing.T)
 }
 
 func TestFeeAndGovernanceAbuseRejected(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-4")
+	app := testutil.NewInitializedApp(t, "aetheris-adversarial-4")
 	ctx := testutil.NewContext(app, 1)
 	feesMsgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
 	dexMsgServer := dexkeeper.NewMsgServerImpl(app.DexKeeper)
 	tfMsgServer := tfkeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
 
 	_, err := feesMsgServer.UpdateParams(ctx, &feestypes.MsgUpdateParams{
-		Authority: "orb1unauthorized",
+		Authority: "ae1unauthorized",
 		Params:    feestypes.DefaultParams(),
 	})
 	require.ErrorIs(t, err, feestypes.ErrUnauthorized)
@@ -188,7 +189,7 @@ func TestFeeAndGovernanceAbuseRejected(t *testing.T) {
 }
 
 func TestZeroAddressProtocolSafetyRules(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-zero-address")
+	app := testutil.NewInitializedApp(t, "aetheris-adversarial-zero-address")
 	ctx := testutil.NewContext(app, 1)
 	_, admin := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
 	_, trader := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
@@ -199,11 +200,11 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 	feesMsgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
 
 	_, err := tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
-		Creator:  orbitaladdress.ZeroRawAddress,
+		Creator:  aetherisaddress.ZeroRawAddress,
 		Subdenom: "gold",
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
-	for _, badAddress := range []string{"", "orb1notvalid"} {
+	for _, badAddress := range []string{"", "ae1notvalid"} {
 		_, err = tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
 			Creator:  badAddress,
 			Subdenom: "badaddr",
@@ -221,86 +222,86 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 	_, err = tfMsgServer.Mint(ctx, &tftypes.MsgMint{
 		Sender:        admin.String(),
 		Amount:        sdk.NewInt64Coin(denom, 10),
-		MintToAddress: orbitaladdress.ZeroUserFriendly,
+		MintToAddress: aetherisaddress.ZeroUserFriendly,
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
 	_, err = tfMsgServer.Burn(ctx, &tftypes.MsgBurn{
 		Sender:          admin.String(),
 		Amount:          sdk.NewInt64Coin(denom, 1),
-		BurnFromAddress: orbitaladdress.ZeroRawAddress,
+		BurnFromAddress: aetherisaddress.ZeroRawAddress,
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
 	_, err = tfMsgServer.ChangeAdmin(ctx, &tftypes.MsgChangeAdmin{
 		Sender:   admin.String(),
 		Denom:    denom,
-		NewAdmin: orbitaladdress.ZeroRawAddress,
+		NewAdmin: aetherisaddress.ZeroRawAddress,
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
 	_, err = tfMsgServer.UpdateParams(ctx, &tftypes.MsgUpdateParams{
-		Authority: orbitaladdress.ZeroRawAddress,
+		Authority: aetherisaddress.ZeroRawAddress,
 		Params:    tftypes.DefaultParams(),
 	})
 	require.ErrorIs(t, err, tftypes.ErrUnauthorized)
 
 	_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 		Creator: trader.String(),
-		TokenA:  sdk.NewInt64Coin("norb", 1_000),
+		TokenA:  sdk.NewInt64Coin("naet", 1_000),
 		TokenB:  sdk.NewInt64Coin("uatom", 1_000),
 	})
 	require.NoError(t, err)
 	_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
-		Creator: orbitaladdress.ZeroRawAddress,
-		TokenA:  sdk.NewInt64Coin("norb", 1),
+		Creator: aetherisaddress.ZeroRawAddress,
+		TokenA:  sdk.NewInt64Coin("naet", 1),
 		TokenB:  sdk.NewInt64Coin("uatom", 1),
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
-	for _, badAddress := range []string{"", "orb1notvalid"} {
+	for _, badAddress := range []string{"", "ae1notvalid"} {
 		_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 			Creator: badAddress,
-			TokenA:  sdk.NewInt64Coin("norb", 1),
+			TokenA:  sdk.NewInt64Coin("naet", 1),
 			TokenB:  sdk.NewInt64Coin("uatom", 1),
 		})
 		require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
 	}
 	_, err = dexMsgServer.AddLiquidity(ctx, &dextypes.MsgAddLiquidity{
-		Depositor: orbitaladdress.ZeroRawAddress,
+		Depositor: aetherisaddress.ZeroRawAddress,
 		PoolId:    1,
-		TokenA:    sdk.NewInt64Coin("norb", 1),
+		TokenA:    sdk.NewInt64Coin("naet", 1),
 		TokenB:    sdk.NewInt64Coin("uatom", 1),
 		MinShares: "1",
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
 	_, err = dexMsgServer.RemoveLiquidity(ctx, &dextypes.MsgRemoveLiquidity{
-		Withdrawer: orbitaladdress.ZeroUserFriendly,
+		Withdrawer: aetherisaddress.ZeroUserFriendly,
 		PoolId:     1,
 		Shares:     sdk.NewInt64Coin("lp/1", 1),
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
 	_, err = dexMsgServer.SwapExactAmountIn(ctx, &dextypes.MsgSwapExactAmountIn{
-		Trader:        orbitaladdress.ZeroRawAddress,
+		Trader:        aetherisaddress.ZeroRawAddress,
 		PoolId:        1,
-		TokenIn:       sdk.NewInt64Coin("norb", 1),
+		TokenIn:       sdk.NewInt64Coin("naet", 1),
 		TokenOutDenom: "uatom",
 		MinAmountOut:  "1",
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
 	_, err = dexMsgServer.UpdateParams(ctx, &dextypes.MsgUpdateParams{
-		Authority: orbitaladdress.ZeroRawAddress,
+		Authority: aetherisaddress.ZeroRawAddress,
 		Params:    dextypes.DefaultParams(),
 	})
 	require.ErrorIs(t, err, dextypes.ErrUnauthorized)
 
 	tfGenesis := tftypes.GenesisState{Denoms: []tftypes.DenomAuthorityMetadata{{
 		Denom: "factory/" + admin.String() + "/bad",
-		Admin: orbitaladdress.ZeroRawAddress,
+		Admin: aetherisaddress.ZeroRawAddress,
 	}}}
 	require.Error(t, tfGenesis.Validate())
 	dexGenesis := dextypes.GenesisState{
 		NextPoolId: 2,
 		Pools: []dextypes.Pool{{
 			Id:          1,
-			Denom0:      "factory/" + orbitaladdress.ZeroRawAddress + "/bad",
-			Denom1:      "norb",
+			Denom0:      "factory/" + aetherisaddress.ZeroRawAddress + "/bad",
+			Denom1:      "naet",
 			Reserve0:    "1",
 			Reserve1:    "1",
 			TotalShares: "1",
@@ -310,21 +311,38 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 	require.Error(t, dexGenesis.Validate())
 
 	feesParams := feestypes.DefaultParams()
-	feesParams.FeeCollectorModule = orbitaladdress.ZeroRawAddress
+	feesParams.FeeCollectorModule = aetherisaddress.ZeroRawAddress
 	_, err = feesMsgServer.UpdateParams(ctx, &feestypes.MsgUpdateParams{
 		Authority: app.FeesKeeper.Authority(),
 		Params:    feesParams,
 	})
 	require.ErrorIs(t, err, feestypes.ErrInvalidParams)
 	_, err = feesMsgServer.UpdateParams(ctx, &feestypes.MsgUpdateParams{
-		Authority: orbitaladdress.ZeroRawAddress,
+		Authority: aetherisaddress.ZeroRawAddress,
 		Params:    feestypes.DefaultParams(),
 	})
 	require.ErrorIs(t, err, feestypes.ErrUnauthorized)
+
+	called := false
+	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+		called = true
+		return ctx, nil
+	}
+	_, err = app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{
+		fees: sdk.NewCoins(sdk.NewInt64Coin(feestypes.BondDenom, 1)),
+		msgs: []sdk.Msg{&banktypes.MsgSend{
+			FromAddress: admin.String(),
+			ToAddress:   aetherisaddress.ZeroRawAddress,
+			Amount:      sdk.NewCoins(sdk.NewInt64Coin(feestypes.BondDenom, 1)),
+		}},
+	}, false)
+	require.ErrorIs(t, err, feestypes.ErrInvalidFee)
+	require.Contains(t, err.Error(), "bank send recipient must not be zero address")
+	require.False(t, called)
 }
 
 func TestRepeatedInvalidFeeSpamDoesNotAdvanceProtocolAccounting(t *testing.T) {
-	app := testutil.NewInitializedApp(t, "orbitalis-adversarial-5")
+	app := testutil.NewInitializedApp(t, "aetheris-adversarial-5")
 	ctx := testutil.NewContext(app, 1)
 	before, err := app.FeesKeeper.GetProtocolFeeState(ctx)
 	require.NoError(t, err)
@@ -346,9 +364,10 @@ func TestRepeatedInvalidFeeSpamDoesNotAdvanceProtocolAccounting(t *testing.T) {
 
 type feeTx struct {
 	fees sdk.Coins
+	msgs []sdk.Msg
 }
 
-func (tx feeTx) GetMsgs() []sdk.Msg                    { return nil }
+func (tx feeTx) GetMsgs() []sdk.Msg                    { return tx.msgs }
 func (tx feeTx) GetMsgsV2() ([]protov2.Message, error) { return nil, nil }
 func (tx feeTx) GetGas() uint64                        { return 100_000 }
 func (tx feeTx) GetFee() sdk.Coins                     { return tx.fees }

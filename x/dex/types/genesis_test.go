@@ -3,7 +3,7 @@ package types
 import (
 	"testing"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
@@ -25,6 +25,7 @@ func validGenesisState() GenesisState {
 }
 
 func TestGenesisValidateRejectsInvalidPoolState(t *testing.T) {
+	admin := "4:0000000000000000000000000000000000000000000000000000000000000001"
 	tests := map[string]func(*GenesisState){
 		"invalid reserve": func(gs *GenesisState) {
 			gs.Pools[0].Reserve0 = "not-int"
@@ -46,8 +47,19 @@ func TestGenesisValidateRejectsInvalidPoolState(t *testing.T) {
 			gs.Pools[0].Denom1 = appparams.BaseDenom
 		},
 		"zero factory denom admin": func(gs *GenesisState) {
-			gs.Pools[0].Denom0 = "factory/" + orbitaladdress.ZeroRawAddress + "/foo"
+			gs.Pools[0].Denom0 = "factory/" + aetherisaddress.ZeroRawAddress + "/foo"
 			gs.Pools[0].Denom1 = appparams.BaseDenom
+		},
+		"display denom native spoof": func(gs *GenesisState) {
+			gs.Pools[0].Denom1 = appparams.DisplayDenom
+		},
+		"factory base denom native spoof": func(gs *GenesisState) {
+			gs.Pools[0].Denom0 = "factory/" + admin + "/" + appparams.BaseDenom
+			gs.Pools[0].Denom1 = "uosmo"
+		},
+		"factory display denom native spoof": func(gs *GenesisState) {
+			gs.Pools[0].Denom0 = "factory/" + admin + "/" + appparams.DisplayDenom
+			gs.Pools[0].Denom1 = "uosmo"
 		},
 		"duplicate pair": func(gs *GenesisState) {
 			gs.NextPoolId = 3

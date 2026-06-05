@@ -3,19 +3,18 @@ package params
 import banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 const (
-	ChainName            = "Orbitalis"
-	BaseDenom            = "norb"
-	DisplayDenom         = "ORB"
-	TokenName            = "Orbitalis"
-	TokenSymbol          = "ORB"
+	ChainName            = "Aetheris"
+	BaseDenom            = "naet"
+	DisplayDenom         = "AET"
+	TokenName            = "Aetheris"
+	TokenSymbol          = "AET"
 	DisplayDenomExponent = uint32(9)
 	BaseUnitsPerDisplay  = int64(1_000_000_000)
-	TestAssetDenom       = "testtoken"
 )
 
 func NativeTokenMetadata() banktypes.Metadata {
 	return banktypes.Metadata{
-		Description: "The native staking and fee token of Orbitalis.",
+		Description: "The native staking and fee token of Aetheris.",
 		Base:        BaseDenom,
 		Display:     DisplayDenom,
 		Name:        TokenName,

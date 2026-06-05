@@ -1,6 +1,6 @@
 # Security Triage Policy
 
-This policy defines how Orbitalis handles scanner, dependency, CodeQL, secret,
+This policy defines how Aetheris handles scanner, dependency, CodeQL, secret,
 and manual audit findings.
 
 ## Merge Rule
@@ -79,3 +79,10 @@ These findings are never silently accepted:
   is possible;
 - committed secret, mnemonic, private key, token, or validator private material;
 - dependency advisory with confirmed reachable `Critical` or `High` path.
+
+## Public Testnet Gate
+
+Public testnet cannot proceed while any untriaged `Critical` or `High`
+fund-safety, consensus-safety, or secret-leak finding remains. This applies to
+manual review findings and to `govulncheck`, `gosec`, CodeQL, gitleaks,
+Dependency Review, determinism-gate, and prototype-audit outputs.

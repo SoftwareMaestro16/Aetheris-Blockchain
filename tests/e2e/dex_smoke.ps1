@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -17,7 +17,7 @@ param(
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
   [string]$FactorySubdenom = "dexgold",
-  [string]$Fees = "1000000norb"
+  [string]$Fees = "1000000naet"
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,7 +30,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 $rpcNode = "tcp://127.0.0.1:$($node0Ports.RPC)"
 
@@ -130,8 +130,8 @@ function Assert-Pool {
   if ([int64]$Pool.id -ne $poolId) {
     throw "pool id must be $poolId, got $($Pool.id)"
   }
-  if ($Pool.denom0 -ne $FactoryDenom -or $Pool.denom1 -ne "norb") {
-    throw "pool denoms must be canonical factory/norb, got $($Pool.denom0)/$($Pool.denom1)"
+  if ($Pool.denom0 -ne $FactoryDenom -or $Pool.denom1 -ne "naet") {
+    throw "pool denoms must be canonical factory/naet, got $($Pool.denom0)/$($Pool.denom1)"
   }
   if ([int64]$Pool.reserve0 -ne $ReserveFactory -or [int64]$Pool.reserve1 -ne $ReserveNorb) {
     throw "pool reserves mismatch: expected $ReserveFactory/$ReserveNorb, got $($Pool.reserve0)/$($Pool.reserve1)"
@@ -186,7 +186,7 @@ try {
     }
   }
 
-  $node0Home = Join-Path $OutputDir "node0\orbitalisd"
+  $node0Home = Join-Path $OutputDir "node0\aetherisd"
   $node0 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName "node0"
   $factoryDenom = "factory/$node0/$FactorySubdenom"
 
@@ -201,12 +201,12 @@ try {
   }
   Write-Host "minted factory liquidity asset to node0"
 
-  $createPoolTx = Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "$($initialNorb)norb", "$($initialFactory)$factoryDenom") -FromHome $node0Home
+  $createPoolTx = Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "$($initialNorb)naet", "$($initialFactory)$factoryDenom") -FromHome $node0Home
   Assert-LocalnetTxEvent -Tx $createPoolTx -Type "dex_create_pool" -Attributes @{
     pool_id       = "$poolId"
     creator       = $node0
     denom0        = $factoryDenom
-    denom1        = "norb"
+    denom1        = "naet"
     amount0       = "$initialFactory"
     amount1       = "$initialNorb"
     lp_denom      = $lpDenom
@@ -222,18 +222,18 @@ try {
   }
   Write-Host "LP balance after create-pool is $lpBalance$lpDenom"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "1$factoryDenom", "1norb") -FromHome $node0Home -ExpectFailure -ExpectedLog "pool already exists" | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "1$factoryDenom", "1naet") -FromHome $node0Home -ExpectFailure -ExpectedLog "pool already exists" | Out-Null
   Write-Host "duplicate pair pool creation is rejected"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)norb", "$($addFactory)$factoryDenom", "$($addNorb + 1)") -FromHome $node0Home -ExpectFailure -ExpectedLog "minted shares below minimum" | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)naet", "$($addFactory)$factoryDenom", "$($addNorb + 1)") -FromHome $node0Home -ExpectFailure -ExpectedLog "minted shares below minimum" | Out-Null
   Write-Host "add-liquidity slippage guard rejected excessive min_shares"
 
-  $addLiquidityTx = Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)norb", "$($addFactory)$factoryDenom", "$addNorb") -FromHome $node0Home
+  $addLiquidityTx = Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "$($addNorb)naet", "$($addFactory)$factoryDenom", "$addNorb") -FromHome $node0Home
   Assert-LocalnetTxEvent -Tx $addLiquidityTx -Type "dex_add_liquidity" -Attributes @{
     pool_id       = "$poolId"
     depositor     = $node0
     denom0        = $factoryDenom
-    denom1        = "norb"
+    denom1        = "naet"
     amount0       = "$addFactory"
     amount1       = "$addNorb"
     lp_denom      = $lpDenom
@@ -246,18 +246,18 @@ try {
   Assert-Pool -Pool $pool -FactoryDenom $factoryDenom -ReserveNorb $expectedReserveNorb -ReserveFactory $expectedReserveFactory -TotalShares $expectedShares
   Write-Host "add-liquidity updated reserves to $expectedReserveFactory/$expectedReserveNorb and shares $expectedShares"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "1norb", "1testtoken", "1") -FromHome $node0Home -ExpectFailure -ExpectedLog "liquidity denoms do not match pool" | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "add-liquidity", "$poolId", "1naet", "1testtoken", "1") -FromHome $node0Home -ExpectFailure -ExpectedLog "liquidity denoms do not match pool" | Out-Null
   Write-Host "add-liquidity rejects wrong denom pair"
 
-  Send-SignedTx -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "$($swapInNorb)norb", $factoryDenom, "1000000") -FromHome $node0Home -ExpectFailure -ExpectedLog "amount out below minimum" | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "$($swapInNorb)naet", $factoryDenom, "1000000") -FromHome $node0Home -ExpectFailure -ExpectedLog "amount out below minimum" | Out-Null
   Write-Host "swap slippage guard rejected excessive min_amount_out"
 
   $factoryBeforeSwap = Get-BalanceAmount -Address $node0 -Denom $factoryDenom
-  $swapTx = Send-SignedTx -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "$($swapInNorb)norb", $factoryDenom, "1") -FromHome $node0Home
+  $swapTx = Send-SignedTx -ActionArgs @("tx", "dex", "swap-exact-in", "$poolId", "$($swapInNorb)naet", $factoryDenom, "1") -FromHome $node0Home
   Assert-LocalnetTxEvent -Tx $swapTx -Type "dex_swap_exact_amount_in" -Attributes @{
     pool_id  = "$poolId"
     trader   = $node0
-    token_in = "$($swapInNorb)norb"
+    token_in = "$($swapInNorb)naet"
   } | Out-Null
   $factoryAfterSwap = Get-BalanceAmount -Address $node0 -Denom $factoryDenom
   if ($factoryAfterSwap -le $factoryBeforeSwap) {
@@ -265,7 +265,7 @@ try {
   }
   $poolAfterSwap = Get-DexPool
   if ([int64]$poolAfterSwap.reserve1 -ne ($expectedReserveNorb + $swapInNorb)) {
-    throw "norb reserve must increase by swap input"
+    throw "naet reserve must increase by swap input"
   }
   if ([int64]$poolAfterSwap.reserve0 -ge $expectedReserveFactory) {
     throw "factory reserve must decrease after swap output"

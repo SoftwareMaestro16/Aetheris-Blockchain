@@ -7,8 +7,8 @@ Run against a running localnet:
 ```powershell
 .\scripts\localnet\load-profile.ps1 `
   -OutputDir .localnet `
-  -Binary build\orbitalisd.exe `
-  -ChainId orbitalis-local-1 `
+  -Binary build\aetherisd.exe `
+  -ChainId aetheris-local-1 `
   -Scenario mixed `
   -Count 12 `
   -RatePerSecond 2
@@ -24,7 +24,7 @@ JSON output for reports:
 
 | Scenario | Operations |
 | --- | --- |
-| `bank` | repeated `tx bank send node0 node1 1norb` |
+| `bank` | repeated `tx bank send node0 node1 1naet` |
 | `tokenfactory` | setup one factory denom, then repeated admin mints |
 | `dex` | setup one factory denom and pool, then repeated `swap-exact-in` |
 | `mixed` | cycles bank send, tokenfactory mint, DEX swap |

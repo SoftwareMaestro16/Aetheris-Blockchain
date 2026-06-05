@@ -1,18 +1,18 @@
-# Orbitalis PoS Smoke Flow
+# Aetheris PoS Smoke Flow
 
-This document defines the operator-visible proof-of-stake smoke scenario for the Orbitalis prototype localnet.
+This document defines the operator-visible proof-of-stake smoke scenario for the Aetheris prototype localnet.
 
-The flow verifies that a multi-validator localnet exposes staking and slashing state, accepts a `norb` delegation from a funded local account, commits the delegation, and updates validator voting power. It intentionally does not simulate downtime or double-sign slashing on the running localnet; destructive slashing behavior belongs in isolated unit or integration tests.
+The flow verifies that a multi-validator localnet exposes staking and slashing state, accepts a `naet` delegation from a funded local account, commits the delegation, and updates validator voting power. It intentionally does not simulate downtime or double-sign slashing on the running localnet; destructive slashing behavior belongs in isolated unit or integration tests.
 
 ## Supported Profiles
 
-- Chain ID: `orbitalis-local-1`
-- Bond denom: `norb`
+- Chain ID: `aetheris-local-1`
+- Bond denom: `naet`
 - Default profile: `3` validators under `.localnet`
 - Heavy profile: `5` validators under `.localnet-5`
 - Delegator key: `node0` from the generated local keyring
-- Delegation amount: `5000000norb`
-- Fees: `1000000norb`
+- Delegation amount: `5000000naet`
+- Fees: `1000000naet`
 
 Generated keys and node homes live under ignored localnet directories. They are prototype helper accounts only and have no production privileges.
 
@@ -35,11 +35,11 @@ Expected result:
 - localnet reaches the requested height
 - CometBFT and staking validator queries return the requested validator count
 - every staking validator is bonded
-- staking params use `bond_denom = norb`
+- staking params use `bond_denom = naet`
 - slashing params are positive
 - slashing signing-infos query returns validator records
 - delegation tx from `node0` is accepted
-- delegation query shows a `norb` balance
+- delegation query shows a `naet` balance
 - CometBFT total voting power increases after the delegation
 - wrong-denom, insufficient-funds, malformed-validator, missing-delegator, and signed-tx replay delegation attempts fail safely
 
@@ -66,7 +66,7 @@ Initialize and start the default localnet:
 Query staking params:
 
 ```powershell
-build\orbitalisd.exe query staking params --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query staking params --node tcp://127.0.0.1:26657 --output json
 ```
 
 Expected output includes:
@@ -74,7 +74,7 @@ Expected output includes:
 ```json
 {
   "params": {
-    "bond_denom": "norb"
+    "bond_denom": "naet"
   }
 }
 ```
@@ -82,33 +82,33 @@ Expected output includes:
 Query validators and select any bonded `operator_address`:
 
 ```powershell
-build\orbitalisd.exe query staking validators --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query staking validators --node tcp://127.0.0.1:26657 --output json
 ```
 
-Expected output includes `BOND_STATUS_BONDED` validators with `orbvaloper...` operator addresses. Do not assume only one validator or a fixed order.
+Expected output includes `BOND_STATUS_BONDED` validators with `aevaloper...` operator addresses. Do not assume only one validator or a fixed order.
 
 Show the funded delegator account:
 
 ```powershell
-build\orbitalisd.exe keys show node0 -a --home .localnet\node0\orbitalisd --keyring-backend test
+build\aetherisd.exe keys show node0 -a --home .localnet\node0\aetherisd --keyring-backend test
 ```
 
 Delegate from `node0` to a bonded validator:
 
 ```powershell
-build\orbitalisd.exe tx staking delegate <orbvaloper...> 5000000norb --from node0 --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe tx staking delegate <aevaloper...> 5000000naet --from node0 --home .localnet\node0\aetherisd --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node tcp://127.0.0.1:26657 --output json
 ```
 
 Expected output includes a `txhash`. Query the transaction until it returns `code = 0`:
 
 ```powershell
-build\orbitalisd.exe query tx <txhash> --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query tx <txhash> --node tcp://127.0.0.1:26657 --output json
 ```
 
 Verify the delegation:
 
 ```powershell
-build\orbitalisd.exe query staking delegation <orb1...delegator> <orbvaloper...> --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query staking delegation <AE...delegator> <aevaloper...> --node tcp://127.0.0.1:26657 --output json
 ```
 
 Expected output includes:
@@ -117,7 +117,7 @@ Expected output includes:
 {
   "delegation_response": {
     "balance": {
-      "denom": "norb",
+      "denom": "naet",
       "amount": "5000000"
     }
   }
@@ -127,8 +127,8 @@ Expected output includes:
 Query slashing params and signing infos:
 
 ```powershell
-build\orbitalisd.exe query slashing params --node tcp://127.0.0.1:26657 --output json
-build\orbitalisd.exe query slashing signing-infos --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query slashing params --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query slashing signing-infos --node tcp://127.0.0.1:26657 --output json
 ```
 
 Expected output:
@@ -147,7 +147,7 @@ Stop the network:
 
 ## Audit Notes
 
-- Staking, fees, and bank balances in this flow must use `norb`.
+- Staking, fees, and bank balances in this flow must use `naet`.
 - Wrong-denom, insufficient-funds, malformed-validator, missing-delegator, and signed-tx replay delegation paths are covered by app tests and the localnet smoke without changing staking module behavior.
 - The e2e flow checks aggregate CometBFT voting power, so it is stable across 3-validator and 5-validator profiles and does not depend on validator ordering.
 - Localnet scripts must not print mnemonics or write helper keys outside ignored node homes.
@@ -160,7 +160,7 @@ go test ./app
 go test ./...
 go vet ./...
 buf lint
-go build -o build/orbitalisd.exe ./cmd/l1d
+go build -o build/aetherisd.exe ./cmd/l1d
 .\tests\e2e\pos_smoke.ps1
 .\tests\e2e\pos_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```

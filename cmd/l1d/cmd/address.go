@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 )
 
 func NewAddressCmd() *cobra.Command {
@@ -21,15 +21,15 @@ func NewAddressCmd() *cobra.Command {
 func NewAddressConvertCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "convert [address]",
-		Short: "Convert an address to Orbitalis raw and userfriendly forms",
+		Short: "Convert an address to Aetheris raw and userfriendly forms",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			bz, err := orbitaladdress.Parse(args[0])
+			bz, err := aetherisaddress.Parse(args[0])
 			if err != nil {
 				return err
 			}
-			raw := orbitaladdress.Format(bz)
-			userFriendly, err := orbitaladdress.FormatUserFriendly(bz)
+			raw := aetherisaddress.Format(bz)
+			userFriendly, err := aetherisaddress.FormatUserFriendly(bz)
 			if err != nil {
 				return err
 			}

@@ -32,7 +32,7 @@ if (Test-Path -LiteralPath $OutputRoot) {
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 
 $fakeGo = Join-Path $OutputRoot "fake-go.ps1"
-$fakeBinary = Join-Path $OutputRoot "orbitalisd.ps1"
+$fakeBinary = Join-Path $OutputRoot "aetherisd.ps1"
 @'
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GoArgs)
 
@@ -62,10 +62,10 @@ if ($GoArgs.Count -gt 0 -and $GoArgs[0] -eq "build") {
   @(
     'param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)',
     'if ($Args.Count -ge 1 -and $Args[0] -eq "version") {',
-    '  Write-Output ''{"name":"Orbitalis","server_name":"orbitalisd","version":"prototype-test","commit":"deadbeef0000","extra_info":{"dirty":"false","cosmos_sdk_version":"v0.54.3","cometbft_version":"v0.39.3"}}''',
+    '  Write-Output ''{"name":"Aetheris","server_name":"aetherisd","version":"prototype-test","commit":"deadbeef0000","extra_info":{"dirty":"false","cosmos_sdk_version":"v0.54.3","cometbft_version":"v0.39.3"}}''',
     '  exit 0',
     '}',
-    'Write-Output "fake orbitalisd"'
+    'Write-Output "fake aetherisd"'
   ) | Set-Content -LiteralPath $out
   exit 0
 }
@@ -76,7 +76,7 @@ exit 1
 
 Push-Location $RepoRoot
 try {
-  $output = & .\scripts\build-orbitalisd.ps1 `
+  $output = & .\scripts\build-aetherisd.ps1 `
     -GoBinary $fakeGo `
     -Binary $fakeBinary `
     -Version prototype-test `
@@ -94,10 +94,10 @@ Assert-True ($text -match "modules downloaded") "go mod download was not run"
 Assert-True ($text -match "all modules verified") "go mod verify was not run"
 Assert-True ($text -match [regex]::Escape($fakeBinary)) "binary path was not printed"
 Assert-True ($text -match "prototype-test") "version metadata was not printed"
-Assert-True ($text -match "Orbitalis") "built binary version was not executed"
+Assert-True ($text -match "Aetheris") "built binary version was not executed"
 
 $fallbackGo = Join-Path $OutputRoot "fake-go-fallback.ps1"
-$fallbackBinary = Join-Path $OutputRoot "orbitalisd-fallback.ps1"
+$fallbackBinary = Join-Path $OutputRoot "aetherisd-fallback.ps1"
 $fallbackState = Join-Path $OutputRoot "verify-fallback-state.txt"
 @"
 param([Parameter(ValueFromRemainingArguments = `$true)][string[]]`$GoArgs)
@@ -129,7 +129,7 @@ if (`$GoArgs.Count -gt 0 -and `$GoArgs[0] -eq "build") {
   New-Item -ItemType Directory -Force -Path (Split-Path `$out) | Out-Null
   @(
     'param([Parameter(ValueFromRemainingArguments = `$true)][string[]]`$Args)',
-    'if (`$Args.Count -ge 1 -and `$Args[0] -eq "version") { Write-Output ''{"name":"Orbitalis"}''; exit 0 }'
+    'if (`$Args.Count -ge 1 -and `$Args[0] -eq "version") { Write-Output ''{"name":"Aetheris"}''; exit 0 }'
   ) | Set-Content -LiteralPath `$out
   exit 0
 }
@@ -140,7 +140,7 @@ exit 1
 
 Push-Location $RepoRoot
 try {
-  $fallbackOutput = & .\scripts\build-orbitalisd.ps1 `
+  $fallbackOutput = & .\scripts\build-aetherisd.ps1 `
     -GoBinary $fallbackGo `
     -Binary $fallbackBinary `
     -Version prototype-test `
@@ -155,4 +155,4 @@ $fallbackText = ($fallbackOutput | Out-String)
 Assert-True (Test-Path -LiteralPath $fallbackBinary) "fallback build did not create binary"
 Assert-True ($fallbackText -match "known Windows extracted-tree mismatch") "CometBFT Windows verify fallback did not run"
 
-Write-Host "build-orbitalisd script test passed"
+Write-Host "build-aetherisd script test passed"

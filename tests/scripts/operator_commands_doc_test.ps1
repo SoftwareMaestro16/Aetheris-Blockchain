@@ -51,7 +51,7 @@ foreach ($heading in @(
 }
 
 foreach ($required in @(
-    '\.\\scripts\\build-orbitalisd\.ps1',
+    '\.\\scripts\\build-aetherisd\.ps1',
     '\.\\scripts\\localnet\\init\.ps1',
     '\.\\scripts\\localnet\\validate-genesis\.ps1',
     '\.\\scripts\\localnet\\start\.ps1',
@@ -62,23 +62,23 @@ foreach ($required in @(
     '\.\\tests\\e2e\\prototype_smoke\.ps1',
     '\.\\tests\\e2e\\pos_smoke\.ps1',
     '\.\\tests\\e2e\\tokenfactory_smoke\.ps1',
-    'build\\orbitalisd\.exe version --long --output json',
-    'build\\orbitalisd\.exe query block',
-    'build\\orbitalisd\.exe query bank balance',
-    'build\\orbitalisd\.exe query staking validators',
-    'build\\orbitalisd\.exe query fees params',
-    'build\\orbitalisd\.exe query tokenfactory denom',
-    'build\\orbitalisd\.exe query dex pool',
-    'build\\orbitalisd\.exe tx bank send',
-    'build\\orbitalisd\.exe tx staking delegate',
-    'build\\orbitalisd\.exe tx tokenfactory create-denom',
-    'build\\orbitalisd\.exe tx tokenfactory mint',
-    'build\\orbitalisd\.exe tx tokenfactory burn',
-    'build\\orbitalisd\.exe tx tokenfactory change-admin',
-    'build\\orbitalisd\.exe tx dex create-pool',
-    'build\\orbitalisd\.exe tx dex add-liquidity',
-    'build\\orbitalisd\.exe tx dex swap-exact-in',
-    'build\\orbitalisd\.exe tx dex remove-liquidity'
+    'build\\aetherisd\.exe version --long --output json',
+    'build\\aetherisd\.exe query block',
+    'build\\aetherisd\.exe query bank balance',
+    'build\\aetherisd\.exe query staking validators',
+    'build\\aetherisd\.exe query fees params',
+    'build\\aetherisd\.exe query tokenfactory denom',
+    'build\\aetherisd\.exe query dex pool',
+    'build\\aetherisd\.exe tx bank send',
+    'build\\aetherisd\.exe tx staking delegate',
+    'build\\aetherisd\.exe tx tokenfactory create-denom',
+    'build\\aetherisd\.exe tx tokenfactory mint',
+    'build\\aetherisd\.exe tx tokenfactory burn',
+    'build\\aetherisd\.exe tx tokenfactory change-admin',
+    'build\\aetherisd\.exe tx dex create-pool',
+    'build\\aetherisd\.exe tx dex add-liquidity',
+    'build\\aetherisd\.exe tx dex swap-exact-in',
+    'build\\aetherisd\.exe tx dex remove-liquidity'
   )) {
   Assert-Contains -Text $guideText -Pattern $required -Message "operator guide missing command pattern: $required"
 }
@@ -88,15 +88,15 @@ foreach ($variable in @('$CHAIN_ID', '$NODE', '$GRPC', '$REST', '$HOME', '$FROM'
 }
 
 Assert-Contains -Text $guideText -Pattern '--keyring-backend test.*local|local.*--keyring-backend test' -Message "operator guide must mark test keyring local-only"
-Assert-Contains -Text $guideText -Pattern 'norb' -Message "operator guide must use norb examples"
-Assert-Contains -Text $guideText -Pattern 'ORB.*display metadata only|display metadata only.*ORB' -Message "operator guide must clarify ORB display-only status"
+Assert-Contains -Text $guideText -Pattern 'naet' -Message "operator guide must use naet examples"
+Assert-Contains -Text $guideText -Pattern 'AET.*display metadata only|display metadata only.*AET' -Message "operator guide must clarify AET display-only status"
 Assert-Contains -Text $guideText -Pattern 'observability\.md' -Message "operator guide must link troubleshooting observability docs"
 Assert-Contains -Text $guideText -Pattern 'operator-troubleshooting\.md' -Message "operator guide must link troubleshooting runbook"
 Assert-Contains -Text $guideText -Pattern 'prototype-audit\.ps1 -Profile Fast' -Message "operator guide must include security audit check"
 
 Assert-NotContains -Text $guideText -Pattern '(?i)print-mnemonic\s+\$?true|--print-mnemonic|mnemonic:\s*[a-z]' -Message "operator guide must not tell operators to print mnemonics"
 Assert-NotContains -Text $guideText -Pattern '(?i)private[_-]?key\s*[:=]' -Message "operator guide must not include private key material"
-Assert-NotContains -Text $guideText -Pattern '1000000ORB|--fees\s+\d+ORB' -Message "operator guide must not use ORB as tx fee denom"
+Assert-NotContains -Text $guideText -Pattern '1000000AET|--fees\s+\d+AET' -Message "operator guide must not use AET as tx fee denom"
 
 Assert-Contains -Text $readmeText -Pattern 'docs/operator-commands\.md' -Message "README must link operator guide"
 Assert-Contains -Text $readmeText -Pattern 'README keeps only the shortest probes' -Message "README must avoid duplicating the full operator runbook"

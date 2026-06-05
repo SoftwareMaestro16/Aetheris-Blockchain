@@ -6,7 +6,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/observability"
 	"github.com/sovereign-l1/l1/x/dex/types"
 	txutil "github.com/sovereign-l1/l1/x/internal/tx"
@@ -23,7 +24,7 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 }
 
 func parseDexAddress(field, text string) (sdk.AccAddress, error) {
-	addr, err := orbitaladdress.ParseUserAddress(field, text)
+	addr, err := aetherisaddress.ParseUserAddress(field, text)
 	if err != nil {
 		return nil, types.ErrInvalidAddress.Wrap(err.Error())
 	}
@@ -43,7 +44,7 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (re
 	if err != nil {
 		return nil, err
 	}
-	creatorText := orbitaladdress.FormatAccAddress(creator)
+	creatorText := aetherisaddress.FormatAccAddress(creator)
 	token0, token1, err := canonicalPair(msg.TokenA, msg.TokenB)
 	if err != nil {
 		return nil, err
@@ -114,7 +115,7 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (re
 		return nil, err
 	}
 	observability.RecordDexPoolCreated()
-	recordNorbLiquidityDelta(token0, token1)
+	recordNaetLiquidityDelta(token0, token1)
 	return &types.MsgCreatePoolResponse{PoolId: id, LpDenom: lp, MintedShares: shareCoin}, nil
 }
 
@@ -131,7 +132,7 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	if err != nil {
 		return nil, err
 	}
-	depositorText := orbitaladdress.FormatAccAddress(depositor)
+	depositorText := aetherisaddress.FormatAccAddress(depositor)
 	pool, found, err := m.GetPool(ctx, msg.PoolId)
 	if err != nil {
 		return nil, err
@@ -192,7 +193,7 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	}); err != nil {
 		return nil, err
 	}
-	recordNorbLiquidityDelta(token0, token1)
+	recordNaetLiquidityDelta(token0, token1)
 	return &types.MsgAddLiquidityResponse{MintedShares: shareCoin}, nil
 }
 
@@ -209,7 +210,7 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	if err != nil {
 		return nil, err
 	}
-	withdrawerText := orbitaladdress.FormatAccAddress(withdrawer)
+	withdrawerText := aetherisaddress.FormatAccAddress(withdrawer)
 	pool, found, err := m.GetPool(ctx, msg.PoolId)
 	if err != nil {
 		return nil, err
@@ -264,7 +265,7 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	}); err != nil {
 		return nil, err
 	}
-	recordNorbLiquidityDelta(negativeCoin(out0), negativeCoin(out1))
+	recordNaetLiquidityDelta(negativeCoin(out0), negativeCoin(out1))
 	return &types.MsgRemoveLiquidityResponse{TokenA: out0, TokenB: out1}, nil
 }
 
@@ -281,7 +282,7 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	if err != nil {
 		return nil, err
 	}
-	traderText := orbitaladdress.FormatAccAddress(trader)
+	traderText := aetherisaddress.FormatAccAddress(trader)
 	pool, found, err := m.GetPool(ctx, msg.PoolId)
 	if err != nil {
 		return nil, err
@@ -339,7 +340,7 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 		return nil, err
 	}
 	observability.RecordDexSwap()
-	recordNorbLiquidityDelta(msg.TokenIn, negativeCoin(out))
+	recordNaetLiquidityDelta(msg.TokenIn, negativeCoin(out))
 	return &types.MsgSwapExactAmountInResponse{TokenOut: out}, nil
 }
 
@@ -347,6 +348,9 @@ func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams)
 	defer recordDexResult("update_params", &err)
 	if msg == nil {
 		return nil, types.ErrInvalidParams.Wrap("empty request")
+	}
+	if err := aetherisaddress.ValidateAuthorityAddress("authority", msg.Authority); err != nil {
+		return nil, types.ErrUnauthorized.Wrap(err.Error())
 	}
 	if msg.Authority != m.Authority() {
 		return nil, types.ErrUnauthorized.Wrap("invalid authority")
@@ -363,12 +367,12 @@ func recordDexResult(action string, err *error) {
 	}
 }
 
-func recordNorbLiquidityDelta(coins ...sdk.Coin) {
+func recordNaetLiquidityDelta(coins ...sdk.Coin) {
 	for _, coin := range coins {
-		if coin.Denom != "norb" || !coin.Amount.IsInt64() {
+		if coin.Denom != appparams.BaseDenom || !coin.Amount.IsInt64() {
 			continue
 		}
-		observability.RecordDexLiquidityNorbDelta(coin.Amount.Int64())
+		observability.RecordDexLiquidityNaetDelta(coin.Amount.Int64())
 	}
 }
 

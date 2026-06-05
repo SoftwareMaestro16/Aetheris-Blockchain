@@ -3,10 +3,13 @@ package keeper_test
 import (
 	"testing"
 
+	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
 	l1app "github.com/sovereign-l1/l1/app"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	l1testutil "github.com/sovereign-l1/l1/tests/testutil"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
@@ -40,7 +43,7 @@ func TestUpdateParamsRequiresAuthority(t *testing.T) {
 	msgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
 
 	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
-		Authority: "orb1notgov",
+		Authority: "ae1notgov",
 		Params:    types.DefaultParams(),
 	})
 	require.ErrorIs(t, err, types.ErrUnauthorized)
@@ -49,6 +52,19 @@ func TestUpdateParamsRequiresAuthority(t *testing.T) {
 	require.NoError(t, getErr)
 	require.Equal(t, types.DefaultParams(), params)
 	requireNoEvent(t, ctx, types.EventTypeUpdateParams)
+}
+
+func TestUpdateParamsRejectsZeroAuthority(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	msgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
+
+	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: aetherisaddress.ZeroRawAddress,
+		Params:    types.DefaultParams(),
+	})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	require.Contains(t, err.Error(), "authority must not be zero address")
 }
 
 func TestUpdateParamsAcceptsGovernanceAuthority(t *testing.T) {
@@ -73,13 +89,38 @@ func TestUpdateParamsAcceptsGovernanceAuthority(t *testing.T) {
 	})
 }
 
+func TestUpdateParamsAcceptsBoundedGovernanceFeePolicyAndSyncsDistribution(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	msgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
+
+	next := types.DefaultParams()
+	next.MinFeeAmount = "42"
+	next.ValidatorRewardsRatio = "0.90"
+	next.CommunityPoolRatio = "0.10"
+
+	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: app.FeesKeeper.Authority(),
+		Params:    next,
+	})
+	require.NoError(t, err)
+
+	params, getErr := app.FeesKeeper.GetParams(ctx)
+	require.NoError(t, getErr)
+	require.Equal(t, next, params)
+
+	distrParams, getErr := app.DistrKeeper.Params.Get(ctx)
+	require.NoError(t, getErr)
+	require.Equal(t, sdkmath.LegacyMustNewDecFromStr("0.10"), distrParams.CommunityTax)
+}
+
 func TestUpdateParamsRejectsInvalidParamsWithoutMutatingState(t *testing.T) {
 	app := l1app.Setup(t, false)
 	ctx := app.NewContext(false)
 	msgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
 
 	invalid := types.DefaultParams()
-	invalid.AllowedFeeDenoms = []string{"testtoken"}
+	invalid.AllowedFeeDenoms = []string{l1testutil.TestAssetDenom}
 
 	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
 		Authority: app.FeesKeeper.Authority(),

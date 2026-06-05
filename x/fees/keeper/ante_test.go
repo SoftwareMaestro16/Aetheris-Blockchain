@@ -7,12 +7,17 @@ import (
 	sdkmath "cosmossdk.io/math"
 	protov2 "google.golang.org/protobuf/proto"
 
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sigtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 
 	l1app "github.com/sovereign-l1/l1/app"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	l1testutil "github.com/sovereign-l1/l1/tests/testutil"
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
 
@@ -46,6 +51,23 @@ func (tx feeTx) FeeGranter() []byte {
 	return nil
 }
 
+type sigFeeTx struct {
+	feeTx
+	signers [][]byte
+}
+
+func (tx sigFeeTx) GetSigners() ([][]byte, error) {
+	return tx.signers, nil
+}
+
+func (tx sigFeeTx) GetPubKeys() ([]cryptotypes.PubKey, error) {
+	return nil, nil
+}
+
+func (tx sigFeeTx) GetSignaturesV2() ([]sigtypes.SignatureV2, error) {
+	return nil, nil
+}
+
 type noFeeTx struct{}
 
 func (tx noFeeTx) GetMsgs() []sdk.Msg {
@@ -56,7 +78,19 @@ func (tx noFeeTx) GetMsgsV2() ([]protov2.Message, error) {
 	return nil, nil
 }
 
+func validRawAddress(fill byte) string {
+	return aetherisaddress.FormatAccAddress(sdk.AccAddress{
+		fill, fill, fill, fill, fill,
+		fill, fill, fill, fill, fill,
+		fill, fill, fill, fill, fill,
+		fill, fill, fill, fill, fill,
+	})
+}
+
 func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
+	validSender := validRawAddress(1)
+	fee := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))
+
 	tests := []struct {
 		name         string
 		tx           sdk.Tx
@@ -65,8 +99,41 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 	}{
 		{
 			name:         "accepts native fee denom",
-			tx:           feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))},
+			tx:           feeTx{fees: fee},
 			wantNextCall: true,
+		},
+		{
+			name:    "rejects zero fee payer",
+			tx:      feeTx{fees: fee, payer: sdk.AccAddress(make([]byte, 20))},
+			wantErr: "fee payer must not be zero address",
+		},
+		{
+			name:    "rejects zero signer",
+			tx:      sigFeeTx{feeTx: feeTx{fees: fee}, signers: [][]byte{make([]byte, 20)}},
+			wantErr: "signer 0 must not be zero address",
+		},
+		{
+			name: "rejects zero bank send recipient",
+			tx: feeTx{
+				fees: fee,
+				msgs: []sdk.Msg{&banktypes.MsgSend{
+					FromAddress: validSender,
+					ToAddress:   aetherisaddress.ZeroRawAddress,
+					Amount:      fee,
+				}},
+			},
+			wantErr: "bank send recipient must not be zero address",
+		},
+		{
+			name: "rejects zero bank multisend output",
+			tx: feeTx{
+				fees: fee,
+				msgs: []sdk.Msg{&banktypes.MsgMultiSend{
+					Inputs:  []banktypes.Input{{Address: validSender, Coins: fee}},
+					Outputs: []banktypes.Output{{Address: aetherisaddress.ZeroUserFriendly, Coins: fee}},
+				}},
+			},
+			wantErr: "output 0: bank multisend output must not be zero address",
 		},
 		{
 			name:    "rejects empty fee list",
@@ -86,12 +153,12 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 		{
 			name:    "rejects non native fee denom",
 			tx:      feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin("uatom", 1))},
-			wantErr: "fee denom uatom not accepted; use norb",
+			wantErr: "fee denom uatom not accepted; use naet",
 		},
 		{
 			name:    "rejects mixed native and non native fee denoms",
-			tx:      feeTx{fees: sdk.Coins{sdk.NewInt64Coin(types.BondDenom, 1), sdk.NewInt64Coin("testtoken", 1)}},
-			wantErr: "fee denom testtoken not accepted; use norb",
+			tx:      feeTx{fees: sdk.Coins{sdk.NewInt64Coin(types.BondDenom, 1), sdk.NewInt64Coin(l1testutil.TestAssetDenom, 1)}},
+			wantErr: "fee denom testtoken not accepted; use naet",
 		},
 		{
 			name:    "rejects malformed fee coin",
@@ -147,6 +214,30 @@ func TestAnteHandlerDecoratorPropagatesNextError(t *testing.T) {
 
 	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))}, false)
 	require.ErrorIs(t, err, nextErr)
+}
+
+func TestAnteHandlerDecoratorRejectsAddressPolicyBeforeFeesAndNext(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(1)
+
+	called := false
+	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+		called = true
+		return ctx, nil
+	}
+
+	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{
+		fees: sdk.Coins{},
+		msgs: []sdk.Msg{&banktypes.MsgSend{
+			FromAddress: validRawAddress(1),
+			ToAddress:   aetherisaddress.ZeroRawAddress,
+			Amount:      sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1)),
+		}},
+	}, false)
+
+	require.ErrorIs(t, err, types.ErrInvalidFee)
+	require.Contains(t, err.Error(), "bank send recipient must not be zero address")
+	require.False(t, called)
 }
 
 func TestAnteHandlerDecoratorRejectsZeroFee(t *testing.T) {

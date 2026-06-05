@@ -6,6 +6,8 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
 const (
@@ -42,14 +44,8 @@ func DefaultGenesisState() *GenesisState {
 }
 
 func (p Params) Validate() error {
-	if len(p.AllowedFeeDenoms) == 0 {
-		return fmt.Errorf("allowed_fee_denoms must contain %s", BondDenom)
-	}
-	if len(p.AllowedFeeDenoms) > MaxAllowedFeeDenomsV1 {
-		return fmt.Errorf("v1 only allows %d fee denom: %s", MaxAllowedFeeDenomsV1, BondDenom)
-	}
-	if p.AllowedFeeDenoms[0] != BondDenom {
-		return fmt.Errorf("v1 only accepts fee denom %s", BondDenom)
+	if err := appparams.ValidateNativeFeeDenomsV1(p.AllowedFeeDenoms, MaxAllowedFeeDenomsV1); err != nil {
+		return err
 	}
 	validatorRatio, err := validateRatio("validator_rewards_ratio", p.ValidatorRewardsRatio)
 	if err != nil {

@@ -4,11 +4,11 @@
 
 All chain constants that affect state transitions must be represented in genesis or module params. No consensus-critical value should be hardcoded in keeper logic.
 
-Initial Orbitalis chain choices:
+Initial Aetheris chain choices:
 - Address prefix: `orb`
-- Native base denom: `norb`
-- Display denom: `ORB`
-- Native token name: `Orbitalis`
+- Native base denom: `naet`
+- Display denom: `AET`
+- Native token name: `Aetheris`
 - Native token decimals: `9`
 - Governance authority: the `x/gov` module account or SDK authority configured at genesis.
 
@@ -21,7 +21,7 @@ Validation:
 - Denom IDs must be canonical factory denoms and collision-free.
 - Admin addresses must decode with the chain address codec.
 - Denoms must use the `factory/<admin>/<subdenom>` prefix.
-- Subdenoms must not directly spoof native names: `norb`, `ORB`, or `Orbitalis`.
+- Subdenoms must not directly spoof native names: `naet`, `AET`, or `Aetheris`.
 - Prototype default genesis starts with no factory denoms.
 
 ## `x/dex`
@@ -43,15 +43,15 @@ Genesis state:
 - `params`
 
 Validation:
-- The only prototype fee denom is `norb`.
+- The only prototype fee denom is `naet`.
 - V1 fee policy requires exactly one allowed denom; empty, duplicate, or multi-denom lists are invalid.
 - Validator rewards ratio and community pool ratio must be valid decimals between `0` and `1`.
 - Fee split ratios must sum exactly to `1`.
-- Prototype default params are `allowed_fee_denoms = ["norb"]`, `validator_rewards_ratio = "0.98"`, and `community_pool_ratio = "0.02"`.
+- Prototype default params are `allowed_fee_denoms = ["naet"]`, `validator_rewards_ratio = "0.98"`, and `community_pool_ratio = "0.02"`.
 
 ## Local Bootstrap Profile
 
-The tracked local profile is `orbitalis-local-1`. Its operator-facing genesis, account, validator, endpoint, and audit contract is defined in [Orbitalis Local Bootstrap Profile](bootstrap-profile.md).
+The tracked local profile is `aetheris-local-1`. Its operator-facing genesis, account, validator, endpoint, and audit contract is defined in [Aetheris Local Bootstrap Profile](bootstrap-profile.md).
 
 ## Upgrade Policy
 

@@ -1,21 +1,21 @@
-# Orbitalis Local Bootstrap Profile
+# Aetheris Local Bootstrap Profile
 
-This document defines the reproducible local bootstrap contract for the prototype profile `orbitalis-local-1`.
+This document defines the reproducible local bootstrap contract for the prototype profile `aetheris-local-1`.
 
 The profile is structurally reproducible: the same commands create the same chain-id, validator count, account layout, balances, staking denom, custom module genesis, and endpoint layout. Validator keys, account addresses, gentx signatures, and `genesis_time` are generated per run and are not expected to be byte-identical across fresh initializations. Within one initialization run, every node must receive the same `genesis.json` hash.
 
 ## Profile
 
-- Chain ID: `orbitalis-local-1`
-- Base denom: `norb`
-- Display denom: `ORB`
-- Address prefixes: account `orb`, validator `orbvaloper`, consensus `orbvalcons`
+- Chain ID: `aetheris-local-1`
+- Base denom: `naet`
+- Display denom: `AET`
+- Address prefixes: account `ae`, validator `aevaloper`, consensus `aevalcons`
 - Default validator count: `3`
 - Supported scale smoke profiles: `1`, `3`, and `5` validators
-- Node directories: `.localnet\node<N>\orbitalisd`
+- Node directories: `.localnet\node<N>\aetherisd`
 - Test accounts: one generated key per validator, named `node0`, `node1`, ...
 - Keyring backend: `test`
-- Minimum gas prices: `0norb`
+- Minimum gas prices: `0naet`
 - Timeout commit: `1s`
 - Default log level: `info`
 - RPC, REST, and gRPC are enabled by default.
@@ -23,13 +23,13 @@ The profile is structurally reproducible: the same commands create the same chai
 Each generated validator account starts with:
 
 - `1000000000testtoken`
-- `500000000norb`
+- `500000000naet`
 
-`testtoken` is a local bootstrap test asset for module and DEX experiments only. It is not the native token, staking denom, fee denom, or display unit for `ORB`.
+`testtoken` is a local bootstrap test asset for module and DEX experiments only. It is not the native token, staking denom, fee denom, or display unit for `AET`.
 
 Each validator gentx self-delegates:
 
-- `100000000norb`
+- `100000000naet`
 
 The default endpoint layout is formula-based and can be shifted with `-BaseP2PPort`, `-BaseRPCPort`, `-BaseRESTPort`, `-BaseGRPCPort`, and `-PortStride`:
 
@@ -48,14 +48,14 @@ Examples:
 
 SDK module expectations:
 
-- `x/bank` includes native token metadata for base `norb`, display `ORB`, exponent `9`.
-- `x/staking` uses bond denom `norb`.
-- `x/mint` uses mint denom `norb`.
+- `x/bank` includes native token metadata for base `naet`, display `AET`, exponent `9`.
+- `x/staking` uses bond denom `naet`.
+- `x/mint` uses mint denom `naet`.
 - `x/genutil` contains one `MsgCreateValidator` gentx per validator.
 
 Custom module expectations:
 
-- `x/fees`: allowed fee denoms `["norb"]`, validator rewards ratio `0.98`, community pool ratio `0.02`.
+- `x/fees`: allowed fee denoms `["naet"]`, validator rewards ratio `0.98`, community pool ratio `0.02`.
 - `x/tokenfactory`: starts with no factory denoms.
 - `x/dex`: starts with `next_pool_id = 1` and no pools.
 
@@ -88,7 +88,7 @@ Initialize a 5-validator profile without copying scripts:
 Custom local profiles can override chain ID, timeout, log level, endpoint base ports, and endpoint toggles:
 
 ```powershell
-.\scripts\localnet\init.ps1 -ChainId orbitalis-local-1 -TimeoutCommit 1s -LogLevel info -BaseRPCPort 27657 -ValidatorCount 3
+.\scripts\localnet\init.ps1 -ChainId aetheris-local-1 -TimeoutCommit 1s -LogLevel info -BaseRPCPort 27657 -ValidatorCount 3
 .\scripts\localnet\start.ps1 -BaseRPCPort 27657 -ValidatorCount 3 -Wait
 ```
 
@@ -112,7 +112,7 @@ If validation fails on an existing localnet after module genesis changes, reset 
 Equivalent single-node manual validation:
 
 ```powershell
-build\orbitalisd.exe genesis validate-genesis .localnet\node0\orbitalisd\config\genesis.json --home .localnet\node0\orbitalisd
+build\aetherisd.exe genesis validate-genesis .localnet\node0\aetherisd\config\genesis.json --home .localnet\node0\aetherisd
 ```
 
 Start, stop, and reset:
@@ -157,7 +157,7 @@ Run the native token lifecycle smoke documented in [native-token-lifecycle.md](n
 .\tests\e2e\native_token_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
-The native token smoke validates bank metadata, `norb` supply and balances, staking/fees/mint denom consistency, and a `bank send` transaction that pays fees in `norb`.
+The native token smoke validates bank metadata, `naet` supply and balances, staking/fees/mint denom consistency, and a `bank send` transaction that pays fees in `naet`.
 
 Run the tokenfactory lifecycle smoke documented in [tokenfactory-lifecycle.md](tokenfactory-lifecycle.md):
 
@@ -175,7 +175,7 @@ Run the fees ante policy smoke documented in [fees-ante-policy.md](fees-ante-pol
 .\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```
 
-The fees ante smoke validates fee params, successful `norb` fees across bank/tokenfactory/DEX txs, wrong fee rejection, mixed-denom fee rejection, and explicit zero/empty fee behavior.
+The fees ante smoke validates fee params, successful `naet` fees across bank/tokenfactory/DEX txs, wrong fee rejection, mixed-denom fee rejection, and explicit zero/empty fee behavior.
 
 Run the DEX prototype smoke documented in [dex-e2e-flow.md](dex-e2e-flow.md):
 
@@ -194,7 +194,7 @@ Export state after the network has started:
 .\scripts\localnet\export-genesis.ps1 -OutputDir .localnet-5 -NodeIndex 0
 ```
 
-`export-genesis.ps1` writes under ignored `.work\genesis`, validates the exported genesis with `orbitalisd genesis validate-genesis`, checks the expected chain ID, and refuses to export while the localnet process for that output directory is still running.
+`export-genesis.ps1` writes under ignored `.work\genesis`, validates the exported genesis with `aetherisd genesis validate-genesis`, checks the expected chain ID, and refuses to export while the localnet process for that output directory is still running.
 
 ## Audit Notes
 
@@ -203,7 +203,7 @@ Export state after the network has started:
 - Localnet scripts must not print mnemonics by default. `testnet init-files` writes generated key seed files only under ignored node homes.
 - `reset.ps1` and `init.ps1` verify the resolved output path is inside the repository and refuse to recursively delete the repository root or paths outside it.
 - Initial stake is symmetric across validators in this prototype profile. Any non-symmetric validator distribution must be documented before use.
-- Consensus-critical checks for this profile: deterministic app-state writes during init/export, valid `norb` bank supply and staking denom, positive validator self-delegations, authorized tokenfactory mint/burn only, DEX reserves absent at genesis, and no panics on malformed custom module genesis.
+- Consensus-critical checks for this profile: deterministic app-state writes during init/export, valid `naet` bank supply and staking denom, positive validator self-delegations, authorized tokenfactory mint/burn only, DEX reserves absent at genesis, and no panics on malformed custom module genesis.
 
 ## Required Checks
 
@@ -211,7 +211,7 @@ Export state after the network has started:
 go test ./...
 go vet ./...
 buf lint
-go build -o build/orbitalisd.exe ./cmd/l1d
+go build -o build/aetherisd.exe ./cmd/l1d
 .\scripts\localnet\validate-genesis.ps1
 .\scripts\localnet\export-genesis.ps1
 .\tests\e2e\prototype_acceptance.ps1

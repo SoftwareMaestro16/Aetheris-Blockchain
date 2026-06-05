@@ -2,14 +2,20 @@ package keeper
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/observability"
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
 
 func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 	return func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		if err := validateNoZeroTxAddresses(tx); err != nil {
+			return ctx, err
+		}
 		if isGenesisCreateValidatorTx(ctx, tx) {
 			return next(ctx, tx, simulate)
 		}
@@ -36,6 +42,55 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 		observability.RecordFeeAccepted()
 		return newCtx, nil
 	}
+}
+
+func validateNoZeroTxAddresses(tx sdk.Tx) error {
+	for _, msg := range tx.GetMsgs() {
+		if err := validateNoZeroMsgAddresses(msg); err != nil {
+			return err
+		}
+	}
+	if feeTx, ok := tx.(sdk.FeeTx); ok {
+		if payer := sdk.AccAddress(feeTx.FeePayer()); aetherisaddress.IsZeroAccAddress(payer) {
+			return types.ErrInvalidFee.Wrap("fee payer must not be zero address")
+		}
+	}
+	if sigTx, ok := tx.(authsigning.SigVerifiableTx); ok {
+		signers, err := sigTx.GetSigners()
+		if err != nil {
+			return err
+		}
+		for i, signer := range signers {
+			if aetherisaddress.IsZero(signer) {
+				return types.ErrInvalidFee.Wrapf("signer %d must not be zero address", i)
+			}
+		}
+	}
+	return nil
+}
+
+func validateNoZeroMsgAddresses(msg sdk.Msg) error {
+	switch msg := msg.(type) {
+	case *banktypes.MsgSend:
+		if err := aetherisaddress.ValidateUserAddress("bank send sender", msg.FromAddress); err != nil {
+			return types.ErrInvalidFee.Wrap(err.Error())
+		}
+		if err := aetherisaddress.ValidateUserAddress("bank send recipient", msg.ToAddress); err != nil {
+			return types.ErrInvalidFee.Wrap(err.Error())
+		}
+	case *banktypes.MsgMultiSend:
+		for i, input := range msg.Inputs {
+			if err := aetherisaddress.ValidateUserAddress("bank multisend input", input.Address); err != nil {
+				return types.ErrInvalidFee.Wrapf("input %d: %s", i, err.Error())
+			}
+		}
+		for i, output := range msg.Outputs {
+			if err := aetherisaddress.ValidateUserAddress("bank multisend output", output.Address); err != nil {
+				return types.ErrInvalidFee.Wrapf("output %d: %s", i, err.Error())
+			}
+		}
+	}
+	return nil
 }
 
 func isGenesisCreateValidatorTx(ctx sdk.Context, tx sdk.Tx) bool {

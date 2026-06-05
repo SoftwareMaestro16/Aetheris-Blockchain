@@ -1,14 +1,14 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$RPCPort = 26657,
   [string]$FromHome = "",
   [string]$FromKey = "node0",
   [string[]]$Recipients = @(),
   [string[]]$Transfers = @(),
-  [string]$Amount = "1000000norb",
-  [string]$Fees = "1000000norb",
+  [string]$Amount = "1000000naet",
+  [string]$Fees = "1000000naet",
   [int]$TimeoutSeconds = 60,
   [switch]$Json
 )
@@ -56,7 +56,7 @@ function Get-CoinParts {
   param([string]$Coin)
 
   if ($Coin -notmatch '^([1-9][0-9]*)([A-Za-z][A-Za-z0-9/:._-]*)$') {
-    throw "amount must be a positive SDK coin such as 1000000norb: $Coin"
+    throw "amount must be a positive SDK coin such as 1000000naet: $Coin"
   }
   return @{
     Amount = [decimal]$Matches[1]
@@ -65,10 +65,10 @@ function Get-CoinParts {
 }
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
-$FromHome = Resolve-LocalnetPath -Path $FromHome -DefaultRelativePath "node0\orbitalisd"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
+$FromHome = Resolve-LocalnetPath -Path $FromHome -DefaultRelativePath "node0\aetherisd"
 if ([string]::IsNullOrWhiteSpace($FromHome) -or -not (Test-Path -LiteralPath $FromHome)) {
-  $FromHome = Join-Path $OutputDir "node0\orbitalisd"
+  $FromHome = Join-Path $OutputDir "node0\aetherisd"
 }
 
 Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "local funding output directory"

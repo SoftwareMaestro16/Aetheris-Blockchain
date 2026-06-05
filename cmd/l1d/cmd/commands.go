@@ -75,7 +75,7 @@ func initAppConfig() (string, interface{}) {
 	// - if you set srvCfg.MinGasPrices non-empty, validators CAN tweak their
 	//   own app.toml to override, or use this default value.
 	//
-	// In Orbitalis, we set the min gas prices to 0.
+	// In Aetheris, we set the min gas prices to 0.
 	srvCfg.MinGasPrices = fmt.Sprintf("0%s", appparams.BaseDenom)
 	// srvCfg.BaseConfig.IAVLDisableFastNode = true // disable fastnode by default
 
@@ -133,7 +133,7 @@ func initRootCmd(
 	)
 }
 
-// genesisCommand builds genesis-related `orbitalisd genesis` command. Users may provide application specific commands as a parameter
+// genesisCommand builds genesis-related `aetherisd genesis` command. Users may provide application specific commands as a parameter
 func genesisCommand(txConfig client.TxConfig, basicManager module.BasicManager, cmds ...*cobra.Command) *cobra.Command {
 	cmd := genutilcli.Commands(txConfig, basicManager, l1app.DefaultNodeHome)
 

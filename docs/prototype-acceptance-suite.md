@@ -1,6 +1,6 @@
 # Prototype Acceptance Suite
 
-This document defines the one-command acceptance check for the Orbitalis L1 prototype.
+This document defines the one-command acceptance check for the Aetheris L1 prototype.
 
 The suite proves that a local prototype can be built from the repository, initialized from zero, started with multiple validators, produce blocks, accept signed transactions, update state, expose CLI/gRPC/REST queries, and stop cleanly.
 
@@ -28,7 +28,7 @@ Full/manual profile:
 Use an already-built binary:
 
 ```powershell
-.\tests\e2e\prototype_acceptance.ps1 -SkipBuild -Binary build\orbitalisd.exe
+.\tests\e2e\prototype_acceptance.ps1 -SkipBuild -Binary build\aetherisd.exe
 ```
 
 Shift ports or choose a specific node endpoint:
@@ -44,7 +44,7 @@ Shift ports or choose a specific node endpoint:
 - `-MinHeight`: first required block height before tx flows start.
 - `-TimeoutSeconds`: shared wait timeout for startup, tx inclusion, and health checks.
 - `-OutputDir`: ignored localnet directory, default `.localnet`.
-- `-Binary`: binary path, default `build\orbitalisd.exe`.
+- `-Binary`: binary path, default `build\aetherisd.exe`.
 - `-SkipBuild`: reuse an existing binary instead of running `go build`.
 - `-Node`: CLI RPC endpoint; defaults to node0 from the port profile.
 - `-KeepLogsOnFailure`: preserve the localnet output directory after a failure. A diagnostic bundle is collected either way.
@@ -53,17 +53,17 @@ Shift ports or choose a specific node endpoint:
 
 `Smoke` runs these steps on one fresh localnet:
 
-1. Build `orbitalisd` unless `-SkipBuild` is set.
+1. Build `aetherisd` unless `-SkipBuild` is set.
 2. Stop any previous matching localnet processes.
 3. Reset/init localnet through `scripts\localnet\init.ps1`.
 4. Validate genesis through `scripts\localnet\validate-genesis.ps1`.
 5. Start validators and wait for height, RPC, peers, REST, and gRPC health.
 6. Query RPC status, block, native token metadata, fees params, and REST node info.
-7. Send `norb` by bank tx and verify balance change.
+7. Send `naet` by bank tx and verify balance change.
 8. Reject a tx with `testtoken` fee.
 9. Create a tokenfactory denom, mint it, and query it through gRPC/REST.
 10. Create a DEX pool, swap exact input, and verify output balance plus pool query.
-11. Query staking/slashing state, delegate `norb`, and verify delegation and voting power update.
+11. Query staking/slashing state, delegate `naet`, and verify delegation and voting power update.
 12. Stop localnet.
 
 ## Full Profile
@@ -92,7 +92,7 @@ If `-KeepLogsOnFailure` is not set, the suite resets the localnet output directo
 - The suite uses local `--keyring-backend test` only under ignored localnet homes.
 - It does not print mnemonics, private keys, validator keys, node keys, or raw environment secrets.
 - Destructive operations go through localnet scripts that validate resolved paths stay inside the repository and are not the repository root.
-- The Cosmos consensus-risk checks covered here are integration smoke checks: deterministic startup/export assumptions, valid `norb` fee/staking denom, authorized tokenfactory mint path, DEX reserve movement, and no panic on normal query/tx flows. Deeper ABCI/non-determinism review remains part of the module security baseline.
+- The Cosmos consensus-risk checks covered here are integration smoke checks: deterministic startup/export assumptions, valid `naet` fee/staking denom, authorized tokenfactory mint path, DEX reserve movement, and no panic on normal query/tx flows. Deeper ABCI/non-determinism review remains part of the module security baseline.
 
 ## CI Contract
 

@@ -1,0 +1,495 @@
+package async
+
+import (
+	"bytes"
+	"reflect"
+	"testing"
+
+	sdkmath "cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
+
+	appparams "github.com/sovereign-l1/l1/app/params"
+)
+
+func TestContractEmitsInternalMessageAndRecipientExecutesInOrder(t *testing.T) {
+	executor := newTestExecutor(t)
+	deployer := testAddr(1)
+	contractA := deployTestContract(t, executor, deployer, []byte("a"))
+	contractB := deployTestContract(t, executor, deployer, []byte("b"))
+
+	require.NoError(t, executor.RegisterHandler(contractA, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		return ExecutionResult{
+			NewState: []byte("a:sent"),
+			Outgoing: []MessageEnvelope{{
+				Destination: contractB,
+				Value:       naetCoin(7),
+				Opcode:      20,
+				QueryID:     msg.QueryID,
+				Body:        []byte("from-a"),
+				Bounce:      true,
+				GasLimit:    100_000,
+				ForwardFee:  forwardFee(),
+			}},
+			ResultCode: ResultOK,
+		}
+	}))
+	require.NoError(t, executor.RegisterHandler(contractB, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		return ExecutionResult{
+			NewState:   append([]byte("b:"), msg.Body...),
+			ResultCode: ResultOK,
+		}
+	}))
+
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{{
+		Source:             testAddr(9),
+		Destination:        contractA,
+		Value:              naetCoin(1),
+		Opcode:             10,
+		QueryID:            99,
+		Body:               []byte("start"),
+		Bounce:             true,
+		CreatedLogicalTime: 1,
+		GasLimit:           100_000,
+		ForwardFee:         forwardFee(),
+	}}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 2)
+	require.Equal(t, uint64(0), receipts[0].Sequence)
+	require.Equal(t, uint64(1), receipts[1].Sequence)
+	require.Equal(t, ResultOK, receipts[0].ResultCode)
+	require.Equal(t, ResultOK, receipts[1].ResultCode)
+
+	a, ok := executor.Contract(contractA)
+	require.True(t, ok)
+	require.Equal(t, []byte("a:sent"), a.State)
+	require.Equal(t, uint64(1), a.LogicalTime)
+	b, ok := executor.Contract(contractB)
+	require.True(t, ok)
+	require.Equal(t, []byte("b:from-a"), b.State)
+	require.Equal(t, uint64(1), b.LogicalTime)
+	require.Equal(t, uint64(2), executor.Metrics().ProcessedMessages)
+	queue := executor.Receipts()
+	require.Equal(t, uint64(0), queue[0].Sequence)
+	require.Equal(t, uint64(1), queue[1].Sequence)
+}
+
+func TestFailedSendProducesDeterministicBounceWithoutDestinationMutation(t *testing.T) {
+	executor := newTestExecutor(t)
+	deployer := testAddr(1)
+	source := deployTestContract(t, executor, deployer, []byte("source"))
+	missingDest, err := DeriveContractAddress(deployer, testCodeHash(9), []byte("missing"))
+	require.NoError(t, err)
+
+	require.NoError(t, executor.RegisterHandler(source, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		if msg.Bounced {
+			return ExecutionResult{
+				NewState:   []byte("source:bounced"),
+				ResultCode: ResultOK,
+			}
+		}
+		return ExecutionResult{
+			NewState:   []byte("source:original"),
+			ResultCode: ResultOK,
+		}
+	}))
+
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{{
+		Source:             source,
+		Destination:        missingDest,
+		Value:              naetCoin(5),
+		Opcode:             30,
+		QueryID:            123,
+		Body:               []byte("will-bounce"),
+		Bounce:             true,
+		CreatedLogicalTime: 1,
+		GasLimit:           100_000,
+		ForwardFee:         forwardFee(),
+	}}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 2)
+	require.Equal(t, ResultNoDestination, receipts[0].ResultCode)
+	require.True(t, executor.Metrics().BouncedMessages > 0)
+	require.Equal(t, BounceOpcode, receipts[1].Opcode)
+	require.True(t, receipts[1].Source.Equals(missingDest))
+	require.True(t, receipts[1].Destination.Equals(source))
+
+	contract, ok := executor.Contract(source)
+	require.True(t, ok)
+	require.Equal(t, []byte("source:bounced"), contract.State)
+	_, exists := executor.Contract(missingDest)
+	require.False(t, exists)
+}
+
+func TestQueueLimitsPreventDoS(t *testing.T) {
+	params := DefaultParams()
+	params.MaxMessagesPerTx = 2
+	params.MaxMessagesPerBlock = 1
+	params.MaxBodySize = 8
+	executor, err := NewExecutor(params)
+	require.NoError(t, err)
+	contract := deployTestContract(t, executor, testAddr(1), []byte("limited"))
+	require.NoError(t, executor.RegisterHandler(contract, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		return ExecutionResult{NewState: contract.State, ResultCode: ResultOK}
+	}))
+
+	tooMany := []MessageEnvelope{
+		testMessage(testAddr(9), contract, 1),
+		testMessage(testAddr(9), contract, 2),
+		testMessage(testAddr(9), contract, 3),
+	}
+	require.ErrorContains(t, executor.EnqueueTxMessages(tooMany), "messages per tx")
+
+	large := testMessage(testAddr(9), contract, 1)
+	large.Body = []byte("too-large")
+	require.ErrorContains(t, executor.EnqueueTxMessages([]MessageEnvelope{large}), "message body size")
+
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{
+		testMessage(testAddr(9), contract, 1),
+		testMessage(testAddr(9), contract, 2),
+	}))
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Len(t, executor.Queue(), 1)
+	require.Equal(t, uint64(1), executor.Metrics().QueueLag)
+}
+
+func TestFailureRollsBackRecipientStateAndRefundsWhenBounceDisabled(t *testing.T) {
+	executor := newTestExecutor(t)
+	deployer := testAddr(1)
+	source := deployTestContract(t, executor, deployer, []byte("source"))
+	dest := deployTestContract(t, executor, deployer, []byte("dest"))
+
+	require.NoError(t, executor.RegisterHandler(source, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		if msg.Opcode == RefundOpcode {
+			return ExecutionResult{NewState: []byte("source:refund"), ResultCode: ResultOK}
+		}
+		return ExecutionResult{NewState: contract.State, ResultCode: ResultOK}
+	}))
+	require.NoError(t, executor.RegisterHandler(dest, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		return ExecutionResult{
+			NewState:   []byte("dest:mutated-but-rolled-back"),
+			ResultCode: ResultExecutionFailed,
+			Error:      "handler failure",
+		}
+	}))
+
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{{
+		Source:      source,
+		Destination: dest,
+		Value:       naetCoin(3),
+		Opcode:      40,
+		QueryID:     1,
+		Body:        []byte("fail"),
+		Bounce:      false,
+		GasLimit:    100_000,
+		ForwardFee:  forwardFee(),
+	}}))
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 2)
+	require.Equal(t, ResultExecutionFailed, receipts[0].ResultCode)
+	require.Equal(t, RefundOpcode, receipts[1].Opcode)
+
+	destContract, ok := executor.Contract(dest)
+	require.True(t, ok)
+	require.Equal(t, []byte("init:dest"), destContract.State)
+	sourceContract, ok := executor.Contract(source)
+	require.True(t, ok)
+	require.Equal(t, []byte("source:refund"), sourceContract.State)
+	require.Equal(t, uint64(1), executor.Metrics().RefundMessages)
+	require.Equal(t, uint64(1), executor.Metrics().FailedExecutions)
+}
+
+func TestExportImportPreservesQueueStateExactly(t *testing.T) {
+	executor := newTestExecutor(t)
+	contract := deployTestContract(t, executor, testAddr(1), []byte("export"))
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{
+		testMessage(testAddr(9), contract, 1),
+		testMessage(testAddr(9), contract, 2),
+	}))
+
+	exported := executor.ExportState()
+	imported, err := ImportState(exported)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(exported, imported.ExportState()))
+	require.Equal(t, exported.Queue, imported.Queue())
+	require.Equal(t, exported.NextTxIndex, imported.ExportState().NextTxIndex)
+	require.Equal(t, uint64(0), exported.Queue[0].TxIndex)
+	require.Equal(t, uint32(0), exported.Queue[0].MessageIndex)
+	require.Equal(t, uint32(1), exported.Queue[1].MessageIndex)
+	require.Equal(t, exported.Queue[0].Envelope.CreatedLogicalTime, exported.Queue[0].SourceLogicalTime)
+	require.Equal(t, string(exported.Queue[0].Envelope.Destination), exported.Queue[0].DestinationKey)
+}
+
+func TestImportStateRejectsDuplicateAndMalformedContractQueueState(t *testing.T) {
+	executor := newTestExecutor(t)
+	contract := deployTestContract(t, executor, testAddr(1), []byte("export"))
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{
+		testMessage(testAddr(9), contract, 1),
+		testMessage(testAddr(9), contract, 2),
+	}))
+	exported := executor.ExportState()
+
+	t.Run("duplicate contract address", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Contracts = append(cloneContracts(exported.Contracts), exported.Contracts[0])
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "duplicate contract address")
+	})
+
+	t.Run("malformed contract state", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Contracts = cloneContracts(exported.Contracts)
+		corrupted.Contracts[0].State = bytes.Repeat([]byte{1}, int(DefaultParams().MaxStateSize)+1)
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "contract state size")
+	})
+
+	t.Run("duplicate queued sequence", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Queue = append(cloneQueuedMessagesForTest(exported.Queue), exported.Queue[0])
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "duplicate queued message sequence")
+	})
+
+	t.Run("queue sequence drift", func(t *testing.T) {
+		corrupted := exported
+		corrupted.NextSequence = exported.Queue[0].Sequence
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "must be less than next_sequence")
+	})
+
+	t.Run("malformed queued message", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
+		corrupted.Queue[0].Envelope.Source = sdk.AccAddress(make([]byte, 20))
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "must not be zero")
+	})
+
+	t.Run("queue ordering drift", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
+		corrupted.Queue[0].MessageIndex = 99
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "sorted")
+	})
+
+	t.Run("queue logical time drift", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
+		corrupted.Queue[0].SourceLogicalTime++
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "source logical time drift")
+	})
+
+	t.Run("queue destination key drift", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
+		corrupted.Queue[0].DestinationKey = "wrong"
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "destination key drift")
+	})
+
+	t.Run("tx index drift", func(t *testing.T) {
+		corrupted := exported
+		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
+		corrupted.Queue[0].TxIndex = exported.NextTxIndex
+		_, err := ImportState(corrupted)
+		require.ErrorContains(t, err, "next_tx_index")
+	})
+}
+
+func TestMessageEnvelopeRequiresGasLimitAndNaetForwardFee(t *testing.T) {
+	params := DefaultParams()
+	msg := testMessage(testAddr(1), testAddr(2), 1)
+	msg.GasLimit = 0
+	require.ErrorContains(t, msg.Validate(params), "gas limit")
+
+	msg = testMessage(testAddr(1), testAddr(2), 1)
+	msg.ForwardFee = sdk.NewInt64Coin("uatom", 1)
+	require.ErrorContains(t, msg.Validate(params), "forward fee denom")
+}
+
+func TestRefundMessageFailureDoesNotCreateDoubleRefundCycle(t *testing.T) {
+	executor := newTestExecutor(t)
+	missingSource := testAddr(8)
+	missingDestination := testAddr(9)
+	msg := testMessage(missingSource, missingDestination, 1)
+	msg.Bounce = false
+	msg.Opcode = RefundOpcode
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, ResultNoDestination, receipts[0].ResultCode)
+	require.Empty(t, executor.Queue())
+	require.Zero(t, executor.Metrics().RefundMessages)
+}
+
+func TestExecutionLimitsRejectGasEmittedMessagesAndStorageWrites(t *testing.T) {
+	params := DefaultParams()
+	params.MaxEmittedMessagesPerExec = 1
+	params.MaxStorageWritesPerExec = 1
+
+	t.Run("gas limit", func(t *testing.T) {
+		executor, err := NewExecutor(params)
+		require.NoError(t, err)
+		contract := deployTestContract(t, executor, testAddr(1), []byte("gas"))
+		require.NoError(t, executor.RegisterHandler(contract, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+			return ExecutionResult{NewState: contract.State, GasUsed: msg.GasLimit + 1, ResultCode: ResultOK}
+		}))
+		msg := testMessage(testAddr(9), contract, 1)
+		msg.GasLimit = 10
+		msg.Bounce = false
+		msg.Value = naetCoin(0)
+		require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+		receipts, err := executor.ProcessBlock(1)
+		require.NoError(t, err)
+		require.Len(t, receipts, 1)
+		require.Equal(t, ResultLimitExceeded, receipts[0].ResultCode)
+		require.Contains(t, receipts[0].Error, "gas limit")
+	})
+
+	t.Run("emitted messages", func(t *testing.T) {
+		executor, err := NewExecutor(params)
+		require.NoError(t, err)
+		source := deployTestContract(t, executor, testAddr(1), []byte("emit"))
+		dest := deployTestContract(t, executor, testAddr(1), []byte("dest"))
+		require.NoError(t, executor.RegisterHandler(source, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+			return ExecutionResult{
+				NewState:   contract.State,
+				ResultCode: ResultOK,
+				Outgoing: []MessageEnvelope{
+					testMessage(contract.Address, dest, 10),
+					testMessage(contract.Address, dest, 11),
+				},
+			}
+		}))
+		msg := testMessage(testAddr(9), source, 1)
+		msg.Bounce = false
+		msg.Value = naetCoin(0)
+		require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+		receipts, err := executor.ProcessBlock(1)
+		require.NoError(t, err)
+		require.Len(t, receipts, 1)
+		require.Equal(t, ResultLimitExceeded, receipts[0].ResultCode)
+		require.Contains(t, receipts[0].Error, "emitted message limit")
+	})
+
+	t.Run("storage writes", func(t *testing.T) {
+		executor, err := NewExecutor(params)
+		require.NoError(t, err)
+		contract := deployTestContract(t, executor, testAddr(1), []byte("stor"))
+		require.NoError(t, executor.RegisterHandler(contract, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+			return ExecutionResult{NewState: contract.State, StorageWrites: 2, ResultCode: ResultOK}
+		}))
+		msg := testMessage(testAddr(9), contract, 1)
+		msg.Bounce = false
+		msg.Value = naetCoin(0)
+		require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+		receipts, err := executor.ProcessBlock(1)
+		require.NoError(t, err)
+		require.Len(t, receipts, 1)
+		require.Equal(t, ResultLimitExceeded, receipts[0].ResultCode)
+		require.Contains(t, receipts[0].Error, "storage write limit")
+	})
+}
+
+func TestQueueOrderingUsesTxMessageLogicalDestinationAndSequence(t *testing.T) {
+	executor := newTestExecutor(t)
+	deployer := testAddr(1)
+	destA := deployTestContract(t, executor, deployer, []byte("a"))
+	destB := deployTestContract(t, executor, deployer, []byte("b"))
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{
+		testMessage(testAddr(9), destB, 2),
+		testMessage(testAddr(9), destA, 1),
+	}))
+	queue := executor.Queue()
+	require.Len(t, queue, 2)
+	require.Equal(t, uint64(0), queue[0].TxIndex)
+	require.Equal(t, uint32(0), queue[0].MessageIndex)
+	require.Equal(t, uint64(0), queue[1].TxIndex)
+	require.Equal(t, uint32(1), queue[1].MessageIndex)
+	require.Equal(t, uint64(0), queue[0].Sequence)
+	require.Equal(t, uint64(1), queue[1].Sequence)
+}
+
+func TestContractAddressDerivationIsStableAndRejectsMalformedInput(t *testing.T) {
+	deployer := testAddr(1)
+	codeHash := testCodeHash(1)
+	a, err := DeriveContractAddress(deployer, codeHash, []byte("salt"))
+	require.NoError(t, err)
+	b, err := DeriveContractAddress(deployer, codeHash, []byte("salt"))
+	require.NoError(t, err)
+	require.Equal(t, a, b)
+
+	_, err = DeriveContractAddress(sdk.AccAddress(make([]byte, 20)), codeHash, []byte("salt"))
+	require.ErrorContains(t, err, "must not be zero")
+	_, err = DeriveContractAddress(deployer, []byte{1}, []byte("salt"))
+	require.ErrorContains(t, err, "contract code hash")
+}
+
+func newTestExecutor(t *testing.T) *Executor {
+	t.Helper()
+	executor, err := NewExecutor(DefaultParams())
+	require.NoError(t, err)
+	return executor
+}
+
+func deployTestContract(t *testing.T, executor *Executor, deployer sdk.AccAddress, salt []byte) sdk.AccAddress {
+	t.Helper()
+	address, err := executor.DeployContract(deployer, testCodeHash(salt[0]), salt, append([]byte("init:"), salt...), sdkmath.NewInt(10_000))
+	require.NoError(t, err)
+	return address
+}
+
+func testMessage(source, dest sdk.AccAddress, queryID uint64) MessageEnvelope {
+	return MessageEnvelope{
+		Source:             source,
+		Destination:        dest,
+		Value:              naetCoin(1),
+		Opcode:             1,
+		QueryID:            queryID,
+		Body:               []byte("body"),
+		Bounce:             true,
+		CreatedLogicalTime: queryID,
+		GasLimit:           100_000,
+		ForwardFee:         forwardFee(),
+	}
+}
+
+func forwardFee() sdk.Coin {
+	return sdk.NewCoin(appparams.BaseDenom, DefaultParams().ForwardingFee)
+}
+
+func naetCoin(amount int64) sdk.Coin {
+	return sdk.NewCoin(appparams.BaseDenom, sdkmath.NewInt(amount))
+}
+
+func testAddr(fill byte) sdk.AccAddress {
+	return sdk.AccAddress(bytes.Repeat([]byte{fill}, 20))
+}
+
+func testCodeHash(fill byte) []byte {
+	return bytes.Repeat([]byte{fill}, CodeHashLength)
+}
+
+func cloneContracts(contracts []ContractAccount) []ContractAccount {
+	out := make([]ContractAccount, len(contracts))
+	copy(out, contracts)
+	return out
+}
+
+func cloneQueuedMessagesForTest(messages []QueuedMessage) []QueuedMessage {
+	out := make([]QueuedMessage, len(messages))
+	copy(out, messages)
+	return out
+}

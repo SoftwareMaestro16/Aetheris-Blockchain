@@ -7,7 +7,17 @@
 - Keeper `ExportGenesis` methods return errors and validate the exported state before returning it.
 - AppModule `InitGenesis` and `ExportGenesis` may panic only because the Cosmos SDK module interface has no error return; these are startup/operator-export invariants, not transaction execution paths.
 - Custom module migrations must be registered for every `ConsensusVersion` bump. No-op migrations are allowed only when they still validate current exportable state.
-- App-level genesis policy runs before module `InitGenesis` and rejects Orbitalis-specific invariants that the SDK cannot infer, including zero auth accounts, invalid bank balances, staking denom drift away from `norb`, and fee denom drift away from `norb`.
+- App-level genesis policy runs before module `InitGenesis` and rejects
+  Aetheris-specific invariants that the SDK cannot infer, including duplicate
+  auth accounts, zero auth accounts, invalid bank balances, duplicate balances,
+  staking denom drift away from `naet`, mint denom drift away from `naet`, and
+  fee denom drift away from `naet`.
+- Contract-standard executable specs validate token masters, token wallets, NFT
+  collections/items, SBT items, and wallet contracts before VM wiring.
+- Contract-standard executable specs validate NFT collections/items.
+- Async VM exported state validates contract accounts, duplicate contract
+  addresses, message envelopes, queued message sequences, inbox/outbox views,
+  and queue `next_sequence` before import.
 
 ## Acceptance Chain
 
@@ -24,6 +34,9 @@ Acceptance tests assert that:
 - repeated export of the same state is byte-identical;
 - exported state validates through the module manager;
 - duplicate auth accounts, malformed account `Any` values, duplicate balances, malformed balance addresses, supply mismatch, staking denom drift, and fee denom drift are rejected before they can become committed state.
+- malformed contract state, duplicate contract addresses, malformed async
+  queued messages, duplicate queue sequences, and queue sequence drift are
+  rejected by the async executable specification.
 
 ## Current Custom Module Versions
 
@@ -32,6 +45,22 @@ Acceptance tests assert that:
 | `x/fees` | `2` | `1 -> 2`, validates protocol fee params and accounting state |
 | `x/tokenfactory` | `2` | `1 -> 2`, validates factory denom metadata and params |
 | `x/dex` | `2` | `1 -> 2`, validates pool IDs, pair uniqueness, reserves, LP supply, and params |
+| `x/aetherisvm/async` | n/a | executable spec only; import validates exported queue state before runtime wiring |
+| `x/aetherisvm/standards/*` | n/a | executable specs only; standard states validate independently from VM choice |
+
+## Legacy Format Isolation
+
+Old Orbitalis public formats (`ORB`, `norb`, `orb1`, and raw `0:` addresses)
+must not be accepted by public validation paths. If historical data migration is
+ever required, it must live in explicit migration-only tooling with:
+
+- an upgrade name;
+- a bounded input set;
+- old-format parsing isolated from `app/addressing` public validators;
+- output normalized to Aetheris `naet`, `AET`, raw `4:`, and userfriendly
+  `AE...` formats;
+- regression tests proving old formats still fail normal genesis, tx, query, and
+  contract-standard validation.
 
 ## Determinism And Scale
 

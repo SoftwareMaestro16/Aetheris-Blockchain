@@ -69,17 +69,17 @@ foreach ($failure in @(
 }
 
 foreach ($command in @(
-    '\.\\scripts\\build-orbitalisd\.ps1',
+    '\.\\scripts\\build-aetherisd\.ps1',
     '\.\\scripts\\localnet\\health\.ps1',
     '\.\\scripts\\localnet\\diagnostics\.ps1',
     '\.\\scripts\\localnet\\stop\.ps1',
     '\.\\scripts\\localnet\\reset\.ps1',
     '\.\\scripts\\localnet\\fund\.ps1',
-    'build\\orbitalisd\.exe query fees params',
-    'build\\orbitalisd\.exe query bank balance',
-    'build\\orbitalisd\.exe query auth account',
-    'build\\orbitalisd\.exe query dex pool',
-    'build\\orbitalisd\.exe query tokenfactory denom',
+    'build\\aetherisd\.exe query fees params',
+    'build\\aetherisd\.exe query bank balance',
+    'build\\aetherisd\.exe query auth account',
+    'build\\aetherisd\.exe query dex pool',
+    'build\\aetherisd\.exe query tokenfactory denom',
     'Invoke-RestMethod'
   )) {
   Assert-Contains -Text $runbookText -Pattern $command -Message "runbook missing troubleshooting command: $command"

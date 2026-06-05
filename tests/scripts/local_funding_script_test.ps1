@@ -33,7 +33,7 @@ foreach ($term in @(
     "local-only",
     "does not mint",
     "genesis-funded",
-    "orbitalis-local-1",
+    "aetheris-local-1",
     "no mnemonics",
     "funding_smoke.ps1"
   )) {

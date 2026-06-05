@@ -9,7 +9,7 @@ import (
 
 	"cosmossdk.io/log/v2"
 	l1app "github.com/sovereign-l1/l1/app"
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/app/params"
 
 	"github.com/cosmos/cosmos-sdk/client"
@@ -25,7 +25,7 @@ import (
 	txsigning "github.com/cosmos/cosmos-sdk/x/tx/signing"
 )
 
-// NewRootCmd creates a new root command for orbitalisd. It is called once in the
+// NewRootCmd creates a new root command for aetherisd. It is called once in the
 // main function.
 func NewRootCmd() *cobra.Command {
 	extraVersionInfo := initVersionInfo()
@@ -50,8 +50,8 @@ func NewRootCmd() *cobra.Command {
 		WithViper("") // uses by default the binary name as prefix
 
 	rootCmd := &cobra.Command{
-		Use:           "orbitalisd",
-		Short:         "Orbitalis sovereign L1 app",
+		Use:           "aetherisd",
+		Short:         "Aetheris sovereign L1 app",
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// set the default command outputs
@@ -76,7 +76,7 @@ func NewRootCmd() *cobra.Command {
 				enabledSignModes := append(tx.DefaultSignModes, signing.SignMode_SIGN_MODE_TEXTUAL)
 				txConfigOpts := tx.ConfigOptions{
 					EnabledSignModes:           enabledSignModes,
-					SigningOptions:             &txsigning.Options{AddressCodec: orbitaladdress.Codec{}, ValidatorAddressCodec: orbitaladdress.Codec{}},
+					SigningOptions:             &txsigning.Options{AddressCodec: aetherisaddress.Codec{}, ValidatorAddressCodec: aetherisaddress.Codec{}},
 					TextualCoinMetadataQueryFn: authtxconfig.NewGRPCCoinMetadataQueryFn(initClientCtx),
 				}
 				txConfig, err := tx.NewTxConfigWithOptions(
@@ -103,8 +103,8 @@ func NewRootCmd() *cobra.Command {
 			return startObservabilityMetrics(cmd)
 		},
 	}
-	rootCmd.PersistentFlags().Bool(flagObservabilityMetrics, false, "enable Orbitalis process Prometheus metrics endpoint")
-	rootCmd.PersistentFlags().String(flagObservabilityMetricsAddr, "127.0.0.1:27660", "Orbitalis process metrics listen address")
+	rootCmd.PersistentFlags().Bool(flagObservabilityMetrics, false, "enable Aetheris process Prometheus metrics endpoint")
+	rootCmd.PersistentFlags().String(flagObservabilityMetricsAddr, "127.0.0.1:27660", "Aetheris process metrics listen address")
 	rootCmd.SetContext(context.WithValue(context.Background(), version.ContextKey{}, extraVersionInfo))
 
 	initRootCmd(rootCmd, encodingConfig.TxConfig, tempApp.BasicModuleManager)

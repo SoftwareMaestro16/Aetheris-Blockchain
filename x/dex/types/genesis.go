@@ -2,12 +2,14 @@ package types
 
 import (
 	"fmt"
+	"strings"
 
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
 func DefaultGenesisState() *GenesisState {
@@ -82,16 +84,10 @@ func (gs GenesisState) Validate() error {
 		if pool.Id > maxID {
 			maxID = pool.Id
 		}
-		if err := sdk.ValidateDenom(pool.Denom0); err != nil {
+		if err := ValidatePoolAssetDenom("denom0", pool.Denom0); err != nil {
 			return fmt.Errorf("invalid denom0 for pool %d: %w", pool.Id, err)
 		}
-		if err := orbitaladdress.ValidateNoZeroFactoryDenomAdmin("denom0", pool.Denom0); err != nil {
-			return fmt.Errorf("invalid denom0 for pool %d: %w", pool.Id, err)
-		}
-		if err := sdk.ValidateDenom(pool.Denom1); err != nil {
-			return fmt.Errorf("invalid denom1 for pool %d: %w", pool.Id, err)
-		}
-		if err := orbitaladdress.ValidateNoZeroFactoryDenomAdmin("denom1", pool.Denom1); err != nil {
+		if err := ValidatePoolAssetDenom("denom1", pool.Denom1); err != nil {
 			return fmt.Errorf("invalid denom1 for pool %d: %w", pool.Id, err)
 		}
 		if pool.Denom0 >= pool.Denom1 {
@@ -121,10 +117,54 @@ func (gs GenesisState) Validate() error {
 	return nil
 }
 
+func ValidatePoolAssetDenom(field, denom string) error {
+	if err := sdk.ValidateDenom(denom); err != nil {
+		return err
+	}
+	if err := aetherisaddress.ValidateNoZeroFactoryDenomAdmin(field, denom); err != nil {
+		return err
+	}
+	if spoofsNativeDenom(denom) {
+		return fmt.Errorf("%s must not spoof native AET/naet", field)
+	}
+	return nil
+}
+
 func validatePositiveInt(field, value string) error {
 	out, ok := sdkmath.NewIntFromString(value)
 	if !ok || !out.IsPositive() {
 		return fmt.Errorf("%s must be a positive integer", field)
 	}
 	return nil
+}
+
+func spoofsNativeDenom(denom string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(denom))
+	if normalized == "" {
+		return false
+	}
+	for _, reserved := range []string{
+		appparams.DisplayDenom,
+		appparams.TokenSymbol,
+		appparams.TokenName,
+	} {
+		if normalized == strings.ToLower(reserved) {
+			return true
+		}
+	}
+	parts := strings.Split(denom, "/")
+	if len(parts) == 3 && parts[0] == "factory" {
+		subdenom := strings.ToLower(strings.TrimSpace(parts[2]))
+		for _, reserved := range []string{
+			appparams.BaseDenom,
+			appparams.DisplayDenom,
+			appparams.TokenSymbol,
+			appparams.TokenName,
+		} {
+			if subdenom == strings.ToLower(reserved) {
+				return true
+			}
+		}
+	}
+	return false
 }

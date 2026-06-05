@@ -5,6 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
 
@@ -21,6 +22,9 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 func (m msgServer) UpdateParams(ctx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
 	if msg == nil {
 		return nil, types.ErrInvalidParams.Wrap("empty request")
+	}
+	if err := aetherisaddress.ValidateAuthorityAddress("authority", msg.Authority); err != nil {
+		return nil, types.ErrUnauthorized.Wrap(err.Error())
 	}
 	if msg.Authority != m.Authority() {
 		return nil, types.ErrUnauthorized.Wrap("invalid authority")

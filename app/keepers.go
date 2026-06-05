@@ -45,7 +45,7 @@ import (
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -61,7 +61,7 @@ func (app *L1App) initKeepers(
 	appOpts servertypes.AppOptions,
 	keys map[string]*storetypes.KVStoreKey,
 ) client.TxConfig {
-	govAuthority := orbitaladdress.FormatAccAddress(authtypes.NewModuleAddress(govtypes.ModuleName))
+	govAuthority := aetherisaddress.FormatAccAddress(authtypes.NewModuleAddress(govtypes.ModuleName))
 	app.ConsensusParamsKeeper = consensusparamkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[consensusparamtypes.StoreKey]),
@@ -75,7 +75,7 @@ func (app *L1App) initKeepers(
 		runtime.NewKVStoreService(keys[authtypes.StoreKey]),
 		authtypes.ProtoBaseAccount,
 		maccPerms,
-		orbitaladdress.Codec{},
+		aetherisaddress.Codec{},
 		AccountAddressPrefix,
 		govAuthority,
 		authkeeper.WithUnorderedTransactions(true),
@@ -95,7 +95,7 @@ func (app *L1App) initKeepers(
 		appCodec,
 		authtx.ConfigOptions{
 			EnabledSignModes:           enabledSignModes,
-			SigningOptions:             &signing.Options{AddressCodec: orbitaladdress.Codec{}, ValidatorAddressCodec: orbitaladdress.Codec{}},
+			SigningOptions:             &signing.Options{AddressCodec: aetherisaddress.Codec{}, ValidatorAddressCodec: aetherisaddress.Codec{}},
 			TextualCoinMetadataQueryFn: txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper),
 		},
 	)
@@ -110,8 +110,8 @@ func (app *L1App) initKeepers(
 		app.AccountKeeper,
 		app.BankKeeper,
 		govAuthority,
-		orbitaladdress.Codec{},
-		orbitaladdress.Codec{},
+		aetherisaddress.Codec{},
+		aetherisaddress.Codec{},
 	)
 	app.MintKeeper = mintkeeper.NewKeeper(
 		appCodec,

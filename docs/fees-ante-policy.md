@@ -1,19 +1,19 @@
 # Fees And Ante Policy
 
-This document defines the prototype fee policy for Orbitalis.
+This document defines the prototype fee policy for Aetheris.
 
 ## Contract
 
-- Allowed fee denom: `norb`
-- Display token: `ORB`, display metadata only
-- Prototype example fee: `1000000norb`
-- Default localnet minimum gas price: `0norb`
+- Allowed fee denom: `naet`
+- Display token: `AET`, display metadata only
+- Prototype example fee: `1000000naet`
+- Default localnet minimum gas price: `0naet`
 - Protocol `min_fee_amount`: `1`
 - Protocol `min_fee_amount` v1 cap: `1000000000000000000`
 - V1 allowed fee denom list size: exactly one denom
 - Fee split params: validator rewards `0.98`, community pool `0.02`
 
-`norb` is the only accepted fee denom because it is also the base bank, staking, and mint denom. Factory denoms, LP denoms, `testtoken`, and display denom `ORB` must not be used for transaction fees in the prototype.
+`naet` is the only accepted fee denom because it is also the base bank, staking, and mint denom. Factory denoms, LP denoms, `testtoken`, and display denom `AET` must not be used for transaction fees in the prototype.
 
 ## Ante Behavior
 
@@ -21,7 +21,7 @@ The `x/fees` ante decorator wraps the base Cosmos SDK ante handler. It enforces 
 
 Accepted by `x/fees` policy:
 
-- `--fees 1000000norb`
+- `--fees 1000000naet`
 
 Rejected by `x/fees` policy:
 
@@ -29,14 +29,14 @@ Rejected by `x/fees` policy:
 - zero native fee coins
 - fees below `min_fee_amount`
 - `--fees 1000testtoken`
-- `--fees 1000norb,1testtoken`
+- `--fees 1000naet,1testtoken`
 - malformed fee coins
 - malformed fee lists such as duplicate denom entries
 - transactions that do not expose the SDK `FeeTx` interface
 
-The localnet default `minimum-gas-prices = "0norb"` is a validator mempool setting. Orbitalis protocol fee policy is stricter: delivered transactions must include at least `1norb` unless they are height-0 genesis create-validator transactions.
+The localnet default `minimum-gas-prices = "0naet"` is a validator mempool setting. Aetheris protocol fee policy is stricter: delivered transactions must include at least `1naet` unless they are height-0 genesis create-validator transactions.
 
-For public testnets, keep protocol `min_fee_amount >= 1` and set validator min-gas-prices independently for mempool filtering. Localnet keeps validator min-gas-prices at `0norb` only so development commands are not filtered before protocol ante can be exercised.
+For public testnets, keep protocol `min_fee_amount >= 1` and set validator min-gas-prices independently for mempool filtering. Localnet keeps validator min-gas-prices at `0naet` only so development commands are not filtered before protocol ante can be exercised.
 
 ## One-Command Smoke
 
@@ -54,13 +54,13 @@ Run the 5-validator profile:
 
 Expected result:
 
-- CLI `query fees params` returns only `norb`
-- REST `/l1/fees/v1/params` returns only `norb` when the local REST gateway is healthy
-- bank send with `1000000norb` fee succeeds
-- tokenfactory create-denom with `1000000norb` fee succeeds
-- DEX create-pool with `1000000norb` fee succeeds
+- CLI `query fees params` returns only `naet`
+- REST `/l1/fees/v1/params` returns only `naet` when the local REST gateway is healthy
+- bank send with `1000000naet` fee succeeds
+- tokenfactory create-denom with `1000000naet` fee succeeds
+- DEX create-pool with `1000000naet` fee succeeds
 - bank send, tokenfactory tx, and DEX tx with `testtoken` fee are rejected
-- mixed `norb,testtoken` fees are rejected
+- mixed `naet,testtoken` fees are rejected
 - zero and empty fee txs are rejected by protocol fee policy
 
 Recovery:
@@ -76,7 +76,7 @@ Recovery:
 Query fee params:
 
 ```powershell
-build\orbitalisd.exe query fees params --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query fees params --node tcp://127.0.0.1:26657 --output json
 Invoke-RestMethod http://127.0.0.1:1317/l1/fees/v1/params
 ```
 
@@ -85,7 +85,7 @@ Expected params:
 ```json
 {
   "params": {
-    "allowed_fee_denoms": ["norb"],
+    "allowed_fee_denoms": ["naet"],
     "validator_rewards_ratio": "0.98",
     "community_pool_ratio": "0.02"
   }
@@ -95,26 +95,26 @@ Expected params:
 Accepted fee:
 
 ```powershell
-build\orbitalisd.exe tx bank send node0 <orb1-address> 1000norb --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe tx bank send node0 <AE-address> 1000naet --home .localnet\node0\aetherisd --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node tcp://127.0.0.1:26657 --output json
 ```
 
 Rejected fee:
 
 ```powershell
-build\orbitalisd.exe tx bank send node0 <orb1-address> 1000norb --home .localnet\node0\orbitalisd --chain-id orbitalis-local-1 --keyring-backend test --fees 1000testtoken --yes --broadcast-mode sync --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe tx bank send node0 <AE-address> 1000naet --home .localnet\node0\aetherisd --chain-id aetheris-local-1 --keyring-backend test --fees 1000testtoken --yes --broadcast-mode sync --node tcp://127.0.0.1:26657 --output json
 ```
 
 Expected rejection log includes:
 
 ```text
-fee denom testtoken not accepted; use norb
+fee denom testtoken not accepted; use naet
 ```
 
 ## Audit Notes
 
 - Ante policy executes before the wrapped SDK ante handler.
 - Non-`FeeTx` transactions are rejected, so callers cannot bypass denom checks with a custom tx type.
-- Fee denom validation is deterministic and bounded. V1 params allow exactly one denom: `norb`.
+- Fee denom validation is deterministic and bounded. V1 params allow exactly one denom: `naet`.
 - Fee params are loaded once per tx; malformed, empty, zero, below-minimum, and wrong-denom fee lists are rejected before any wrapped ante handler can mutate state.
 - Protocol fee accounting is recorded only after wrapped SDK ante success, so invalid signer, wrong chain ID, stale sequence, insufficient fee funds, and malformed tx failures do not update fee accounting.
 - Empty allowed-denom lists, duplicate denoms, and multi-denom params are rejected by params validation.
@@ -130,7 +130,7 @@ go test ./x/fees/...
 go test ./...
 go vet ./...
 buf lint
-go build -o build/orbitalisd.exe ./cmd/l1d
+go build -o build/aetherisd.exe ./cmd/l1d
 .\tests\e2e\fees_ante_smoke.ps1
 .\tests\e2e\fees_ante_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```

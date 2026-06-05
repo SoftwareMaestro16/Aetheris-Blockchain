@@ -9,11 +9,11 @@ The acceptance smoke runs bank, staking, tokenfactory, and DEX flows before expo
 | Area | Export check |
 | --- | --- |
 | Chain header | `chain_id` matches the local chain id |
-| Fees | `app_state.fees.params.allowed_fee_denoms` is exactly `norb` |
+| Fees | `app_state.fees.params.allowed_fee_denoms` is exactly `naet` |
 | Tokenfactory | created `factory/{admin}/{subdenom}` denom and admin are present |
 | DEX | pool `1` preserves denoms, reserves, `total_shares`, and `lp/1` |
-| Bank | account balances preserve factory token, LP token, and funded `norb` |
-| Staking | `bond_denom` is `norb`; the delegated validator/delegator entry exists |
+| Bank | account balances preserve factory token, LP token, and funded `naet` |
+| Staking | `bond_denom` is `naet`; the delegated validator/delegator entry exists |
 | Security | exported JSON does not contain mnemonic, private key, keyring, seed, wallet, or validator key markers |
 
 Run it from the repo root:
@@ -29,7 +29,7 @@ The script uses `.localnet-export-import` and shifted ports by default, then wri
 The smoke copies the exported state, corrupts `app_state.dex.pools[0].reserve0`, and expects:
 
 ```powershell
-build\orbitalisd.exe genesis validate-genesis .work\genesis\export-import\node0-export-corrupt.json --home .localnet-export-import\node0\orbitalisd
+build\aetherisd.exe genesis validate-genesis .work\genesis\export-import\node0-export-corrupt.json --home .localnet-export-import\node0\aetherisd
 ```
 
 to fail with an `invalid` or `reserve0` validation error. The app unit test `TestStateImportRejectsCorruptedExportedPrototypeData` covers the same risk through `BasicModuleManager.ValidateGenesis`.

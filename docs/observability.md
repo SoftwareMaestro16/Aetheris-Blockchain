@@ -1,6 +1,6 @@
 # Prototype Observability
 
-This runbook defines the minimum diagnostic surface for local Orbitalis prototype nodes.
+This runbook defines the minimum diagnostic surface for local Aetheris prototype nodes.
 
 ## Health Checks
 
@@ -21,7 +21,7 @@ The health command checks:
 - peer availability for multi-validator localnet
 - REST gateway `/cosmos/base/tendermint/v1beta1/blocks/latest`
 - gRPC TCP readiness
-- tracked `orbitalisd` process ids
+- tracked `aetherisd` process ids
 - generated telemetry mode from node `app.toml`
 - recent redacted node log tails
 
@@ -91,6 +91,6 @@ For symptom-specific operator commands and fixes, see [Operator Troubleshooting 
 - `Port ... is already in use`: run `.\scripts\localnet\stop.ps1` or shift base ports.
 - `REST ... 503`: check `.\scripts\localnet\health.ps1`; localnet gRPC address must be `127.0.0.1:<grpc-port>`.
 - `height does not increase`: inspect `node*.out.log` for consensus timeout, disk, or validator errors.
-- `fee denom ... not accepted`: prototype tx examples must use `--fees 1000000norb`.
+- `fee denom ... not accepted`: prototype tx examples must use `--fees 1000000naet`.
 - `account sequence mismatch`: wait one block and retry after the previous tx commits.
 - `There is not enough space on the disk`: stop localnet and clean generated `.localnet*` and `.work\gocache` if needed.

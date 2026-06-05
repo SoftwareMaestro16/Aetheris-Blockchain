@@ -8,7 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/x/tokenfactory/types"
 )
 
@@ -34,7 +34,7 @@ func NewCreateDenomCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			msg := &types.MsgCreateDenom{Creator: orbitaladdress.FormatAccAddress(clientCtx.GetFromAddress()), Subdenom: args[0]}
+			msg := &types.MsgCreateDenom{Creator: aetherisaddress.FormatAccAddress(clientCtx.GetFromAddress()), Subdenom: args[0]}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
@@ -56,7 +56,7 @@ func NewMintCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			msg := &types.MsgMint{Sender: orbitaladdress.FormatAccAddress(clientCtx.GetFromAddress()), Amount: coin, MintToAddress: args[1]}
+			msg := &types.MsgMint{Sender: aetherisaddress.FormatAccAddress(clientCtx.GetFromAddress()), Amount: coin, MintToAddress: args[1]}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
@@ -78,7 +78,7 @@ func NewBurnCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			msg := &types.MsgBurn{Sender: orbitaladdress.FormatAccAddress(clientCtx.GetFromAddress()), Amount: coin, BurnFromAddress: args[1]}
+			msg := &types.MsgBurn{Sender: aetherisaddress.FormatAccAddress(clientCtx.GetFromAddress()), Amount: coin, BurnFromAddress: args[1]}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
@@ -96,7 +96,7 @@ func NewChangeAdminCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			msg := &types.MsgChangeAdmin{Sender: orbitaladdress.FormatAccAddress(clientCtx.GetFromAddress()), Denom: args[0], NewAdmin: args[1]}
+			msg := &types.MsgChangeAdmin{Sender: aetherisaddress.FormatAccAddress(clientCtx.GetFromAddress()), Denom: args[0], NewAdmin: args[1]}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}

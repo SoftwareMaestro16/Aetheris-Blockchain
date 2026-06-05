@@ -13,7 +13,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -54,7 +54,7 @@ func TestStateExportImportPreservesPrototypeModuleData(t *testing.T) {
 	exportedGenesis, exportedAppState := exportGenesisFromContext(t, app, ctx)
 	require.NoError(t, app.BasicModuleManager.ValidateGenesis(app.AppCodec(), app.TxConfig(), exportedGenesis))
 
-	adminText := orbitaladdress.FormatAccAddress(admin)
+	adminText := aetherisaddress.FormatAccAddress(admin)
 	requireExportedPrototypeState(t, app, exportedGenesis, adminText, factoryDenom)
 
 	imported, _ := setup(false, 5)

@@ -63,7 +63,7 @@ func Test_TestnetCmd(t *testing.T) {
 	const validatorCount = 3
 	cmd.SetArgs([]string{
 		fmt.Sprintf("--%s=test", flags.FlagKeyringBackend),
-		fmt.Sprintf("--%s=%s", flags.FlagChainID, "orbitalis-local-1"),
+		fmt.Sprintf("--%s=%s", flags.FlagChainID, "aetheris-local-1"),
 		fmt.Sprintf("--%s=%d", flagNumValidators, validatorCount),
 		fmt.Sprintf("--%s=%s", flagOutputDir, outputDir),
 		fmt.Sprintf("--%s=%s", flagStakingDenom, appparams.BaseDenom),
@@ -76,7 +76,7 @@ func Test_TestnetCmd(t *testing.T) {
 	var firstGenesisHash string
 	var firstGenesisRaw []byte
 	for i := 0; i < validatorCount; i++ {
-		genFile := filepath.Join(outputDir, fmt.Sprintf("node%d", i), "orbitalisd", "config", "genesis.json")
+		genFile := filepath.Join(outputDir, fmt.Sprintf("node%d", i), "aetherisd", "config", "genesis.json")
 		genesisRaw, err := os.ReadFile(genFile)
 		require.NoError(t, err)
 		require.NotRegexp(t, `(?i)\b(mnemonic|private[_-]?key|priv_validator|secret|seed|wallet)\b`, string(genesisRaw))
@@ -94,7 +94,7 @@ func Test_TestnetCmd(t *testing.T) {
 		appState, appGenesis, err := genutiltypes.GenesisStateFromGenFile(genFile)
 		require.NoError(t, err)
 		require.NoError(t, appGenesis.ValidateAndComplete())
-		require.Equal(t, "orbitalis-local-1", appGenesis.ChainID)
+		require.Equal(t, "aetheris-local-1", appGenesis.ChainID)
 		require.Equal(t, int64(1), appGenesis.InitialHeight)
 		require.NoError(t, moduleBasic.ValidateGenesis(cdc, txConfig, appState))
 
@@ -131,7 +131,7 @@ func assertPrototypeGenesisProfile(
 	requireNativeTokenMetadata(t, native)
 
 	expectedAccountCoins := sdk.NewCoins(
-		sdk.NewCoin(appparams.TestAssetDenom, sdk.TokensFromConsensusPower(1000, sdk.DefaultPowerReduction)),
+		sdk.NewCoin(bootstrapTestAssetDenom, sdk.TokensFromConsensusPower(1000, sdk.DefaultPowerReduction)),
 		sdk.NewCoin(appparams.BaseDenom, sdk.TokensFromConsensusPower(500, sdk.DefaultPowerReduction)),
 	).Sort()
 	for _, balance := range bankGenState.Balances {

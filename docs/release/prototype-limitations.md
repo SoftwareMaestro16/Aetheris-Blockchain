@@ -1,6 +1,6 @@
 # Prototype Non-Goals And Limitations
 
-Version scope: current Orbitalis working prototype prerelease line. Update this file for every prototype release decision that changes scope, risk acceptance, or blocker status.
+Version scope: current Aetheris working prototype prerelease line. Update this file for every prototype release decision that changes scope, risk acceptance, or blocker status.
 
 This document prevents scope creep and avoids implying mainnet readiness. It does not override the security gate: any untriaged Critical or High security finding remains a release blocker, not an accepted limitation.
 
@@ -31,7 +31,7 @@ If a limitation is later found to create fund loss, consensus halt, unauthorized
 | Limitation | Current mitigation | Exit condition |
 | --- | --- | --- |
 | Local-only key material | Localnet uses ignored node homes and `--keyring-backend test`; scripts and diagnostics avoid printing mnemonics/private keys. | Public testnet/mainnet key-management plan and runbook. |
-| Localnet minimum gas price may be `0norb` | Docs and e2e examples still use `--fees 1000000norb`; `x/fees` ante enforces allowed fee denom. | Public network fee policy and validator min-gas configuration. |
+| Localnet minimum gas price may be `0naet` | Docs and e2e examples still use `--fees 1000000naet`; `x/fees` ante enforces allowed fee denom. | Public network fee policy and validator min-gas configuration. |
 | Tokenfactory/DEX are prototype modules | Unit/e2e/adversarial tests cover signer, denom, balance, DEX accounting, and negative flows. | External audit, expanded invariants, and production economics/risk model. |
 | Query/list endpoints are bounded but not public-load proven | List endpoints use bounded pagination and smoke/load scripts record minimal local evidence. | High-cardinality API and explorer load tests with documented limits. |
 | Minimal load profile is local baseline only | `load-profile.ps1` records block progress, tx latency, and failures under small local mixed load. | Dedicated performance plan for public testnet/mainnet capacity. |

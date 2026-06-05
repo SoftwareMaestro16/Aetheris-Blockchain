@@ -1,10 +1,10 @@
 # Local Funding Flow
 
-This flow is local-only prototype tooling. It funds accounts by sending `norb` from a genesis-funded localnet key, usually `node0`. It does not mint tokens, does not add a faucet module, and must not be used as a production funding path.
+This flow is local-only prototype tooling. It funds accounts by sending `naet` from a genesis-funded localnet key, usually `node0`. It does not mint tokens, does not add a faucet module, and must not be used as a production funding path.
 
 ## Safety Rules
 
-- Only local chain IDs are accepted. The default is `orbitalis-local-1`.
+- Only local chain IDs are accepted. The default is `aetheris-local-1`.
 - The script reads CometBFT `/status` from `127.0.0.1:<RPCPort>` and refuses to run if the network does not match `-ChainId`.
 - The sender key is read from an ignored localnet home with `--keyring-backend test`.
 - No mnemonics, private keys, or keyring files are printed.
@@ -13,14 +13,14 @@ This flow is local-only prototype tooling. It funds accounts by sending `norb` f
 ## Single Recipient
 
 ```powershell
-$NODE1 = build\orbitalisd.exe keys show node1 -a --home .localnet\node1\orbitalisd --keyring-backend test
+$NODE1 = build\aetherisd.exe keys show node1 -a --home .localnet\node1\aetherisd --keyring-backend test
 .\scripts\localnet\fund.ps1 `
   -OutputDir .localnet `
-  -Binary build\orbitalisd.exe `
-  -ChainId orbitalis-local-1 `
+  -Binary build\aetherisd.exe `
+  -ChainId aetheris-local-1 `
   -RPCPort 26657 `
   -Recipients @($NODE1) `
-  -Amount 1000000norb
+  -Amount 1000000naet
 ```
 
 ## Multiple Recipients And Amounts
@@ -28,17 +28,17 @@ $NODE1 = build\orbitalisd.exe keys show node1 -a --home .localnet\node1\orbitali
 Use `-Recipients` when every account receives the same `-Amount`, and `-Transfers` for explicit `address=amount` entries.
 
 ```powershell
-$NODE1 = build\orbitalisd.exe keys show node1 -a --home .localnet\node1\orbitalisd --keyring-backend test
-$NODE2 = build\orbitalisd.exe keys show node2 -a --home .localnet\node2\orbitalisd --keyring-backend test
+$NODE1 = build\aetherisd.exe keys show node1 -a --home .localnet\node1\aetherisd --keyring-backend test
+$NODE2 = build\aetherisd.exe keys show node2 -a --home .localnet\node2\aetherisd --keyring-backend test
 
 .\scripts\localnet\fund.ps1 `
   -OutputDir .localnet `
-  -Binary build\orbitalisd.exe `
-  -ChainId orbitalis-local-1 `
+  -Binary build\aetherisd.exe `
+  -ChainId aetheris-local-1 `
   -RPCPort 26657 `
   -Recipients @($NODE1) `
-  -Transfers @("$NODE2=2500000norb") `
-  -Amount 1000000norb `
+  -Transfers @("$NODE2=2500000naet") `
+  -Amount 1000000naet `
   -Json
 ```
 

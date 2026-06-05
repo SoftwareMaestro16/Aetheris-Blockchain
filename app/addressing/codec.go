@@ -13,24 +13,21 @@ import (
 )
 
 const (
-	RawPrefix             = "0:"
-	RawAddressLength      = 66
-	UserFriendlyLength    = 48
-	UserFriendlyPrefix    = "ORB"
-	ZeroRawAddress        = "0:0000000000000000000000000000000000000000000000000000000000000000"
-	ZeroUserFriendly      = "ORBAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	legacyAccountPrefix   = "orb"
-	legacyValidatorPrefix = "orbvaloper"
-	legacyConsensusPrefix = "orbvalcons"
-	rawPayloadLength      = 32
-	shortAddressLength    = 20
-	longAddressPadLength  = rawPayloadLength - shortAddressLength
-	userFriendlyVersion   = byte(1)
+	RawPrefix            = "4:"
+	RawAddressLength     = 66
+	UserFriendlyLength   = 48
+	UserFriendlyPrefix   = "AE"
+	ZeroRawAddress       = "4:0000000000000000000000000000000000000000000000000000000000000000"
+	ZeroUserFriendly     = "AEAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	rawPayloadLength     = 32
+	shortAddressLength   = 20
+	longAddressPadLength = rawPayloadLength - shortAddressLength
+	userFriendlyVersion  = byte(1)
 )
 
 var (
-	userFriendlyMagic = [3]byte{0x39, 0x10, 0x40}
-	rawAddressRe      = regexp.MustCompile(`^0:[0-9a-f]{64}$`)
+	userFriendlyMagic = [3]byte{0x00, 0x40, 0x00}
+	rawAddressRe      = regexp.MustCompile(`^4:[0-9a-f]{64}$`)
 )
 
 type Codec struct{}
@@ -127,7 +124,7 @@ func Parse(text string) ([]byte, error) {
 			payload[1] != userFriendlyMagic[1] ||
 			payload[2] != userFriendlyMagic[2] ||
 			payload[3] != userFriendlyVersion {
-			return nil, fmt.Errorf("invalid ORB userfriendly address header")
+			return nil, fmt.Errorf("invalid AE userfriendly address header")
 		}
 		return FromRawPayload(payload[4:]), nil
 	}
@@ -135,9 +132,6 @@ func Parse(text string) ([]byte, error) {
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
 		sdk.GetConfig().GetBech32ValidatorAddrPrefix(),
 		sdk.GetConfig().GetBech32ConsensusAddrPrefix(),
-		legacyAccountPrefix,
-		legacyValidatorPrefix,
-		legacyConsensusPrefix,
 	} {
 		if prefix == "" {
 			continue
@@ -150,7 +144,7 @@ func Parse(text string) ([]byte, error) {
 			return bz, nil
 		}
 	}
-	return nil, fmt.Errorf("invalid address format: expected 0:<64 lowercase hex> or 48-char ORB userfriendly address")
+	return nil, fmt.Errorf("invalid address format: expected 4:<64 lowercase hex> or 48-char AE userfriendly address")
 }
 
 func ToRawPayload(bz []byte) ([]byte, error) {

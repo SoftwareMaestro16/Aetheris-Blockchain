@@ -18,7 +18,7 @@ Every security-relevant PR must record:
 
 - Address, signer, authority, admin, recipient, and module-account fields reject
   empty, malformed, zero, and unauthorized values.
-- Native `norb` fee, staking, mint, and bank assumptions cannot drift through
+- Native `naet` fee, staking, mint, and bank assumptions cannot drift through
   genesis, params, tx, migration, or export/import paths.
 - Keeper writes are deterministic and do not depend on wall time, randomness,
   map iteration order, goroutine races, external APIs, local filesystem state,
@@ -35,6 +35,23 @@ Every security-relevant PR must record:
 - Migrations validate exportable state before and after layout changes.
 - Localnet and diagnostics scripts do not print or package keyrings, validator
   private keys, mnemonics, database URLs, API tokens, or environment dumps.
+
+## Contract Standards Review
+
+- AW-5 wallet commands reject replayed `seqno`, wrong `wallet_id`, expired
+  `valid_until`, invalid signatures, unauthorized extensions, and non-`naet`
+  protocol fee paths before state mutation.
+- AFT-44 token master/wallet accounting rejects token supply divergence,
+  non-admin mint/admin takeover, replayed wallet messages, malformed
+  metadata, native AET/naet spoofing, and non-`naet` protocol fees.
+- ANFT-66 item transfers require current owner authorization and reject
+  metadata spoofing, malformed collection/item addresses, and unbounded batch
+  minting.
+- ASBT-67 transfer attempts are rejected, SBT revocation requires authority, and
+  revoke paths do not transfer ownership.
+- Async contract execution rejects queue DoS, malformed envelopes, duplicate
+  contract addresses, duplicate queue sequences, queue `next_sequence` drift,
+  and bounce/refund paths that could double-spend value.
 
 ## Automated Evidence
 

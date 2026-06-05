@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	l1app "github.com/sovereign-l1/l1/app"
-	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
+	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
@@ -79,7 +79,7 @@ func TestTokenfactoryRejectsZeroAddresses(t *testing.T) {
 	msgServer := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
 
 	_, err := msgServer.CreateDenom(ctx, &types.MsgCreateDenom{
-		Creator:  orbitaladdress.ZeroRawAddress,
+		Creator:  aetherisaddress.ZeroRawAddress,
 		Subdenom: "zero",
 	})
 	require.ErrorIs(t, err, types.ErrInvalidAddress)
@@ -94,15 +94,23 @@ func TestTokenfactoryRejectsZeroAddresses(t *testing.T) {
 	_, err = msgServer.Mint(ctx, &types.MsgMint{
 		Sender:        admin.String(),
 		Amount:        sdk.NewInt64Coin(createRes.NewTokenDenom, 1),
-		MintToAddress: orbitaladdress.ZeroUserFriendly,
+		MintToAddress: aetherisaddress.ZeroUserFriendly,
 	})
 	require.ErrorIs(t, err, types.ErrInvalidAddress)
 	require.Contains(t, err.Error(), "mint_to_address must not be zero address")
 
+	_, err = msgServer.Burn(ctx, &types.MsgBurn{
+		Sender:          admin.String(),
+		Amount:          sdk.NewInt64Coin(createRes.NewTokenDenom, 1),
+		BurnFromAddress: aetherisaddress.ZeroRawAddress,
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "burn_from_address must not be zero address")
+
 	_, err = msgServer.ChangeAdmin(ctx, &types.MsgChangeAdmin{
 		Sender:   admin.String(),
 		Denom:    createRes.NewTokenDenom,
-		NewAdmin: orbitaladdress.ZeroRawAddress,
+		NewAdmin: aetherisaddress.ZeroRawAddress,
 	})
 	require.ErrorIs(t, err, types.ErrInvalidAddress)
 	require.Contains(t, err.Error(), "new_admin must not be zero address")
@@ -113,8 +121,8 @@ func TestTokenfactoryLifecycleEmitsStableEventsAndStateQueries(t *testing.T) {
 	ctx := app.NewContext(false)
 	addrs := l1app.AddTestAddrsIncremental(app, ctx, 2, sdkmath.NewInt(1_000_000))
 	admin, newAdmin := addrs[0], addrs[1]
-	adminText := orbitaladdress.FormatAccAddress(admin)
-	newAdminText := orbitaladdress.FormatAccAddress(newAdmin)
+	adminText := aetherisaddress.FormatAccAddress(admin)
+	newAdminText := aetherisaddress.FormatAccAddress(newAdmin)
 	msgServer := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
 
 	createRes, err := msgServer.CreateDenom(ctx, &types.MsgCreateDenom{
@@ -244,14 +252,14 @@ func TestCreateDenomRejectsNativeTokenSpoofing(t *testing.T) {
 	admin := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
 	msgServer := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
 
-	for _, subdenom := range []string{appparams.BaseDenom, appparams.DisplayDenom, "orb", appparams.TokenName} {
+	for _, subdenom := range []string{appparams.BaseDenom, appparams.DisplayDenom, "aet", appparams.TokenName} {
 		t.Run(subdenom, func(t *testing.T) {
 			_, err := msgServer.CreateDenom(ctx, &types.MsgCreateDenom{
 				Creator:  admin.String(),
 				Subdenom: subdenom,
 			})
 			require.ErrorIs(t, err, types.ErrInvalidDenom)
-			require.Contains(t, err.Error(), "native ORB/norb")
+			require.Contains(t, err.Error(), "native AET/naet")
 		})
 	}
 }
@@ -329,4 +337,17 @@ func TestAdminTransferRejectsOldAdminAndPreservesSupply(t *testing.T) {
 	require.Equal(t, "1100", supply.Amount.String())
 	require.Equal(t, "1000", app.BankKeeper.GetBalance(ctx, admin, denom).Amount.String())
 	require.Equal(t, "100", app.BankKeeper.GetBalance(ctx, newAdmin, denom).Amount.String())
+}
+
+func TestUpdateParamsRejectsZeroAuthority(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	msgServer := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
+
+	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: aetherisaddress.ZeroRawAddress,
+		Params:    types.DefaultParams(),
+	})
+	require.ErrorIs(t, err, types.ErrUnauthorized)
+	require.Contains(t, err.Error(), "authority must not be zero address")
 }

@@ -1,21 +1,21 @@
 # DEX Prototype End-To-End Flow
 
-This document defines the prototype user flow for the Orbitalis DEX module.
+This document defines the prototype user flow for the Aetheris DEX module.
 
 ## Contract
 
 - AMM type: constant-product pool
 - Pool fee: `30` bps
-- Native side: `norb`
+- Native side: `naet`
 - Prototype external asset: a factory denom created by `x/tokenfactory`
 - LP denom format: `lp/<pool_id>`
 - Default first pool ID: `1`
-- Prototype fee coin for all tx examples: `1000000norb`
+- Prototype fee coin for all tx examples: `1000000naet`
 
 `lp/<pool_id>` is a bank denom minted by the `dex` module. Users see LP balances with the normal bank balance query:
 
 ```powershell
-build\orbitalisd.exe query bank balance $node0 lp/1 --node tcp://127.0.0.1:26657 --output json
+build\aetherisd.exe query bank balance $node0 lp/1 --node tcp://127.0.0.1:26657 --output json
 ```
 
 ## One-Command Smoke
@@ -37,7 +37,7 @@ Expected result:
 - localnet reaches the requested height with the expected validator set
 - node0 creates `factory/<node0>/dexgold`
 - node0 mints the factory asset to itself
-- `tx dex create-pool` creates pool `1` with `norb` and the factory denom
+- `tx dex create-pool` creates pool `1` with `naet` and the factory denom
 - `query dex pool 1` returns reserves, total shares, and `lp/1`
 - duplicate pair pool creation is rejected
 - `add-liquidity` succeeds with a realistic `min_shares`
@@ -69,25 +69,25 @@ Load node0:
 
 ```powershell
 $node = "tcp://127.0.0.1:26657"
-$home = ".localnet\node0\orbitalisd"
-$node0 = build\orbitalisd.exe keys show node0 -a --home $home --keyring-backend test
+$home = ".localnet\node0\aetherisd"
+$node0 = build\aetherisd.exe keys show node0 -a --home $home --keyring-backend test
 $denom = "factory/$node0/dexgold"
 ```
 
 Create and fund the factory denom:
 
 ```powershell
-build\orbitalisd.exe tx tokenfactory create-denom dexgold --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
-build\orbitalisd.exe tx tokenfactory mint "100000000$denom" $node0 --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
-build\orbitalisd.exe query bank balance $node0 $denom --node $node --output json
+build\aetherisd.exe tx tokenfactory create-denom dexgold --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe tx tokenfactory mint "100000000$denom" $node0 --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe query bank balance $node0 $denom --node $node --output json
 ```
 
 Create a pool:
 
 ```powershell
-build\orbitalisd.exe tx dex create-pool 10000000norb "10000000$denom" --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
-build\orbitalisd.exe query dex pool 1 --node $node --output json
-build\orbitalisd.exe query bank balance $node0 lp/1 --node $node --output json
+build\aetherisd.exe tx dex create-pool 10000000naet "10000000$denom" --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe query dex pool 1 --node $node --output json
+build\aetherisd.exe query bank balance $node0 lp/1 --node $node --output json
 ```
 
 Expected pool fields:
@@ -97,7 +97,7 @@ Expected pool fields:
   "pool": {
     "id": "1",
     "denom0": "factory/<node0>/dexgold",
-    "denom1": "norb",
+    "denom1": "naet",
     "reserve0": "10000000",
     "reserve1": "10000000",
     "total_shares": "10000000",
@@ -109,13 +109,13 @@ Expected pool fields:
 Add liquidity with slippage protection:
 
 ```powershell
-build\orbitalisd.exe tx dex add-liquidity 1 1000000norb "1000000$denom" 1000000 --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe tx dex add-liquidity 1 1000000naet "1000000$denom" 1000000 --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
 ```
 
 Expected failure when `min_shares` is too high:
 
 ```powershell
-build\orbitalisd.exe tx dex add-liquidity 1 1000000norb "1000000$denom" 1000001 --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe tx dex add-liquidity 1 1000000naet "1000000$denom" 1000001 --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
 ```
 
 Expected rejection log includes:
@@ -127,14 +127,14 @@ minted shares below minimum
 Swap exact amount in:
 
 ```powershell
-build\orbitalisd.exe tx dex swap-exact-in 1 100000norb $denom 1 --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
-build\orbitalisd.exe query bank balance $node0 $denom --node $node --output json
+build\aetherisd.exe tx dex swap-exact-in 1 100000naet $denom 1 --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe query bank balance $node0 $denom --node $node --output json
 ```
 
 Expected failure when `min_amount_out` is too high:
 
 ```powershell
-build\orbitalisd.exe tx dex swap-exact-in 1 100000norb $denom 1000000 --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe tx dex swap-exact-in 1 100000naet $denom 1000000 --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
 ```
 
 Expected rejection log includes:
@@ -146,9 +146,9 @@ amount out below minimum
 Remove liquidity:
 
 ```powershell
-build\orbitalisd.exe tx dex remove-liquidity 1 1000000lp/1 --from node0 --home $home --chain-id orbitalis-local-1 --keyring-backend test --fees 1000000norb --yes --broadcast-mode sync --node $node --output json
-build\orbitalisd.exe query dex pool 1 --node $node --output json
-build\orbitalisd.exe query bank balance $node0 lp/1 --node $node --output json
+build\aetherisd.exe tx dex remove-liquidity 1 1000000lp/1 --from node0 --home $home --chain-id aetheris-local-1 --keyring-backend test --fees 1000000naet --yes --broadcast-mode sync --node $node --output json
+build\aetherisd.exe query dex pool 1 --node $node --output json
+build\aetherisd.exe query bank balance $node0 lp/1 --node $node --output json
 ```
 
 ## Audit Notes
@@ -158,7 +158,7 @@ build\orbitalisd.exe query bank balance $node0 lp/1 --node $node --output json
 - Genesis validation rejects duplicate pool IDs, duplicate pairs, non-canonical denoms, invalid LP denoms, zero reserves, zero shares, and malformed integer state.
 - Keeper tests cover corrupted pool state without panic, wrong liquidity denoms, wrong LP denom, reserve/module-account balance consistency, LP supply consistency, tiny swap rounding, and slippage guards.
 - DEX reserves are checked against the `dex` module account balance in keeper tests.
-- LP denoms use `lp/<pool_id>` and are not aliases for native `norb` or display `ORB`.
+- LP denoms use `lp/<pool_id>` and are not aliases for native `naet` or display `AET`.
 - Query `dex pools` uses bounded `next_key` pagination with default limit `50` and max limit `100`.
 - There is no external price oracle, sandwich protection, or production routing. Multi-hop swaps and exchange-grade routing are out of scope for this prototype.
 
@@ -169,7 +169,7 @@ go test ./x/dex/...
 go test ./...
 go vet ./...
 buf lint
-go build -o build/orbitalisd.exe ./cmd/l1d
+go build -o build/aetherisd.exe ./cmd/l1d
 .\tests\e2e\dex_smoke.ps1
 .\tests\e2e\dex_smoke.ps1 -OutputDir .localnet-5 -ValidatorCount 5
 ```

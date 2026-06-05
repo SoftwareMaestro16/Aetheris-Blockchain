@@ -34,8 +34,8 @@ func TestInitCmd(t *testing.T) {
 func TestRootCommandBranding(t *testing.T) {
 	rootCmd := cmd.NewRootCmd()
 
-	require.Equal(t, "orbitalisd", rootCmd.Use)
-	require.Contains(t, rootCmd.Short, "Orbitalis")
+	require.Equal(t, "aetherisd", rootCmd.Use)
+	require.Contains(t, rootCmd.Short, "Aetheris")
 }
 
 func TestObservabilityFlagsRegistered(t *testing.T) {
@@ -72,7 +72,7 @@ func TestRootHelpShowsOperatorCommandSurface(t *testing.T) {
 	require.NoError(t, rootCmd.Execute())
 
 	help := out.String()
-	require.Contains(t, help, "Orbitalis sovereign L1 app")
+	require.Contains(t, help, "Aetheris sovereign L1 app")
 	require.Contains(t, help, "version")
 	require.Contains(t, help, "testnet")
 	require.Contains(t, help, "query")
@@ -98,8 +98,8 @@ func TestVersionCommandShowsOperatorMetadata(t *testing.T) {
 		ExtraInfo        map[string]string `json:"extra_info"`
 	}
 	require.NoError(t, json.Unmarshal(out.Bytes(), &info), out.String())
-	require.Equal(t, "Orbitalis", info.Name)
-	require.Equal(t, "orbitalisd", info.ServerName)
+	require.Equal(t, "Aetheris", info.Name)
+	require.Equal(t, "aetherisd", info.ServerName)
 	require.NotEmpty(t, info.Version)
 	require.NotEmpty(t, info.Commit)
 	require.NotEmpty(t, firstNonEmpty(info.CosmosSDKVersion, info.ExtraInfo["cosmos_sdk_version"]))
@@ -144,7 +144,7 @@ func TestAddressConvertCommandOutputsRawAndUserFriendly(t *testing.T) {
 	rootCmd.SetOut(&out)
 	rootCmd.SetErr(&out)
 	homeDir := t.TempDir()
-	rootCmd.SetArgs([]string{"address", "convert", "orb1yrdln94htlwyugypgnsv4yspdq2gzj728q8pyz", fmt.Sprintf("--%s=%s", flags.FlagHome, homeDir)})
+	rootCmd.SetArgs([]string{"address", "convert", "4:00000000000000000000000020dbf996b75fdc4e208146e0ca920168148149ca", fmt.Sprintf("--%s=%s", flags.FlagHome, homeDir)})
 
 	require.NoError(t, svrcmd.Execute(rootCmd, "", homeDir))
 
@@ -153,8 +153,8 @@ func TestAddressConvertCommandOutputsRawAndUserFriendly(t *testing.T) {
 		UserFriendly string `json:"user_friendly"`
 	}
 	require.NoError(t, json.Unmarshal(out.Bytes(), &res), out.String())
-	require.Regexp(t, `^0:[0-9a-f]{64}$`, res.Raw)
-	require.Regexp(t, `^ORB[A-Za-z0-9_-]{45}$`, res.UserFriendly)
+	require.Regexp(t, `^4:[0-9a-f]{64}$`, res.Raw)
+	require.Regexp(t, `^AE[A-Za-z0-9_-]{46}$`, res.UserFriendly)
 	require.Len(t, res.UserFriendly, 48)
 }
 
@@ -215,34 +215,34 @@ func TestPrototypeCommandArgsValidation(t *testing.T) {
 		{
 			name: "dex create-pool accepts two coins",
 			path: []string{"tx", "dex", "create-pool"},
-			args: []string{"100norb", "100factory/orb1addr/gold"},
+			args: []string{"100naet", "100factory/ae1addr/gold"},
 		},
 		{
 			name:    "dex create-pool rejects one coin",
 			path:    []string{"tx", "dex", "create-pool"},
-			args:    []string{"100norb"},
+			args:    []string{"100naet"},
 			wantErr: true,
 		},
 		{
 			name: "dex add-liquidity accepts pool coins and min shares",
 			path: []string{"tx", "dex", "add-liquidity"},
-			args: []string{"1", "100norb", "100factory/orb1addr/gold", "1"},
+			args: []string{"1", "100naet", "100factory/ae1addr/gold", "1"},
 		},
 		{
 			name:    "dex add-liquidity rejects missing min shares",
 			path:    []string{"tx", "dex", "add-liquidity"},
-			args:    []string{"1", "100norb", "100factory/orb1addr/gold"},
+			args:    []string{"1", "100naet", "100factory/ae1addr/gold"},
 			wantErr: true,
 		},
 		{
 			name: "dex swap accepts exact-in shape",
 			path: []string{"tx", "dex", "swap-exact-in"},
-			args: []string{"1", "100norb", "factory/orb1addr/gold", "1"},
+			args: []string{"1", "100naet", "factory/ae1addr/gold", "1"},
 		},
 		{
 			name:    "dex swap rejects missing min out",
 			path:    []string{"tx", "dex", "swap-exact-in"},
-			args:    []string{"1", "100norb", "factory/orb1addr/gold"},
+			args:    []string{"1", "100naet", "factory/ae1addr/gold"},
 			wantErr: true,
 		},
 		{

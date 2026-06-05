@@ -3,7 +3,7 @@ param(
   [string]$Profile = "Smoke",
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 4,
   [int]$TimeoutSeconds = 120,
@@ -19,10 +19,10 @@ param(
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
   [string]$Node = "",
-  [string]$Fees = "1000000norb",
+  [string]$Fees = "1000000naet",
   [string]$WrongFees = "1000testtoken",
   [string]$FactorySubdenom = "acceptgold",
-  [string]$DelegationAmount = "5000000norb",
+  [string]$DelegationAmount = "5000000naet",
   [switch]$SkipBuild,
   [switch]$KeepLogsOnFailure
 )
@@ -38,7 +38,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "tests\e2e\prototype_acceptance_helpers.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 Assert-LocalnetWorkspacePath -Path $OutputDir -Purpose "acceptance localnet output directory"
 if (-not $SkipBuild) {
   Assert-LocalnetWorkspacePath -Path (Split-Path $Binary) -Purpose "acceptance binary output directory"
@@ -89,7 +89,7 @@ try {
   & .\scripts\localnet\stop.ps1 -OutputDir $OutputDir
 
   if (-not $SkipBuild) {
-    Write-AcceptanceStep "build orbitalisd"
+    Write-AcceptanceStep "build aetherisd"
     Invoke-AcceptanceBuild -Context $ctx
   } elseif (!(Test-Path -LiteralPath $Binary)) {
     throw "Binary not found at $Binary and -SkipBuild was specified"
@@ -122,8 +122,8 @@ try {
     -EnableRPC $EnableRPC | Out-Null
   Write-Host "localnet healthy at height $height"
 
-  $node0Home = Join-Path $OutputDir "node0\orbitalisd"
-  $node1Home = Join-Path $OutputDir "node1\orbitalisd"
+  $node0Home = Join-Path $OutputDir "node0\aetherisd"
+  $node1Home = Join-Path $OutputDir "node1\aetherisd"
   $node0 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName "node0"
   $node1 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node1Home -KeyName "node1"
 
@@ -136,7 +136,7 @@ try {
   if (-not ($latestBlock.header.height -or $latestBlock.block.header.height)) {
     throw "query block did not return a block height"
   }
-  $metadata = Get-LocalnetBankMetadata -Binary $Binary -Denom "norb" -RPCPort $node0Ports.RPC
+  $metadata = Get-LocalnetBankMetadata -Binary $Binary -Denom "naet" -RPCPort $node0Ports.RPC
   Assert-AcceptanceNativeMetadata -Metadata $metadata
   $feesParams = Invoke-AcceptanceQueryGrpcJson -Context $ctx -Arguments @("query", "fees", "params")
   Assert-AcceptanceFeesParams -Params $feesParams.params
@@ -149,22 +149,22 @@ try {
   Write-Host "base CLI/gRPC/REST queries passed"
 
   Write-AcceptanceStep "bank send"
-  $node1Before = Get-AcceptanceBalanceAmount -Context $ctx -Address $node1 -Denom "norb"
-  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1000norb") -FromHome $node0Home | Out-Null
-  $node1After = Get-AcceptanceBalanceAmount -Context $ctx -Address $node1 -Denom "norb"
+  $node1Before = Get-AcceptanceBalanceAmount -Context $ctx -Address $node1 -Denom "naet"
+  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1000naet") -FromHome $node0Home | Out-Null
+  $node1After = Get-AcceptanceBalanceAmount -Context $ctx -Address $node1 -Denom "naet"
   if ($node1After -ne ($node1Before + 1000)) {
-    throw "bank send did not increase node1 balance by 1000norb: before=$node1Before after=$node1After"
+    throw "bank send did not increase node1 balance by 1000naet: before=$node1Before after=$node1After"
   }
-  Write-Host "bank send updated node1 balance to $($node1After)norb"
+  Write-Host "bank send updated node1 balance to $($node1After)naet"
 
   Write-AcceptanceStep "fees policy"
   Send-AcceptanceTx `
     -Context $ctx `
-    -ActionArgs @("tx", "bank", "send", "node0", $node1, "1norb") `
+    -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") `
     -FromHome $node0Home `
     -Fees $WrongFees `
     -ExpectFailure `
-    -ExpectedLog "fee denom testtoken not accepted; use norb" | Out-Null
+    -ExpectedLog "fee denom testtoken not accepted; use naet" | Out-Null
   Write-Host "wrong fee denom rejected"
 
   Write-AcceptanceStep "tokenfactory create/mint/query"
@@ -188,7 +188,7 @@ try {
   Write-Host "factory denom $factoryDenom minted to node0"
 
   Write-AcceptanceStep "DEX create pool/swap/query"
-  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "dex", "create-pool", "10000000naet", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
   $pool = Invoke-AcceptanceQueryGrpcJson -Context $ctx -Arguments @("query", "dex", "pool", "1")
   if ($pool.pool.lp_denom -ne "lp/1") {
     throw "DEX pool 1 returned unexpected lp denom $($pool.pool.lp_denom)"
@@ -196,14 +196,14 @@ try {
   if ($Profile -eq "Full") {
     Send-AcceptanceTx `
       -Context $ctx `
-      -ActionArgs @("tx", "dex", "swap-exact-in", "1", "100000norb", $factoryDenom, "1000000") `
+      -ActionArgs @("tx", "dex", "swap-exact-in", "1", "100000naet", $factoryDenom, "1000000") `
       -FromHome $node0Home `
       -ExpectFailure `
       -ExpectedLog "amount out below minimum" | Out-Null
     Write-Host "DEX slippage guard rejected excessive min_amount_out"
   }
   $factoryBeforeSwap = Get-AcceptanceBalanceAmount -Context $ctx -Address $node0 -Denom $factoryDenom
-  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "dex", "swap-exact-in", "1", "100000norb", $factoryDenom, "1") -FromHome $node0Home | Out-Null
+  Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "dex", "swap-exact-in", "1", "100000naet", $factoryDenom, "1") -FromHome $node0Home | Out-Null
   $factoryAfterSwap = Get-AcceptanceBalanceAmount -Context $ctx -Address $node0 -Denom $factoryDenom
   if ($factoryAfterSwap -le $factoryBeforeSwap) {
     throw "factory balance did not increase after DEX swap: before=$factoryBeforeSwap after=$factoryAfterSwap"
@@ -218,8 +218,8 @@ try {
 
   Write-AcceptanceStep "PoS delegation/slashing queries"
   $stakingParams = Get-LocalnetStakingParams -Binary $Binary -RPCPort $node0Ports.RPC
-  if ($stakingParams.bond_denom -ne "norb") {
-    throw "staking bond denom must be norb, got $($stakingParams.bond_denom)"
+  if ($stakingParams.bond_denom -ne "naet") {
+    throw "staking bond denom must be naet, got $($stakingParams.bond_denom)"
   }
   $validators = @(Get-LocalnetStakingValidators -Binary $Binary -RPCPort $node0Ports.RPC)
   if ($validators.Count -ne $ValidatorCount) {
@@ -246,7 +246,7 @@ try {
     -TimeoutSeconds $TimeoutSeconds | Out-Null
   $delegation = Get-LocalnetDelegation -Binary $Binary -DelegatorAddress $node0 -ValidatorAddress $selectedValidator.operator_address -RPCPort $node0Ports.RPC
   $delegationBalance = if ($delegation.delegation_response.balance) { $delegation.delegation_response.balance } else { $delegation.balance }
-  if ($delegationBalance.denom -ne "norb" -or [int64]$delegationBalance.amount -lt 5000000) {
+  if ($delegationBalance.denom -ne "naet" -or [int64]$delegationBalance.amount -lt 5000000) {
     throw "delegation query returned unexpected balance $($delegationBalance.amount)$($delegationBalance.denom)"
   }
   $afterPower = Wait-LocalnetTotalVotingPowerGreater -PreviousPower $beforePower -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds

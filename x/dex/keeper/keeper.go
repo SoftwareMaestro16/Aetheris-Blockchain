@@ -76,10 +76,10 @@ func validatePoolState(pool types.Pool) (reserve0, reserve1, totalShares sdkmath
 	if pool.Id == 0 {
 		return sdkmath.Int{}, sdkmath.Int{}, sdkmath.Int{}, types.ErrInvalidPool.Wrap("pool id must be positive")
 	}
-	if err := sdk.ValidateDenom(pool.Denom0); err != nil {
+	if err := types.ValidatePoolAssetDenom("denom0", pool.Denom0); err != nil {
 		return sdkmath.Int{}, sdkmath.Int{}, sdkmath.Int{}, types.ErrInvalidPool.Wrapf("invalid denom0: %v", err)
 	}
-	if err := sdk.ValidateDenom(pool.Denom1); err != nil {
+	if err := types.ValidatePoolAssetDenom("denom1", pool.Denom1); err != nil {
 		return sdkmath.Int{}, sdkmath.Int{}, sdkmath.Int{}, types.ErrInvalidPool.Wrapf("invalid denom1: %v", err)
 	}
 	if pool.Denom0 >= pool.Denom1 {
@@ -285,6 +285,12 @@ func (k Keeper) GetParams(ctx context.Context) (types.Params, error) {
 func canonicalPair(a, b sdk.Coin) (sdk.Coin, sdk.Coin, error) {
 	if !a.IsValid() || !b.IsValid() || !a.IsPositive() || !b.IsPositive() {
 		return sdk.Coin{}, sdk.Coin{}, types.ErrInvalidLiquidity.Wrap("tokens must be positive")
+	}
+	if err := types.ValidatePoolAssetDenom("token_a", a.Denom); err != nil {
+		return sdk.Coin{}, sdk.Coin{}, types.ErrInvalidPool.Wrapf("invalid token_a denom: %v", err)
+	}
+	if err := types.ValidatePoolAssetDenom("token_b", b.Denom); err != nil {
+		return sdk.Coin{}, sdk.Coin{}, types.ErrInvalidPool.Wrapf("invalid token_b denom: %v", err)
 	}
 	if a.Denom == b.Denom {
 		return sdk.Coin{}, sdk.Coin{}, types.ErrInvalidPool.Wrap("pool requires two different denoms")

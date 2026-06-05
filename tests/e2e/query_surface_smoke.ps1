@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -14,7 +14,7 @@ param(
   [string]$TimeoutCommit = "1s",
   [string]$LogLevel = "info",
   [string]$FactorySubdenom = "querygold",
-  [string]$Fees = "1000000norb"
+  [string]$Fees = "1000000naet"
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,7 +27,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 $rpcNode = "tcp://127.0.0.1:$($node0Ports.RPC)"
 $grpcAddr = "127.0.0.1:$($node0Ports.GRPC)"
@@ -192,7 +192,7 @@ try {
   & .\scripts\localnet\health.ps1 -OutputDir $OutputDir -ValidatorCount $ValidatorCount -TimeoutSeconds $TimeoutSeconds | Out-Null
   Write-Host "localnet health check passed for RPC/REST/gRPC"
 
-  $node0Home = Join-Path $OutputDir "node0\orbitalisd"
+  $node0Home = Join-Path $OutputDir "node0\aetherisd"
   $node0 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName "node0"
 
   $latestBlock = Invoke-QueryCliJson -Arguments @("query", "block")
@@ -200,13 +200,13 @@ try {
     throw "CLI query block must include header.height"
   }
 
-  $balance = Invoke-QueryCliJson -Arguments @("query", "bank", "balance", $node0, "norb")
-  if ($balance.balance.denom -ne "norb" -or [int64]$balance.balance.amount -le 0) {
-    throw "CLI bank balance must return positive norb balance"
+  $balance = Invoke-QueryCliJson -Arguments @("query", "bank", "balance", $node0, "naet")
+  if ($balance.balance.denom -ne "naet" -or [int64]$balance.balance.amount -le 0) {
+    throw "CLI bank balance must return positive naet balance"
   }
-  $balanceGrpc = Invoke-QueryGrpcJson -Arguments @("query", "bank", "balance", $node0, "norb")
-  if ($balanceGrpc.balance.denom -ne "norb" -or [int64]$balanceGrpc.balance.amount -le 0) {
-    throw "gRPC bank balance must return positive norb balance"
+  $balanceGrpc = Invoke-QueryGrpcJson -Arguments @("query", "bank", "balance", $node0, "naet")
+  if ($balanceGrpc.balance.denom -ne "naet" -or [int64]$balanceGrpc.balance.amount -le 0) {
+    throw "gRPC bank balance must return positive naet balance"
   }
 
   $validators = Invoke-QueryCliJson -Arguments @("query", "staking", "validators")
@@ -219,8 +219,8 @@ try {
   }
 
   $feesParams = Invoke-QueryGrpcJson -Arguments @("query", "fees", "params")
-  if (@($feesParams.params.allowed_fee_denoms) -notcontains "norb") {
-    throw "gRPC fees params must include norb"
+  if (@($feesParams.params.allowed_fee_denoms) -notcontains "naet") {
+    throw "gRPC fees params must include naet"
   }
   Write-Host "CLI/gRPC queries returned block, bank, staking, and fees data"
 
@@ -249,21 +249,21 @@ try {
     throw "REST node_info network mismatch"
   }
   $restBalances = Invoke-RestJson -Path "/cosmos/bank/v1beta1/balances/$node0"
-  $restNorb = @($restBalances.balances) | Where-Object { $_.denom -eq "norb" } | Select-Object -First 1
+  $restNorb = @($restBalances.balances) | Where-Object { $_.denom -eq "naet" } | Select-Object -First 1
   if (-not $restNorb -or [int64]$restNorb.amount -le 0) {
-    throw "REST bank balances must include positive norb"
+    throw "REST bank balances must include positive naet"
   }
-  $restBalanceByDenom = Invoke-RestJson -Path "/cosmos/bank/v1beta1/balances/$node0/by_denom?denom=norb"
-  if ($restBalanceByDenom.balance.denom -ne "norb" -or [int64]$restBalanceByDenom.balance.amount -le 0) {
-    throw "REST bank balance by denom must include positive norb"
+  $restBalanceByDenom = Invoke-RestJson -Path "/cosmos/bank/v1beta1/balances/$node0/by_denom?denom=naet"
+  if ($restBalanceByDenom.balance.denom -ne "naet" -or [int64]$restBalanceByDenom.balance.amount -le 0) {
+    throw "REST bank balance by denom must include positive naet"
   }
   $restValidators = Invoke-RestJson -Path "/cosmos/staking/v1beta1/validators"
   if (@($restValidators.validators).Count -ne $ValidatorCount) {
     throw "REST staking validators count mismatch"
   }
   $restFees = Invoke-RestJson -Path "/l1/fees/v1/params"
-  if (@($restFees.params.allowed_fee_denoms) -notcontains "norb") {
-    throw "REST fees params must include norb"
+  if (@($restFees.params.allowed_fee_denoms) -notcontains "naet") {
+    throw "REST fees params must include naet"
   }
   $restDenoms = Invoke-RestJson -Path "/l1/tokenfactory/v1/denoms"
   if (@($restDenoms.denoms).Count -ne 0) {
@@ -310,8 +310,8 @@ try {
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom2", $node0) -FromHome $node0Home | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000norb", "10000000$factoryDenom2") -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000naet", "10000000$factoryDenom") -FromHome $node0Home | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "dex", "create-pool", "10000000naet", "10000000$factoryDenom2") -FromHome $node0Home | Out-Null
 
   $poolCli = Invoke-QueryGrpcJson -Arguments @("query", "dex", "pool", "1")
   if ($poolCli.pool.id -ne "1" -and [int64]$poolCli.pool.id -ne 1) {

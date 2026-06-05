@@ -53,10 +53,10 @@ function Assert-BuildWorkspacePath {
 function Get-DefaultBinaryRelativePath {
   param([string]$OS, [string]$Arch)
   if ($OS -eq "windows" -and $Arch -eq "amd64") {
-    return "build\orbitalisd.exe"
+    return "build\aetherisd.exe"
   }
   $suffix = if ($OS -eq "windows") { ".exe" } else { "" }
-  return "build\orbitalisd-$OS-$Arch$suffix"
+  return "build\aetherisd-$OS-$Arch$suffix"
 }
 
 function Get-GoTool {

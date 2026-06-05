@@ -8,7 +8,7 @@ import (
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
-const binaryName = "orbitalisd"
+const binaryName = "aetherisd"
 
 var (
 	appVersion = "dev"

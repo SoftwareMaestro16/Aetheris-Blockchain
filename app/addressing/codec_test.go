@@ -17,9 +17,9 @@ func TestRawAddressFormat(t *testing.T) {
 	text := addressing.FormatAccAddress(addr)
 
 	require.Len(t, text, addressing.RawAddressLength)
-	require.True(t, strings.HasPrefix(text, "0:"))
+	require.True(t, strings.HasPrefix(text, "4:"))
 	require.Equal(t, strings.ToLower(text), text)
-	require.Regexp(t, `^0:[0-9a-f]{64}$`, text)
+	require.Regexp(t, `^4:[0-9a-f]{64}$`, text)
 
 	parsed, err := addressing.ParseAccAddress(text)
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestRawLongAddressRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	text := addressing.Format(raw)
-	require.Equal(t, "0:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", text)
+	require.Equal(t, "4:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", text)
 
 	parsed, err := addressing.Parse(text)
 	require.NoError(t, err)
@@ -74,13 +74,18 @@ func TestZeroAddressFormats(t *testing.T) {
 
 func TestZeroAddressValidationPolicy(t *testing.T) {
 	valid := sdk.AccAddress(bytes20(0x33))
+	validText := addressing.FormatAccAddress(valid)
 
-	require.NoError(t, addressing.ValidateUserAddress("recipient", valid.String()))
-	require.NoError(t, addressing.ValidateAuthorityAddress("authority", valid.String()))
+	require.NoError(t, addressing.ValidateUserAddress("recipient", validText))
+	require.NoError(t, addressing.ValidateAuthorityAddress("authority", validText))
+	require.NoError(t, addressing.ValidateContractAddress("contract", validText))
+	require.NoError(t, addressing.RejectZeroAddress("signer", valid.Bytes()))
 
 	require.ErrorContains(t, addressing.ValidateUserAddress("recipient", addressing.ZeroRawAddress), "must not be zero address")
 	require.ErrorContains(t, addressing.ValidateUserAddress("recipient", addressing.ZeroUserFriendly), "must not be zero address")
 	require.ErrorContains(t, addressing.ValidateAuthorityAddress("authority", addressing.ZeroRawAddress), "must not be zero address")
+	require.ErrorContains(t, addressing.ValidateContractAddress("contract", addressing.ZeroRawAddress), "must not be zero address")
+	require.ErrorContains(t, addressing.RejectZeroAddress("signer", sdk.AccAddress(bytes20(0)).Bytes()), "must not be zero address")
 
 	_, present, err := addressing.ParseOptionalAdminAddress("admin", "")
 	require.NoError(t, err)
@@ -88,19 +93,41 @@ func TestZeroAddressValidationPolicy(t *testing.T) {
 	require.ErrorContains(t, addressing.ValidateOptionalAdminAddress("admin", addressing.ZeroRawAddress), "must not be zero address")
 }
 
-func TestAddressValidationRejectsEmptyAndMalformedBech32(t *testing.T) {
-	for _, text := range []string{"", "   ", "orb1notvalid", "cosmos1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqp2n8k9"} {
-		t.Run(text, func(t *testing.T) {
+func TestAddressValidationRejectsEmptyMalformedAndLegacyFormats(t *testing.T) {
+	validLegacy, err := sdk.Bech32ifyAddressBytes("orb", bytes20(0x44))
+	require.NoError(t, err)
+
+	validFriendly, err := addressing.FormatUserFriendly(sdk.AccAddress(bytes20(0x46)))
+	require.NoError(t, err)
+
+	tests := map[string]string{
+		"empty":                         "",
+		"blank":                         "   ",
+		"malformed bech32":              "ae1notvalid",
+		"foreign bech32":                "cosmos1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqp2n8k9",
+		"old raw prefix":                "0:0000000000000000000000000000000000000000000000000000000000000000",
+		"mixed case raw":                "4:ABCDEFabcdef0000000000000000000000000000000000000000000000000000",
+		"wrong length raw":              "4:00000000000000000000000000000000000000000000000000000000000000",
+		"old userfriendly prefix":       "ORBAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		"wrong userfriendly prefix":     "AF" + validFriendly[2:],
+		"non base64url userfriendly":    "AE+/" + validFriendly[4:],
+		"old bech32 account prefix":     validLegacy,
+	}
+	for name, text := range tests {
+		t.Run(name, func(t *testing.T) {
 			require.Error(t, addressing.ValidateUserAddress("sender", text))
 		})
 	}
 }
 
-func TestAddressValidationAcceptsLegacyOrbBech32(t *testing.T) {
-	valid, err := sdk.Bech32ifyAddressBytes("orb", bytes20(0x44))
+func TestAddressValidationAcceptsCurrentSDKBech32Compatibility(t *testing.T) {
+	cfg := sdk.GetConfig()
+	cfg.SetBech32PrefixForAccount("ae", "aepub")
+
+	valid, err := sdk.Bech32ifyAddressBytes("ae", bytes20(0x45))
 	require.NoError(t, err)
 
-	require.True(t, strings.HasPrefix(valid, "orb1"))
+	require.True(t, strings.HasPrefix(valid, "ae1"))
 	require.NoError(t, addressing.ValidateUserAddress("sender", valid))
 }
 

@@ -1,8 +1,11 @@
 # Prototype Security And Determinism Audit Gate
 
-This gate blocks an Orbitalis prototype release when consensus-critical or fund-safety risks are untriaged.
+This gate blocks an Aetheris prototype release when consensus-critical or fund-safety risks are untriaged.
 
 Scope: custom modules `x/tokenfactory`, `x/dex`, `x/fees`; app wiring and ABCI paths; genesis/bootstrap; fees ante policy; DEX math/accounting; tokenfactory admin rights; localnet/prototype acceptance scripts.
+
+Contract-standard and async execution specs under `x/aetherisvm` are included
+for public-testnet readiness even before VM runtime wiring.
 
 The consensus node does not require Redis, PostgreSQL, or any external database. Do not commit database URLs, credentials, mnemonics, validator keys, localnet keyrings, or environment dumps. Off-chain indexers can use databases later through environment variables or a secret manager, outside this gate.
 
@@ -61,6 +64,12 @@ Any untriaged `Critical` or `High` finding from this gate, CodeQL,
 Dependency Review, `govulncheck`, `gosec`, `gitleaks`, or manual review is a
 merge blocker.
 
+Public testnet cannot proceed while any untriaged High/Critical fund-safety,
+consensus-safety, or secret-leak finding remains.
+
+The full public testnet and production gate ledger is
+[Public Testnet And Production Gates](../public-testnet-production-gates.md).
+
 ## Required Checks
 
 | Check | Command | Gate |
@@ -92,13 +101,25 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | Nondeterminism | No consensus path uses map iteration order, wall clock, `math/rand`, goroutines, select races, floating point, pointer addresses, or platform-dependent serialization. |
 | ABCI panic | BeginBlocker/EndBlocker, InitGenesis, ExportGenesis, ante decorators, and msg servers return errors for malformed input instead of panicking. Panics are limited to impossible app wiring/module registration failures. |
 | Authorization | `Msg` signers match msg server sender/admin checks. Tokenfactory mint/burn/change-admin requires current admin. Fees params update requires governance authority. |
-| Denom validation | Native `norb`/`ORB` cannot be spoofed by tokenfactory or LP denoms. All user-provided denoms use SDK validation before bank movement. |
+| Denom validation | Native `naet`/`AET` cannot be spoofed by tokenfactory, factory pool denoms, or LP denoms. All user-provided denoms use SDK validation before bank movement. |
 | Balance checks | Bank sends/mints/burns propagate errors. DEX module balances equal recorded reserves. LP supply equals pool `total_shares`. |
 | Rounding | DEX math uses integer arithmetic only. Rounding favors protocol safety and slippage checks reject zero/tiny output surprises. |
 | State bloat DoS | Tx paths use direct key lookups. List queries use bounded pagination/default limits or are documented blockers before public high-cardinality use. |
 | Genesis/bootstrap | Genesis validates, native metadata is present, custom module defaults round-trip, validator stake is positive, and tracked files contain no secrets. |
 | Local scripts | Destructive operations validate resolved paths stay inside the workspace and never delete repository root or arbitrary paths. |
 | Observability | Health/diagnostic bundle excludes keyring and validator private material. |
+
+## Contract Manual Checklist
+
+| Area | Review |
+| --- | --- |
+| Wallet replay | AW-5 rejects replayed `seqno`, wrong `wallet_id`, expired commands, invalid signatures, and relayer non-`naet` fee paths. |
+| Extension takeover | AW-5 install/remove is explicit and unauthorized extension sends fail before mutation. |
+| Token accounting | AFT-44 master supply equals wallet balances; non-admin mint and admin takeover fail. |
+| NFT/SBT transfer | ANFT-66 requires current owner authorization; ASBT-67 rejects transfer bypass and unauthorized revoke. |
+| Async queue | Async execution enforces queue, body, state, deploy, and depth limits. |
+| Bounce/refund | Failed sends produce deterministic bounce/refund without double-spend or failed-state commit. |
+| Metadata spoofing | Token, NFT, SBT, factory, and DEX metadata cannot spoof native AET/naet. |
 
 ## Regression Test Map
 
@@ -112,6 +133,10 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | Tokenfactory query malformed/not found/bounded list | `x/tokenfactory/keeper/query_server_test.go` |
 | DEX duplicate pair, wrong denom, corrupted pool, LP accounting, slippage | `x/dex/keeper/msg_server_test.go`, `x/dex/keeper/math_test.go`, `tests/e2e/dex_smoke.ps1` |
 | DEX query malformed/not found/bounded list | `x/dex/keeper/query_server_test.go` |
+| AW-5 wallet replay/wallet_id/extension takeover | `x/aetherisvm/standards/aw/*_test.go` |
+| AFT-44 token supply divergence/admin takeover/metadata spoofing | `x/aetherisvm/standards/aft/*_test.go` |
+| ANFT-66/ASBT-67 unauthorized transfer/SBT bypass/metadata spoofing | `x/aetherisvm/standards/anft/*_test.go` |
+| Async queue DoS and bounce/refund behavior | `x/aetherisvm/async/*_test.go` |
 | Full prototype tx/query composition | `tests/e2e/prototype_acceptance.ps1` |
 
 ## Current Known Triage
@@ -121,7 +146,7 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | `go mod verify` reports modified global CometBFT module cache | Local `C:\Users\Ryzen\go\pkg\mod\github.com\cometbft\cometbft@v0.39.3` | Medium | Environment cache issue. Clean module cache or run in CI before release. Do not commit vendored or modified module cache. |
 | `GO-2026-5026` in `golang.org/x/net@v0.53.0` | `govulncheck -scan=package` | Medium/High by advisory | Fixed in `v0.55.0`. Upgrade when dependency graph permits; run symbol scan before release to confirm reachability. |
 | `GO-2026-5024` in `golang.org/x/sys@v0.43.0` | `govulncheck -scan=package`, Windows | Medium/High by advisory | Fixed in `v0.44.0`. Upgrade when dependency graph permits; Windows prototype builds should keep this visible. |
-| `GO-2026-4479` in `github.com/pion/dtls/v2@v2.2.12` | `govulncheck -scan=package` | Medium/High by advisory | No fixed version reported. Track upstream; confirm whether the vulnerable path is reachable from Orbitalis node/runtime before release. |
+| `GO-2026-4479` in `github.com/pion/dtls/v2@v2.2.12` | `govulncheck -scan=package` | Medium/High by advisory | No fixed version reported. Track upstream; confirm whether the vulnerable path is reachable from Aetheris node/runtime before release. |
 | `GO-2024-2584` in `github.com/cosmos/cosmos-sdk@v0.54.3` | `govulncheck -scan=package` | High | Cosmos SDK slashing advisory with no fixed version reported by current tool. Keep PoS/slashing smoke tests mandatory and track SDK patch guidance. |
 | `gosec` `G115` in generated protobuf | Generated `.pb.go` encode/decode casts | Low | Excluded with `-exclude-generated`; source `.proto` remains linted by `buf lint`. |
 | Localnet secrets in ignored directories | `.localnet*`, keyring, validator private files | Low if ignored | Full filesystem secret scans will find generated localnet material. Gate uses staged/history scans; diagnostic bundles exclude private material. |

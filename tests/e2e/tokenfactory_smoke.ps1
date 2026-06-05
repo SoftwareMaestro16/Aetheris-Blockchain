@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -17,7 +17,7 @@ param(
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
   [string]$FactorySubdenom = "gold",
-  [string]$Fees = "1000000norb"
+  [string]$Fees = "1000000naet"
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,7 +30,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 $rpcNode = "tcp://127.0.0.1:$($node0Ports.RPC)"
 $restBase = "http://127.0.0.1:$($node0Ports.REST)"
@@ -163,8 +163,8 @@ try {
     Wait-LocalnetRest -RESTPort $node0Ports.REST -TimeoutSeconds $TimeoutSeconds | Out-Null
   }
 
-  $node0Home = Join-Path $OutputDir "node0\orbitalisd"
-  $node1Home = Join-Path $OutputDir "node1\orbitalisd"
+  $node0Home = Join-Path $OutputDir "node0\aetherisd"
+  $node1Home = Join-Path $OutputDir "node1\aetherisd"
   $node0 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName "node0"
   $node1 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node1Home -KeyName "node1"
   $factoryDenom = "factory/$node0/$FactorySubdenom"
@@ -191,12 +191,12 @@ try {
   }
 
   $bankMetadata = Get-LocalnetBankMetadata -Binary $Binary -Denom $factoryDenom -RPCPort $node0Ports.RPC
-  if ($bankMetadata.display -eq "ORB" -or $bankMetadata.symbol -eq "ORB" -or $bankMetadata.base -eq "norb") {
-    throw "factory metadata must not spoof native ORB/norb"
+  if ($bankMetadata.display -eq "AET" -or $bankMetadata.symbol -eq "AET" -or $bankMetadata.base -eq "naet") {
+    throw "factory metadata must not spoof native AET/naet"
   }
 
   Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", $FactorySubdenom) -FromHome $node0Home -ExpectFailure -ExpectedLog "denom already exists" | Out-Null
-  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", "norb") -FromHome $node0Home -ExpectFailure -ExpectedLog "native ORB/norb" | Out-Null
+  Send-SignedTx -ActionArgs @("tx", "tokenfactory", "create-denom", "naet") -FromHome $node0Home -ExpectFailure -ExpectedLog "native AET/naet" | Out-Null
   Write-Host "duplicate and native-spoof denom creation rejected"
 
   $mintTx = Send-SignedTx -ActionArgs @("tx", "tokenfactory", "mint", "1000000$factoryDenom", $node0) -FromHome $node0Home

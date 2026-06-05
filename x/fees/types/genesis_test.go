@@ -8,10 +8,12 @@ import (
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
+const fixtureTestAssetDenom = "testtoken"
+
 func TestDefaultParamsValidate(t *testing.T) {
 	params := DefaultParams()
 	if len(params.AllowedFeeDenoms) != 1 || params.AllowedFeeDenoms[0] != appparams.BaseDenom {
-		t.Fatalf("expected only norb as default fee denom: %v", params.AllowedFeeDenoms)
+		t.Fatalf("expected only naet as default fee denom: %v", params.AllowedFeeDenoms)
 	}
 	if params.MinFeeAmount != "1" {
 		t.Fatalf("expected min fee amount 1, got %q", params.MinFeeAmount)
@@ -29,7 +31,7 @@ func TestParamsRejectInvalidAllowedFeeDenoms(t *testing.T) {
 		"empty list":       {},
 		"non native denom": {"uatom"},
 		"duplicate native": {appparams.BaseDenom, appparams.BaseDenom},
-		"mixed denoms":     {appparams.BaseDenom, "testtoken"},
+		"mixed denoms":     {appparams.BaseDenom, fixtureTestAssetDenom},
 	}
 
 	for name, denoms := range tests {

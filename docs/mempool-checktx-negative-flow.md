@@ -14,7 +14,7 @@ The smoke uses `.localnet-mempool-negative` and shifted ports by default, create
 
 | Scenario | Expected phase | Expected error signal | State invariant |
 | --- | --- | --- | --- |
-| Wrong fee denom on bank send | `CheckTx` / ante | `fee denom testtoken not accepted; use norb` | receiver balance unchanged; no tx execution |
+| Wrong fee denom on bank send | `CheckTx` / ante | `fee denom testtoken not accepted; use naet` | receiver balance unchanged; no tx execution |
 | Insufficient bank send amount | `DeliverTx` | `insufficient`, `spendable`, or `funds` | receiver balance unchanged; SDK fee deduction for failed DeliverTx is allowed |
 | Signed tx replay / invalid sequence | `CheckTx` / ante | `sequence`, `account sequence`, or signature verification failure | second broadcast does not repeat bank send |
 | Unauthorized tokenfactory mint | `DeliverTx` | `only denom admin can mint` | factory token supply and recipient balance unchanged |

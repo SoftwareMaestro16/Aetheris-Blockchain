@@ -1,7 +1,7 @@
 param(
   [string]$OutputDir = "",
   [string]$Binary = "",
-  [string]$ChainId = "orbitalis-local-1",
+  [string]$ChainId = "aetheris-local-1",
   [int]$ValidatorCount = 3,
   [int]$MinHeight = 3,
   [int]$TimeoutSeconds = 90,
@@ -16,8 +16,8 @@ param(
   [bool]$EnableAPI = $true,
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
-  [string]$DelegationAmount = "5000000norb",
-  [string]$Fees = "1000000norb"
+  [string]$DelegationAmount = "5000000naet",
+  [string]$Fees = "1000000naet"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +26,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 . (Join-Path $RepoRoot "scripts\localnet\common.ps1")
 
 $OutputDir = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
-$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\orbitalisd.exe"
+$Binary = Resolve-LocalnetPath -Path $Binary -DefaultRelativePath "build\aetherisd.exe"
 $node0Ports = Get-LocalnetPortProfile -Index 0 -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
 $rpcNode = "tcp://127.0.0.1:$($node0Ports.RPC)"
 
@@ -154,10 +154,10 @@ try {
   }
 
   $stakingParams = Get-LocalnetStakingParams -Binary $Binary -RPCPort $node0Ports.RPC
-  if ($stakingParams.bond_denom -ne "norb") {
-    throw "staking bond denom must be norb, got $($stakingParams.bond_denom)"
+  if ($stakingParams.bond_denom -ne "naet") {
+    throw "staking bond denom must be naet, got $($stakingParams.bond_denom)"
   }
-  Write-Host "staking params use bond denom norb"
+  Write-Host "staking params use bond denom naet"
 
   $validators = @(Get-LocalnetStakingValidators -Binary $Binary -RPCPort $node0Ports.RPC)
   if ($validators.Count -ne $ValidatorCount) {
@@ -193,7 +193,7 @@ try {
   } | Out-Null
   Write-Host "slashing signing-infos query returned validator records"
 
-  $node0Home = Join-Path $OutputDir "node0\orbitalisd"
+  $node0Home = Join-Path $OutputDir "node0\aetherisd"
   $delegator = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName "node0"
   $beforePower = Get-LocalnetTotalVotingPower -RPCPort $node0Ports.RPC
   Send-LocalnetDelegateTx `
@@ -214,8 +214,8 @@ try {
   if ($null -eq $balance) {
     $balance = $delegation.balance
   }
-  if ($balance.denom -ne "norb") {
-    throw "delegation balance denom must be norb, got $($balance.denom)"
+  if ($balance.denom -ne "naet") {
+    throw "delegation balance denom must be naet, got $($balance.denom)"
   }
   if ([int64]$balance.amount -lt 5000000) {
     throw "delegation balance amount is too small: $($balance.amount)"
@@ -230,22 +230,22 @@ try {
     -Name "wrong delegation denom"
 
   Assert-DelegateTxFailsSafely `
-    -Arguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "999999999999999999norb" -FromHome $node0Home) `
+    -Arguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "999999999999999999naet" -FromHome $node0Home) `
     -Name "insufficient delegation funds"
 
   Assert-LocalnetCliFailure `
     -Binary $Binary `
-    -Arguments (New-DelegateTxArgs -ValidatorAddress "not-a-validator-address" -Amount "1norb" -FromHome $node0Home) | Out-Null
+    -Arguments (New-DelegateTxArgs -ValidatorAddress "not-a-validator-address" -Amount "1naet" -FromHome $node0Home) | Out-Null
   Write-Host "invalid validator address rejected"
 
   Assert-LocalnetCliFailure `
     -Binary $Binary `
-    -Arguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "1norb" -FromHome $node0Home -FromKey "missing-delegator") | Out-Null
+    -Arguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "1naet" -FromHome $node0Home -FromKey "missing-delegator") | Out-Null
   Write-Host "invalid delegator key rejected"
 
   Assert-LocalnetSignedTxReplayFailure `
     -Binary $Binary `
-    -GenerateArguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "1norb" -FromHome $node0Home) `
+    -GenerateArguments (New-DelegateTxArgs -ValidatorAddress $validatorAddress -Amount "1naet" -FromHome $node0Home) `
     -FromKey "node0" `
     -FromHome $node0Home `
     -ChainId $ChainId `

@@ -1,6 +1,6 @@
-# Orbitalis Prototype Demo
+# Aetheris Prototype Demo
 
-This is a guided local-only demo path for showing the working Orbitalis prototype in one visible sequence. It wraps tested localnet commands and is not a substitute for the e2e acceptance suite.
+This is a guided local-only demo path for showing the working Aetheris prototype in one visible sequence. It wraps tested localnet commands and is not a substitute for the e2e acceptance suite.
 
 Preview the steps without building or starting localnet:
 
@@ -17,19 +17,19 @@ Run the demo:
 Use an existing binary:
 
 ```powershell
-.\scripts\demo\prototype-demo.ps1 -SkipBuild -Binary build\orbitalisd.exe
+.\scripts\demo\prototype-demo.ps1 -SkipBuild -Binary build\aetherisd.exe
 ```
 
 ## What It Shows
 
-1. Builds `orbitalisd` unless `-SkipBuild` is set.
+1. Builds `aetherisd` unless `-SkipBuild` is set.
 2. Starts a default 3-validator localnet under `.localnet-demo`.
 3. Shows block height through CLI and node info through REST.
-4. Sends `1000norb` from `node0` to `node1`.
+4. Sends `1000naet` from `node0` to `node1`.
 5. Creates a tokenfactory denom and mints factory tokens to `node0`.
-6. Creates a DEX pool and swaps `norb` for the factory token.
+6. Creates a DEX pool and swaps `naet` for the factory token.
 7. Queries the DEX pool through REST.
-8. Prints final `norb`, factory token, and LP balances.
+8. Prints final `naet`, factory token, and LP balances.
 9. Stops localnet unless `-KeepLocalnet` is set.
 
 ## Safety

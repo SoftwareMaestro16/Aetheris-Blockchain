@@ -51,7 +51,7 @@ foreach ($term in @(
   Assert-Contains -Text $text -Pattern ([regex]::Escape($term)) -Message "checklist missing required term: $term"
 }
 
-foreach ($module in @("tokenfactory", "dex", "fees", "norb", "MsgUpdateParams", "buf lint")) {
+foreach ($module in @("tokenfactory", "dex", "fees", "naet", "MsgUpdateParams", "buf lint")) {
   Assert-Contains -Text $text -Pattern ([regex]::Escape($module)) -Message "checklist missing module/API coverage: $module"
 }
 

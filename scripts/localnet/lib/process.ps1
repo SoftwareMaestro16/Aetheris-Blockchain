@@ -21,7 +21,7 @@ function Stop-LocalnetProcesses {
   $escaped = [regex]::Escape($resolved)
   Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
-      $_.Name -like "orbitalisd*" -and
+      $_.Name -like "aetherisd*" -and
       $_.CommandLine -match $escaped
     } |
     ForEach-Object {

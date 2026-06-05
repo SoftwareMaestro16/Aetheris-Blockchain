@@ -9,7 +9,7 @@ function Write-AcceptanceStep {
 function Invoke-AcceptanceBuild {
   param([pscustomobject]$Context)
 
-  & (Join-Path $Context.RepoRoot "scripts\build-orbitalisd.ps1") -Binary $Context.Binary
+  & (Join-Path $Context.RepoRoot "scripts\build-aetherisd.ps1") -Binary $Context.Binary
 }
 
 function Invoke-AcceptanceLocalnetScript {
@@ -153,28 +153,28 @@ function Assert-AcceptanceFeesParams {
   param([object]$Params)
 
   $allowed = @($Params.allowed_fee_denoms)
-  if ($allowed.Count -ne 1 -or $allowed[0] -ne "norb") {
-    throw "fees params must allow only norb, got $($allowed -join ',')"
+  if ($allowed.Count -ne 1 -or $allowed[0] -ne "naet") {
+    throw "fees params must allow only naet, got $($allowed -join ',')"
   }
 }
 
 function Assert-AcceptanceNativeMetadata {
   param([object]$Metadata)
 
-  if ($Metadata.base -ne "norb") {
-    throw "native metadata base must be norb, got $($Metadata.base)"
+  if ($Metadata.base -ne "naet") {
+    throw "native metadata base must be naet, got $($Metadata.base)"
   }
-  if ($Metadata.display -ne "ORB" -or $Metadata.symbol -ne "ORB") {
-    throw "native metadata display/symbol must be ORB, got $($Metadata.display)/$($Metadata.symbol)"
+  if ($Metadata.display -ne "AET" -or $Metadata.symbol -ne "AET") {
+    throw "native metadata display/symbol must be AET, got $($Metadata.display)/$($Metadata.symbol)"
   }
 
-  $baseUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "norb" })
-  $displayUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "ORB" })
+  $baseUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "naet" })
+  $displayUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "AET" })
   if ($baseUnit.Count -ne 1 -or (Get-AcceptanceDenomUnitExponent -DenomUnit $baseUnit[0]) -ne 0) {
-    throw "native metadata must include norb exponent 0"
+    throw "native metadata must include naet exponent 0"
   }
   if ($displayUnit.Count -ne 1 -or (Get-AcceptanceDenomUnitExponent -DenomUnit $displayUnit[0]) -ne 9) {
-    throw "native metadata must include ORB exponent 9"
+    throw "native metadata must include AET exponent 9"
   }
 }
 

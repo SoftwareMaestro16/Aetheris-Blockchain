@@ -1,6 +1,6 @@
-# Orbitalis Prototype Release Package
+# Aetheris Prototype Release Package
 
-This document defines the release package for the Orbitalis working L1 prototype.
+This document defines the release package for the Aetheris working L1 prototype.
 
 The package is a prerelease/testnet artifact. It is not a mainnet-ready release and must not be marketed as production validator software.
 
@@ -8,7 +8,7 @@ The package is a prerelease/testnet artifact. It is not a mainnet-ready release 
 
 Each package produced by `scripts\release\prototype-package.ps1` contains:
 
-- `bin/orbitalisd` or `bin/orbitalisd.exe`
+- `bin/aetherisd` or `bin/aetherisd.exe`
 - `release-manifest.json`
 - `QUICKSTART.md`
 - `RELEASE-NOTES.md`
@@ -51,7 +51,7 @@ buf lint
 Reuse an existing binary:
 
 ```powershell
-.\scripts\release\prototype-package.ps1 -Version prototype-local -SkipBuild -Binary build\orbitalisd.exe -AllowDirty
+.\scripts\release\prototype-package.ps1 -Version prototype-local -SkipBuild -Binary build\aetherisd.exe -AllowDirty
 ```
 
 Attach sanitized evidence:

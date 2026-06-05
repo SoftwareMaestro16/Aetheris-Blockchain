@@ -59,7 +59,7 @@ if (Test-Path -LiteralPath $logDir) {
 
 foreach ($node in $nodes) {
   $nodeName = $node.Name
-  $nodeHome = Join-Path $node.FullName "orbitalisd"
+  $nodeHome = Join-Path $node.FullName "aetherisd"
   $safeConfigDir = Join-Path $BundleDir "$nodeName\config"
   New-Item -ItemType Directory -Force -Path $safeConfigDir | Out-Null
 

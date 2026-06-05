@@ -39,7 +39,7 @@ func TestInitGenesisRejectsCorruptedStateWithoutWrites(t *testing.T) {
 		Pools: []types.Pool{
 			{
 				Id:          1,
-				Denom0:      "norb",
+				Denom0:      "naet",
 				Denom1:      "uatom",
 				Reserve0:    "not-an-int",
 				Reserve1:    "100",
@@ -62,7 +62,7 @@ func TestMigrationRejectsCorruptedPoolState(t *testing.T) {
 	ctx := app.NewContext(false)
 	require.NoError(t, app.DexKeeper.SetPool(ctx, types.Pool{
 		Id:          77,
-		Denom0:      "norb",
+		Denom0:      "naet",
 		Denom1:      "uatom",
 		Reserve0:    "0",
 		Reserve1:    "100",
@@ -82,7 +82,7 @@ func TestInitGenesisRejectsDuplicatePoolID(t *testing.T) {
 	pools := []types.Pool{
 		{
 			Id:          1,
-			Denom0:      "norb",
+			Denom0:      "naet",
 			Denom1:      "uatom",
 			Reserve0:    "100",
 			Reserve1:    "100",
@@ -91,8 +91,8 @@ func TestInitGenesisRejectsDuplicatePoolID(t *testing.T) {
 		},
 		{
 			Id:          1,
-			Denom0:      "factory/orb1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqp3h70a/gold",
-			Denom1:      "norb",
+			Denom0:      "factory/ae1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqp3h70a/gold",
+			Denom1:      "naet",
 			Reserve0:    "100",
 			Reserve1:    "100",
 			TotalShares: "100",

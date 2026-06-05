@@ -71,6 +71,10 @@ The prototype release gate lives in [Prototype Security And Determinism Audit Ga
 
 The Cosmos-specific manual review lives in [Cosmos Security Audit Checklist](security/cosmos-security-checklist.md). It is mandatory for prototype changes touching app wiring, custom modules, proto/query surface, localnet scripts, or release artifacts.
 
+The public-testnet security audit pack lives in [Security Audit Pack](security/security-audit-pack.md). It ties manual checklists, `govulncheck`, `gosec`, CodeQL, gitleaks, Dependency Review, Cosmos checks, contract checks, and high/critical triage into one release blocker.
+
+The base-chain pre-contract gate lives in [Account And Transaction Safety](security/account-transaction-safety.md). AVM and CosmWasm must not mutate production state until signer, fee, address, zero-address, malformed tx, replay, consensus panic, event, scan, and determinism evidence is green.
+
 The transaction lifecycle matrix lives in [Prototype Transaction Lifecycle Matrix](transaction-lifecycle-matrix.md). It traces prototype txs from actor and signer through state writes, events, verification queries, negative cases, and test evidence.
 
 The tx event contract lives in [Prototype Tx Event Contract](event-contract.md). It defines stable custom event types and attributes for e2e evidence and future indexers without replacing state queries.

@@ -26,7 +26,7 @@ function Get-LocalnetNodes {
   param(
     [string]$OutputDir,
     [string]$NodeDirPrefix = "node",
-    [string]$NodeDaemonHome = "orbitalisd"
+    [string]$NodeDaemonHome = "aetherisd"
   )
 
   $resolved = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
@@ -72,13 +72,13 @@ function Set-LocalnetGeneratedPorts {
     [bool]$EnableAPI = $true,
     [bool]$EnableGRPC = $true,
     [bool]$EnableRPC = $true,
-    [string]$MinimumGasPrices = "0norb",
+    [string]$MinimumGasPrices = "0naet",
     [string]$LogLevel = "info"
   )
 
   $resolved = Resolve-LocalnetPath -Path $OutputDir -DefaultRelativePath ".localnet"
   for ($i = 0; $i -lt $ValidatorCount; $i++) {
-    $nodeHome = Join-Path $resolved "node$i\orbitalisd"
+    $nodeHome = Join-Path $resolved "node$i\aetherisd"
     $configToml = Join-Path $nodeHome "config\config.toml"
     $appToml = Join-Path $nodeHome "config\app.toml"
     $p = Get-LocalnetPortProfile -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
