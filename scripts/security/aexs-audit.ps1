@@ -932,6 +932,116 @@ function Get-AexsAtomicTaskOverride {
       mutation_inputs     = "forward without fee, duplicate value transfer, duplicate bounce receipt, duplicate refund receipt, forged refund destination"
       expected_rejection  = "messaging economic abuse must not bypass forwarding fees, double-spend value, double-bounce, or double-refund"
     }
+    "QUEUE-01" = [ordered]@{
+      flow                = "enqueue, delayed execution, dequeue, bounce, refund, per-block processing limit"
+      state               = "queue items, delayed execution state, dequeue markers, bounce state, refund state, and per-block counters update deterministically"
+      attack              = "valid queue lifecycle baseline plus unauthorized queue actor control sample"
+      invariant           = "queue lifecycle preserves deterministic ordering, sequence counters, refund uniqueness, and per-block processing limits"
+      expected_behavior   = "valid enqueue, delayed execution, dequeue, bounce, refund, and per-block processing paths update queue state exactly once"
+      expected_events     = "queue events match enqueue, dequeue, delay, bounce, refund, and per-block counter deltas"
+      expected_error_path = "unauthorized queue actor control sample is rejected before queue, bounce, refund, or value state mutation"
+      mutation_inputs     = "valid enqueue, valid delayed execution, valid dequeue, valid bounce, valid refund, valid per-block processing limit, unauthorized actor control"
+      expected_rejection  = "unauthorized queue lifecycle variants must fail without queue item, sequence, bounce, refund, or value mutation"
+    }
+    "QUEUE-02" = [ordered]@{
+      flow                = "empty queue, max queue, max depth, expired item, duplicate sequence, missing actor"
+      state               = "queue edge cases leave queue items, depth counters, sequence counters, actors, and refund state unchanged unless explicitly accepted"
+      attack              = "empty queue dequeue, max queue overflow, max depth overflow, expired item replay, duplicate sequence, missing actor"
+      invariant           = "queue accepts only bounded queue depth, valid sequence counters, live items, and valid actors"
+      expected_behavior   = "valid queue boundaries execute deterministically; invalid boundaries reject before queue or value mutation"
+      expected_events     = "accepted boundary queue events match queue deltas; rejected edge cases emit no success events"
+      expected_error_path = "queue validation rejects empty dequeue, max queue overflow, max depth overflow, expired items, duplicate sequence, or missing actor"
+      mutation_inputs     = "empty queue dequeue, max queue plus one, max depth plus one, expired item, duplicate sequence, missing actor"
+      expected_rejection  = "invalid queue edge cases must not alter queue items, depth counters, sequence counters, actors, bounce, refund, or value state"
+    }
+    "QUEUE-03" = [ordered]@{
+      flow                = "queue flooding, message loop, starvation, priority manipulation, duplicate sequence injection"
+      state               = "adversarial queue attempts cannot flood unbounded state, create message loops, starve items, manipulate priority, or inject duplicate sequences"
+      attack              = "queue flooding, message loop, starvation, priority manipulation, duplicate sequence injection"
+      invariant           = "queue depth, ordering, progress, priority, and sequence uniqueness cannot be bypassed"
+      expected_behavior   = "adversarial queue mutations fail deterministically before queue, value, or priority state corruption"
+      expected_events     = "failed queue attacks emit no misleading enqueue, dequeue, bounce, refund, priority, or sequence success events"
+      expected_error_path = "queue transition rejects flooding, loops, starvation, priority manipulation, or duplicate sequence injection before commit"
+      mutation_inputs     = "many enqueue burst, self-reenqueuing loop, high-priority starvation sequence, forged priority, duplicate sequence item"
+      expected_rejection  = "queue attacks must not flood unbounded state, loop indefinitely, starve valid items, manipulate priority, or inject duplicate sequences"
+    }
+    "QUEUE-04" = [ordered]@{
+      flow                = "queue ordering, sequence counters, deterministic export and import stability"
+      state               = "queue ordering, sequence counters, depth counters, bounce/refund state, and delayed execution state do not diverge across replay/export/import"
+      attack              = "state drift attempt through mixed accepted and rejected enqueue, dequeue, bounce, refund, delay, and export/import operations"
+      invariant           = "queue ordering and sequence counters are deterministic and export/import stable"
+      expected_behavior   = "queue state integrity holds across enqueue, dequeue, delay, bounce, refund, replay, export, and import sequences"
+      expected_events     = "queue events reconcile to final queue ordering, sequence, depth, bounce, refund, and delayed execution deltas"
+      expected_error_path = "failed queue operations preserve pre-failure queue ordering, sequence counters, depth, bounce, refund, and value snapshots"
+      mutation_inputs     = "accepted enqueue followed by duplicate sequence, accepted dequeue followed by replay, accepted bounce followed by failed refund, export/import after queue processing"
+      expected_rejection  = "rejected queue operations must preserve deterministic ordering, sequence counters, and export/import consistency"
+    }
+    "QUEUE-05" = [ordered]@{
+      flow                = "queued value refund uniqueness, forwarding fees, and malformed bounce path trapping"
+      state               = "queued value cannot be refunded twice, forwarded without fee, or trapped by malformed bounce path"
+      attack              = "double refund, fee-free forward, malformed bounce trap, forged refund target"
+      invariant           = "queued value cannot be refunded twice, forwarded without fee, or trapped by malformed bounce path"
+      expected_behavior   = "queue economic rules enforce forwarding fees, value conservation, single-use refunds, and safe malformed bounce handling"
+      expected_events     = "no double refund, fee-free forward, trapped value, or malformed bounce success event appears for rejected queue economic abuse paths"
+      expected_error_path = "queue economic abuse rejects before fee, value, bounce, refund, queue, or replay-marker mutation"
+      mutation_inputs     = "duplicate refund item, forward without fee, malformed bounce destination, forged refund target, bounce path that traps queued value"
+      expected_rejection  = "queue economic abuse must not let queued value be refunded twice, forwarded without fee, or trapped by malformed bounce path"
+    }
+    "EVENTS-01" = [ordered]@{
+      flow                = "deterministic event emission for bank, fees, DEX, identity, execution, queue, and memo paths"
+      state               = "event stream, receipt linkage, attributes, indexes, and committed state references are emitted deterministically"
+      attack              = "valid event emission baseline plus unauthorized event source control sample"
+      invariant           = "event emission is deterministic and derived from committed module state transitions only"
+      expected_behavior   = "valid bank, fees, DEX, identity, execution, queue, and memo paths emit deterministic events exactly once"
+      expected_events     = "event stream order and attributes match committed state and receipts"
+      expected_error_path = "unauthorized event source control sample is rejected before event, receipt, or index mutation"
+      mutation_inputs     = "valid bank event, valid fees event, valid DEX event, valid identity event, valid execution event, valid queue event, valid memo event, unauthorized event source"
+      expected_rejection  = "unauthorized event emission variants must fail without event stream, receipt, index, or state mutation"
+    }
+    "EVENTS-02" = [ordered]@{
+      flow                = "empty attributes, max attribute size, duplicate event keys, failed tx event behavior"
+      state               = "event edge cases leave event stream, receipt linkage, indexes, and committed state references deterministic"
+      attack              = "empty attributes, oversized attributes, duplicate event keys, misleading failed tx event"
+      invariant           = "events use bounded attributes, deterministic key ordering, and explicit failed tx behavior"
+      expected_behavior   = "valid event boundaries execute deterministically; invalid boundaries reject or sanitize before event/index mutation"
+      expected_events     = "accepted boundary events match receipt and state deltas; rejected edge cases emit no misleading success events"
+      expected_error_path = "event validation rejects oversized attributes, duplicate event keys where disallowed, and misleading failed tx success event behavior"
+      mutation_inputs     = "empty attributes, max attribute size plus one, duplicate event keys, failed tx with success-shaped event"
+      expected_rejection  = "invalid event edge cases must not create misleading event stream, receipt linkage, indexes, or state references"
+    }
+    "EVENTS-03" = [ordered]@{
+      flow                = "event spoofing, inconsistent event order, misleading success event after failure"
+      state               = "adversarial event attempts cannot spoof authority, reorder inconsistently, or emit success after failed state transitions"
+      attack              = "event spoofing, inconsistent event order, misleading success event after failure"
+      invariant           = "events cannot spoof state authority, violate deterministic ordering, or claim success after failure"
+      expected_behavior   = "adversarial event mutations fail deterministically before event stream or receipt corruption"
+      expected_events     = "failed event attacks emit no misleading authority, balance, resolver, execution, or success events"
+      expected_error_path = "event emission path rejects spoofed events, inconsistent ordering, or success-after-failure before commit"
+      mutation_inputs     = "spoofed bank transfer event, reversed event order, success event after failed tx, forged resolver event, forged execution event"
+      expected_rejection  = "event attacks must not spoof authority, reorder events nondeterministically, or emit misleading success after failure"
+    }
+    "EVENTS-04" = [ordered]@{
+      flow                = "events match committed state and receipts"
+      state               = "event stream, receipt linkage, indexes, and committed state references reconcile after accepted and rejected operations"
+      attack              = "state drift attempt through mixed accepted and rejected event-emitting module operations"
+      invariant           = "events match committed state and receipts"
+      expected_behavior   = "event state integrity holds across event emission, receipt linkage, replay, export, and import sequences"
+      expected_events     = "events reconcile to committed state, receipts, indexes, and final app traces"
+      expected_error_path = "failed event-emitting operations preserve pre-failure event stream, receipt linkage, indexes, and committed state references"
+      mutation_inputs     = "accepted bank event followed by failed spoof, accepted execution receipt followed by failed event, export/import after event-emitting txs"
+      expected_rejection  = "rejected event operations must preserve committed-state and receipt consistency"
+    }
+    "EVENTS-05" = [ordered]@{
+      flow                = "event economic abuse around authority for balances, fees, resolver targets, and execution success"
+      state               = "events cannot be used as authority for balances, fees, resolver targets, or execution success"
+      attack              = "event-as-authority balance spoof, fee spoof, resolver target spoof, execution success spoof"
+      invariant           = "events are observational and cannot authorize balances, fees, resolver targets, or execution success"
+      expected_behavior   = "event economic rules keep authority in committed state, not event text or indexes"
+      expected_events     = "no balance, fee, resolver, or execution authority event is accepted without matching committed state"
+      expected_error_path = "event authority abuse rejects before balance, fee, resolver, execution, receipt, or index state mutation"
+      mutation_inputs     = "balance update from event only, fee paid event without bank state, resolver target from event only, execution success event without receipt"
+      expected_rejection  = "events must not be used as authority for balances, fees, resolver targets, or execution success"
+    }
   }
   if ($overrides.ContainsKey($TaskId)) {
     return $overrides[$TaskId]

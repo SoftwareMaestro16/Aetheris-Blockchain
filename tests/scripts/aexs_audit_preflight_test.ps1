@@ -321,7 +321,17 @@ try {
       "MSG-02",
       "MSG-03",
       "MSG-04",
-      "MSG-05"
+      "MSG-05",
+      "QUEUE-01",
+      "QUEUE-02",
+      "QUEUE-03",
+      "QUEUE-04",
+      "QUEUE-05",
+      "EVENTS-01",
+      "EVENTS-02",
+      "EVENTS-03",
+      "EVENTS-04",
+      "EVENTS-05"
     )) {
     Assert-True ($atomicTaskById.ContainsKey($taskId)) "required base-chain atomic task missing: $taskId"
   }
@@ -394,6 +404,16 @@ try {
   Assert-True ($atomicTaskById["MSG-03"].adversarial_simulation_result.attack_attempt -match "forged proof") "MSG-03 must record forged proof attack"
   Assert-True ($atomicTaskById["MSG-04"].invariant_tested -match "replay/export/import") "MSG-04 must record replay/export/import invariant"
   Assert-True ($atomicTaskById["MSG-05"].adversarial_simulation_result.expected_rejection -match "double-refund") "MSG-05 must record refund double-spend rejection"
+  Assert-True ($atomicTaskById["QUEUE-01"].function_or_flow_covered -match "enqueue") "QUEUE-01 must record queue lifecycle flow"
+  Assert-True ($atomicTaskById["QUEUE-02"].adversarial_simulation_result.mutation_inputs -match "duplicate sequence") "QUEUE-02 must record duplicate sequence mutation"
+  Assert-True ($atomicTaskById["QUEUE-03"].adversarial_simulation_result.attack_attempt -match "queue flooding") "QUEUE-03 must record queue flooding attack"
+  Assert-True ($atomicTaskById["QUEUE-04"].invariant_tested -match "sequence counters") "QUEUE-04 must record sequence counter invariant"
+  Assert-True ($atomicTaskById["QUEUE-05"].adversarial_simulation_result.expected_rejection -match "refunded twice") "QUEUE-05 must record double refund rejection"
+  Assert-True ($atomicTaskById["EVENTS-01"].function_or_flow_covered -match "deterministic event emission") "EVENTS-01 must record deterministic event flow"
+  Assert-True ($atomicTaskById["EVENTS-02"].adversarial_simulation_result.mutation_inputs -match "duplicate event keys") "EVENTS-02 must record duplicate event key mutation"
+  Assert-True ($atomicTaskById["EVENTS-03"].adversarial_simulation_result.attack_attempt -match "event spoofing") "EVENTS-03 must record event spoofing attack"
+  Assert-True ($atomicTaskById["EVENTS-04"].invariant_tested -match "committed state and receipts") "EVENTS-04 must record committed-state receipt invariant"
+  Assert-True ($atomicTaskById["EVENTS-05"].adversarial_simulation_result.expected_rejection -match "authority for balances") "EVENTS-05 must record event authority rejection"
 
   $enforceFailed = $false
   try {
