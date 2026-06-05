@@ -1,0 +1,516 @@
+# Aetheris Automated Fuzzing And Invariant Testing Pipeline
+
+This document defines the implementation task list for the Aetheris automated
+exploit simulator and invariant testing pipeline. It is a security engineering
+roadmap, not runtime code.
+
+The pipeline turns Aetheris into a continuously attacked simulation
+environment: every module, transaction path, routing decision, execution queue,
+and economic rule is treated as a hostile target under adversarial fuzzing and
+mandatory invariant enforcement.
+
+## Purpose
+
+The pipeline is intended to:
+
+- automatically discover vulnerabilities;
+- verify economic invariants;
+- test consensus, base-chain, and execution-layer behavior;
+- simulate red-team attack patterns;
+- stress load, routing, queue, and sharding R&D systems;
+- generate reproducible exploit reports when an invariant breaks.
+
+The system is considered safe only when mandatory invariants pass at 100%,
+red-team mode finds no exploitable path, deterministic execution does not
+diverge, and economic loops cannot be exploited.
+
+## Architecture
+
+The pipeline has seven layers:
+
+```text
+Scenario Generator
+  -> Transaction Mutator / Attack Generator
+  -> Chain Simulator
+  -> State Snapshot Comparator
+  -> Invariant Checker
+  -> Exploit Classifier
+  -> Report Generator
+```
+
+Required targets:
+
+- core modules: `x/auth`, `x/bank`, `x/staking`, `x/slashing`, `x/gov`,
+  `x/distribution`;
+- economy modules: `x/fees`, future `x/token`;
+- application modules: `x/tokenfactory`, `x/dex`, `x/identity`;
+- execution modules: `x/execution`, `x/vm`, `x/messaging`, `x/queue`,
+  `x/events`, `x/actors`, `x/scheduler`, `x/storage`;
+- anti-spam and query modules: `x/reputation`, `x/indexer`;
+- scaling R&D: `x/sharding/sim`, load/routing model, compute shard simulator;
+- AVM executable specification and async contract standards.
+
+## Scenario Generator
+
+The scenario generator creates random and adversarial scenario families.
+
+Required scenario types:
+
+- random transaction sequences;
+- malformed single transactions;
+- staking lifecycle sequences;
+- validator lifecycle sequences;
+- DEX pool, liquidity, and swap sequences;
+- fee and spam bursts;
+- governance proposal/vote sequences;
+- tokenfactory create, mint, burn, and admin sequences;
+- domain registration, auction, renewal, resolver, and reverse lookup flows;
+- async contract messages;
+- queue, bounce, refund, and delayed execution flows;
+- load/routing/shard activation scenarios.
+
+Required fuzz strategies:
+
+- stateless fuzzing: single malformed transaction or message;
+- stateful fuzzing: multi-block transaction chains;
+- adversarial fuzzing: known attack patterns;
+- economic fuzzing: mint, burn, fee, supply, staking, DEX, and reward paths;
+- determinism fuzzing: repeated execution under the same inputs;
+- boundary fuzzing: max gas, max memo, max tx size, max queue, max state size.
+
+Implementation tasks:
+
+- [ ] Define canonical scenario schema.
+- [ ] Add deterministic seed handling.
+- [ ] Add module target selection.
+- [ ] Add scenario minimization hooks for exploit reproduction.
+- [ ] Add scenario replay by seed and step list.
+- [ ] Add `.work/aexs/scenarios/` as default runtime output path.
+
+## Transaction Mutator And Attack Generator
+
+The mutator transforms valid scenarios into hostile inputs.
+
+Required mutations:
+
+- invalid signatures;
+- replayed signed transactions;
+- nonce and sequence manipulation;
+- corrupted fee fields;
+- non-`naet` fees;
+- missing fees;
+- extreme gas values;
+- malformed addresses;
+- zero address inputs;
+- malformed memo fields;
+- malformed routing hints;
+- invalid domain resolution;
+- expired domain actions;
+- fake cross-zone messages;
+- queue depth abuse;
+- oversized VM payloads;
+- invalid AVM entrypoint inputs;
+- partial rollback attempts;
+- malformed genesis fragments for simulator startup tests.
+
+Required adversarial profiles:
+
+- spam attacker;
+- malicious validator;
+- MEV-style bot;
+- governance attacker;
+- routing exploiter;
+- shard overload attacker;
+- tokenfactory authority attacker;
+- DEX liquidity drain attacker;
+- identity/domain squatter;
+- AVM crash-input attacker.
+
+Implementation tasks:
+
+- [ ] Add attacker profile catalog.
+- [ ] Add mutation catalog.
+- [ ] Add per-module mutation allowlist.
+- [ ] Add seed-stable random mutation order.
+- [ ] Add replay mutation for already accepted tx bytes.
+- [ ] Add mutation metadata for reporting.
+
+## Chain Simulator
+
+The simulator runs Aetheris execution locally with reproducible state.
+
+Required modes:
+
+- single-validator fast fuzz mode;
+- multi-validator consensus mode;
+- stateful multi-block mode;
+- stress mode for DoS and load spikes;
+- chaos mode with injected failures;
+- deterministic replay mode for exploit reproduction.
+
+Required simulated surfaces:
+
+- Aether Core consensus and validator set;
+- base-chain ante and transaction validation;
+- staking, slashing, distribution, and governance;
+- native fees in `naet`;
+- tokenfactory and DEX;
+- identity and resolver;
+- AVM executable specification;
+- async messaging and queue;
+- load system and deterministic `LOAD_SCORE`;
+- routing engine and compute shard simulator.
+
+Implementation tasks:
+
+- [ ] Add in-memory Aetheris app runner.
+- [ ] Add randomized but valid genesis generation.
+- [ ] Add randomized validator set generation.
+- [ ] Add block replay support.
+- [ ] Add per-block state snapshot capture.
+- [ ] Add multi-node deterministic replay comparison.
+- [ ] Add localnet-backed stress mode after in-memory mode is stable.
+
+## Invariant Engine
+
+Every simulated block must run mandatory invariant checks. Invariant failure is
+an audit failure even if no user-visible exploit is found yet.
+
+### Economic Invariants
+
+- [ ] Total supply consistency:
+  `sum(account balances) + module balances + burned + staked = total_supply`.
+- [ ] No negative balances.
+- [ ] No unauthorized mint.
+- [ ] No unauthorized burn.
+- [ ] Fee distribution totals match collected fees.
+- [ ] Non-`naet` fees are rejected.
+- [ ] Mint, burn, slash, reward, and fee accounting are export/import stable.
+- [ ] Validator/delegator rewards are deterministic.
+
+### Consensus Invariants
+
+- [ ] Same block inputs produce the same app hash.
+- [ ] Same signed transaction cannot execute twice.
+- [ ] Invalid signer cannot mutate state.
+- [ ] Validator set matches staking state.
+- [ ] Slashing evidence is deterministic and cryptographically verifiable.
+- [ ] No state transition succeeds after malformed ante validation.
+
+### Routing And Load Invariants
+
+- [ ] Same transaction and state produce the same zone decision.
+- [ ] Same transaction and state produce the same shard decision.
+- [ ] No routing loops.
+- [ ] No shard starvation.
+- [ ] `LOAD_SCORE` is always in `[0,1]`.
+- [ ] EMA smoothing is deterministic.
+- [ ] `LOAD_SCORE` does not jump beyond `MAX_DELTA`.
+- [ ] Load values are identical across simulated nodes.
+
+### DEX Invariants
+
+- [ ] Pool reserves match module account balances.
+- [ ] LP supply matches pool shares.
+- [ ] No negative liquidity.
+- [ ] No fake LP tokens.
+- [ ] Swap output is non-negative and slippage-bounded.
+- [ ] Constant-product constraints hold after fee-adjusted swaps.
+- [ ] Failed bank movement does not mutate pool state.
+
+### Identity And Resolver Invariants
+
+- [ ] Domain names are unique.
+- [ ] Active domains cannot be re-auctioned.
+- [ ] Expired domains require auction or explicit renewal path.
+- [ ] Resolver cannot point to malformed or zero address.
+- [ ] Resolver-based payment fails before funds move if unresolved.
+- [ ] Reverse lookup is consistent with owner-approved mapping.
+- [ ] Domain registry owner and NFT representation owner do not diverge.
+
+### Execution, AVM, And Queue Invariants
+
+- [ ] AVM malformed input does not panic.
+- [ ] AVM gas is bounded and deterministic.
+- [ ] Infinite loops are rejected by gas or instruction limits.
+- [ ] Contract state updates are deterministic.
+- [ ] Queue ordering is deterministic.
+- [ ] Cross-zone message replay is rejected.
+- [ ] Bounce/refund cannot double-spend.
+- [ ] Message loops are bounded by depth and per-block limits.
+- [ ] Export/import preserves queue state exactly.
+
+Implementation tasks:
+
+- [ ] Define invariant interface.
+- [ ] Add invariant registry by module.
+- [ ] Add pre-block and post-block invariant phases.
+- [ ] Add state snapshot comparator.
+- [ ] Add invariant failure minimizer.
+- [ ] Add invariant coverage tracker.
+
+## Attack Simulation Engine
+
+Every fuzz run must attempt red-team attacks, not only random mutations.
+
+Required attack families:
+
+- consensus attacks:
+  - double-sign simulation;
+  - slashing bypass attempt;
+  - validator set drift attempt;
+  - deterministic replay divergence attempt.
+- economic attacks:
+  - inflation manipulation;
+  - fee bypass;
+  - unauthorized mint/burn;
+  - staking reward farming loop;
+  - supply accounting drift.
+- DEX attacks:
+  - pool drain;
+  - fake LP;
+  - reserve mismatch;
+  - rounding exploit;
+  - failed bank movement rollback exploit.
+- load/routing attacks:
+  - spam bursts to inflate `LOAD_SCORE`;
+  - shard overload targeting;
+  - routing poisoning;
+  - priority manipulation;
+  - low-reputation bypass.
+- identity attacks:
+  - duplicate domain;
+  - expired domain reuse without auction;
+  - resolver hijack;
+  - reverse lookup spoof;
+  - unresolved-domain payment bypass.
+- execution attacks:
+  - AVM crash input;
+  - oversized payload;
+  - infinite loop attempt;
+  - state corruption attempt;
+  - invalid bounce/refund replay.
+
+Implementation tasks:
+
+- [ ] Add red-team attack suite.
+- [ ] Add attacker role selector per run.
+- [ ] Add severity mapping by invariant family.
+- [ ] Add reproduction output for every failing scenario.
+- [ ] Add exploit path graph generation.
+
+## Coverage Matrix
+
+Audit readiness fails if any module attack surface has less than `95%` planned
+fuzz/invariant coverage. Production-safe status requires `100%` mandatory
+invariant pass rate and no exploitable red-team path.
+
+Required coverage targets:
+
+| Target | Required coverage |
+| --- | --- |
+| `x/auth` | signatures, replay, nonce, signer extraction, malformed tx |
+| `x/bank` | transfers, balances, module accounts, overflow, zero address |
+| `x/staking` | delegation, unbonding, redelegation, rewards, validator set |
+| `x/slashing` | downtime, equivocation evidence, jail/tombstone, slash accounting |
+| `x/fees` | fee denom, fee amount, fee split, bypass attempts |
+| `x/tokenfactory` | create, mint, burn, admin transfer, unauthorized authority |
+| `x/dex` | pools, swaps, liquidity, LP supply, reserve accounting |
+| `x/identity` | domain lifecycle, auction, expiry, renewal, resolver |
+| `x/reputation` | score bounds, decay, rate limits, priority influence |
+| `x/execution` | pipeline order, dispatch, route output, deterministic trace |
+| `x/vm` and AVM | entrypoints, gas, code limits, malformed bytecode |
+| `x/messaging` | async calls, replay, cross-zone message proofs |
+| `x/queue` | ordering, delayed execution, bounce, refund, depth limits |
+| `x/sharding/sim` | shard assignment, overload, replay, state consistency |
+| Load/routing | `LOAD_SCORE`, EMA, `MAX_DELTA`, deterministic zone/shard route |
+
+Implementation tasks:
+
+- [ ] Add coverage schema.
+- [ ] Add module-to-scenario mapping.
+- [ ] Add module-to-invariant mapping.
+- [ ] Add report-time coverage percentage.
+- [ ] Add audit failure when any required target is below threshold.
+
+### Runnable Preflight
+
+The pre-campaign structural audit is implemented by:
+
+```powershell
+.\scripts\security\aexs-audit.ps1 -OutputDir .work\aexs
+```
+
+The runner validates `TO_AUDIT.md`, this pipeline document, the mandatory
+module list, atomic task counts, mandatory coverage matrix rows, and evidence
+links. It writes deterministic campaign output under `.work\aexs\`:
+
+- `summary.json`;
+- `coverage-matrix.json`;
+- `AUDIT_RESULT.md`;
+- `TO_AUDIT.md`.
+
+The runner deliberately returns `NOT_SAFE_PRE_CAMPAIGN` until a real fuzzing
+and invariant campaign records executed results. `-EnforceSafe` must fail until
+mandatory invariants have a `100%` pass rate, planned fuzz/invariant coverage
+is at least `95%`, and no untriaged Critical or High exploit remains.
+
+## Chaos Mode
+
+Chaos mode injects reproducible failures to detect nondeterministic consensus
+bugs and recovery gaps.
+
+Required injections:
+
+- validator delay;
+- validator crash;
+- partial mempool loss;
+- mempool corruption;
+- delayed block propagation in simulator;
+- inconsistent local validator state;
+- partial execution-zone failure;
+- shard crash simulation;
+- queue backlog spike;
+- state snapshot interruption;
+- export/import replay under load.
+
+Rules:
+
+- chaos seeds must be reproducible;
+- injected faults must be recorded in reports;
+- fault timing must be deterministic in replay mode;
+- chaos mode must never hide invariant failures.
+
+Implementation tasks:
+
+- [ ] Add chaos event schema.
+- [ ] Add deterministic fault scheduler.
+- [ ] Add replay support for chaos runs.
+- [ ] Add chaos-specific report fields.
+
+## Exploit Reporter
+
+If any invariant breaks, the pipeline must generate a report that an engineer
+can replay and debug.
+
+Required exploit fields:
+
+- root cause summary;
+- exploit path;
+- minimal reproduction steps;
+- seed;
+- block height;
+- transaction sequence;
+- mutation sequence;
+- affected modules;
+- expected state;
+- actual state;
+- invariant that failed;
+- severity score;
+- fix recommendation.
+
+Severity scale:
+
+- Critical: unauthorized mint/burn, double spend, consensus divergence, fee
+  bypass at scale, slashing bypass, deterministic app hash divergence.
+- High: DEX drain, resolver hijack, routing manipulation, queue double-refund,
+  validator-set inconsistency.
+- Medium: bounded DoS, incorrect report/index state, non-critical accounting
+  drift caught before finalization.
+- Low: non-consensus UX/reporting issue with no fund-safety impact.
+
+Implementation tasks:
+
+- [ ] Add report data model.
+- [ ] Add markdown report renderer.
+- [ ] Add minimal reproduction reducer.
+- [ ] Add state diff renderer.
+- [ ] Add severity classifier.
+
+## Output Files
+
+Runtime outputs should live under `.work/aexs/` unless a future implementation
+explicitly chooses a tracked report path.
+
+### `TO_AUDIT.md`
+
+Generated before a fuzz campaign.
+
+Required content:
+
+- full fuzz strategy;
+- module breakdown;
+- attack surface map;
+- invariant list;
+- attack scenarios;
+- coverage plan;
+- selected seeds;
+- simulator mode;
+- expected run duration.
+
+### `AUDIT_RESULT.md`
+
+Updated during and after a fuzz campaign.
+
+Per-run content:
+
+- scenario executed;
+- mutation applied;
+- attacker profile;
+- result;
+- invariant pass/fail;
+- exploit found, if any;
+- reproduction seed;
+- affected modules.
+
+Final content:
+
+- security score from `0` to `100`;
+- top vulnerabilities;
+- system stability rating;
+- economic risk rating;
+- coverage matrix;
+- mandatory invariant pass rate;
+- red-team exploit summary;
+- production-safe decision.
+
+## Safe-System Criteria
+
+Aetheris can be marked safe for the tested scope only if:
+
+- mandatory invariant pass rate is `100%`;
+- no exploitable red-team path remains;
+- no deterministic execution violation occurs;
+- no economic loop is exploitable;
+- no fee bypass is possible;
+- no unauthorized mint/burn path is possible;
+- no double spend is possible;
+- no queue bounce/refund double-spend is possible;
+- no domain/resolver hijack path is possible;
+- every required coverage target is at or above `95%`;
+- all generated exploit reports are triaged and either fixed or explicitly
+  marked out of scope for the tested release.
+
+## Implementation Checklist
+
+1. Build scenario schema and seed handling.
+2. Build stateless mutator for tx bytes, signatures, fees, denoms, memo, and
+   addresses.
+3. Build in-memory app runner and randomized genesis.
+4. Add stateful multi-block fuzzing.
+5. Add invariant registry and state snapshot comparator.
+6. Add DEX, tokenfactory, fees, staking, and bank invariants.
+7. Add identity, resolver, reputation, load, routing, and queue invariants.
+8. Add AVM malformed input and gas-bound fuzzing.
+9. Add red-team attack profiles.
+10. Add chaos mode.
+11. Add coverage matrix and audit threshold enforcement.
+12. Add `TO_AUDIT.md` and `AUDIT_RESULT.md` renderers under `.work/aexs/`.
+13. Add reproduction reducer and state diff output.
+14. Wire the pipeline into security gates after the first stable implementation.
+
+## One-Line Summary
+
+This pipeline turns Aetheris L1 into a continuously attacked simulation
+environment where every module is treated as a hostile target under adversarial
+fuzzing, invariant enforcement, deterministic replay, and exploit reporting.
