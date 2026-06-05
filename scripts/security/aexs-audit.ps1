@@ -1152,6 +1152,116 @@ function Get-AexsAtomicTaskOverride {
       mutation_inputs     = "high fee spam starving normal tasks, forged market signal, priority above cap, reputation above cap, repeated priority-only plan"
       expected_rejection  = "scheduler economic abuse must not starve normal users or bypass fee/reputation caps through priority or market signals"
     }
+    "STORE-01" = [ordered]@{
+      flow                = "KV writes, reads, versioning, snapshots, export/import, state sync"
+      state               = "key/value state, versions, snapshot roots, exported state, imported state, and state-sync metadata update deterministically"
+      attack              = "valid storage lifecycle baseline plus unauthorized store writer control sample"
+      invariant           = "storage lifecycle preserves deterministic reads/writes, versioning, snapshot roots, export/import equality, and state-sync integrity"
+      expected_behavior   = "valid KV write, read, versioning, snapshot, export/import, and state-sync paths update storage state exactly once"
+      expected_events     = "storage events match write, read, version, snapshot, export/import, and state-sync deltas"
+      expected_error_path = "unauthorized store writer control sample is rejected before key/value, version, snapshot, or export state mutation"
+      mutation_inputs     = "valid KV write, valid KV read, valid version increment, valid snapshot, valid export/import, valid state sync, unauthorized store writer"
+      expected_rejection  = "unauthorized storage lifecycle variants must fail without key/value, version, snapshot, export, import, or state-sync mutation"
+    }
+    "STORE-02" = [ordered]@{
+      flow                = "max key, max value, empty value, duplicate key, deleted key, pagination boundaries"
+      state               = "storage edge cases leave key/value state, versions, deleted markers, pagination cursors, and snapshot roots deterministic"
+      attack              = "max key overflow, max value overflow, empty value ambiguity, duplicate key write, deleted key resurrection, pagination boundary abuse"
+      invariant           = "storage accepts only bounded keys/values, canonical deletion semantics, and bounded deterministic pagination"
+      expected_behavior   = "valid storage boundaries execute deterministically; invalid boundaries reject before state mutation"
+      expected_events     = "accepted boundary storage events match state deltas; rejected edge cases emit no success events"
+      expected_error_path = "storage validation rejects oversized keys, oversized values, invalid duplicate writes, deleted-key misuse, or unsafe pagination boundaries"
+      mutation_inputs     = "max key plus one, max value plus one, empty value, duplicate key write, deleted key read/write, pagination page limit plus one, invalid pagination next key"
+      expected_rejection  = "invalid storage edge cases must not alter key/value state, versions, deleted markers, pagination cursors, or snapshot roots"
+    }
+    "STORE-03" = [ordered]@{
+      flow                = "state root collision, snapshot poisoning, malformed import, unbounded iteration"
+      state               = "adversarial storage attempts cannot collide roots, poison snapshots, import malformed state, or trigger unbounded iteration"
+      attack              = "state root collision, snapshot poisoning, malformed import, unbounded iteration"
+      invariant           = "storage roots, snapshots, imports, and iterators are deterministic, validated, and bounded"
+      expected_behavior   = "adversarial storage mutations fail deterministically before root, snapshot, import, or iterator state corruption"
+      expected_events     = "failed storage attacks emit no misleading root, snapshot, import, or state-sync success events"
+      expected_error_path = "storage path rejects root collision attempt, poisoned snapshot, malformed import, or unbounded iteration before commit"
+      mutation_inputs     = "two states with forged same root, poisoned snapshot chunk, malformed import payload, unsorted import keys, unbounded prefix iterator request"
+      expected_rejection  = "storage attacks must not collide state roots, poison snapshots, import malformed state, or execute unbounded iteration"
+    }
+    "STORE-04" = [ordered]@{
+      flow                = "committed state root, snapshot root, exported state determinism"
+      state               = "committed state root, snapshot root, exported state, versions, and imported state do not diverge across replay/export/import"
+      attack              = "state drift attempt through mixed accepted and rejected storage writes, snapshots, export, and import operations"
+      invariant           = "committed state root, snapshot root, and exported state are deterministic"
+      expected_behavior   = "storage state integrity holds across write, delete, snapshot, replay, export, import, and state-sync sequences"
+      expected_events     = "storage events reconcile to final key/value, root, snapshot, export, import, and version deltas"
+      expected_error_path = "failed storage operations preserve pre-failure key/value state, roots, snapshots, versions, and export/import snapshots"
+      mutation_inputs     = "accepted write followed by failed import, accepted delete followed by replay, snapshot then export/import, same state with different key insertion order"
+      expected_rejection  = "rejected storage operations must preserve deterministic committed root, snapshot root, and exported state consistency"
+    }
+    "STORE-05" = [ordered]@{
+      flow                = "storage economic abuse around growth, rent/deposit, and contract state size limits"
+      state               = "storage growth, storage rent/deposit, and contract state size limits cannot be bypassed"
+      attack              = "storage growth bypass, storage rent bypass, storage deposit bypass, contract state size limit bypass"
+      invariant           = "storage growth, rent/deposit, and contract state size limits cannot be bypassed"
+      expected_behavior   = "storage economic rules enforce bounded growth, rent/deposit accounting, and contract state size limits before commit"
+      expected_events     = "no storage growth, rent, deposit, or contract size limit bypass event appears for rejected storage economic abuse paths"
+      expected_error_path = "storage economic abuse rejects before key/value, size, rent, deposit, contract state, or root mutation"
+      mutation_inputs     = "many small keys to bypass rent, oversized contract state write, zero deposit storage write, split storage writes, expired rent update"
+      expected_rejection  = "storage economic abuse must not bypass storage growth, storage rent/deposit, or contract state size limits"
+    }
+    "MEMO-01" = [ordered]@{
+      flow                = "optional UTF-8 memo on bank, identity, token, DEX, and contract calls"
+      state               = "memo metadata, tx metadata, index entries, event attributes, and execution inputs record optional UTF-8 memo deterministically"
+      attack              = "valid memo lifecycle baseline plus unauthorized memo mutation control sample"
+      invariant           = "memo lifecycle preserves optional UTF-8 validation and cannot alter business execution semantics"
+      expected_behavior   = "valid optional UTF-8 memo on bank, identity, token, DEX, and contract calls is recorded exactly once"
+      expected_events     = "memo events and indexes match committed tx metadata without changing execution result"
+      expected_error_path = "unauthorized memo mutation control sample is rejected before memo, index, event, or execution state mutation"
+      mutation_inputs     = "valid bank memo, valid identity memo, valid token memo, valid DEX memo, valid contract memo, unauthorized memo mutation"
+      expected_rejection  = "unauthorized memo lifecycle variants must fail without memo metadata, index, event, or execution mutation"
+    }
+    "MEMO-02" = [ordered]@{
+      flow                = "empty memo, max memo, invalid UTF-8, control chars, oversized byte length"
+      state               = "memo edge cases leave tx metadata, memo records, index entries, events, and execution results deterministic"
+      attack              = "empty memo ambiguity, max memo overflow, invalid UTF-8, control chars, oversized byte length"
+      invariant           = "memo accepts only valid UTF-8, bounded byte length, and deterministic control-character policy"
+      expected_behavior   = "valid memo boundaries execute deterministically; invalid boundaries reject before memo/index mutation"
+      expected_events     = "accepted boundary memo events match metadata deltas; rejected edge cases emit no misleading success events"
+      expected_error_path = "memo validation rejects invalid UTF-8, disallowed control chars, and oversized byte length before tx metadata mutation"
+      mutation_inputs     = "empty memo, max memo, invalid UTF-8 bytes, control chars, oversized byte length, boundary multibyte UTF-8"
+      expected_rejection  = "invalid memo edge cases must not alter tx metadata, memo records, indexes, events, or execution results"
+    }
+    "MEMO-03" = [ordered]@{
+      flow                = "memo spam, binary payload injection, indexing abuse, misleading memo on failed tx"
+      state               = "adversarial memo attempts cannot spam indexes, inject binary payloads, abuse indexing, or mislead failed transaction state"
+      attack              = "memo spam, binary payload injection, indexing abuse, misleading memo on failed tx"
+      invariant           = "memo metadata remains bounded, UTF-8, index-safe, and non-authoritative on failed txs"
+      expected_behavior   = "adversarial memo mutations fail deterministically before memo, index, event, or execution corruption"
+      expected_events     = "failed memo attacks emit no misleading memo, index, success, or execution events"
+      expected_error_path = "memo path rejects spam, binary injection, indexing abuse, or misleading failed-tx memo before commit"
+      mutation_inputs     = "many oversized memos, binary payload bytes, index key injection, failed tx with success-shaped memo, repeated memo spam burst"
+      expected_rejection  = "memo attacks must not spam indexes, inject binary payloads, abuse indexing, or mislead failed transaction state"
+    }
+    "MEMO-04" = [ordered]@{
+      flow                = "memo immutability after block inclusion and no execution result mutation"
+      state               = "memo metadata, tx metadata, indexes, events, and execution results do not diverge across replay/export/import"
+      attack              = "state drift attempt through memo mutation after inclusion, replay, export, import, and failed execution"
+      invariant           = "memo metadata is immutable after block inclusion and cannot alter execution result"
+      expected_behavior   = "memo state integrity holds across block inclusion, replay, export, import, indexing, and execution sequences"
+      expected_events     = "memo events reconcile to final tx metadata, indexes, receipts, and unchanged execution results"
+      expected_error_path = "failed memo operations preserve pre-failure memo metadata, indexes, events, receipts, and execution result snapshots"
+      mutation_inputs     = "accepted memo then post-inclusion mutation, replay with changed memo, export/import after memo indexing, failed tx memo mutation attempt"
+      expected_rejection  = "rejected memo operations must preserve immutability and no-execution-result-mutation consistency"
+    }
+    "MEMO-05" = [ordered]@{
+      flow                = "memo economic abuse around memo cost, byte fee, and reputation multiplier"
+      state               = "memo cost, byte fee, and reputation multiplier cannot be bypassed"
+      attack              = "memo cost bypass, byte fee bypass, reputation multiplier bypass"
+      invariant           = "memo cost, byte fee, and reputation multiplier cannot be bypassed"
+      expected_behavior   = "memo economic rules enforce byte-based cost, fee accounting, and bounded reputation multiplier before inclusion"
+      expected_events     = "no memo cost, byte fee, or reputation multiplier bypass event appears for rejected memo economic abuse paths"
+      expected_error_path = "memo economic abuse rejects before memo metadata, fee, reputation, index, event, or execution state mutation"
+      mutation_inputs     = "long memo with zero byte fee, compressed-looking memo underpay, high reputation memo fee bypass, control chars to avoid byte count, split memo fields"
+      expected_rejection  = "memo economic abuse must not bypass memo cost, byte fee, or reputation multiplier"
+    }
   }
   if ($overrides.ContainsKey($TaskId)) {
     return $overrides[$TaskId]

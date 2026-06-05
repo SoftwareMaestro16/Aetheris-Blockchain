@@ -341,7 +341,17 @@ try {
       "SCHED-02",
       "SCHED-03",
       "SCHED-04",
-      "SCHED-05"
+      "SCHED-05",
+      "STORE-01",
+      "STORE-02",
+      "STORE-03",
+      "STORE-04",
+      "STORE-05",
+      "MEMO-01",
+      "MEMO-02",
+      "MEMO-03",
+      "MEMO-04",
+      "MEMO-05"
     )) {
     Assert-True ($atomicTaskById.ContainsKey($taskId)) "required base-chain atomic task missing: $taskId"
   }
@@ -434,6 +444,16 @@ try {
   Assert-True ($atomicTaskById["SCHED-03"].adversarial_simulation_result.attack_attempt -match "nondeterministic tie-break") "SCHED-03 must record nondeterministic tie-break attack"
   Assert-True ($atomicTaskById["SCHED-04"].invariant_tested -match "same tasks and state") "SCHED-04 must record same-input same-plan invariant"
   Assert-True ($atomicTaskById["SCHED-05"].adversarial_simulation_result.expected_rejection -match "fee/reputation caps") "SCHED-05 must record fee/reputation cap rejection"
+  Assert-True ($atomicTaskById["STORE-01"].function_or_flow_covered -match "KV writes") "STORE-01 must record storage lifecycle flow"
+  Assert-True ($atomicTaskById["STORE-02"].adversarial_simulation_result.mutation_inputs -match "pagination") "STORE-02 must record pagination boundary mutation"
+  Assert-True ($atomicTaskById["STORE-03"].adversarial_simulation_result.attack_attempt -match "state root collision") "STORE-03 must record state root collision attack"
+  Assert-True ($atomicTaskById["STORE-04"].invariant_tested -match "snapshot root") "STORE-04 must record root determinism invariant"
+  Assert-True ($atomicTaskById["STORE-05"].adversarial_simulation_result.expected_rejection -match "storage rent/deposit") "STORE-05 must record rent/deposit bypass rejection"
+  Assert-True ($atomicTaskById["MEMO-01"].function_or_flow_covered -match "UTF-8 memo") "MEMO-01 must record memo lifecycle flow"
+  Assert-True ($atomicTaskById["MEMO-02"].adversarial_simulation_result.mutation_inputs -match "invalid UTF-8") "MEMO-02 must record invalid UTF-8 mutation"
+  Assert-True ($atomicTaskById["MEMO-03"].adversarial_simulation_result.attack_attempt -match "memo spam") "MEMO-03 must record memo spam attack"
+  Assert-True ($atomicTaskById["MEMO-04"].invariant_tested -match "immutable after block inclusion") "MEMO-04 must record memo immutability invariant"
+  Assert-True ($atomicTaskById["MEMO-05"].adversarial_simulation_result.expected_rejection -match "byte fee") "MEMO-05 must record memo fee bypass rejection"
 
   $enforceFailed = $false
   try {
