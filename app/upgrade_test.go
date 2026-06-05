@@ -24,9 +24,9 @@ func TestModuleVersionMapIncludesPrototypeModules(t *testing.T) {
 		require.NotZero(t, version, moduleName)
 		require.Equal(t, version, stored[moduleName], moduleName)
 	}
-	require.Equal(t, uint64(1), stored[tokenfactorytypes.ModuleName])
-	require.Equal(t, uint64(1), stored[dextypes.ModuleName])
-	require.Equal(t, uint64(1), stored[feestypes.ModuleName])
+	require.Equal(t, uint64(2), stored[tokenfactorytypes.ModuleName])
+	require.Equal(t, uint64(2), stored[dextypes.ModuleName])
+	require.Equal(t, uint64(2), stored[feestypes.ModuleName])
 }
 
 func TestNoOpUpgradeDryRunAndExport(t *testing.T) {

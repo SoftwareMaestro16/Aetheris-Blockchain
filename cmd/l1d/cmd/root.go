@@ -100,6 +100,8 @@ func NewRootCmd() *cobra.Command {
 			return startObservabilityMetrics(cmd)
 		},
 	}
+	rootCmd.PersistentFlags().Bool(flagObservabilityMetrics, false, "enable Orbitalis process Prometheus metrics endpoint")
+	rootCmd.PersistentFlags().String(flagObservabilityMetricsAddr, "127.0.0.1:27660", "Orbitalis process metrics listen address")
 	rootCmd.SetContext(context.WithValue(context.Background(), version.ContextKey{}, extraVersionInfo))
 
 	initRootCmd(rootCmd, encodingConfig.TxConfig, tempApp.BasicModuleManager)

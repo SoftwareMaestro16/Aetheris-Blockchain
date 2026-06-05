@@ -70,7 +70,7 @@ func (k Keeper) GetDenoms(ctx context.Context, limit int) ([]types.DenomAuthorit
 		}
 		var meta types.DenomAuthorityMetadata
 		if err := k.cdc.Unmarshal(iter.Value(), &meta); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		out = append(out, meta)
 	}

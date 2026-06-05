@@ -3,6 +3,8 @@ package types
 import (
 	"testing"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 

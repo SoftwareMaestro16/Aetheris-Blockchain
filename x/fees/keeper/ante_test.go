@@ -67,19 +67,19 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 			wantNextCall: true,
 		},
 		{
-			name:         "accepts empty fee list",
-			tx:           feeTx{fees: sdk.Coins{}},
-			wantNextCall: true,
+			name:    "rejects empty fee list",
+			tx:      feeTx{fees: sdk.Coins{}},
+			wantErr: "fee must be positive",
 		},
 		{
-			name:         "accepts nil fee list",
-			tx:           feeTx{},
-			wantNextCall: true,
+			name:    "rejects nil fee list",
+			tx:      feeTx{},
+			wantErr: "fee must be positive",
 		},
 		{
-			name:         "accepts zero native fee coin",
-			tx:           feeTx{fees: sdk.Coins{sdk.NewInt64Coin(types.BondDenom, 0)}},
-			wantNextCall: true,
+			name:    "rejects zero native fee coin",
+			tx:      feeTx{fees: sdk.Coins{sdk.NewInt64Coin(types.BondDenom, 0)}},
+			wantErr: "invalid fee coins",
 		},
 		{
 			name:    "rejects non native fee denom",
@@ -94,7 +94,7 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 		{
 			name:    "rejects malformed fee coin",
 			tx:      feeTx{fees: sdk.Coins{{Denom: "!", Amount: sdkmath.NewInt(1)}}},
-			wantErr: "fee coins must be valid",
+			wantErr: "invalid fee coins",
 		},
 		{
 			name: "rejects duplicate fee denom entries",
@@ -102,7 +102,7 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 				sdk.NewInt64Coin(types.BondDenom, 1),
 				sdk.NewInt64Coin(types.BondDenom, 2),
 			}},
-			wantErr: "fee coins must be valid",
+			wantErr: "invalid fee coins",
 		},
 		{
 			name:    "rejects transaction without fee interface",

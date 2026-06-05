@@ -14,7 +14,8 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 			observability.RecordFeeRejected("missing_fee_tx")
 			return ctx, types.ErrInvalidFee.Wrap("transaction must expose fees")
 		}
-		if err := k.ValidateTxFees(ctx, feeTx.GetFee()); err != nil {
+		fees := feeTx.GetFee()
+		if err := k.ValidateTxFees(ctx, fees); err != nil {
 			return ctx, err
 		}
 		newCtx, err := next(ctx, tx, simulate)

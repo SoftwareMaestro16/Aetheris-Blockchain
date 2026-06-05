@@ -172,7 +172,7 @@ func (k Keeper) GetPools(ctx context.Context, limit int) ([]types.Pool, bool, er
 		}
 		var pool types.Pool
 		if err := k.cdc.Unmarshal(iter.Value(), &pool); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		pools = append(pools, pool)
 	}

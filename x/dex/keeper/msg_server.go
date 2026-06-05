@@ -56,6 +56,9 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (re
 	if !shares.IsPositive() {
 		return nil, types.ErrInvalidLiquidity.Wrap("initial shares must be positive")
 	}
+	if shares.LT(minInitialLiquidity) {
+		return nil, types.ErrInvalidLiquidity.Wrap("initial shares below minimum")
+	}
 	shareCoin := sdk.NewCoin(lp, shares)
 	pool := types.Pool{
 		Id:          id,
