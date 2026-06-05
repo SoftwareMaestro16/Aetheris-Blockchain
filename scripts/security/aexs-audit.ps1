@@ -1042,6 +1042,116 @@ function Get-AexsAtomicTaskOverride {
       mutation_inputs     = "balance update from event only, fee paid event without bank state, resolver target from event only, execution success event without receipt"
       expected_rejection  = "events must not be used as authority for balances, fees, resolver targets, or execution success"
     }
+    "ACTOR-01" = [ordered]@{
+      flow                = "actor lifecycle, mailbox processing, logical time, isolated state transition"
+      state               = "actor state, mailbox state, logical time, lifecycle markers, and isolated state transition update deterministically"
+      attack              = "valid actor lifecycle baseline plus unauthorized actor controller sample"
+      invariant           = "actor lifecycle preserves isolated state transitions, mailbox ordering, and monotonic logical time"
+      expected_behavior   = "valid actor creation, activation, mailbox processing, logical-time update, and isolated state transition execute exactly once"
+      expected_events     = "actor events match lifecycle, mailbox, logical-time, and isolated state deltas"
+      expected_error_path = "unauthorized actor controller sample is rejected before actor, mailbox, logical-time, or state mutation"
+      mutation_inputs     = "valid actor create, valid mailbox process, valid logical-time tick, valid isolated state transition, unauthorized actor controller"
+      expected_rejection  = "unauthorized actor lifecycle variants must fail without actor state, mailbox, logical-time, or isolated state mutation"
+    }
+    "ACTOR-02" = [ordered]@{
+      flow                = "missing actor, inactive actor, max mailbox, max state size, actor deletion and migration boundaries"
+      state               = "actor edge cases leave actor state, mailbox state, logical time, deletion markers, and migration state unchanged unless explicitly accepted"
+      attack              = "missing actor call, inactive actor call, max mailbox overflow, max state size overflow, invalid deletion or migration boundary"
+      invariant           = "actors accept only existing active actors, bounded mailboxes, bounded state, and valid deletion or migration boundaries"
+      expected_behavior   = "valid actor boundaries execute deterministically; invalid boundaries reject before actor or mailbox mutation"
+      expected_events     = "accepted boundary actor events match state deltas; rejected edge cases emit no success events"
+      expected_error_path = "actor validation rejects missing actor, inactive actor, mailbox overflow, state size overflow, or invalid deletion/migration boundary"
+      mutation_inputs     = "missing actor id, inactive actor message, max mailbox plus one, max state size plus one, delete active actor with pending mailbox, invalid migration target"
+      expected_rejection  = "invalid actor edge cases must not alter actor state, mailbox state, logical time, deletion markers, or migration state"
+    }
+    "ACTOR-03" = [ordered]@{
+      flow                = "cross-actor direct state mutation, mailbox flood, logical-time spoof, actor takeover"
+      state               = "adversarial actor attempts cannot directly mutate another actor, flood mailboxes unboundedly, spoof logical time, or take over actors"
+      attack              = "cross-actor direct state mutation, mailbox flood, logical-time spoof, actor takeover"
+      invariant           = "actor isolation, mailbox bounds, monotonic logical time, and ownership checks cannot be bypassed"
+      expected_behavior   = "adversarial actor mutations fail deterministically before actor, mailbox, logical-time, or ownership state corruption"
+      expected_events     = "failed actor attacks emit no misleading state, mailbox, logical-time, ownership, or migration success events"
+      expected_error_path = "actor transition rejects direct cross-actor mutation, mailbox flood, logical-time spoof, or takeover before commit"
+      mutation_inputs     = "direct write to another actor, mailbox flood burst, lower logical time, future logical time jump, forged actor owner"
+      expected_rejection  = "actor attacks must not mutate another actor directly, flood mailboxes, spoof logical time, or take over actor ownership"
+    }
+    "ACTOR-04" = [ordered]@{
+      flow                = "actor isolation through committed messages only"
+      state               = "one actor cannot mutate another actor except through committed messages"
+      attack              = "state drift attempt through mixed accepted and rejected cross-actor mailbox and direct state operations"
+      invariant           = "one actor cannot mutate another actor except through committed messages"
+      expected_behavior   = "actor state integrity holds across mailbox delivery, rejected direct mutation, replay, export, and import sequences"
+      expected_events     = "actor events reconcile to committed message, mailbox, logical-time, and isolated state deltas"
+      expected_error_path = "failed actor operations preserve pre-failure actor state, mailbox state, logical time, and ownership snapshots"
+      mutation_inputs     = "accepted committed message followed by direct mutation attempt, accepted mailbox delivery followed by replay, export/import after actor transitions"
+      expected_rejection  = "rejected actor operations must preserve actor isolation and committed-message-only mutation consistency"
+    }
+    "ACTOR-05" = [ordered]@{
+      flow                = "actor economic abuse around storage, execution, message costs, actor splitting, and mailbox abuse"
+      state               = "actor storage, execution, and message costs cannot be avoided through actor splitting or mailbox abuse"
+      attack              = "storage cost bypass, execution cost bypass, message cost bypass, actor splitting, mailbox abuse"
+      invariant           = "actor storage, execution, and message costs cannot be avoided through actor splitting or mailbox abuse"
+      expected_behavior   = "actor economic rules enforce storage, execution, and message cost accounting across actor and mailbox layouts"
+      expected_events     = "no storage, execution, message, actor splitting, or mailbox cost bypass event appears for rejected actor economic abuse paths"
+      expected_error_path = "actor economic abuse rejects before actor state, mailbox, storage, execution, message, or fee accounting mutation"
+      mutation_inputs     = "many tiny actors to bypass storage cost, mailbox fanout to bypass message cost, repeated cheap execution, split actor state, unpaid mailbox message"
+      expected_rejection  = "actor economic abuse must not avoid storage, execution, or message costs through actor splitting or mailbox abuse"
+    }
+    "SCHED-01" = [ordered]@{
+      flow                = "deterministic ordering, task selection, read/write set handling, priority class handling"
+      state               = "plan output, selected tasks, read/write conflict results, priority class ordering, and task status update deterministically"
+      attack              = "valid scheduler lifecycle baseline plus unauthorized scheduler input control sample"
+      invariant           = "scheduler planning preserves deterministic ordering, read/write conflict handling, and bounded priority class rules"
+      expected_behavior   = "valid task ordering, selection, read/write handling, and priority handling produce one deterministic execution plan"
+      expected_events     = "scheduler events match plan output, task selection, conflict result, and priority deltas"
+      expected_error_path = "unauthorized scheduler input control sample is rejected before plan, task, or priority state mutation"
+      mutation_inputs     = "valid task set, valid priority class, valid read/write set, valid dependency graph, unauthorized scheduler input"
+      expected_rejection  = "unauthorized scheduler lifecycle variants must fail without plan output, task status, conflict result, or priority mutation"
+    }
+    "SCHED-02" = [ordered]@{
+      flow                = "empty plan, duplicate task id, max tasks, conflicting read/write sets, dependency boundaries"
+      state               = "scheduler edge cases leave plan output, task status, dependency state, conflict results, and priority state deterministic"
+      attack              = "empty plan abuse, duplicate task id, max tasks overflow, conflicting read/write set, dependency boundary violation"
+      invariant           = "scheduler accepts only canonical task ids, bounded task counts, deterministic conflicts, and valid dependency boundaries"
+      expected_behavior   = "valid scheduler boundaries execute deterministically; invalid boundaries reject before plan mutation"
+      expected_events     = "accepted boundary scheduler events match plan deltas; rejected edge cases emit no success events"
+      expected_error_path = "scheduler validation rejects duplicate task ids, max task overflow, invalid conflicts, and dependency boundary violations"
+      mutation_inputs     = "empty plan, duplicate task id, max tasks plus one, conflicting read/write sets, missing dependency, cyclic dependency"
+      expected_rejection  = "invalid scheduler edge cases must not alter plan output, task status, dependency state, conflict results, or priority state"
+    }
+    "SCHED-03" = [ordered]@{
+      flow                = "scheduling manipulation, starvation, priority gaming, nondeterministic tie-break"
+      state               = "adversarial scheduler attempts cannot manipulate plans, starve tasks, game priority, or use nondeterministic tie-breaks"
+      attack              = "scheduling manipulation, starvation, priority gaming, nondeterministic tie-break"
+      invariant           = "scheduler ordering, starvation prevention, priority bounds, and tie-breaks remain deterministic"
+      expected_behavior   = "adversarial scheduler mutations fail deterministically before plan, priority, or task-status corruption"
+      expected_events     = "failed scheduler attacks emit no misleading plan, priority, selection, starvation, or tie-break success events"
+      expected_error_path = "scheduler transition rejects manipulation, starvation, priority gaming, or nondeterministic tie-break before commit"
+      mutation_inputs     = "task order permutation, high-priority starvation sequence, forged priority class, equal priority tie without hash key, validator-local ordering hint"
+      expected_rejection  = "scheduler attacks must not manipulate planning, starve tasks, game priority, or introduce nondeterministic tie-breaks"
+    }
+    "SCHED-04" = [ordered]@{
+      flow                = "same tasks and state produce same execution plan across nodes"
+      state               = "plan output, task status, conflict results, dependency ordering, and priority ordering do not diverge across replay/export/import"
+      attack              = "state drift attempt through same task set with different insertion order, replay, export, and import"
+      invariant           = "same tasks and state produce the same execution plan across nodes"
+      expected_behavior   = "scheduler state integrity holds across task planning, conflict resolution, replay, export, and import sequences"
+      expected_events     = "scheduler events reconcile to final plan output, task status, conflict result, dependency, and priority deltas"
+      expected_error_path = "failed scheduler operations preserve pre-failure plan, task status, conflict result, dependency, and priority snapshots"
+      mutation_inputs     = "same tasks in different insertion order, accepted plan followed by replay, export/import after planning, equal priority tie-break sequence"
+      expected_rejection  = "rejected scheduler operations must preserve deterministic same-input same-plan consistency"
+    }
+    "SCHED-05" = [ordered]@{
+      flow                = "scheduler economic abuse around priority or market signals, starvation, fee caps, and reputation caps"
+      state               = "priority or market signals cannot starve normal users or bypass fee/reputation caps"
+      attack              = "market signal starvation, priority signal starvation, fee cap bypass, reputation cap bypass"
+      invariant           = "priority or market signals cannot starve normal users or bypass fee/reputation caps"
+      expected_behavior   = "scheduler economic rules enforce bounded priority influence, anti-starvation, fee caps, and reputation caps"
+      expected_events     = "no starvation, fee cap bypass, reputation cap bypass, or priority abuse success event appears for rejected scheduler economic paths"
+      expected_error_path = "scheduler economic abuse rejects before plan, priority, market signal, fee, reputation, or task status mutation"
+      mutation_inputs     = "high fee spam starving normal tasks, forged market signal, priority above cap, reputation above cap, repeated priority-only plan"
+      expected_rejection  = "scheduler economic abuse must not starve normal users or bypass fee/reputation caps through priority or market signals"
+    }
   }
   if ($overrides.ContainsKey($TaskId)) {
     return $overrides[$TaskId]

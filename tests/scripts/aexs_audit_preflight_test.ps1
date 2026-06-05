@@ -331,7 +331,17 @@ try {
       "EVENTS-02",
       "EVENTS-03",
       "EVENTS-04",
-      "EVENTS-05"
+      "EVENTS-05",
+      "ACTOR-01",
+      "ACTOR-02",
+      "ACTOR-03",
+      "ACTOR-04",
+      "ACTOR-05",
+      "SCHED-01",
+      "SCHED-02",
+      "SCHED-03",
+      "SCHED-04",
+      "SCHED-05"
     )) {
     Assert-True ($atomicTaskById.ContainsKey($taskId)) "required base-chain atomic task missing: $taskId"
   }
@@ -414,6 +424,16 @@ try {
   Assert-True ($atomicTaskById["EVENTS-03"].adversarial_simulation_result.attack_attempt -match "event spoofing") "EVENTS-03 must record event spoofing attack"
   Assert-True ($atomicTaskById["EVENTS-04"].invariant_tested -match "committed state and receipts") "EVENTS-04 must record committed-state receipt invariant"
   Assert-True ($atomicTaskById["EVENTS-05"].adversarial_simulation_result.expected_rejection -match "authority for balances") "EVENTS-05 must record event authority rejection"
+  Assert-True ($atomicTaskById["ACTOR-01"].function_or_flow_covered -match "actor lifecycle") "ACTOR-01 must record actor lifecycle flow"
+  Assert-True ($atomicTaskById["ACTOR-02"].adversarial_simulation_result.mutation_inputs -match "max mailbox") "ACTOR-02 must record max mailbox mutation"
+  Assert-True ($atomicTaskById["ACTOR-03"].adversarial_simulation_result.attack_attempt -match "mailbox flood") "ACTOR-03 must record mailbox flood attack"
+  Assert-True ($atomicTaskById["ACTOR-04"].invariant_tested -match "committed messages") "ACTOR-04 must record committed-message isolation invariant"
+  Assert-True ($atomicTaskById["ACTOR-05"].adversarial_simulation_result.expected_rejection -match "actor splitting") "ACTOR-05 must record actor splitting cost rejection"
+  Assert-True ($atomicTaskById["SCHED-01"].function_or_flow_covered -match "deterministic ordering") "SCHED-01 must record scheduler lifecycle flow"
+  Assert-True ($atomicTaskById["SCHED-02"].adversarial_simulation_result.mutation_inputs -match "duplicate task id") "SCHED-02 must record duplicate task id mutation"
+  Assert-True ($atomicTaskById["SCHED-03"].adversarial_simulation_result.attack_attempt -match "nondeterministic tie-break") "SCHED-03 must record nondeterministic tie-break attack"
+  Assert-True ($atomicTaskById["SCHED-04"].invariant_tested -match "same tasks and state") "SCHED-04 must record same-input same-plan invariant"
+  Assert-True ($atomicTaskById["SCHED-05"].adversarial_simulation_result.expected_rejection -match "fee/reputation caps") "SCHED-05 must record fee/reputation cap rejection"
 
   $enforceFailed = $false
   try {
