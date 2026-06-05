@@ -712,6 +712,116 @@ function Get-AexsAtomicTaskOverride {
       mutation_inputs     = "losing bid refund redirect, renewal fee redirect, auction escrow drain, invalid payment target, duplicate refund claim"
       expected_rejection  = "identity economic abuse must not steal bids, renewal fees, refunds, or route domain payments to invalid targets"
     }
+    "REP-01" = [ordered]@{
+      flow                = "score updates, decay, level assignment, rate limit, priority signal"
+      state               = "reputation score, decay state, level, rate limit, and priority signal update deterministically"
+      attack              = "valid reputation lifecycle baseline plus unauthorized score writer control sample"
+      invariant           = "reputation lifecycle preserves bounded score, deterministic decay, rate limits, and priority class rules"
+      expected_behavior   = "valid score update, decay, level assignment, rate limit, and priority signal update reputation state exactly once"
+      expected_events     = "reputation events match score, decay, level, rate-limit, and priority deltas"
+      expected_error_path = "unauthorized score writer control sample is rejected before reputation state mutation"
+      mutation_inputs     = "valid score update, valid decay tick, valid level assignment, valid rate-limit update, valid priority signal, unauthorized score writer"
+      expected_rejection  = "unauthorized reputation lifecycle variants must fail without score, level, rate-limit, or priority mutation"
+    }
+    "REP-02" = [ordered]@{
+      flow                = "score floor, score ceiling, inactive accounts, new accounts, zero activity, max activity"
+      state               = "reputation edge cases clamp score, level, rate limit, and priority deterministically"
+      attack              = "score floor bypass, score ceiling overflow, inactive account mutation, new account bootstrap abuse, zero or max activity boundary"
+      invariant           = "reputation scores remain within floor and ceiling and account activity boundaries are deterministic"
+      expected_behavior   = "valid reputation boundaries execute deterministically; invalid boundaries reject before score mutation"
+      expected_events     = "accepted boundary reputation events match state deltas; rejected edge cases emit no success events"
+      expected_error_path = "reputation validation rejects out-of-bound score, inactive-account abuse, invalid new-account state, or unsafe max activity"
+      mutation_inputs     = "score floor minus one, score ceiling plus one, inactive account update, new account with forged history, zero activity, max activity plus one"
+      expected_rejection  = "invalid reputation edge cases must not alter score, level, rate limit, or priority state"
+    }
+    "REP-03" = [ordered]@{
+      flow                = "reputation farming, sybil bypass, spam with low score, priority manipulation"
+      state               = "adversarial reputation attempts cannot farm score, bypass sybil controls, spam low-score lanes, or manipulate priority"
+      attack              = "reputation farming, sybil bypass, spam with low score, priority manipulation"
+      invariant           = "reputation cannot be farmed or used to bypass bounded rate limits and priority ordering"
+      expected_behavior   = "adversarial reputation mutations fail deterministically before score, rate-limit, or priority corruption"
+      expected_events     = "failed reputation attacks emit no misleading score, level, rate-limit, or priority success events"
+      expected_error_path = "reputation transition rejects farming, sybil bypass, low-score spam, or priority manipulation before commit"
+      mutation_inputs     = "rapid self-activity loop, sybil account fanout, low-score spam burst, forged high-priority reputation signal, repeated decay timing sequence"
+      expected_rejection  = "reputation attacks must not farm score, bypass sybil controls, spam accepted lanes, or manipulate priority"
+    }
+    "REP-04" = [ordered]@{
+      flow                = "deterministic score replay, export, and import integrity"
+      state               = "score updates, decay, levels, limits, and priority signals do not diverge across replay/export/import"
+      attack              = "state drift attempt through mixed accepted and rejected reputation updates plus replay/export/import"
+      invariant           = "score updates preserve deterministic replay and do not diverge across replay/export/import"
+      expected_behavior   = "reputation state integrity holds across score update, decay, rejected update, replay, export, and import sequences"
+      expected_events     = "reputation events reconcile to final score, decay, level, rate-limit, and priority deltas"
+      expected_error_path = "failed reputation operations preserve pre-failure score, level, rate-limit, priority, and replay snapshots"
+      mutation_inputs     = "accepted score update followed by failed update, accepted decay followed by replay, export/import after priority updates"
+      expected_rejection  = "rejected reputation operations must preserve deterministic replay and export/import consistency"
+    }
+    "REP-05" = [ordered]@{
+      flow                = "reputation economic abuse around direct purchase, fee bypass, deposit bypass, and signer bypass"
+      state               = "reputation cannot be bought directly and cannot bypass required fees, deposits, or signer checks"
+      attack              = "direct reputation purchase, required fee bypass, required deposit bypass, signer check bypass"
+      invariant           = "reputation cannot substitute for protocol fees, deposits, or signer authorization"
+      expected_behavior   = "reputation economic rules keep score influence bounded to allowed priority/rate-limit effects"
+      expected_events     = "no fee bypass, deposit bypass, signer bypass, or direct score purchase event appears for rejected reputation abuse paths"
+      expected_error_path = "economic reputation abuse rejects before fee, deposit, signer, score, or priority state mutation"
+      mutation_inputs     = "payment shaped as score purchase, high reputation with zero fee, high reputation without deposit, forged signer reputation proof, priority lane without signer"
+      expected_rejection  = "reputation economic abuse must not buy score directly or bypass required fees, deposits, or signer checks"
+    }
+    "EXEC-01" = [ordered]@{
+      flow                = "transaction pipeline order, dispatch, route output, events, deterministic trace"
+      state               = "execution result, route output, events, receipts, and deterministic trace update in canonical pipeline order"
+      attack              = "valid execution pipeline baseline plus unauthorized dispatch control sample"
+      invariant           = "execution pipeline order, dispatch target, route output, events, and trace are deterministic"
+      expected_behavior   = "valid pipeline validation, dispatch, route output, event emission, and trace recording execute exactly once"
+      expected_events     = "execution events match dispatch, route, receipt, and trace deltas"
+      expected_error_path = "unauthorized dispatch control sample is rejected before execution state mutation"
+      mutation_inputs     = "valid pipeline tx, valid dispatch, valid route output, valid event trace, unauthorized dispatch control"
+      expected_rejection  = "unauthorized execution lifecycle variants must fail without dispatch, receipt, route, event, or trace mutation"
+    }
+    "EXEC-02" = [ordered]@{
+      flow                = "malformed payload, missing route, invalid module, failed dispatch, max tx size"
+      state               = "execution edge cases leave dispatch state, route output, events, receipts, and traces unchanged unless explicitly accepted"
+      attack              = "malformed payload, missing route, invalid module, failed dispatch, max tx size boundary"
+      invariant           = "execution accepts only valid payloads, routes, modules, dispatch results, and bounded tx sizes"
+      expected_behavior   = "valid execution boundaries execute deterministically; invalid boundaries reject before state mutation"
+      expected_events     = "accepted boundary execution events match trace deltas; rejected edge cases emit no success events"
+      expected_error_path = "execution validation rejects malformed payloads, missing routes, invalid modules, failed dispatches, or unsafe max tx sizes"
+      mutation_inputs     = "malformed payload bytes, missing route, invalid module id, forced dispatch failure, max tx size plus one"
+      expected_rejection  = "invalid execution edge cases must not alter dispatch state, route output, events, receipts, or traces"
+    }
+    "EXEC-03" = [ordered]@{
+      flow                = "partial rollback, wrong module dispatch, invalid state transition after ante failure, execution desync"
+      state               = "adversarial execution attempts cannot partially commit, dispatch to wrong modules, mutate after ante failure, or desync traces"
+      attack              = "partial rollback, wrong module dispatch, invalid state transition after ante failure, execution desync"
+      invariant           = "execution cannot commit partial writes, bypass ante failure, dispatch to wrong module, or produce nondeterministic traces"
+      expected_behavior   = "adversarial execution mutations fail deterministically before state, receipt, or trace corruption"
+      expected_events     = "failed execution attacks emit no misleading dispatch, receipt, event, or trace success events"
+      expected_error_path = "execution path rejects rollback, dispatch, ante-bypass, or desync attack before commit"
+      mutation_inputs     = "panic-shaped partial write, wrong module route, ante-failed tx with state write, nondeterministic trace input, duplicate dispatch"
+      expected_rejection  = "execution attacks must not partially commit, wrong-dispatch, mutate after ante failure, or desync execution traces"
+    }
+    "EXEC-04" = [ordered]@{
+      flow                = "failed execution no partial writes and accepted execution stable receipts"
+      state               = "failed execution does not commit partial writes and accepted execution emits stable receipts"
+      attack              = "state drift attempt through mixed accepted and rejected execution, dispatch, route, and receipt operations"
+      invariant           = "failed execution does not commit partial writes and accepted execution emits stable receipts"
+      expected_behavior   = "execution state integrity holds across accepted dispatch, failed dispatch, replay, export, and import sequences"
+      expected_events     = "execution events reconcile to final receipts, route output, trace, and committed state deltas"
+      expected_error_path = "failed execution preserves pre-failure state writes, route output, events, receipts, and trace snapshots"
+      mutation_inputs     = "accepted dispatch followed by failed dispatch, accepted route followed by invalid module, failed execution then replay, export/import after receipts"
+      expected_rejection  = "rejected execution operations must preserve no-partial-write and stable-receipt consistency"
+    }
+    "EXEC-05" = [ordered]@{
+      flow                = "execution economic abuse around fee, gas, memo, reputation, and routing constraints"
+      state               = "execution cannot bypass fee, gas, memo, reputation, or routing constraints"
+      attack              = "fee bypass, gas bypass, memo bypass, reputation bypass, routing constraint bypass"
+      invariant           = "execution cannot bypass fee, gas, memo, reputation, or routing constraints"
+      expected_behavior   = "execution economic rules preserve ante, gas, memo, reputation, and routing gates before dispatch"
+      expected_events     = "no dispatch, receipt, or trace success event appears for rejected execution constraint bypass paths"
+      expected_error_path = "execution economic abuse rejects before dispatch, state write, receipt, event, or trace mutation"
+      mutation_inputs     = "zero fee execution, gas underpayment execution, oversized memo execution, forged reputation execution, missing route execution"
+      expected_rejection  = "execution economic abuse must not bypass fee, gas, memo, reputation, or routing constraints"
+    }
   }
   if ($overrides.ContainsKey($TaskId)) {
     return $overrides[$TaskId]

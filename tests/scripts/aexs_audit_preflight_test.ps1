@@ -301,7 +301,17 @@ try {
       "ID-02",
       "ID-03",
       "ID-04",
-      "ID-05"
+      "ID-05",
+      "REP-01",
+      "REP-02",
+      "REP-03",
+      "REP-04",
+      "REP-05",
+      "EXEC-01",
+      "EXEC-02",
+      "EXEC-03",
+      "EXEC-04",
+      "EXEC-05"
     )) {
     Assert-True ($atomicTaskById.ContainsKey($taskId)) "required base-chain atomic task missing: $taskId"
   }
@@ -354,6 +364,16 @@ try {
   Assert-True ($atomicTaskById["ID-03"].adversarial_simulation_result.attack_attempt -match "domain hijack") "ID-03 must record domain hijack attack"
   Assert-True ($atomicTaskById["ID-04"].invariant_tested -match "NFT representation") "ID-04 must record NFT representation invariant"
   Assert-True ($atomicTaskById["ID-05"].adversarial_simulation_result.expected_rejection -match "invalid targets") "ID-05 must record invalid payment target rejection"
+  Assert-True ($atomicTaskById["REP-01"].function_or_flow_covered -match "score updates") "REP-01 must record reputation lifecycle flow"
+  Assert-True ($atomicTaskById["REP-02"].adversarial_simulation_result.mutation_inputs -match "score floor") "REP-02 must record score floor mutation"
+  Assert-True ($atomicTaskById["REP-03"].adversarial_simulation_result.attack_attempt -match "reputation farming") "REP-03 must record reputation farming attack"
+  Assert-True ($atomicTaskById["REP-04"].invariant_tested -match "deterministic replay") "REP-04 must record replay determinism invariant"
+  Assert-True ($atomicTaskById["REP-05"].adversarial_simulation_result.expected_rejection -match "required fees") "REP-05 must record fee/deposit/signer bypass rejection"
+  Assert-True ($atomicTaskById["EXEC-01"].function_or_flow_covered -match "transaction pipeline order") "EXEC-01 must record execution pipeline flow"
+  Assert-True ($atomicTaskById["EXEC-02"].adversarial_simulation_result.mutation_inputs -match "missing route") "EXEC-02 must record missing route mutation"
+  Assert-True ($atomicTaskById["EXEC-03"].adversarial_simulation_result.attack_attempt -match "partial rollback") "EXEC-03 must record partial rollback attack"
+  Assert-True ($atomicTaskById["EXEC-04"].invariant_tested -match "failed execution") "EXEC-04 must record no-partial-write invariant"
+  Assert-True ($atomicTaskById["EXEC-05"].adversarial_simulation_result.expected_rejection -match "routing constraints") "EXEC-05 must record routing constraint rejection"
 
   $enforceFailed = $false
   try {
