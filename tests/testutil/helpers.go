@@ -100,7 +100,7 @@ func EncodeSignedTxWithChainID(
 	acc := app.AccountKeeper.GetAccount(ctx, addr)
 	require.NotNil(t, acc)
 	tx, err := sims.GenSignedMockTx(
-		rand.New(rand.NewSource(1)),
+		rand.New(rand.NewSource(1)), // #nosec G404 deterministic test signing only, not consensus or key generation
 		app.TxConfig(),
 		msgs,
 		fee,

@@ -1,0 +1,6 @@
+# Govulncheck findings already triaged in docs/security/prototype-audit-gate.md.
+# New GO-* IDs from the Security Gate workflow are untriaged and must fail PRs.
+GO-2024-2584
+GO-2026-4479
+GO-2026-5024
+GO-2026-5026

@@ -1,6 +1,6 @@
 # Cosmos Security Audit Checklist
 
-Use this checklist for every prototype change that touches app wiring, custom modules, proto/query surface, localnet tooling, or release artifacts. It is Cosmos-specific review, not a replacement for `go test`, `go vet`, `buf lint`, or the runnable gate in [Prototype Security And Determinism Audit Gate](prototype-audit-gate.md).
+Use this checklist for every prototype change that touches app wiring, custom modules, proto/query surface, localnet tooling, or release artifacts. It is Cosmos-specific review, not a replacement for `go test`, `go vet`, `buf lint`, the runnable gate in [Prototype Security And Determinism Audit Gate](prototype-audit-gate.md), or the merge policy in [Security Triage Policy](security-triage-policy.md).
 
 The reviewer must load and apply `cosmos-vulnerability-scanner` before marking the checklist complete. Required scanner themes: missing denom validation, insufficient authorization, missing balance check, ABCI panic, nondeterminism, rounding, and unbounded loops.
 
@@ -13,6 +13,8 @@ Prototype release is blocked when any `Critical` or `High` finding is untriaged.
 - explicit downgrade with rationale, owner, and accepted prototype scope.
 
 Every change must record architecture, security, scalability, and test strategy review. Post-code review must also record any refactor opportunity that was intentionally deferred.
+
+The PR-level manual checklist is [Manual Security Audit Checklist](manual-audit-checklist.md).
 
 ## Review Record
 

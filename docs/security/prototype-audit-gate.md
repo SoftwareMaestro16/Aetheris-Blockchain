@@ -56,6 +56,11 @@ Outputs are written under ignored `.work\security\prototype-audit-*`:
 
 Use `-Strict` to make triage-required tool findings return non-zero. Default mode permits known, documented triage so developers can reproduce the gate locally.
 
+PR merge triage follows [Security Triage Policy](security-triage-policy.md).
+Any untriaged `Critical` or `High` finding from this gate, CodeQL,
+Dependency Review, `govulncheck`, `gosec`, `gitleaks`, or manual review is a
+merge blocker.
+
 ## Required Checks
 
 | Check | Command | Gate |
@@ -76,7 +81,9 @@ Generated `.pb.go`/`.pb.gw.go` scanner noise must be excluded through tool flags
 
 ## Cosmos Manual Checklist
 
-Use [Cosmos Security Audit Checklist](cosmos-security-checklist.md) as the detailed reviewer checklist. The table below is the release summary form.
+Use [Cosmos Security Audit Checklist](cosmos-security-checklist.md) and
+[Manual Security Audit Checklist](manual-audit-checklist.md) as the detailed
+reviewer checklists. The table below is the release summary form.
 
 Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or `N/A`.
 
@@ -125,5 +132,9 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 ## CI
 
 CodeQL and GitHub Dependency Review are required for PRs through `.github/workflows/security.yml`.
+
+The PR `govulncheck` job allows only advisory IDs listed in
+`.github/security/govulncheck-triage.txt`. Adding a new ID to that file requires
+the triage record above to be updated first.
 
 CI does not replace manual Cosmos review. CodeQL catches general Go issues; dependency review catches new vulnerable dependencies; this gate covers Cosmos-specific determinism, authorization, denom, accounting, rounding, and state-bloat risks.
