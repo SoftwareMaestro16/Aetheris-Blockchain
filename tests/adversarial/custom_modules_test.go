@@ -203,6 +203,13 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 		Subdenom: "gold",
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+	for _, badAddress := range []string{"", "orb1notvalid"} {
+		_, err = tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
+			Creator:  badAddress,
+			Subdenom: "badaddr",
+		})
+		require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+	}
 
 	createDenomRes, err := tfMsgServer.CreateDenom(ctx, &tftypes.MsgCreateDenom{
 		Creator:  admin.String(),
@@ -229,6 +236,11 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 		NewAdmin: orbitaladdress.ZeroRawAddress,
 	})
 	require.ErrorIs(t, err, tftypes.ErrInvalidAddress)
+	_, err = tfMsgServer.UpdateParams(ctx, &tftypes.MsgUpdateParams{
+		Authority: orbitaladdress.ZeroRawAddress,
+		Params:    tftypes.DefaultParams(),
+	})
+	require.ErrorIs(t, err, tftypes.ErrUnauthorized)
 
 	_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
 		Creator: trader.String(),
@@ -242,6 +254,14 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 		TokenB:  sdk.NewInt64Coin("uatom", 1),
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+	for _, badAddress := range []string{"", "orb1notvalid"} {
+		_, err = dexMsgServer.CreatePool(ctx, &dextypes.MsgCreatePool{
+			Creator: badAddress,
+			TokenA:  sdk.NewInt64Coin("norb", 1),
+			TokenB:  sdk.NewInt64Coin("uatom", 1),
+		})
+		require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+	}
 	_, err = dexMsgServer.AddLiquidity(ctx, &dextypes.MsgAddLiquidity{
 		Depositor: orbitaladdress.ZeroRawAddress,
 		PoolId:    1,
@@ -264,6 +284,11 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 		MinAmountOut:  "1",
 	})
 	require.ErrorIs(t, err, dextypes.ErrInvalidAddress)
+	_, err = dexMsgServer.UpdateParams(ctx, &dextypes.MsgUpdateParams{
+		Authority: orbitaladdress.ZeroRawAddress,
+		Params:    dextypes.DefaultParams(),
+	})
+	require.ErrorIs(t, err, dextypes.ErrUnauthorized)
 
 	tfGenesis := tftypes.GenesisState{Denoms: []tftypes.DenomAuthorityMetadata{{
 		Denom: "factory/" + admin.String() + "/bad",
@@ -291,6 +316,11 @@ func TestZeroAddressProtocolSafetyRules(t *testing.T) {
 		Params:    feesParams,
 	})
 	require.ErrorIs(t, err, feestypes.ErrInvalidParams)
+	_, err = feesMsgServer.UpdateParams(ctx, &feestypes.MsgUpdateParams{
+		Authority: orbitaladdress.ZeroRawAddress,
+		Params:    feestypes.DefaultParams(),
+	})
+	require.ErrorIs(t, err, feestypes.ErrUnauthorized)
 }
 
 func TestRepeatedInvalidFeeSpamDoesNotAdvanceProtocolAccounting(t *testing.T) {

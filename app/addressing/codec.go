@@ -13,16 +13,19 @@ import (
 )
 
 const (
-	RawPrefix            = "0:"
-	RawAddressLength     = 66
-	UserFriendlyLength   = 48
-	UserFriendlyPrefix   = "ORB"
-	ZeroRawAddress       = "0:0000000000000000000000000000000000000000000000000000000000000000"
-	ZeroUserFriendly     = "ORBAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	rawPayloadLength     = 32
-	shortAddressLength   = 20
-	longAddressPadLength = rawPayloadLength - shortAddressLength
-	userFriendlyVersion  = byte(1)
+	RawPrefix             = "0:"
+	RawAddressLength      = 66
+	UserFriendlyLength    = 48
+	UserFriendlyPrefix    = "ORB"
+	ZeroRawAddress        = "0:0000000000000000000000000000000000000000000000000000000000000000"
+	ZeroUserFriendly      = "ORBAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	legacyAccountPrefix   = "orb"
+	legacyValidatorPrefix = "orbvaloper"
+	legacyConsensusPrefix = "orbvalcons"
+	rawPayloadLength      = 32
+	shortAddressLength    = 20
+	longAddressPadLength  = rawPayloadLength - shortAddressLength
+	userFriendlyVersion   = byte(1)
 )
 
 var (
@@ -132,6 +135,9 @@ func Parse(text string) ([]byte, error) {
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
 		sdk.GetConfig().GetBech32ValidatorAddrPrefix(),
 		sdk.GetConfig().GetBech32ConsensusAddrPrefix(),
+		legacyAccountPrefix,
+		legacyValidatorPrefix,
+		legacyConsensusPrefix,
 	} {
 		if prefix == "" {
 			continue

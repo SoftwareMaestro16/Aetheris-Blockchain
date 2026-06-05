@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"time"
 
@@ -75,6 +76,9 @@ func (app *L1App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 	if err != nil {
 		return nil, err
 	}
+	if err := app.validateOrbitalisAuthGenesis(genesisState); err != nil {
+		return nil, err
+	}
 	res, err := app.ModuleManager.InitGenesis(ctx, app.appCodec, genesisState)
 	if err != nil {
 		return nil, err
@@ -83,6 +87,21 @@ func (app *L1App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 		return nil, err
 	}
 	return res, nil
+}
+
+func (app *L1App) validateOrbitalisAuthGenesis(genesisState GenesisState) error {
+	authGenesis := authtypes.GetGenesisStateFromAppState(app.appCodec, genesisState)
+	accounts, err := authtypes.UnpackAccounts(authGenesis.Accounts)
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		addr := account.GetAddress()
+		if orbitaladdress.IsZeroAccAddress(addr) {
+			return fmt.Errorf("auth genesis account %s must not be zero address", orbitaladdress.ZeroRawAddress)
+		}
+	}
+	return nil
 }
 
 func (app *L1App) ensureCoreGenesisCollections(ctx sdk.Context) error {

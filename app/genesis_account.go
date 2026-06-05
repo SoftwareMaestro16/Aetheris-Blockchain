@@ -5,6 +5,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+
+	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
 )
 
 var _ authtypes.GenesisAccount = (*SimGenesisAccount)(nil)
@@ -28,6 +30,12 @@ type SimGenesisAccount struct {
 
 // Validate checks for errors on the vesting and module account parameters
 func (sga SimGenesisAccount) Validate() error {
+	if sga.BaseAccount == nil {
+		return errors.New("base account must be set")
+	}
+	if orbitaladdress.IsZeroAccAddress(sga.GetAddress()) {
+		return errors.New("genesis account must not be zero address")
+	}
 	if !sga.OriginalVesting.IsZero() {
 		if sga.StartTime >= sga.EndTime {
 			return errors.New("vesting start-time cannot be before end-time")

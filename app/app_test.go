@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/log/v2"
+	sdkmath "cosmossdk.io/math"
 	abci "github.com/cometbft/cometbft/abci/types"
 	dbm "github.com/cosmos/cosmos-db"
-	sdkmath "cosmossdk.io/math"
-	"cosmossdk.io/log/v2"
 
 	"github.com/cosmos/cosmos-sdk/client/flags"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sims "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -24,6 +25,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 
+	orbitaladdress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/observability"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
@@ -204,6 +206,29 @@ func TestDefaultGenesisRejectsCorruptedPrototypeModuleState(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestInitChainRejectsZeroGenesisAccount(t *testing.T) {
+	app, genesis := setup(true, 5)
+	zeroAccount := authtypes.NewBaseAccount(sdk.AccAddress(bytes.Repeat([]byte{0}, 20)), nil, 0, 0)
+	zeroAny, err := codectypes.NewAnyWithValue(zeroAccount)
+	require.NoError(t, err)
+
+	authGenesis := authtypes.GetGenesisStateFromAppState(app.AppCodec(), genesis)
+	authGenesis.Accounts = append(authGenesis.Accounts, zeroAny)
+	genesis[authtypes.ModuleName] = app.AppCodec().MustMarshalJSON(&authGenesis)
+
+	err = app.validateOrbitalisAuthGenesis(genesis)
+	require.ErrorContains(t, err, orbitaladdress.ZeroRawAddress)
+
+	stateBytes, err := json.MarshalIndent(genesis, "", " ")
+	require.NoError(t, err)
+	_, err = app.InitChain(&abci.RequestInitChain{
+		Validators:      []abci.ValidatorUpdate{},
+		ConsensusParams: sims.DefaultConsensusParams,
+		AppStateBytes:   stateBytes,
+	})
+	require.ErrorContains(t, err, "must not be zero address")
 }
 
 func TestPrototypeModuleAccountPermissionsAreNarrow(t *testing.T) {

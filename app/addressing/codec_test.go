@@ -88,6 +88,22 @@ func TestZeroAddressValidationPolicy(t *testing.T) {
 	require.ErrorContains(t, addressing.ValidateOptionalAdminAddress("admin", addressing.ZeroRawAddress), "must not be zero address")
 }
 
+func TestAddressValidationRejectsEmptyAndMalformedBech32(t *testing.T) {
+	for _, text := range []string{"", "   ", "orb1notvalid", "cosmos1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqp2n8k9"} {
+		t.Run(text, func(t *testing.T) {
+			require.Error(t, addressing.ValidateUserAddress("sender", text))
+		})
+	}
+}
+
+func TestAddressValidationAcceptsLegacyOrbBech32(t *testing.T) {
+	valid, err := sdk.Bech32ifyAddressBytes("orb", bytes20(0x44))
+	require.NoError(t, err)
+
+	require.True(t, strings.HasPrefix(valid, "orb1"))
+	require.NoError(t, addressing.ValidateUserAddress("sender", valid))
+}
+
 func bytes20(fill byte) []byte {
 	out := make([]byte, 20)
 	for i := range out {
