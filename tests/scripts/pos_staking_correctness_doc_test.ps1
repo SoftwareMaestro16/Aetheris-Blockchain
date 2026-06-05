@@ -27,6 +27,8 @@ $validateText = Get-Content -Raw -LiteralPath $ValidateGenesisPath
 
 foreach ($term in @(
     "Phase 6 Aetheris",
+    "Aetheris Slashing System",
+    "slashing-system.md",
     "Production Staking Policy",
     "naet",
     "AET has no fixed max supply",

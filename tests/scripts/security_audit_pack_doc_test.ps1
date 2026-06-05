@@ -37,6 +37,8 @@ foreach ($term in @(
     "fund-safety",
     "consensus-safety",
     "secret-leak",
+    "Security Risks And Controls",
+    "Aetheris Slashing System",
     "govulncheck",
     "gosec high severity",
     "gitleaks secrets",

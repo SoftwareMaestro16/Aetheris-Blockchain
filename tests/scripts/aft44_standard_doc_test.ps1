@@ -25,6 +25,7 @@ foreach ($term in @(
     'Native `AET`/`naet` is not an `AFT-44` token',
     'Wallet contract address is derived',
     'master.total_supply == sum(wallet.balance)',
+    'admin controls metadata',
     'Token balances are never accepted as protocol fee payment',
     'Replayed wallet query ids are rejected',
     'Bounce/finalize handling',

@@ -31,6 +31,29 @@ func TestCreateCollectionMintNFTAndVerifyItemAddress(t *testing.T) {
 	require.Equal(t, uint64(1), state.Collection.NextItemIndex)
 }
 
+func TestCollectionRoyaltyPolicyBounded(t *testing.T) {
+	collection := testCollection(testAddr(1))
+	collection.RoyaltyPolicy = RoyaltyPolicy{
+		Enabled:     true,
+		Recipient:   testAddr(5),
+		BasisPoints: MaxRoyaltyBasisPoints,
+	}
+	_, err := NewState(collection)
+	require.NoError(t, err)
+
+	collection.RoyaltyPolicy.BasisPoints = MaxRoyaltyBasisPoints + 1
+	_, err = NewState(collection)
+	require.ErrorContains(t, err, "royalty basis points")
+
+	collection.RoyaltyPolicy = RoyaltyPolicy{Enabled: true, Recipient: sdk.AccAddress(make([]byte, 20)), BasisPoints: 100}
+	_, err = NewState(collection)
+	require.ErrorContains(t, err, "must not be zero")
+
+	collection.RoyaltyPolicy = RoyaltyPolicy{Enabled: false, Recipient: testAddr(5)}
+	_, err = NewState(collection)
+	require.ErrorContains(t, err, "disabled royalty policy")
+}
+
 func TestTransferNFTRequiresCurrentOwner(t *testing.T) {
 	admin := testAddr(1)
 	alice := testAddr(2)

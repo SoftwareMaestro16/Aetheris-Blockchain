@@ -179,6 +179,25 @@ func TestRelayerFlowPaysNaet(t *testing.T) {
 	require.Len(t, state.SentMessages, 0)
 }
 
+func TestRecoveryPolicyValidatedAndCloned(t *testing.T) {
+	state, _, _ := newTestState(t)
+	state.Wallet.RecoveryPolicy = RecoveryPolicy{
+		Enabled:      true,
+		Authority:    testAddr(11),
+		DelaySeconds: 60,
+	}
+	require.NoError(t, state.Wallet.Validate())
+	queried := state.QueryWalletState()
+	queried.RecoveryPolicy.Authority[0] = 0xff
+	require.NotEqual(t, queried.RecoveryPolicy.Authority, state.Wallet.RecoveryPolicy.Authority)
+
+	state.Wallet.RecoveryPolicy.DelaySeconds = MaxRecoveryDelaySec + 1
+	require.ErrorContains(t, state.Wallet.Validate(), "recovery delay")
+
+	state.Wallet.RecoveryPolicy = RecoveryPolicy{Enabled: false, Authority: testAddr(12)}
+	require.ErrorContains(t, state.Wallet.Validate(), "disabled recovery policy")
+}
+
 func newTestState(t testing.TB) (*State, ed25519.PublicKey, ed25519.PrivateKey) {
 	t.Helper()
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)

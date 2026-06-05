@@ -29,7 +29,9 @@ foreach ($term in @(
     'NFT transfer requires current owner authorization',
     'SBT owner is immutable after mint',
     'SBT revoke does not transfer ownership',
+    'Metadata and royalties are bounded',
     'Metadata must not spoof native AET metadata',
+    'royalty policy bounded',
     'Batch minting must have strict limits',
     'x/aetherisvm/standards/anft',
     'go test ./x/aetherisvm/standards/anft'

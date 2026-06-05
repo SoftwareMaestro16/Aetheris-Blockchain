@@ -114,6 +114,7 @@ deterministic message codec. It defines:
 - native-only operation fee validation
 - mint, transfer, burn, admin transfer, renounce, close minting, and bounce
   state transitions
+- admin-controlled metadata changes
 - accounting validation for master supply versus wallet balances
 - async conformance execution through `AsyncHandler`
 - deterministic bounce/finalize handling for failed wallet delivery
@@ -137,6 +138,7 @@ The package tests cover:
 - deploy missing recipient wallet
 - burn and supply decrement
 - admin transfer and renounce
+- admin controls metadata
 - non-admin mint rejected
 - native `AET`/`naet` spoof rejected
 - non-`naet` fee rejected for token operations

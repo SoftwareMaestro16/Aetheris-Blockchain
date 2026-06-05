@@ -11,6 +11,8 @@ fund-safety, consensus-safety, or secret-leak findings.
 - [Prototype Security And Determinism Audit Gate](prototype-audit-gate.md)
 - [Security Triage Policy](security-triage-policy.md)
 - [Determinism Gate](determinism-gate.md)
+- [Security Risks And Controls](security-risks-controls.md)
+- [Aetheris Slashing System](slashing-system.md)
 
 ## Required Workflows
 

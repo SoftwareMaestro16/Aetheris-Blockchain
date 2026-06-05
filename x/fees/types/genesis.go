@@ -21,13 +21,25 @@ const (
 
 func DefaultParams() Params {
 	return Params{
-		AllowedFeeDenoms:       []string{BondDenom},
-		ValidatorRewardsRatio:  "0.98",
-		CommunityPoolRatio:     "0.02",
-		MinFeeAmount:           MinDefaultFeeAmount,
-		FeeCollectorModule:     FeeCollectorModuleName,
-		ValidatorRewardsTarget: ValidatorRewardsTarget,
-		CommunityPoolTarget:    CommunityPoolTarget,
+		AllowedFeeDenoms:              []string{BondDenom},
+		ValidatorRewardsRatio:         "0.98",
+		CommunityPoolRatio:            "0.02",
+		MinFeeAmount:                  MinDefaultFeeAmount,
+		FeeCollectorModule:            FeeCollectorModuleName,
+		ValidatorRewardsTarget:        ValidatorRewardsTarget,
+		CommunityPoolTarget:           CommunityPoolTarget,
+		BaseFeeAmount:                 DefaultBaseFeeAmount,
+		MaxFeeAmount:                  DefaultMaxFeeAmount,
+		TargetBlockUtilizationBps:     DefaultTargetUtilizationBps,
+		CongestionThresholdBps:        DefaultCongestionBps,
+		MaxTxGas:                      DefaultMaxTxGas,
+		MaxBlockGas:                   DefaultMaxBlockGas,
+		MaxBlockTxs:                   DefaultMaxBlockTxs,
+		MaxSenderTxsPerBlock:          DefaultSenderTxsPerBlock,
+		StakeTxAllowanceStepAmount:    DefaultStakeAllowanceStep,
+		MaxSenderTxsPerBlockWithStake: DefaultStakeSenderTxsPerBlock,
+		FeePriorityWeightBps:          DefaultFeePriorityWeightBps,
+		StakePriorityWeightBps:        DefaultStakePriorityWeightBps,
 	}
 }
 
@@ -61,6 +73,18 @@ func (p Params) Validate() error {
 	if _, err := validateMinFeeAmount(p.MinFeeAmount); err != nil {
 		return err
 	}
+	if _, err := validateBaseFeeAmount(p.BaseFeeAmount, p.MinFeeAmount); err != nil {
+		return err
+	}
+	if _, err := validateMaxFeeAmount(p.MaxFeeAmount, p.BaseFeeAmount); err != nil {
+		return err
+	}
+	if err := validateUtilizationParams(p); err != nil {
+		return err
+	}
+	if _, err := validatePositiveAmount("stake_tx_allowance_step_amount", p.StakeTxAllowanceStepAmount, MaxFeeAmountV1); err != nil {
+		return err
+	}
 	if p.FeeCollectorModule != FeeCollectorModuleName {
 		return fmt.Errorf("fee_collector_module must be %s", FeeCollectorModuleName)
 	}
@@ -86,6 +110,42 @@ func NormalizeParams(params Params) Params {
 	if params.CommunityPoolTarget == "" {
 		params.CommunityPoolTarget = CommunityPoolTarget
 	}
+	if params.BaseFeeAmount == "" {
+		params.BaseFeeAmount = DefaultBaseFeeAmount
+	}
+	if params.MaxFeeAmount == "" {
+		params.MaxFeeAmount = DefaultMaxFeeAmount
+	}
+	if params.TargetBlockUtilizationBps == 0 {
+		params.TargetBlockUtilizationBps = DefaultTargetUtilizationBps
+	}
+	if params.CongestionThresholdBps == 0 {
+		params.CongestionThresholdBps = DefaultCongestionBps
+	}
+	if params.MaxTxGas == 0 {
+		params.MaxTxGas = DefaultMaxTxGas
+	}
+	if params.MaxBlockGas == 0 {
+		params.MaxBlockGas = DefaultMaxBlockGas
+	}
+	if params.MaxBlockTxs == 0 {
+		params.MaxBlockTxs = DefaultMaxBlockTxs
+	}
+	if params.MaxSenderTxsPerBlock == 0 {
+		params.MaxSenderTxsPerBlock = DefaultSenderTxsPerBlock
+	}
+	if params.StakeTxAllowanceStepAmount == "" {
+		params.StakeTxAllowanceStepAmount = DefaultStakeAllowanceStep
+	}
+	if params.MaxSenderTxsPerBlockWithStake == 0 {
+		params.MaxSenderTxsPerBlockWithStake = DefaultStakeSenderTxsPerBlock
+	}
+	if params.FeePriorityWeightBps == 0 {
+		params.FeePriorityWeightBps = DefaultFeePriorityWeightBps
+	}
+	if params.StakePriorityWeightBps == 0 {
+		params.StakePriorityWeightBps = DefaultStakePriorityWeightBps
+	}
 	return params
 }
 
@@ -104,18 +164,77 @@ func validateRatio(name, value string) (sdkmath.LegacyDec, error) {
 }
 
 func validateMinFeeAmount(value string) (sdkmath.Int, error) {
-	minFee, ok := sdkmath.NewIntFromString(value)
-	if !ok || !minFee.IsPositive() {
-		return sdkmath.Int{}, fmt.Errorf("min_fee_amount must be a positive integer")
+	return validatePositiveAmount("min_fee_amount", value, MaxMinFeeAmountV1)
+}
+
+func validateBaseFeeAmount(baseValue, minValue string) (sdkmath.Int, error) {
+	baseFee, err := validatePositiveAmount("base_fee_amount", baseValue, MaxFeeAmountV1)
+	if err != nil {
+		return sdkmath.Int{}, err
 	}
-	maxMinFee, ok := sdkmath.NewIntFromString(MaxMinFeeAmountV1)
+	minFee, err := validateMinFeeAmount(minValue)
+	if err != nil {
+		return sdkmath.Int{}, err
+	}
+	if baseFee.LT(minFee) {
+		return sdkmath.Int{}, fmt.Errorf("base_fee_amount must be >= min_fee_amount")
+	}
+	return baseFee, nil
+}
+
+func validateMaxFeeAmount(maxValue, baseValue string) (sdkmath.Int, error) {
+	maxFee, err := validatePositiveAmount("max_fee_amount", maxValue, MaxFeeAmountV1)
+	if err != nil {
+		return sdkmath.Int{}, err
+	}
+	baseFee, err := validatePositiveAmount("base_fee_amount", baseValue, MaxFeeAmountV1)
+	if err != nil {
+		return sdkmath.Int{}, err
+	}
+	if maxFee.LT(baseFee) {
+		return sdkmath.Int{}, fmt.Errorf("max_fee_amount must be >= base_fee_amount")
+	}
+	return maxFee, nil
+}
+
+func validatePositiveAmount(name, value, maxValue string) (sdkmath.Int, error) {
+	amount, ok := sdkmath.NewIntFromString(value)
+	if !ok || !amount.IsPositive() {
+		return sdkmath.Int{}, fmt.Errorf("%s must be a positive integer", name)
+	}
+	maxAmount, ok := sdkmath.NewIntFromString(maxValue)
 	if !ok {
-		return sdkmath.Int{}, fmt.Errorf("invalid max_min_fee_amount_v1")
+		return sdkmath.Int{}, fmt.Errorf("invalid max bound for %s", name)
 	}
-	if minFee.GT(maxMinFee) {
-		return sdkmath.Int{}, fmt.Errorf("min_fee_amount must be <= %s", MaxMinFeeAmountV1)
+	if amount.GT(maxAmount) {
+		return sdkmath.Int{}, fmt.Errorf("%s must be <= %s", name, maxValue)
 	}
-	return minFee, nil
+	return amount, nil
+}
+
+func validateUtilizationParams(params Params) error {
+	if params.TargetBlockUtilizationBps == 0 || params.TargetBlockUtilizationBps >= uint32(BasisPoints) {
+		return fmt.Errorf("target_block_utilization_bps must be between 1 and 9999")
+	}
+	if params.CongestionThresholdBps <= params.TargetBlockUtilizationBps || params.CongestionThresholdBps > uint32(BasisPoints) {
+		return fmt.Errorf("congestion_threshold_bps must be greater than target and <= 10000")
+	}
+	if params.MaxTxGas == 0 || params.MaxBlockGas == 0 || params.MaxTxGas > params.MaxBlockGas {
+		return fmt.Errorf("gas limits must be positive and max_tx_gas must be <= max_block_gas")
+	}
+	if params.MaxBlockTxs == 0 {
+		return fmt.Errorf("max_block_txs must be positive")
+	}
+	if params.MaxSenderTxsPerBlock == 0 {
+		return fmt.Errorf("max_sender_txs_per_block must be positive")
+	}
+	if params.MaxSenderTxsPerBlockWithStake < params.MaxSenderTxsPerBlock {
+		return fmt.Errorf("max_sender_txs_per_block_with_stake must be >= max_sender_txs_per_block")
+	}
+	if uint64(params.FeePriorityWeightBps)+uint64(params.StakePriorityWeightBps) != BasisPoints {
+		return fmt.Errorf("priority weights must sum to 10000 bps")
+	}
+	return nil
 }
 
 func (gs GenesisState) Validate() error {
@@ -132,6 +251,18 @@ func (p Params) CommunityRatioDec() (sdkmath.LegacyDec, error) {
 
 func (p Params) MinFeeInt() (sdkmath.Int, error) {
 	return validateMinFeeAmount(p.MinFeeAmount)
+}
+
+func (p Params) BaseFeeInt() (sdkmath.Int, error) {
+	return validateBaseFeeAmount(p.BaseFeeAmount, p.MinFeeAmount)
+}
+
+func (p Params) MaxFeeInt() (sdkmath.Int, error) {
+	return validateMaxFeeAmount(p.MaxFeeAmount, p.BaseFeeAmount)
+}
+
+func (p Params) StakeTxAllowanceStepInt() (sdkmath.Int, error) {
+	return validatePositiveAmount("stake_tx_allowance_step_amount", p.StakeTxAllowanceStepAmount, MaxFeeAmountV1)
 }
 
 func ValidateFeeCoins(params Params, fees sdk.Coins, enforceMin bool) error {
@@ -170,6 +301,13 @@ func ValidateFeeCoins(params Params, fees sdk.Coins, enforceMin bool) error {
 		}
 		if fees.AmountOf(BondDenom).LT(minFee) {
 			return ErrInvalidFee.Wrapf("fee must be at least %s%s", minFee.String(), BondDenom)
+		}
+		maxFee, err := params.MaxFeeInt()
+		if err != nil {
+			return err
+		}
+		if fees.AmountOf(BondDenom).GT(maxFee) {
+			return ErrInvalidFee.Wrapf("fee must not exceed hard cap %s%s", maxFee.String(), BondDenom)
 		}
 	}
 	return nil

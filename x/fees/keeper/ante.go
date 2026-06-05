@@ -25,7 +25,7 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 			return ctx, types.ErrInvalidFee.Wrap("transaction must expose fees")
 		}
 		fees := feeTx.GetFee()
-		if err := k.ValidateTxFees(ctx, fees); err != nil {
+		if _, err := k.AdmitTx(ctx, feeTx, selectTxSender(tx, feeTx), simulate); err != nil {
 			return ctx, err
 		}
 		newCtx, err := next(ctx, tx, simulate)
@@ -63,6 +63,23 @@ func validateNoZeroTxAddresses(tx sdk.Tx) error {
 		for i, signer := range signers {
 			if aetherisaddress.IsZero(signer) {
 				return types.ErrInvalidFee.Wrapf("signer %d must not be zero address", i)
+			}
+		}
+	}
+	return nil
+}
+
+func selectTxSender(tx sdk.Tx, feeTx sdk.FeeTx) sdk.AccAddress {
+	if payer := sdk.AccAddress(feeTx.FeePayer()); len(payer) > 0 {
+		return payer
+	}
+	if sigTx, ok := tx.(authsigning.SigVerifiableTx); ok {
+		signers, err := sigTx.GetSigners()
+		if err == nil {
+			for _, signer := range signers {
+				if len(signer) > 0 {
+					return sdk.AccAddress(signer)
+				}
 			}
 		}
 	}

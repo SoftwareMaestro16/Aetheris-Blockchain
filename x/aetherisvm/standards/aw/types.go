@@ -11,6 +11,7 @@ const (
 	MaxExtensions       = 32
 	MaxMultiSendCount   = 16
 	MaxPayloadBytes     = 4096
+	MaxRecoveryDelaySec = int64(30 * 24 * 60 * 60)
 	PublicKeyLength     = ed25519.PublicKeySize
 	SignatureLength     = ed25519.SignatureSize
 	signingBytesDomain  = "aetheris/AW-5/external-command/v1"
@@ -32,6 +33,12 @@ type ExtensionState struct {
 	Installed bool
 }
 
+type RecoveryPolicy struct {
+	Enabled      bool
+	Authority    sdk.AccAddress
+	DelaySeconds int64
+}
+
 type WalletState struct {
 	Address               sdk.AccAddress
 	SignatureAllowed      bool
@@ -41,6 +48,7 @@ type WalletState struct {
 	Owner                 sdk.AccAddress
 	Extensions            map[string]ExtensionState
 	RecoveryAuthority     sdk.AccAddress
+	RecoveryPolicy        RecoveryPolicy
 	SubscriptionsEnabled  bool
 	StandingPaymentPolicy string
 }

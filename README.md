@@ -123,9 +123,13 @@ Operators and scripts must use `naet` for balances, fees, staking, and tx amount
 
 ## Fee Model
 
-Base-chain transaction fees are native-only. In v1, `allowed_fee_denoms` must be exactly `["naet"]`, delivered transactions must pay at least `1naet`, and non-`naet` fees are rejected even when the fee payer owns the token.
+Base-chain transaction fees are native-only and capped. In v1, `allowed_fee_denoms` must be exactly `["naet"]`, delivered transactions must pay at least `1naet`, and non-`naet` fees are rejected even when the fee payer owns the token.
+
+The protocol uses a bounded dynamic fee based on block gas utilization. Normal traffic pays the base fee (`1naet` by default), congestion raises the required fee along a deterministic curve, and the hard cap (`1000naet` by default) cannot be exceeded. Fee overpayment does not buy priority, so the system avoids Ethereum-style fee auctions.
 
 User-created tokens, DEX LP tokens, NFT/SBT assets, `testtoken`, and display denom `AET` cannot pay protocol fees. Gasless or user-friendly flows must use relayers that pay `naet` on-chain; any alternative token collection is outside the base-chain fee path.
+
+Spam is handled by protocol controls: max tx gas, max block gas, max block tx count, per-sender block rate limits, congestion checks, and stake-weighted priority formulas. Validators remain economically incentivized by PoS issuance and rewards rather than high transaction fees.
 
 Localnet validator `minimum-gas-prices` may be `0naet` so development txs are not filtered before ante checks run. That mempool setting does not disable protocol fee validation for delivered transactions.
 

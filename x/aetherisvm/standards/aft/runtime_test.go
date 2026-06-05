@@ -35,6 +35,14 @@ func TestAFT44RunsAsAsyncAVMContractAndBouncesTransfer(t *testing.T) {
 	require.Equal(t, async.ResultOK, receipts[0].ResultCode)
 	require.Equal(t, sdkmath.NewInt(100), state.Master.TotalSupply)
 
+	metadata := EncodeChangeMetadataMessage(admin, TokenMetadata{Name: "Runtime Token", Symbol: "RTK", Decimals: 6, ContentRef: "ipfs://runtime"})
+	require.NoError(t, executor.EnqueueTxMessages([]async.MessageEnvelope{aftMessage(admin, masterAddress, OpcodeMetadata, 10, metadata)}))
+	receipts, err = executor.ProcessBlock(10)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, async.ResultOK, receipts[0].ResultCode)
+	require.Equal(t, "RTK", state.Master.Metadata.Symbol)
+
 	transfer := EncodeTransferMessage(TransferMessage{Owner: alice, Recipient: bob, Amount: sdkmath.NewInt(25)})
 	require.NoError(t, executor.EnqueueTxMessages([]async.MessageEnvelope{aftMessage(alice, masterAddress, OpcodeTransfer, 2, transfer)}))
 	receipts, err = executor.ProcessBlock(2)

@@ -27,9 +27,11 @@ foreach ($term in @(
     'Signature validation happens before protocol fee acceptance',
     'Extension auth is explicit and revocable',
     'Multi-send is bounded',
+    'Recovery policy is explicit and bounded',
     'Wallet cannot silently pay protocol fees in non-`naet`',
     'A relayer can submit a command, but on-chain fee payment is still `naet`',
     'x/aetherisvm/standards/aw',
+    'recovery policy bounded',
     'go test ./x/aetherisvm/standards/aw'
   )) {
   Assert-Contains -Text $standardText -Pattern ([regex]::Escape($term)) -Message "AW-5 standard doc missing: $term"

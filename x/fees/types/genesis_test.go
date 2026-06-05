@@ -3,6 +3,7 @@ package types
 import (
 	"testing"
 
+	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	appparams "github.com/sovereign-l1/l1/app/params"
@@ -17,6 +18,9 @@ func TestDefaultParamsValidate(t *testing.T) {
 	}
 	if params.MinFeeAmount != "1" {
 		t.Fatalf("expected min fee amount 1, got %q", params.MinFeeAmount)
+	}
+	if params.BaseFeeAmount != "1" || params.MaxFeeAmount != "1000" {
+		t.Fatalf("expected capped low-fee defaults, got base=%q max=%q", params.BaseFeeAmount, params.MaxFeeAmount)
 	}
 	if params.FeeCollectorModule != FeeCollectorModuleName {
 		t.Fatalf("expected fee collector %s, got %q", FeeCollectorModuleName, params.FeeCollectorModule)
@@ -101,6 +105,30 @@ func TestParamsRejectUnsafeProtocolFeeConfig(t *testing.T) {
 		"duplicate denom": func(params *Params) {
 			params.AllowedFeeDenoms = []string{BondDenom, BondDenom}
 		},
+		"base below min": func(params *Params) {
+			params.MinFeeAmount = "10"
+			params.BaseFeeAmount = "9"
+		},
+		"max below base": func(params *Params) {
+			params.BaseFeeAmount = "10"
+			params.MaxFeeAmount = "9"
+		},
+		"target utilization too high": func(params *Params) {
+			params.TargetBlockUtilizationBps = 10000
+		},
+		"congestion below target": func(params *Params) {
+			params.CongestionThresholdBps = params.TargetBlockUtilizationBps
+		},
+		"tx gas above block gas": func(params *Params) {
+			params.MaxTxGas = params.MaxBlockGas + 1
+		},
+		"sender stake limit below base": func(params *Params) {
+			params.MaxSenderTxsPerBlockWithStake = params.MaxSenderTxsPerBlock - 1
+		},
+		"priority weights not normalized": func(params *Params) {
+			params.FeePriorityWeightBps = 1
+			params.StakePriorityWeightBps = 1
+		},
 	}
 
 	for name, mutate := range tests {
@@ -111,6 +139,113 @@ func TestParamsRejectUnsafeProtocolFeeConfig(t *testing.T) {
 				t.Fatal("expected invalid protocol fee params to fail")
 			}
 		})
+	}
+}
+
+func TestDynamicFeeFormulaIsBoundedAndNonAuction(t *testing.T) {
+	params := DefaultParams()
+	base, err := params.BaseFeeInt()
+	if err != nil {
+		t.Fatalf("base fee should parse: %v", err)
+	}
+	maxFee, err := params.MaxFeeInt()
+	if err != nil {
+		t.Fatalf("max fee should parse: %v", err)
+	}
+
+	underTarget := DynamicFeeAmount(base, maxFee, params.TargetBlockUtilizationBps, params.TargetBlockUtilizationBps)
+	if !underTarget.Equal(base) {
+		t.Fatalf("expected target utilization to keep base fee, got %s", underTarget)
+	}
+	congested := DynamicFeeAmount(base, maxFee, params.TargetBlockUtilizationBps, 9000)
+	if !congested.GT(base) {
+		t.Fatalf("expected congestion to raise fee above base")
+	}
+	full := DynamicFeeAmount(base, maxFee, params.TargetBlockUtilizationBps, 10000)
+	if !full.Equal(maxFee) {
+		t.Fatalf("expected full block to hit hard cap %s, got %s", maxFee, full)
+	}
+}
+
+func TestValidateAdmissionRejectsSpamWithoutUnboundedFeeEscalation(t *testing.T) {
+	params := DefaultParams()
+	quote, err := ValidateAdmission(params, AdmissionInput{
+		Fee:              sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 1000)),
+		GasLimit:         params.MaxTxGas,
+		BlockGasConsumed: params.MaxBlockGas - params.MaxTxGas,
+		BlockTxCount:     1,
+		SenderTxCount:    1,
+		SenderStake:      sdkmath.ZeroInt(),
+	})
+	if err != nil {
+		t.Fatalf("max capped fee should be accepted at full utilization: %v", err)
+	}
+	if !quote.AtHardCap || quote.RequiredFee.Amount.Int64() != 1000 {
+		t.Fatalf("expected hard cap quote, got %+v", quote)
+	}
+
+	_, err = ValidateAdmission(params, AdmissionInput{
+		Fee:              sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 1001)),
+		GasLimit:         100_000,
+		BlockGasConsumed: 0,
+		BlockTxCount:     1,
+		SenderTxCount:    1,
+		SenderStake:      sdkmath.ZeroInt(),
+	})
+	if err == nil {
+		t.Fatal("expected over-cap fee to be rejected")
+	}
+
+	_, err = ValidateAdmission(params, AdmissionInput{
+		Fee:              sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 1)),
+		GasLimit:         params.MaxTxGas + 1,
+		BlockGasConsumed: 0,
+		BlockTxCount:     1,
+		SenderTxCount:    1,
+		SenderStake:      sdkmath.ZeroInt(),
+	})
+	if err == nil {
+		t.Fatal("expected over-sized tx gas to be rejected")
+	}
+
+	_, err = ValidateAdmission(params, AdmissionInput{
+		Fee:              sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 1)),
+		GasLimit:         100_000,
+		BlockGasConsumed: 0,
+		BlockTxCount:     1,
+		SenderTxCount:    params.MaxSenderTxsPerBlock,
+		SenderStake:      sdkmath.ZeroInt(),
+	})
+	if err == nil {
+		t.Fatal("expected sender rate limit to be rejected")
+	}
+}
+
+func TestStakeWeightingIncreasesRateLimitAndPriorityWithoutFeeAuction(t *testing.T) {
+	params := DefaultParams()
+	baseLimit, err := SenderTxLimit(params, sdkmath.ZeroInt())
+	if err != nil {
+		t.Fatalf("base sender limit should compute: %v", err)
+	}
+	stakedLimit, err := SenderTxLimit(params, sdkmath.NewInt(10_000_000_000))
+	if err != nil {
+		t.Fatalf("staked sender limit should compute: %v", err)
+	}
+	if stakedLimit <= baseLimit {
+		t.Fatalf("expected stake to increase sender allowance: base=%d staked=%d", baseLimit, stakedLimit)
+	}
+
+	required := sdk.NewInt64Coin(BondDenom, 10)
+	scoreAtRequired, err := PriorityScore(params, required, required, sdkmath.ZeroInt())
+	if err != nil {
+		t.Fatalf("priority should compute: %v", err)
+	}
+	scoreOverpay, err := PriorityScore(params, sdk.NewInt64Coin(BondDenom, 1000), required, sdkmath.ZeroInt())
+	if err != nil {
+		t.Fatalf("priority should compute: %v", err)
+	}
+	if scoreOverpay != scoreAtRequired {
+		t.Fatalf("overpay must not increase priority: required=%d overpay=%d", scoreAtRequired, scoreOverpay)
 	}
 }
 

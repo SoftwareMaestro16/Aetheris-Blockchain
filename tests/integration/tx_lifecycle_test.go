@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
+	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -275,6 +276,25 @@ func TestNativeFeeDeductionUpdatesCollectorAndAccounting(t *testing.T) {
 	require.True(t, feeCollectorFound, "fee collector module balance must be exposed")
 }
 
+func TestBankTransferEmitsDeterministicTransferEvent(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "aetheris-integration-bank-events")
+	ctx := testutil.NewContext(app, 1)
+	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("naet", 123)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), 200_000)
+	res := testutil.FinalizeBlock(t, app, 1, txBytes)
+	require.Len(t, res.TxResults, 1)
+	require.Zero(t, res.TxResults[0].Code, res.TxResults[0].Log)
+
+	requireABCIEvent(t, res.TxResults[0].Events, banktypes.EventTypeTransfer, map[string]string{
+		banktypes.AttributeKeySender:    aetherisaddress.FormatAccAddress(sender),
+		banktypes.AttributeKeyRecipient: aetherisaddress.FormatAccAddress(recipient),
+		sdk.AttributeKeyAmount:          "123naet",
+	})
+}
+
 func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {
 	app := testutil.NewInitializedApp(t, "aetheris-integration-3")
 	ctx := testutil.NewContext(app, 1)
@@ -326,4 +346,29 @@ func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin("naet", 10)), accounting.ProtocolFeeState.TotalCollected)
 	require.NoError(t, accounting.ProtocolFeeState.Validate())
+}
+
+func requireABCIEvent(t *testing.T, events []abci.Event, eventType string, attrs map[string]string) {
+	t.Helper()
+	for _, event := range events {
+		if event.Type != eventType {
+			continue
+		}
+		found := make(map[string]string, len(event.Attributes))
+		for _, attr := range event.Attributes {
+			found[attr.Key] = attr.Value
+		}
+		matches := true
+		for key, expected := range attrs {
+			if found[key] != expected {
+				matches = false
+				break
+			}
+		}
+		if !matches {
+			continue
+		}
+		return
+	}
+	require.Failf(t, "missing event", "event type %s with attrs %v not emitted in events %+v", eventType, attrs, events)
 }

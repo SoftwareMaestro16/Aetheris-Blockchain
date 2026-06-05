@@ -96,6 +96,7 @@ func TestUpdateParamsAcceptsBoundedGovernanceFeePolicyAndSyncsDistribution(t *te
 
 	next := types.DefaultParams()
 	next.MinFeeAmount = "42"
+	next.BaseFeeAmount = "42"
 	next.ValidatorRewardsRatio = "0.90"
 	next.CommunityPoolRatio = "0.10"
 

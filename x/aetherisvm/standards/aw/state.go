@@ -40,6 +40,9 @@ func (w WalletState) Validate() error {
 			return err
 		}
 	}
+	if err := w.RecoveryPolicy.Validate(); err != nil {
+		return err
+	}
 	if len(w.Extensions) > MaxExtensions {
 		return fmt.Errorf("extensions count must be <= %d", MaxExtensions)
 	}
@@ -47,6 +50,28 @@ func (w WalletState) Validate() error {
 		if err := extension.Validate(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (p RecoveryPolicy) Validate() error {
+	if !p.Enabled {
+		if len(p.Authority) != 0 {
+			return errors.New("disabled recovery policy must not set authority")
+		}
+		if p.DelaySeconds != 0 {
+			return errors.New("disabled recovery policy must not set delay")
+		}
+		return nil
+	}
+	if err := aetherisaddress.RejectZeroAddress("recovery policy authority", p.Authority); err != nil {
+		return err
+	}
+	if p.DelaySeconds < 0 {
+		return errors.New("recovery delay must not be negative")
+	}
+	if p.DelaySeconds > MaxRecoveryDelaySec {
+		return fmt.Errorf("recovery delay must be <= %d seconds", MaxRecoveryDelaySec)
 	}
 	return nil
 }
@@ -103,6 +128,7 @@ func (s *State) QueryWalletState() WalletState {
 	wallet.PublicKey = append(ed25519.PublicKey(nil), s.Wallet.PublicKey...)
 	wallet.Owner = append(sdk.AccAddress(nil), s.Wallet.Owner...)
 	wallet.RecoveryAuthority = append(sdk.AccAddress(nil), s.Wallet.RecoveryAuthority...)
+	wallet.RecoveryPolicy.Authority = append(sdk.AccAddress(nil), s.Wallet.RecoveryPolicy.Authority...)
 	wallet.Extensions = make(map[string]ExtensionState, len(s.Wallet.Extensions))
 	for key, value := range s.Wallet.Extensions {
 		value.Address = append(sdk.AccAddress(nil), value.Address...)

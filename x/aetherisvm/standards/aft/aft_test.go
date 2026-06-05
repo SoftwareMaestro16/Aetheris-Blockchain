@@ -76,6 +76,20 @@ func TestAdminTransferAndRenounce(t *testing.T) {
 	require.ErrorContains(t, state.Mint(nextAdmin, holder, sdkmath.NewInt(1)), "token admin is renounced")
 }
 
+func TestAdminControlsMetadata(t *testing.T) {
+	admin := testAddr(1)
+	attacker := testAddr(2)
+	state := newTestState(t, admin)
+	metadata := TokenMetadata{Name: "Updated USD", Symbol: "UUSD", Decimals: 6, ContentRef: "ipfs://updated"}
+
+	require.ErrorContains(t, state.ChangeMetadata(attacker, metadata), "only token admin")
+	require.NoError(t, state.ChangeMetadata(admin, metadata))
+	require.Equal(t, metadata, state.Master.Metadata)
+
+	require.ErrorContains(t, state.ChangeMetadata(admin, TokenMetadata{Name: "Aetheris", Symbol: "UUSD"}), "must not spoof")
+	require.Equal(t, metadata, state.Master.Metadata)
+}
+
 func TestNonAdminMintRejected(t *testing.T) {
 	admin := testAddr(1)
 	attacker := testAddr(2)

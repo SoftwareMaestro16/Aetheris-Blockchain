@@ -20,6 +20,7 @@ const (
 	OpcodeBurn        = uint32(0x4146_0003)
 	OpcodeChangeAdmin = uint32(0x4146_0004)
 	OpcodeRenounce    = uint32(0x4146_0005)
+	OpcodeMetadata    = uint32(0x4146_0006)
 )
 
 type MintMessage struct {
@@ -69,6 +70,13 @@ func EncodeChangeAdminMessage(caller, nextAdmin sdk.AccAddress) []byte {
 	return encoder.bytes()
 }
 
+func EncodeChangeMetadataMessage(caller sdk.AccAddress, metadata TokenMetadata) []byte {
+	encoder := newRuntimeEncoder()
+	encoder.writeAddress(caller)
+	encoder.writeMetadata(metadata)
+	return encoder.bytes()
+}
+
 func EncodeRenounceMessage(caller sdk.AccAddress) []byte {
 	encoder := newRuntimeEncoder()
 	encoder.writeAddress(caller)
@@ -102,6 +110,8 @@ func (s *State) AsyncHandler() async.Handler {
 			err = s.applyBurn(msg.Body, msg.QueryID)
 		case OpcodeChangeAdmin:
 			err = s.applyChangeAdmin(msg.Body)
+		case OpcodeMetadata:
+			err = s.applyChangeMetadata(msg.Body)
 		case OpcodeRenounce:
 			err = s.applyRenounce(msg.Body)
 		default:
@@ -174,6 +184,22 @@ func (s *State) applyChangeAdmin(body []byte) error {
 		return err
 	}
 	return s.ChangeAdmin(caller, nextAdmin)
+}
+
+func (s *State) applyChangeMetadata(body []byte) error {
+	decoder := newRuntimeDecoder(body)
+	caller, err := decoder.readAddress()
+	if err != nil {
+		return err
+	}
+	metadata, err := decoder.readMetadata()
+	if err != nil {
+		return err
+	}
+	if err := decoder.done(); err != nil {
+		return err
+	}
+	return s.ChangeMetadata(caller, metadata)
 }
 
 func (s *State) applyRenounce(body []byte) error {
@@ -263,6 +289,14 @@ func (e *runtimeEncoder) writeString(value string) {
 	e.writeBytes([]byte(value))
 }
 
+func (e *runtimeEncoder) writeMetadata(metadata TokenMetadata) {
+	e.writeString(metadata.Name)
+	e.writeString(metadata.Symbol)
+	e.writeUint64(uint64(metadata.Decimals))
+	e.writeString(metadata.ContentRef)
+	e.writeString(metadata.DisplayName)
+}
+
 func (e *runtimeEncoder) writeBytes(bz []byte) {
 	var length [4]byte
 	binary.BigEndian.PutUint32(length[:], uint32(len(bz)))
@@ -311,6 +345,38 @@ func (d *runtimeDecoder) readString() (string, error) {
 		return "", err
 	}
 	return string(bz), nil
+}
+
+func (d *runtimeDecoder) readUint64() (uint64, error) {
+	var bz [8]byte
+	if _, err := io.ReadFull(d.reader, bz[:]); err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint64(bz[:]), nil
+}
+
+func (d *runtimeDecoder) readMetadata() (TokenMetadata, error) {
+	name, err := d.readString()
+	if err != nil {
+		return TokenMetadata{}, err
+	}
+	symbol, err := d.readString()
+	if err != nil {
+		return TokenMetadata{}, err
+	}
+	decimals, err := d.readUint64()
+	if err != nil {
+		return TokenMetadata{}, err
+	}
+	contentRef, err := d.readString()
+	if err != nil {
+		return TokenMetadata{}, err
+	}
+	displayName, err := d.readString()
+	if err != nil {
+		return TokenMetadata{}, err
+	}
+	return TokenMetadata{Name: name, Symbol: symbol, Decimals: uint32(decimals), ContentRef: contentRef, DisplayName: displayName}, nil
 }
 
 func (d *runtimeDecoder) readBytes() ([]byte, error) {

@@ -29,6 +29,8 @@ $preflightText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Preflight)
 
 foreach ($term in @(
     'Public Testnet And Production Gates',
+    'Test And Production Gates',
+    'test-production-gates.md',
     'go test ./...',
     'go vet ./...',
     'buf lint',

@@ -304,6 +304,17 @@ func (s *State) RenounceAdmin(caller sdk.AccAddress) error {
 	return s.Master.Validate()
 }
 
+func (s *State) ChangeMetadata(caller sdk.AccAddress, metadata TokenMetadata) error {
+	if err := s.requireAdmin(caller); err != nil {
+		return err
+	}
+	if err := ValidateMetadata(metadata); err != nil {
+		return err
+	}
+	s.Master.Metadata = metadata
+	return s.Master.Validate()
+}
+
 func (s *State) CloseMinting(caller sdk.AccAddress) error {
 	if err := s.requireAdmin(caller); err != nil {
 		return err

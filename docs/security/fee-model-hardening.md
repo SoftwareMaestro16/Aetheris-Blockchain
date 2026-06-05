@@ -37,6 +37,14 @@ Governance cannot expand fee policy beyond the v1 bounds:
 - allowed fee denom count: exactly `1`
 - allowed fee denom value: `naet`
 - `min_fee_amount`: positive integer, capped at `1000000000000000000`
+- `base_fee_amount`: positive integer, `>= min_fee_amount`
+- `max_fee_amount`: positive integer, `>= base_fee_amount`, capped at
+  `1000000000000000000`
+- target utilization: `1..9999` bps
+- congestion threshold: greater than target and `<= 10000` bps
+- `max_tx_gas <= max_block_gas`
+- block tx, sender tx, and stake-weighted sender tx limits must be positive
+- fee/stake priority weights must sum to `10000` bps
 - validator/community split ratios: each between `0` and `1`
 - split ratio sum: exactly `1`
 - fee collector module: `fee_collector`
@@ -51,9 +59,12 @@ synchronize `community_pool_ratio` into `x/distribution` as `community_tax`.
 The `x/fees` ante decorator runs before the SDK ante handler:
 
 1. Reject zero-address fee participants, missing, empty, malformed,
-   below-minimum, and non-`naet` fees.
-2. Call the wrapped SDK ante handler.
-3. After SDK ante succeeds and deducts fees into `fee_collector`, record
+   below-minimum, over-cap, and non-`naet` fees.
+2. Compute the dynamic required fee from deterministic block gas utilization.
+3. Enforce per-tx gas, per-block gas, per-block tx count, and sender rate
+   limits.
+4. Call the wrapped SDK ante handler.
+5. After SDK ante succeeds and deducts fees into `fee_collector`, record
    protocol fee accounting.
 
 The v1 split model records:
@@ -64,3 +75,26 @@ The v1 split model records:
 Integer truncation applies to the community share, and the remainder goes to
 validator rewards, so `total_collected == validator_rewards + community_pool`
 always holds. Accounting state only supports `naet` in v1.
+
+## Low-Fee Congestion Policy
+
+The dynamic fee curve is capped and intentionally revenue-suboptimal:
+
+```text
+required_fee = base_fee + ceil((max_fee - base_fee) * over_target^2 / room^2)
+required_fee = min(required_fee, max_fee)
+```
+
+Normal traffic at or below target utilization pays the base fee. Extreme
+congestion can never exceed the hard cap. Transactions above the hard cap are
+invalid, and fee overpayment does not increase priority.
+
+Spam is controlled by protocol admission limits instead of unbounded fee
+escalation:
+
+- fixed max tx gas;
+- fixed max block gas;
+- fixed max tx count per block;
+- rolling sender count per block;
+- stake-weighted allowance and priority formulas for PrepareProposal/mempool
+  integration.

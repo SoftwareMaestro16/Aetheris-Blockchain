@@ -19,6 +19,14 @@ service Query {
   rpc ModuleBalances(QueryModuleBalancesRequest) returns (QueryModuleBalancesResponse) {
     option (google.api.http).get = "/l1/fees/v1/module_balances";
   }
+
+  rpc NetworkLoad(QueryNetworkLoadRequest) returns (QueryNetworkLoadResponse) {
+    option (google.api.http).get = "/l1/fees/v1/network_load";
+  }
+
+  rpc EstimateFee(QueryEstimateFeeRequest) returns (QueryEstimateFeeResponse) {
+    option (google.api.http).get = "/l1/fees/v1/estimate_fee";
+  }
 }
 
 message QueryParamsRequest {}
@@ -37,4 +45,26 @@ message QueryModuleBalancesRequest {}
 
 message QueryModuleBalancesResponse {
   repeated ModuleBalance balances = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryNetworkLoadRequest {}
+
+message QueryNetworkLoadResponse {
+  uint64 block_gas_consumed = 1;
+  uint64 max_block_gas = 2;
+  uint32 utilization_bps = 3;
+  bool congested = 4;
+}
+
+message QueryEstimateFeeRequest {
+  uint64 gas_limit = 1;
+}
+
+message QueryEstimateFeeResponse {
+  string required_fee = 1;
+  string base_fee = 2;
+  string max_fee = 3;
+  uint32 utilization_bps = 4;
+  bool congested = 5;
+  bool at_hard_cap = 6;
 }

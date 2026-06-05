@@ -1,6 +1,8 @@
 # PoS And Staking Correctness
 
 This document records the Phase 6 Aetheris PoS and staking acceptance policy.
+The detailed protocol-level slashing design is defined in
+[Aetheris Slashing System](slashing-system.md).
 
 ## Production Staking Policy
 
@@ -38,6 +40,88 @@ remain deterministic and governance-bounded:
 - inflation rate change, min inflation, max inflation, goal bonded, and blocks
   per year must pass SDK mint param validation
 - reward and distribution accounting must be deterministic and test-covered
+
+## Validator Income Model
+
+Validator income must not depend only on transaction fees. The production
+security budget is modeled as:
+
+```text
+validator_income =
+  validator_share_of_mint_rewards
+  + validator_share_of_fee_rewards
+  + validator_commission
+
+delegator_income =
+  delegator_share_of_mint_rewards
+  + delegator_share_of_fee_rewards
+  - validator_commission
+
+validator_reward_weight =
+  validator_power / total_validator_power
+```
+
+The implementation keeps the arithmetic in native integer `naet` units and
+uses basis points for ratios. The hard policy bounds are:
+
+```text
+min_commission = 100 bps    # 1%
+max_commission = 2000 bps   # 20%
+max_daily_commission_change = 100 bps # 1%
+```
+
+Mint rewards provide baseline validator/delegator income. Fee rewards add
+activity-linked upside, but fee revenue is not a security assumption. The
+treasury and future insurance reserve are separate public-goods and emergency
+recovery tracks.
+
+The security threshold remains:
+
+```text
+attack_cost >= bonded_value_controlled_by_attacker
+```
+
+Operational monitoring must flag validator concentration:
+
+- `< 1/3` malicious voting power should not break consensus safety;
+- `1/3+` malicious voting power is a serious halt/liveness risk;
+- `2/3+` malicious voting power can finalize malicious state and must be
+  economically infeasible.
+
+`app/params/economy.go` contains the deterministic income formulas used by
+tests and future keeper integration.
+
+## System Balance Controller
+
+Aetheris economy controls four feedback loops:
+
+```text
+low staking -> inflation rises -> staking becomes more attractive
+high staking -> inflation falls -> dilution decreases
+high activity -> burn rises -> supply expansion slows
+low activity -> burn falls -> mint rewards maintain validator security
+high congestion -> soft fee multiplier + queue/rate limits
+low congestion -> low fees
+```
+
+The controller inputs are staking ratio, block load, async queue depth, failed
+tx rate, annual mint, and annual burn. The deterministic outputs are:
+
+- adaptive inflation, clamped to `1%..5%`;
+- burn ratio, clamped to `10%..50%`;
+- validator fee ratio after treasury and burn shares;
+- congestion, queue-limit, and rate-limit flags.
+
+Deflation guard:
+
+```text
+if annual_burn > annual_mint * 1.25:
+  burn_ratio moves down toward min_burn_ratio
+```
+
+The controller is deliberately bounded. Governance can tune soft params only
+inside hard-coded safety ranges; raising the hard inflation cap or disabling
+fee caps requires a software upgrade.
 
 ## Validator Lifecycle Coverage
 

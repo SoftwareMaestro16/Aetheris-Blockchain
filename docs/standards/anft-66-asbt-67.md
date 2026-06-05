@@ -25,7 +25,7 @@ immutable after mint.
 - item code hash or code reference
 - standard version
 - mutable metadata flag
-- collection royalty policy, only if added by a later version
+- collection royalty policy with bounded basis points and non-zero recipient
 - SBT policy flag if collection is soulbound-only
 
 ## NFT Collection Messages
@@ -85,6 +85,7 @@ immutable after mint.
 - SBT owner is immutable after mint.
 - SBT revoke does not transfer ownership.
 - Metadata changes must be bounded and authorization-checked.
+- Metadata and royalties are bounded.
 - Metadata must not spoof native AET metadata: `Aetheris`, `AET`, or `naet`.
 - Batch minting must have strict limits to prevent block or async queue DoS.
 
@@ -123,6 +124,7 @@ and deterministic message codec. It defines:
 - owner-authorized NFT transfer
 - immutable SBT ownership and authority-only revocation
 - bounded metadata validation and native-spoof rejection
+- bounded royalty policy validation
 - bounded, atomic batch minting
 - async conformance execution through `AsyncHandler`
 - deterministic failure/bounce behavior for rejected SBT transfer attempts
@@ -151,5 +153,6 @@ The package tests cover:
 - SBT revoke by authority
 - unauthorized revoke rejected
 - metadata spoofing rejected
+- royalty policy bounded
 - batch mint bounded
 - async NFT transfer, SBT rejection, and bounce behavior through the queue

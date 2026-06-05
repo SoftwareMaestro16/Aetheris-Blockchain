@@ -1,5 +1,15 @@
 # Module Boundaries
 
+Core SDK module responsibilities and Aetheris-specific wrappers are documented
+in [Core Module Architecture](architecture/core-module-architecture.md). This
+file focuses on custom modules and readiness packages. Economy and interop
+boundaries are documented in
+[Economy And Interop Module Architecture](architecture/economy-interop-architecture.md).
+Application module architecture is documented in
+[Application Module Architecture](architecture/application-module-architecture.md).
+Additional support modules are documented in
+[Additional Modules](architecture/additional-modules.md).
+
 ## `x/tokenfactory`
 
 Purpose: create and manage custom denoms without EVM dependency.
@@ -67,6 +77,439 @@ Security invariants:
 - Recorded reserves must match module account balances, and LP supply must
   match pool shares after every DEX state transition.
 
+## `x/identity`
+
+Purpose: future `.aet` domain registry and resolver ownership surface.
+
+Current status:
+- Pure validation helpers only.
+- No SDK stores, keepers, module accounts, genesis, or CLI tx surface are
+  registered yet.
+- Registry records are the source of truth; NFT representation is a UI/wallet
+  proof layer, not a replacement for registry ownership checks.
+
+State:
+- Domain record keyed by normalized name.
+- Owner address.
+- Optional resolver address.
+- Expiry and renewal state.
+- Auction status.
+- NFT item reference for wallet/UI representation.
+
+Security invariants:
+- Domain names are normalized and restricted to lowercase ASCII `a-z`, digits
+  `0-9`, `-`, and `_`.
+- Whitespace, invisible Unicode, mixed-script spoofing, unsupported symbols,
+  and non-`.aet` TLDs are rejected.
+- Owner and resolver addresses use central address validation and reject zero
+  addresses by default.
+- Resolver updates require current owner authorization.
+- Expiry, renewal, and auction transitions must emit deterministic events.
+- Domain lifecycle is `available -> auction -> active -> expired ->
+  available/auction`.
+- Auctions run for `24h`, use a `5%` minimum bid increment, apply bounded
+  `10m` anti-snipe extensions, and assign ownership only during finalization.
+- Auction proceeds split `40%` burn, `40%` treasury, and `20%` rewards.
+- Renewal extends expiry and uses the deterministic start-price discount rule.
+- Resolver records support domain-to-address resolution, reverse resolution,
+  multi-address records, delegated manager grants, bounded metadata, and
+  deterministic resolver update events.
+- Resolver payment routing fails before funds move when `primary` is unset,
+  the resolver target is zero, the registry owner does not match, or the domain
+  is expired.
+- Subdomains such as `dex.alice.aet`, `nft.alice.aet`, and `bot.alice.aet`
+  resolve through the base `.aet` registry owner.
+
+## `x/workflow`
+
+Purpose: future bounded multi-step orchestration for application flows that need
+explicit synchronous composition.
+
+Current status:
+- Pure validation helpers only.
+- No SDK stores, keepers, module accounts, genesis, or CLI tx surface are
+  registered yet.
+
+Examples:
+- resolver-based payment.
+- domain auction finalization.
+- token mint and wallet deploy.
+- NFT mint and metadata attach.
+- contract deployment plus first message.
+
+Security invariants:
+- Workflow authority is a valid non-zero address.
+- Workflows are bounded by maximum step count and payload size.
+- Step IDs are unique inside one workflow.
+- Orchestration must not bypass signer checks, replay protection, `naet` fee
+  policy, zero-address rejection, or module-specific invariants.
+
+## `x/memo`
+
+Purpose: optional human-readable transaction metadata for notes, receipts, and
+UI context.
+
+Current status:
+- Pure validation and fee helpers only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- No execution state.
+- Future indexed transaction metadata may include `memo`, `memo_hash`, and
+  `memo_visible`, but it must be immutable after block inclusion.
+
+Security invariants:
+- Memo text is optional and UTF-8 only.
+- Memo length is governed within a hard protocol bound.
+- Prohibited control characters are rejected.
+- Memo metadata does not affect execution state transitions.
+- Memo data is stored as transaction metadata, not keeper execution input.
+- Memo fees are paid only in `naet`.
+- Empty memo can have zero memo fee.
+- Memo byte cost can scale by reputation and congestion so memo text cannot
+  become cheap spam storage.
+- Memo projection may index by tx hash, sender, receiver, domain, contract,
+  asset, and event type.
+- Full memo on-chain and hash-only on-chain storage policies are explicit.
+- Consensus does not depend on search index results.
+- `EventMemoAttached` is deterministic and includes tx hash, from, to, domain,
+  memo hash, and memo according to storage policy.
+
+## `x/execution`
+
+Purpose: future execution OS for transaction orchestration, execution pipeline,
+module dispatch, async entrypoint coordination, deterministic event collection,
+and error handling.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- `ExecutionEnvelope` carries tx hash, sender, receiver, route, VM route, gas,
+  fees, optional memo metadata, resolver/domain records, reputation record,
+  load counters, async messages, module events, block height, and timestamp.
+- Deterministic execution trace records pipeline stage order for tests.
+
+Security invariants:
+- CheckTx order is decode, signatures, fees, memo, stateless checks.
+- DeliverTx/FinalizeBlock order is ante, execution context, module dispatch,
+  async enqueue, event emit, state write.
+- Resolver lookup, reputation limits, fee estimation, memo validation, and VM
+  routing must not bypass signatures, `naet` fee validation, zero-address
+  rejection, or module authorization.
+- Event collection is deterministic and sorted where needed.
+
+## `x/vm`
+
+Purpose: AVM and gated CosmWasm runtime facade for execution routing.
+
+Current status:
+- Pure validation facade only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- Runtime policy for AVM params and CosmWasm feature gate.
+- VM call descriptor for deploy, external call, internal call, bounced call,
+  and query/getter.
+
+Security invariants:
+- AVM action-to-entrypoint mapping is deterministic.
+- CosmWasm remains disabled by default.
+- Runtime routing validates code size, gas, query response/depth, and feature
+  gates before keeper wiring.
+- VM routing cannot bypass base-chain signer, fee, denom, zero-address,
+  transaction, or genesis validation.
+
+## `x/messaging`
+
+Purpose: async contract messaging facade for internal message envelopes,
+outgoing message validation, bounce/refund behavior, and delivery through the
+async execution spec.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- Message id, source, destination, value in `naet`, opcode, query id, body,
+  bounce flag, deadline, gas limit, and created logical time.
+
+Security invariants:
+- Message ids are deterministic.
+- Source and destination reject zero address.
+- Value and forwarding fees are native `naet`.
+- Bounce, expiry, and refund/no-double-spend behavior must match
+  `x/aetherisvm/async`.
+- Outgoing messages are bounded by async message body, gas, and queue limits.
+
+## `x/queue`
+
+Purpose: deterministic delayed execution and scheduled task queue.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- Scheduled height.
+- Reputation class.
+- Tx height, tx index, and message index.
+- Source logical time.
+- Sequence tie-breaker.
+- Account and contract queue ownership.
+- Attempts and last error for retry/failure handling.
+
+Security invariants:
+- Priority key is deterministic:
+  `scheduled_height, reputation_class, tx_height, tx_index, message_index,
+  source_logical_time, sequence`.
+- Low reputation cannot starve forever because aged ready items receive an
+  effective top class after the starvation window.
+- Per-block processing, per-account queued messages, and per-contract queued
+  messages are bounded.
+- Queue observability exposes queued, processed, failed, lag, account count,
+  and contract count.
+
+## `x/events`
+
+Purpose: deterministic event schema for protocol, indexer, contract, memo,
+domain, reputation, and fee events.
+
+Current status:
+- Pure validation and canonicalization helpers only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- Event type, category, tx hash, height, sequence, actor, and sorted
+  attributes.
+
+Security invariants:
+- Supported events include `EventTransfer`, `EventMemoAttached`,
+  `EventDomainAuctionStarted`, `EventDomainResolved`,
+  `EventContractMessageQueued`, `EventContractMessageProcessed`,
+  `EventReputationUpdated`, and `EventFeeDistributed`.
+- Event attributes are canonicalized and sorted by key/value.
+- Event sorting is deterministic by height, sequence, type, and tx hash.
+- Event actors reject zero address when present.
+
+## `x/actors`
+
+Purpose: contract actor model for isolated actor state, mailbox processing, and
+actor lifecycle.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- Actor address.
+- Code hash.
+- State root.
+- Logical time.
+- Mailbox stats.
+- Lifecycle status.
+- Exported actor state with mailbox.
+
+Security invariants:
+- Each contract behaves as an actor.
+- One actor state transition occurs per delivered message.
+- Actor cannot mutate another actor state directly.
+- All cross-actor effects go through messages.
+- Exported state includes actor state and mailbox and is deterministically
+  ordered.
+
+## `x/scheduler`
+
+Purpose: deterministic execution planning for sequential execution today and
+future optimistic parallel execution.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks, or
+  concurrent state access are registered yet.
+
+State:
+- Scheduler task id.
+- Tx height, tx index, and message index ordering keys.
+- Declared read/write set.
+- Deterministic batch plan.
+
+Security invariants:
+- Initial execution remains sequential deterministic execution.
+- Optimistic parallel execution requires deterministic conflict detection.
+- Read/write set tracking must identify write/write and read/write conflicts.
+- DAG scheduler and safe concurrent state access are future production work.
+- Scheduler output must fall back to sequential on conflict and must not
+  introduce nondeterministic state writes.
+
+## `x/storage`
+
+Purpose: future KV state engine for versioned contract storage, snapshots, state
+sync, and bounded iteration.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks, snapshots,
+  or state-sync integration are registered yet.
+
+State:
+- Contract namespace.
+- Storage key format.
+- Versioned key/value entry.
+- Max state size.
+- Storage rent/deposit accounting.
+- Deterministic snapshot and state root.
+
+Security invariants:
+- Contract storage is namespaced.
+- Storage keys and namespace lengths are bounded.
+- Max state size is enforced before accepting a write.
+- Bounded iteration requires an explicit positive limit.
+- Export/import exact state must preserve version, entries, and state root.
+- Snapshot/state-sync tests must prove imported state roots match exported
+  roots before production wiring.
+
+## `x/compute`
+
+Purpose: measure CPU/compute usage separately from simple tx gas, price
+expensive computation, and protect validators from CPU abuse.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks, or fee
+  deduction wiring are registered yet.
+
+State:
+- Compute unit schedule.
+- Per-op cost.
+- Per-contract compute stats.
+- Per-block compute budget.
+
+Security invariants:
+- Expensive contract operations are charged more compute units than cheap
+  operations.
+- Per-contract and per-block compute caps are enforced deterministically.
+- Compute accounting is sorted deterministically and rejects zero contract
+  addresses.
+- Compute pricing must complement gas limits and cannot bypass signer, fee,
+  denom, zero-address, or VM validation.
+
+## `x/permissions`
+
+Purpose: ACL system for contracts, modules, resolver delegates, domain
+managers, contract extensions, and governance-controlled permissions.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks, or
+  authority routing are registered yet.
+
+State:
+- Permission id.
+- Owner address.
+- Grantee address.
+- Scope.
+- Resource.
+- Grant height.
+- Expiry height.
+- Revocation height.
+
+Security invariants:
+- All permissions have owner, scope, expiry, and revocation path.
+- Permission checks are deterministic.
+- Resolver delegate, domain manager, contract extension, module ACL,
+  governance, and emergency permissions are explicit scopes.
+- There is no hidden superuser outside explicit governance/emergency policy.
+- Permission owner and grantee reject zero addresses.
+
+## `x/indexer`
+
+Purpose: fast query layer for state search, event search, memo search, domain
+lookup, token discovery, and NFT discovery.
+
+Current status:
+- Pure executable projection specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks, indexer
+  service, or consensus dependency are registered yet.
+
+State:
+- Projection kind.
+- Projection key.
+- Owner.
+- Height.
+- Tx hash.
+- Value.
+- Canonical search fields.
+
+Security invariants:
+- Indexer must never be required for consensus.
+- Query limits are required for bounded result sets.
+- State, event, memo, domain, token, and NFT indexes are projections only.
+- Search output is deterministic for tests but cannot affect state
+  transitions.
+
+## `x/market`
+
+Purpose: bounded, deterministic, and non-extractive market for compute,
+storage, and execution priority.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks, settlement,
+  fee deduction, or scheduler integration are registered yet.
+
+State:
+- Market resource.
+- Account.
+- Quantity.
+- Optional premium in `naet`.
+- Base fee paid flag.
+- Normal-user reservation flag.
+- Sequence tie-breaker.
+
+Security invariants:
+- Market premiums cannot replace the base `naet` fee.
+- Premiums are capped and priority score is capped by scheduler fairness.
+- Wealthy users cannot fully starve normal users because normal-user reserved
+  slots and per-account share caps are enforced deterministically.
+- Market ordering must remain deterministic and cannot bypass fee, signer,
+  denom, zero-address, scheduler, or VM validation.
+
+## `x/scheduler-v2`
+
+Purpose: DAG execution engine for parallel tx scheduling and async actor
+mailbox planning.
+
+Current status:
+- Pure executable specification only.
+- No SDK stores, keepers, module accounts, genesis, CLI, ABCI hooks,
+  parallel state access, or execution-pipeline integration are registered yet.
+
+State:
+- DAG task id.
+- Actor id.
+- Tx height, tx index, and message index ordering keys.
+- Dependency ids.
+- Deterministic read/write set.
+- Replay hash.
+- Actor mailbox plan.
+
+Security invariants:
+- Read/write sets are required and deterministic.
+- Conflict resolution is deterministic and serializes conflicting tasks.
+- Schedule replay hash is stable across input order.
+- Actor mailbox planning is deterministic.
+- Validators must get identical results before this can move from spec to
+  production execution.
+
 ## `x/fees`
 
 Purpose: centralize protocol fee policy and distribution.
@@ -89,6 +532,43 @@ Security invariants:
 - Distribution weights must sum to the configured denominator.
 - Governance authority controls params.
 - Fee collection must be idempotent for repeated block execution inputs.
+
+## `x/reputation`
+
+Purpose: future deterministic reputation state for anti-spam, scheduler
+weighting, and progressive account or contract limits.
+
+Current status:
+- Pure validation and scoring helpers only.
+- No SDK stores, keepers, module accounts, genesis, CLI, or ABCI hooks are
+  registered yet.
+
+State:
+- Reputation record keyed by account or contract address.
+- Deterministic component scores for age, staking time, transaction success,
+  bounded volume, domain ownership, and contract behavior.
+- Penalties for spam, failed transactions, and slash events.
+- Last updated epoch for inactivity decay.
+
+Security invariants:
+- Reputation scores are based only on deterministic on-chain events.
+- There is no direct reputation purchase.
+- Reputation staking may exist only as a bonded signal with slashing/risk.
+- Domain ownership can add bounded reputation, but cannot dominate score.
+- Contracts also have reputation.
+- New accounts have progressive limits.
+- Score is clamped to `0..100`; levels are restricted, new, normal, trusted,
+  and elite.
+- Low score lowers tx rate limit and async queue quota, raises memo/storage
+  byte cost, and tightens contract deploy limits.
+- High score may improve deterministic queue priority within bounded weights,
+  but cannot bypass fees, signatures, or validation.
+- Token creation, contract deployment, and DEX pool creation may require a
+  score threshold or bonded deposit.
+- Domain auction spam can be rate-limited by score.
+- Contract reputation updates on deterministic failed or successful executions.
+- Reputation must not bypass signer checks, sequence replay protection,
+  zero-address rejection, `naet` fee validation, or module authorization.
 
 ## `x/aetherisvm/standards`
 

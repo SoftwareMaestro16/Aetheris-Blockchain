@@ -278,6 +278,8 @@ func TestAnteHandlerDecoratorRejectsBelowMinimumFee(t *testing.T) {
 	ctx := app.NewContext(false).WithBlockHeight(1)
 	params := types.DefaultParams()
 	params.MinFeeAmount = "100"
+	params.BaseFeeAmount = "100"
+	params.MaxFeeAmount = "1000"
 	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
 
 	called := false
@@ -289,6 +291,71 @@ func TestAnteHandlerDecoratorRejectsBelowMinimumFee(t *testing.T) {
 	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 99))}, false)
 	require.ErrorIs(t, err, types.ErrInvalidFee)
 	require.False(t, called)
+}
+
+func TestAnteHandlerDecoratorRejectsOverHardFeeCap(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(1)
+
+	called := false
+	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+		called = true
+		return ctx, nil
+	}
+
+	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1001))}, false)
+	require.ErrorIs(t, err, types.ErrInvalidFee)
+	require.Contains(t, err.Error(), "fee must not exceed hard cap")
+	require.False(t, called)
+}
+
+func TestAnteHandlerDecoratorEnforcesSenderRateLimit(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(1)
+	params := types.DefaultParams()
+	params.MaxSenderTxsPerBlock = 2
+	params.MaxSenderTxsPerBlockWithStake = 2
+	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
+
+	payer := sdk.AccAddress{1, 2, 3}
+	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+		return ctx, nil
+	}
+	handler := app.FeesKeeper.AnteHandlerDecorator(next)
+	tx := feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1)), payer: payer}
+
+	_, err := handler(ctx, tx, false)
+	require.NoError(t, err)
+	_, err = handler(ctx, tx, false)
+	require.NoError(t, err)
+	_, err = handler(ctx, tx, false)
+	require.ErrorIs(t, err, types.ErrInvalidFee)
+	require.Contains(t, err.Error(), "sender rate limit")
+}
+
+func TestAnteHandlerDecoratorResetsRateLimitByBlockHeight(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(1)
+	params := types.DefaultParams()
+	params.MaxSenderTxsPerBlock = 1
+	params.MaxSenderTxsPerBlockWithStake = 1
+	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
+
+	payer := sdk.AccAddress{9, 9, 9}
+	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+		return ctx, nil
+	}
+	handler := app.FeesKeeper.AnteHandlerDecorator(next)
+	tx := feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1)), payer: payer}
+
+	_, err := handler(ctx, tx, false)
+	require.NoError(t, err)
+	_, err = handler(ctx, tx, false)
+	require.ErrorIs(t, err, types.ErrInvalidFee)
+
+	nextBlock := ctx.WithBlockHeight(2)
+	_, err = handler(nextBlock, tx, false)
+	require.NoError(t, err)
 }
 
 func TestAnteHandlerDecoratorRecordsFeesAfterDeduction(t *testing.T) {

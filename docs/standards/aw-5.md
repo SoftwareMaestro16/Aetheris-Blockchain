@@ -14,7 +14,7 @@ protocol fee payment remains native-only in `naet`.
 - public key
 - owner address if separate from public key
 - extensions dictionary/map
-- optional recovery authority policy
+- recovery policy with enabled flag, authority, and bounded delay
 - optional subscription or standing-payment policy
 
 ## Wallet Messages
@@ -36,6 +36,7 @@ protocol fee payment remains native-only in `naet`.
   commands.
 - Extension auth is explicit and revocable.
 - Multi-send is bounded.
+- Recovery policy is explicit and bounded.
 - Wallet cannot silently pay protocol fees in non-`naet`.
 - A relayer can submit a command, but on-chain fee payment is still `naet`.
 
@@ -77,6 +78,7 @@ message codec. It defines:
 - expiry checks for `valid_until`
 - signature_allowed updates
 - explicit extension install/remove and internal extension command auth
+- explicit bounded recovery policy validation
 - bounded multi-send batches
 - native-only protocol fee validation for direct and relayed commands
 - async conformance execution through `AsyncHandler`
@@ -103,6 +105,7 @@ The package tests cover:
 - extension install/remove
 - extension authorized send
 - unauthorized extension rejected
+- recovery policy bounded
 - multi-send bounded
 - relayer flow pays `naet`
 - async contract execution with deterministic bounce for a failed send

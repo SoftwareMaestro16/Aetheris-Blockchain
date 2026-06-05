@@ -20,6 +20,7 @@ const (
 	MaxContentRefLength   = 512
 	MaxRevokeReasonLength = 256
 	MaxBatchMintCount     = uint32(100)
+	MaxRoyaltyBasisPoints = uint32(1_000)
 	ItemCodeHashLength    = 32
 	DefaultVersion        = uint32(1)
 	itemDerivationDomain  = "aetheris/ANFT-66/item/v1"
@@ -38,6 +39,12 @@ type Metadata struct {
 	ContentRef string
 }
 
+type RoyaltyPolicy struct {
+	Enabled     bool
+	Recipient   sdk.AccAddress
+	BasisPoints uint32
+}
+
 type CollectionState struct {
 	Address         sdk.AccAddress
 	Admin           sdk.AccAddress
@@ -46,6 +53,7 @@ type CollectionState struct {
 	ItemCodeHash    []byte
 	StandardVersion uint32
 	MutableMetadata bool
+	RoyaltyPolicy   RoyaltyPolicy
 	SoulboundOnly   bool
 }
 
@@ -121,7 +129,29 @@ func (c CollectionState) Validate() error {
 	if c.StandardVersion == 0 {
 		return errors.New("standard version must be positive")
 	}
+	if err := c.RoyaltyPolicy.Validate(); err != nil {
+		return err
+	}
 	return ValidateMetadata(c.Metadata)
+}
+
+func (r RoyaltyPolicy) Validate() error {
+	if !r.Enabled {
+		if len(r.Recipient) != 0 {
+			return errors.New("disabled royalty policy must not set recipient")
+		}
+		if r.BasisPoints != 0 {
+			return errors.New("disabled royalty policy must not set basis points")
+		}
+		return nil
+	}
+	if err := aetherisaddress.RejectZeroAddress("royalty recipient", r.Recipient); err != nil {
+		return err
+	}
+	if r.BasisPoints > MaxRoyaltyBasisPoints {
+		return fmt.Errorf("royalty basis points must be <= %d", MaxRoyaltyBasisPoints)
+	}
+	return nil
 }
 
 func (i ItemState) Validate() error {

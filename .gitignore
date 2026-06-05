@@ -5,6 +5,7 @@ ecosystem/
 STEP*.md
 ROADMAP.md
 Roadmap_v2.md
+ROADMAP_v3.md
 
 # Secrets and private config
 .env
