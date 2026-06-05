@@ -27,7 +27,7 @@ jobs:
     name: Checks And Audit
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:
@@ -81,7 +81,7 @@ jobs:
     runs-on: windows-latest
     needs: checks
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:
@@ -117,7 +117,7 @@ jobs:
             target_os: linux
             target_arch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:
