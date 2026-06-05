@@ -378,6 +378,12 @@ Every generated atomic task record contains:
 - pass/fail result;
 - reproduction seed or exact manual reproduction steps.
 
+The base-chain `x/auth` and `x/bank` atomic tasks are expanded into
+task-specific records for signature validation, replay prevention, sequence
+integrity, fee/priority abuse, bank sends, multi-send atomicity, supply
+consistency, zero-address handling, and native-denom spoofing. These records
+must not collapse back to generic module-level attack descriptions.
+
 Every campaign setup record contains the deterministic campaign id, git commit,
 branch, dirty status, Go version, OS, test command set, fuzz seed list, target
 modules, enabled runtime modes, enabled simulator modes, and stop conditions.

@@ -213,7 +213,9 @@ try {
 
   $atomicTasks = Get-Content -Raw -LiteralPath (Join-Path $result.output_dir "atomic-tasks.json") | ConvertFrom-Json
   Assert-True (@($atomicTasks).Count -eq $result.atomic_task_count) "summary atomic task count must match atomic-tasks.json"
+  $atomicTaskById = @{}
   foreach ($task in $atomicTasks) {
+    $atomicTaskById[$task.task_id] = $task
     foreach ($field in @(
         "module",
         "task_id",
@@ -249,6 +251,29 @@ try {
     Assert-True ($task.pass_fail_result -eq "not_executed") "preflight atomic task $($task.task_id) must stay not_executed"
     Assert-True ($task.valid -eq $true) "atomic task $($task.task_id) must be valid"
   }
+  foreach ($taskId in @(
+      "AUTH-01",
+      "AUTH-02",
+      "AUTH-03",
+      "AUTH-04",
+      "AUTH-05",
+      "BANK-01",
+      "BANK-02",
+      "BANK-03",
+      "BANK-04",
+      "BANK-05"
+    )) {
+    Assert-True ($atomicTaskById.ContainsKey($taskId)) "required auth/bank atomic task missing: $taskId"
+  }
+  Assert-True ($atomicTaskById["AUTH-01"].function_or_flow_covered -match "signature verification") "AUTH-01 must use task-specific signature flow"
+  Assert-True ($atomicTaskById["AUTH-03"].adversarial_simulation_result.mutation_inputs -match "bit-flipped signature") "AUTH-03 must record concrete invalid signature mutation"
+  Assert-True ($atomicTaskById["AUTH-04"].defensive_analysis_result.expected_state_transition -match "does not increment sequence") "AUTH-04 must record rejected auth state invariant"
+  Assert-True ($atomicTaskById["AUTH-05"].adversarial_simulation_result.attack_attempt -match "fee bypass") "AUTH-05 must record fee/priority abuse surface"
+  Assert-True ($atomicTaskById["BANK-01"].function_or_flow_covered -match "module account transfers") "BANK-01 must use task-specific transfer flow"
+  Assert-True ($atomicTaskById["BANK-02"].adversarial_simulation_result.mutation_inputs -match "zero coin") "BANK-02 must record zero amount mutation"
+  Assert-True ($atomicTaskById["BANK-03"].adversarial_simulation_result.expected_rejection -match "partial recipient credits") "BANK-03 must record atomic multi-send rejection"
+  Assert-True ($atomicTaskById["BANK-04"].invariant_tested -match "total supply") "BANK-04 must record supply consistency invariant"
+  Assert-True ($atomicTaskById["BANK-05"].adversarial_simulation_result.attack_attempt -match "native denom spoof") "BANK-05 must record native denom spoofing attack"
 
   $enforceFailed = $false
   try {

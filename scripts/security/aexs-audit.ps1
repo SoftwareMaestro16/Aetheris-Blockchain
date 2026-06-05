@@ -151,6 +151,134 @@ function Get-AexsMissingTerms {
   return $missing
 }
 
+function Get-AexsOverrideValue {
+  param([object]$Override, [string]$Field, [object]$Fallback)
+  if ($null -ne $Override -and $Override.Contains($Field)) {
+    return $Override[$Field]
+  }
+  return $Fallback
+}
+
+function Get-AexsAtomicTaskOverride {
+  param([string]$TaskId)
+  $overrides = @{
+    "AUTH-01" = [ordered]@{
+      flow                = "valid signature verification, signer extraction, account sequence increment"
+      state               = "accepted tx increments account sequence exactly once"
+      attack              = "valid tx baseline plus mismatched signer control sample"
+      invariant           = "valid signer can mutate only authorized account state"
+      expected_behavior   = "valid signatures and signer extraction pass ante validation and execute exactly once"
+      expected_events     = "auth success path emits stable tx/auth events and downstream message events"
+      expected_error_path = "mismatched signer control sample is rejected before message execution"
+      mutation_inputs     = "valid signature baseline, wrong signer control, duplicated signer control"
+      expected_rejection  = "wrong or duplicate signer variants must fail without sequence mutation"
+    }
+    "AUTH-02" = [ordered]@{
+      flow                = "empty signer set, duplicate signers, malformed public keys, wrong chain id, max-size auth info"
+      state               = "rejected auth edge cases leave account sequence and balances unchanged"
+      attack              = "malformed public key, wrong chain id, duplicate signer, max-size auth info"
+      invariant           = "malformed auth info cannot mutate account state"
+      expected_behavior   = "edge-case auth inputs are rejected deterministically with stable errors"
+      expected_events     = "rejected edge cases emit no success events"
+      expected_error_path = "validation rejects before fee/message state transition when auth info is invalid"
+      mutation_inputs     = "empty signer array, duplicate signer array, malformed pubkey bytes, wrong chain id, oversized auth info"
+      expected_rejection  = "all invalid auth edge cases fail before account sequence increment"
+    }
+    "AUTH-03" = [ordered]@{
+      flow                = "invalid signature injection, replayed signed bytes, tx malleability, nonce manipulation"
+      state               = "replay and malleability attempts cannot execute or alter sequence twice"
+      attack              = "invalid signature, replayed tx bytes, mutated sign bytes, stale/future nonce"
+      invariant           = "same signed transaction cannot execute twice"
+      expected_behavior   = "auth adversarial mutations fail deterministically before state mutation"
+      expected_events     = "failed replay or signature mutation emits no success events"
+      expected_error_path = "ante signature or sequence decorator rejects before message server execution"
+      mutation_inputs     = "bit-flipped signature, replayed accepted tx bytes, altered sign doc, stale sequence, future sequence"
+      expected_rejection  = "invalid, replayed, or malleated tx must fail without sequence or balance mutation"
+    }
+    "AUTH-04" = [ordered]@{
+      flow                = "rejected auth path state integrity"
+      state               = "failed auth path does not increment sequence or mutate account state"
+      attack              = "state corruption attempt through rejected auth path"
+      invariant           = "invalid signer cannot mutate state"
+      expected_behavior   = "auth rejection preserves account number, sequence, balances, and module state"
+      expected_events     = "no state-changing events after rejected auth path"
+      expected_error_path = "auth failure returns before fee deduction or message execution"
+      mutation_inputs     = "invalid signer, invalid sequence, malformed signer, rejected fee payer"
+      expected_rejection  = "state snapshot before and after rejected auth path must match"
+    }
+    "AUTH-05" = [ordered]@{
+      flow                = "auth failure interaction with fee deduction, priority rules, and rate limits"
+      state               = "auth failure cannot charge or bypass fees outside expected ante semantics"
+      attack              = "fee bypass, priority bypass, rate-limit bypass through auth failure"
+      invariant           = "auth failure cannot bypass fee deduction, priority, or rate limits"
+      expected_behavior   = "invalid auth cannot be used to gain free execution or priority"
+      expected_events     = "no fee distribution, priority success, or rate-limit success event after invalid auth"
+      expected_error_path = "invalid auth fails before any message execution and cannot mark tx as accepted"
+      mutation_inputs     = "invalid signer with high priority, invalid signer with zero fee, repeated invalid signer spam"
+      expected_rejection  = "invalid auth must not execute messages, bypass fee policy, or consume accepted priority lane"
+    }
+    "BANK-01" = [ordered]@{
+      flow                = "naet sends, module account transfers, multi-send success paths"
+      state               = "sender, recipient, module account balances, and supply remain consistent after accepted sends"
+      attack              = "valid transfer baseline plus unauthorized module transfer control sample"
+      invariant           = "accepted bank sends preserve total supply and authorization"
+      expected_behavior   = "valid naet sends and valid multi-sends update balances exactly by transferred amount"
+      expected_events     = "bank transfer events match committed balance deltas"
+      expected_error_path = "unauthorized module transfer control sample is rejected before balance mutation"
+      mutation_inputs     = "valid send, valid multi-send, valid module transfer, unauthorized module transfer control"
+      expected_rejection  = "unauthorized module movement must fail without partial balance update"
+    }
+    "BANK-02" = [ordered]@{
+      flow                = "zero amount, max amount, insufficient funds, malformed denom, zero address, self-transfer"
+      state               = "bank edge cases either update balances exactly or leave state unchanged"
+      attack              = "zero amount, max amount, insufficient funds, malformed denom, zero address, self-transfer"
+      invariant           = "bank edge cases cannot create negative balances or invalid denom state"
+      expected_behavior   = "valid boundaries execute deterministically; invalid boundaries reject before mutation"
+      expected_events     = "accepted boundary sends emit accurate transfer events; rejected paths emit no success events"
+      expected_error_path = "invalid amount, denom, address, or insufficient funds rejects before balance mutation"
+      mutation_inputs     = "zero coin, max int coin, insufficient funds coin, malformed denom, zero address recipient, self-transfer"
+      expected_rejection  = "invalid boundary inputs must not mutate balances or supply"
+    }
+    "BANK-03" = [ordered]@{
+      flow                = "double spend, partial multi-send failure, negative balance creation, overflow"
+      state               = "failed adversarial bank operations leave all account and module balances unchanged"
+      attack              = "double spend, partial multi-send failure, negative balance attempt, arithmetic overflow attempt"
+      invariant           = "no negative balances and no partial multi-send commits"
+      expected_behavior   = "adversarial bank mutations fail atomically"
+      expected_events     = "failed adversarial sends emit no misleading success transfer events"
+      expected_error_path = "bank validation or keeper send path rejects before partial commit"
+      mutation_inputs     = "two spends of same funds, multi-send with one invalid output, negative-like amount encoding, overflow-size amount"
+      expected_rejection  = "failed bank attack must not create funds, negative balances, or partial recipient credits"
+    }
+    "BANK-04" = [ordered]@{
+      flow                = "balance, module balance, and total supply state integrity"
+      state               = "balances, module balances, and total supply remain consistent after accepted and rejected sends"
+      attack              = "state drift attempt through mixed accepted and rejected bank sends"
+      invariant           = "sum(account balances) plus module balances equals total supply"
+      expected_behavior   = "bank state integrity holds across multi-step send sequences"
+      expected_events     = "events reconcile to final committed balance deltas"
+      expected_error_path = "failed sends preserve pre-failure balance and supply snapshot"
+      mutation_inputs     = "accepted send followed by failed send, module transfer followed by failed multi-send, export/import after sends"
+      expected_rejection  = "any rejected send must preserve total supply and module/account balance consistency"
+    }
+    "BANK-05" = [ordered]@{
+      flow                = "bank economic abuse around mint, burn, native denom metadata, and protocol fee denom"
+      state               = "bank paths cannot change supply except through authorized module mint/burn paths"
+      attack              = "unauthorized mint, unauthorized burn, native denom spoof, non-naet protocol fee payment"
+      invariant           = "bank cannot mint, burn, spoof native denom metadata, or pay protocol fees with non-naet assets"
+      expected_behavior   = "bank transfers move existing balances only and cannot alter native token authority"
+      expected_events     = "no mint/burn/native metadata event from plain bank send"
+      expected_error_path = "unauthorized supply or fee-denom abuse rejects before state mutation"
+      mutation_inputs     = "bank send shaped as mint, bank send shaped as burn, denom metadata spoof, non-naet fee asset"
+      expected_rejection  = "bank economic abuse must not alter supply, native metadata, or protocol fee acceptance"
+    }
+  }
+  if ($overrides.ContainsKey($TaskId)) {
+    return $overrides[$TaskId]
+  }
+  return $null
+}
+
 function Get-AexsAtomicTaskRecords {
   param(
     [string]$Text,
@@ -201,12 +329,22 @@ function Get-AexsAtomicTaskRecords {
 
   $out = @()
   foreach ($record in $records) {
+    $override = Get-AexsAtomicTaskOverride -TaskId $record["task_id"]
     $seedHash = (Get-AexsSha256Hex -Text "$CampaignId|$($Module["Module"])|$($record["task_id"])").Substring(0, 16)
     $seed = "aexs-$($record["task_id"].ToLowerInvariant())-$seedHash"
     $flow = if ([string]::IsNullOrWhiteSpace($functionCell)) { $record["description"] } else { $functionCell }
     $attack = if ([string]::IsNullOrWhiteSpace($attackCell)) { $record["description"] } else { $attackCell }
     $invariant = if ([string]::IsNullOrWhiteSpace($invariantCell)) { "module-specific invariant from TO_AUDIT task $($record["task_id"])" } else { $invariantCell }
     $state = if ([string]::IsNullOrWhiteSpace($stateCell)) { "state transition from TO_AUDIT task $($record["task_id"])" } else { $stateCell }
+    $flow = Get-AexsOverrideValue -Override $override -Field "flow" -Fallback $flow
+    $attack = Get-AexsOverrideValue -Override $override -Field "attack" -Fallback $attack
+    $invariant = Get-AexsOverrideValue -Override $override -Field "invariant" -Fallback $invariant
+    $state = Get-AexsOverrideValue -Override $override -Field "state" -Fallback $state
+    $expectedBehavior = Get-AexsOverrideValue -Override $override -Field "expected_behavior" -Fallback $record["description"]
+    $expectedEvents = Get-AexsOverrideValue -Override $override -Field "expected_events" -Fallback "stable module events or no events for rejected path"
+    $expectedErrorPath = Get-AexsOverrideValue -Override $override -Field "expected_error_path" -Fallback "malformed, unauthorized, replayed, or boundary input must fail before unintended state mutation"
+    $mutationInputs = Get-AexsOverrideValue -Override $override -Field "mutation_inputs" -Fallback "malformed input, replay, unauthorized signer, bad fee, boundary values, state corruption attempt, or module-specific exploit"
+    $expectedRejection = Get-AexsOverrideValue -Override $override -Field "expected_rejection" -Fallback "attack must not violate invariant or mutate state outside the expected transition"
 
     $out += [ordered]@{
       module                         = $Module["Module"]
@@ -218,17 +356,17 @@ function Get-AexsAtomicTaskRecords {
       invariant_tested               = $invariant
       defensive_analysis_result      = [ordered]@{
         status                    = "planned_not_executed"
-        expected_behavior         = $record["description"]
+        expected_behavior         = $expectedBehavior
         expected_state_transition = $state
-        expected_events           = "stable module events or no events for rejected path"
-        expected_error_path       = "malformed, unauthorized, replayed, or boundary input must fail before unintended state mutation"
+        expected_events           = $expectedEvents
+        expected_error_path       = $expectedErrorPath
         expected_invariant        = $invariant
       }
       adversarial_simulation_result  = [ordered]@{
         status             = "planned_not_executed"
         attack_attempt     = $attack
-        mutation_inputs    = "malformed input, replay, unauthorized signer, bad fee, boundary values, state corruption attempt, or module-specific exploit"
-        expected_rejection = "attack must not violate invariant or mutate state outside the expected transition"
+        mutation_inputs    = $mutationInputs
+        expected_rejection = $expectedRejection
         replay_mode        = "deterministic replay by seed and step list"
       }
       pass_fail_result               = "not_executed"
