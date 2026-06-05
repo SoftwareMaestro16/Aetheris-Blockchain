@@ -61,6 +61,8 @@ try {
   Assert-True ($result.invalid_transaction_mutator_count -eq 0) "AEXS must not generate invalid transaction mutator records"
   Assert-True ($result.invariant_checklist_count -ge 17) "AEXS must record the required economic and consensus invariant checklist"
   Assert-True ($result.invalid_invariant_checklist_count -eq 0) "AEXS must not generate invalid invariant checklist records"
+  Assert-True ($result.core_exploit_count -ge 13) "AEXS must record consensus and Aether Core exploit catalog entries"
+  Assert-True ($result.invalid_core_exploit_count -eq 0) "AEXS must not generate invalid consensus exploit records"
 
   foreach ($module in @(
       "app",
@@ -91,6 +93,8 @@ try {
       "atomic-tasks.md",
       "invariant-checklist.json",
       "invariant-checklist.md",
+      "exploit-catalog.json",
+      "exploit-catalog.md",
       "scenario-generator.json",
       "scenario-generator.md",
       "transaction-mutator.json",
@@ -184,7 +188,16 @@ try {
       "IDINV-05",
       "IDINV-06",
       "IDINV-07",
-      "IDINV-08"
+      "IDINV-08",
+      "EXECINV-01",
+      "EXECINV-02",
+      "EXECINV-03",
+      "EXECINV-04",
+      "EXECINV-05",
+      "EXECINV-06",
+      "EXECINV-07",
+      "EXECINV-08",
+      "EXECINV-09"
     )) {
     Assert-True ($invariantById.ContainsKey($invariantId)) "mandatory invariant checklist record missing: $invariantId"
   }
@@ -224,6 +237,65 @@ try {
   Assert-True ($invariantById["IDINV-06"].attack_surface_covered -match "reverse lookup poisoning") "IDINV-06 must record reverse lookup poisoning"
   Assert-True ($invariantById["IDINV-07"].attack_surface_covered -match "NFT transfer without registry update") "IDINV-07 must record registry/NFT divergence"
   Assert-True ($invariantById["IDINV-08"].attack_surface_covered -match "parent policy bypass") "IDINV-08 must record subdomain parent policy bypass"
+  Assert-True ($invariantById["EXECINV-01"].attack_surface_covered -match "malformed bytecode") "EXECINV-01 must record malformed AVM input"
+  Assert-True ($invariantById["EXECINV-02"].attack_surface_covered -match "gas underpayment") "EXECINV-02 must record gas abuse"
+  Assert-True ($invariantById["EXECINV-03"].attack_surface_covered -match "infinite loop bytecode") "EXECINV-03 must record infinite loop bytecode"
+  Assert-True ($invariantById["EXECINV-04"].attack_surface_covered -match "wall-clock dependency") "EXECINV-04 must record nondeterministic host access"
+  Assert-True ($invariantById["EXECINV-05"].attack_surface_covered -match "queue insertion order drift") "EXECINV-05 must record queue ordering drift"
+  Assert-True ($invariantById["EXECINV-06"].attack_surface_covered -match "duplicate mesh message") "EXECINV-06 must record cross-zone replay"
+  Assert-True ($invariantById["EXECINV-07"].attack_surface_covered -match "duplicate refund receipt") "EXECINV-07 must record refund double spend"
+  Assert-True ($invariantById["EXECINV-08"].attack_surface_covered -match "recursive message loop") "EXECINV-08 must record message loop bounds"
+  Assert-True ($invariantById["EXECINV-09"].attack_surface_covered -match "queue export ordering drift") "EXECINV-09 must record queue export/import drift"
+
+  $exploitCatalog = Get-Content -Raw -LiteralPath (Join-Path $result.output_dir "exploit-catalog.json") | ConvertFrom-Json
+  Assert-True (@($exploitCatalog).Count -eq $result.core_exploit_count) "summary core exploit count must match exploit-catalog.json"
+  $exploitById = @{}
+  foreach ($exploit in $exploitCatalog) {
+    $exploitById[$exploit.exploit_id] = $exploit
+    foreach ($field in @(
+        "exploit_id",
+        "category",
+        "description",
+        "exploit_path",
+        "seed",
+        "expected_state",
+        "actual_state",
+        "severity",
+        "fix_recommendation",
+        "status"
+      )) {
+      Assert-True (-not [string]::IsNullOrWhiteSpace([string]$exploit.$field)) "exploit record $($exploit.exploit_id) missing $field"
+    }
+    Assert-True (@($exploit.step_list).Count -gt 0) "exploit record $($exploit.exploit_id) must include step list"
+    Assert-True (@($exploit.affected_modules).Count -gt 0) "exploit record $($exploit.exploit_id) must include affected modules"
+    Assert-True ($exploit.actual_state -eq "not_executed_preflight") "preflight exploit $($exploit.exploit_id) must record actual state as not executed"
+    Assert-True ($exploit.status -eq "planned_not_executed") "preflight exploit $($exploit.exploit_id) must stay planned"
+    Assert-True ($exploit.valid -eq $true) "exploit record $($exploit.exploit_id) must be valid"
+  }
+  foreach ($exploitId in @(
+      "COREEXP-01",
+      "COREEXP-02",
+      "COREEXP-03",
+      "COREEXP-04",
+      "COREEXP-05",
+      "COREEXP-06",
+      "COREEXP-07",
+      "COREEXP-08",
+      "COREEXP-09",
+      "COREEXP-10",
+      "COREEXP-11",
+      "COREEXP-12",
+      "COREEXP-13"
+    )) {
+    Assert-True ($exploitById.ContainsKey($exploitId)) "core exploit catalog record missing: $exploitId"
+  }
+  Assert-True ($exploitById["COREEXP-01"].exploit_path -match "conflicting blocks") "COREEXP-01 must record double-sign fork path"
+  Assert-True ($exploitById["COREEXP-01"].severity -eq "Critical") "COREEXP-01 must be Critical"
+  Assert-True ($exploitById["COREEXP-03"].exploit_path -match "long-range history rewrite") "COREEXP-03 must record long-range rewrite"
+  Assert-True (@($exploitById["COREEXP-03"].affected_modules) -contains "x/staking") "COREEXP-03 must affect staking"
+  Assert-True ($exploitById["COREEXP-07"].exploit_path -match "self-delegation inflation") "COREEXP-07 must record self-delegation inflation"
+  Assert-True ($exploitById["COREEXP-11"].exploit_path -match "fork choice manipulation") "COREEXP-11 must record fork choice manipulation"
+  Assert-True ($exploitById["COREEXP-13"].exploit_path -match "Byzantine majority") "COREEXP-13 must record Byzantine majority simulator"
 
   $campaignSetup = Get-Content -Raw -LiteralPath (Join-Path $result.output_dir "campaign-setup.json") | ConvertFrom-Json
   Assert-True ($campaignSetup.campaign_id -eq $result.campaign_id) "campaign setup campaign id must match summary"

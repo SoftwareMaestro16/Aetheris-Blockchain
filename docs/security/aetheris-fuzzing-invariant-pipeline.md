@@ -355,6 +355,8 @@ campaign output under `.work\aexs\`:
 - `atomic-tasks.md`;
 - `invariant-checklist.json`;
 - `invariant-checklist.md`;
+- `exploit-catalog.json`;
+- `exploit-catalog.md`;
 - `scenario-generator.json`;
 - `scenario-generator.md`;
 - `transaction-mutator.json`;
@@ -406,6 +408,21 @@ auction lifecycle enforcement, malformed and zero-address resolver rejection,
 resolver-payment rollback before funds move, owner-approved reverse lookup
 consistency, registry/NFT owner reconciliation, and parent-policy enforcement
 for subdomain ownership and resolver delegation.
+Execution, AVM, and queue checklist records cover malformed AVM input panic
+safety, bounded deterministic gas, infinite-loop termination, deterministic
+contract writes, canonical queue ordering, cross-zone replay rejection,
+bounce/refund double-spend prevention, message-loop depth and per-block bounds,
+and exact queue export/import preservation.
+
+Every generated consensus and Aether Core exploit catalog record contains the
+exploit id, category, exploit path, deterministic seed, step list, expected
+state, actual state, affected modules, severity, fix recommendation, and
+execution status. The first catalog section covers double-sign fork creation,
+equivocation across heights and rounds, long-range history rewrite, stake
+grinding, validator cartel concentration, delegation manipulation,
+self-delegation inflation, fake validator liveness, validator eclipse, block
+withholding, fork-choice manipulation, finality-delay manipulation, and
+Byzantine-majority simulator scenarios.
 
 The base-chain `x/auth`, `x/bank`, `x/staking`, `x/slashing`, `x/gov`,
 `x/distribution`, `x/fees`, `x/tokenfactory`, `x/dex`, `x/identity`,

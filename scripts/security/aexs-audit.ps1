@@ -1990,6 +1990,96 @@ function Get-AexsInvariantChecklistOverride {
       mutation_inputs     = "wrong parent signer, child resolver overwrite by parent when policy forbids, duplicate child label, delegated admin escalation"
       expected_rejection  = "subdomain ownership or resolver delegation cannot bypass parent policy or child owner authorization"
     }
+    "EXECINV-01" = [ordered]@{
+      flow                = "AVM malformed input panic safety"
+      state               = "AVM malformed input does not panic"
+      attack              = "malformed bytecode, invalid entrypoint payload, truncated message, oversized payload, invalid opcode stream"
+      expected_behavior   = "AVM parser and dispatcher return deterministic errors for malformed input without panics or partial writes"
+      expected_events     = "malformed AVM input emits no successful deploy, execute, query, migrate, or state-write event"
+      expected_error_path = "malformed AVM input rejects before contract state, queue, gas accounting, or emitted message mutation"
+      mutation_inputs     = "truncated bytecode, invalid opcode, oversized payload, invalid entrypoint args, random byte stream"
+      expected_rejection  = "malformed AVM input cannot panic or commit state"
+    }
+    "EXECINV-02" = [ordered]@{
+      flow                = "AVM deterministic gas accounting"
+      state               = "AVM gas is bounded and deterministic"
+      attack              = "gas underpayment, host function gas bypass, platform-dependent gas, storage write gas evasion, query gas overflow"
+      expected_behavior   = "gas metering uses deterministic protocol costs and rejects execution before exceeding configured limits"
+      expected_events     = "gas consumed and failure events are stable for the same input and state"
+      expected_error_path = "out-of-gas rejects before committing contract, queue, or forwarded message state"
+      mutation_inputs     = "zero gas, max gas, deep query, storage spam, host function loop, message forwarding burst"
+      expected_rejection  = "AVM execution cannot exceed deterministic gas or underpay gas"
+    }
+    "EXECINV-03" = [ordered]@{
+      flow                = "AVM infinite loop termination"
+      state               = "Infinite loops are stopped by gas or instruction limits"
+      attack              = "infinite loop bytecode, recursive internal call, unbounded host iteration, instruction counter overflow"
+      expected_behavior   = "gas or instruction limits stop execution deterministically before node resource exhaustion"
+      expected_events     = "loop termination emits deterministic out-of-gas or instruction-limit failure"
+      expected_error_path = "looping execution rejects before state writes, queue messages, or refunds are committed"
+      mutation_inputs     = "jump-to-self bytecode, recursive call payload, unbounded iterator contract, max-depth call sequence"
+      expected_rejection  = "infinite loops cannot halt the chain or mutate state after limit failure"
+    }
+    "EXECINV-04" = [ordered]@{
+      flow                = "contract state update determinism"
+      state               = "Contract state updates are deterministic"
+      attack              = "wall-clock dependency, randomness dependency, map iteration drift, external API dependency, platform-dependent int behavior"
+      expected_behavior   = "contract writes derive only from deterministic inputs, canonical storage ordering, and protocol host functions"
+      expected_events     = "same contract input and state produce identical write set, receipts, and emitted messages"
+      expected_error_path = "nondeterministic host access rejects before contract state or queue mutation"
+      mutation_inputs     = "same state with different local map order, random host call attempt, local time request, external API request"
+      expected_rejection  = "contract state cannot diverge across deterministic replay"
+    }
+    "EXECINV-05" = [ordered]@{
+      flow                = "queue canonical ordering"
+      state               = "Queue ordering is deterministic"
+      attack              = "queue insertion order drift, duplicate sequence, priority tie-break mismatch, map-order dequeue, delayed execution reorder"
+      expected_behavior   = "queue ordering uses canonical height, priority, sequence, message id, and deterministic tie-breakers"
+      expected_events     = "same queued messages produce identical dequeue and execution event order"
+      expected_error_path = "duplicate sequence or ambiguous ordering rejects before queue state mutation"
+      mutation_inputs     = "same queue items in different local insertion order, duplicate sequence, identical priority except message id"
+      expected_rejection  = "queue ordering cannot depend on local map or mempool order"
+    }
+    "EXECINV-06" = [ordered]@{
+      flow                = "cross-zone message replay prevention"
+      state               = "Cross-zone message replay is rejected"
+      attack              = "duplicate mesh message, stale receipt replay, forged proof replay, same message id on different shard"
+      expected_behavior   = "replay markers and receipt uniqueness prevent the same cross-zone message from executing twice"
+      expected_events     = "duplicate message emits no successful delivery, receipt, value transfer, or contract execution event"
+      expected_error_path = "replayed cross-zone message rejects before destination state or value movement"
+      mutation_inputs     = "same message id twice, stale finality reference, duplicate receipt, wrong source shard replay"
+      expected_rejection  = "cross-zone replay cannot mutate state or spend assets twice"
+    }
+    "EXECINV-07" = [ordered]@{
+      flow                = "bounce and refund double-spend prevention"
+      state               = "Bounce/refund cannot double-spend"
+      attack              = "duplicate refund receipt, bounce/refund loop, failed execution double refund, invalid destination refund replay"
+      expected_behavior   = "refund and bounce receipts are single-use and cannot produce multiple value releases for one message"
+      expected_events     = "one source message produces at most one finalized refund or bounce value movement"
+      expected_error_path = "duplicate bounce or refund rejects before value transfer, receipt, marker, or queue state mutation"
+      mutation_inputs     = "same failed message refund twice, bounce of bounce, duplicate refund receipt, timeout plus execution-failure refund"
+      expected_rejection  = "bounce/refund paths cannot double-spend or loop indefinitely"
+    }
+    "EXECINV-08" = [ordered]@{
+      flow                = "message loop depth and per-block processing bounds"
+      state               = "Message loops are bounded by depth and per-block limits"
+      attack              = "recursive message loop, queue flood, bounce storm, unbounded internal call fanout, per-block limit bypass"
+      expected_behavior   = "message processing enforces deterministic depth, emitted-message, and per-block queue limits"
+      expected_events     = "bounded deferral or rejection events appear when loop depth or per-block limits are reached"
+      expected_error_path = "limit breach rejects or defers before unbounded queue growth or repeated value movement"
+      mutation_inputs     = "A->B->A recursive messages, many emitted messages, bounce storm, delayed execution loop"
+      expected_rejection  = "message loops cannot exhaust block execution or bypass per-block limits"
+    }
+    "EXECINV-09" = [ordered]@{
+      flow                = "queue export/import exactness"
+      state               = "Export/import preserves queue state exactly"
+      attack              = "queue export ordering drift, missing replay marker, duplicate queued item, corrupted delayed execution height, receipt marker loss"
+      expected_behavior   = "exported queue state imports to the same ordered items, sequence counters, replay markers, receipts, and delayed heights"
+      expected_events     = "pure export/import emits no queue execution, refund, bounce, or receipt mutation event"
+      expected_error_path = "corrupted queue import rejects during genesis validation before chain start"
+      mutation_inputs     = "reordered queue items, duplicate sequence, missing marker, corrupted receipt, malformed delayed height"
+      expected_rejection  = "export/import cannot reorder or lose queue state"
+    }
   }
   if ($overrides.ContainsKey($InvariantId)) {
     return $overrides[$InvariantId]
@@ -2154,6 +2244,200 @@ function Test-AexsInvariantChecklistRecord {
   return $reasons
 }
 
+function Get-AexsCoreExploitOverride {
+  param([string]$ExploitId)
+  $overrides = @{
+    "COREEXP-01" = [ordered]@{
+      path            = "attempt to make one validator sign conflicting blocks for the same height and round, then feed both commits into replay and evidence validation"
+      expected_state  = "only one canonical block is committed; duplicate signing is recorded as objective evidence; slash/tombstone path is deterministic"
+      affected        = @("app", "x/slashing", "x/staking", "CometBFT consensus")
+      severity        = "Critical"
+      fix             = "enforce duplicate-sign evidence validation, tombstone persistence, deterministic slash accounting, and replay regression for conflicting vote evidence"
+    }
+    "COREEXP-02" = [ordered]@{
+      path            = "attempt equivocation with conflicting prevote/precommit evidence across heights and rounds, including stale and duplicate evidence variants"
+      expected_state  = "valid equivocation evidence slashes once; stale, malformed, or duplicate evidence is rejected before validator state mutation"
+      affected        = @("x/slashing", "x/staking", "app evidence handling", "CometBFT consensus")
+      severity        = "Critical"
+      fix             = "harden evidence freshness, uniqueness, validator identity binding, and deterministic slash/jail/tombstone tests"
+    }
+    "COREEXP-03" = [ordered]@{
+      path            = "attempt long-range history rewrite with an old validator set after unbonding and export/import replay"
+      expected_state  = "current trust period, unbonding windows, and checkpointed app state reject rewritten history and preserve canonical app hash"
+      affected        = @("x/staking", "x/slashing", "app", "CometBFT light-client trust model")
+      severity        = "Critical"
+      fix             = "enforce unbonding/evidence windows, state-sync trust assumptions, checkpoint documentation, and long-range replay tests"
+    }
+    "COREEXP-04" = [ordered]@{
+      path            = "attempt stake grinding by cycling delegation, validator creation, and reward timing to bias proposer or validator-set selection"
+      expected_state  = "validator power and proposer eligibility derive only from canonical bonded stake and deterministic staking state"
+      affected        = @("x/staking", "x/distribution", "app validator updates")
+      severity        = "High"
+      fix             = "add stake-grinding simulations, delegation timing invariants, and validator power update regression tests"
+    }
+    "COREEXP-05" = [ordered]@{
+      path            = "simulate validator cartel concentration to test governance, slashing, and validator-set safety under concentrated voting power"
+      expected_state  = "validator concentration cannot bypass deterministic slashing, parameter bounds, or documented governance quorum/threshold rules"
+      affected        = @("x/staking", "x/gov", "x/slashing", "distribution economics")
+      severity        = "High"
+      fix             = "document concentration risk, enforce hard parameter bounds, and add cartel governance/slashing scenario tests"
+    }
+    "COREEXP-06" = [ordered]@{
+      path            = "attempt delegation manipulation through rapid delegate/redelegate/unbond sequences and share rounding boundaries"
+      expected_state  = "delegator shares, validator tokens, unbonding records, and validator power remain consistent after every accepted or rejected transition"
+      affected        = @("x/staking", "x/distribution", "x/slashing")
+      severity        = "High"
+      fix             = "add staking share-rounding, redelegation, unbonding, and slash-period invariant regression tests"
+    }
+    "COREEXP-07" = [ordered]@{
+      path            = "attempt self-delegation inflation by manipulating validator self-bond, shares, commission, and minimum self-delegation boundaries"
+      expected_state  = "self-delegation cannot inflate validator tokens, delegator shares, voting power, commission, or rewards"
+      affected        = @("x/staking", "x/distribution", "app validator updates")
+      severity        = "Critical"
+      fix             = "enforce self-delegation bounds, share math invariants, and validator power/supply accounting tests"
+    }
+    "COREEXP-08" = [ordered]@{
+      path            = "attempt fake validator liveness by spoofing signing info, missed blocks, or evidence state across restart/export/import"
+      expected_state  = "validator signing info, missed block counters, jail state, and liveness updates remain objective and deterministic"
+      affected        = @("x/slashing", "x/staking", "app restart/export")
+      severity        = "High"
+      fix             = "add liveness replay tests, signing-info export/import checks, and downtime edge-case coverage"
+    }
+    "COREEXP-09" = [ordered]@{
+      path            = "simulate validator eclipse by isolating validator peers and attempting delayed evidence, stale blocks, or divergent mempool assumptions"
+      expected_state  = "network partition cannot create accepted conflicting state; evidence and finality remain objective after reconnection"
+      affected        = @("CometBFT P2P", "app", "x/slashing", "localnet tooling")
+      severity        = "High"
+      fix             = "add localnet partition/evidence smoke tests and document validator peer diversity requirements"
+    }
+    "COREEXP-10" = [ordered]@{
+      path            = "attempt block withholding by proposer or validator subset to delay finality or bias transaction inclusion"
+      expected_state  = "withheld blocks do not commit; liveness/finality delay is observable; safety and app hash determinism remain intact"
+      affected        = @("CometBFT consensus", "mempool", "x/slashing", "observability")
+      severity        = "High"
+      fix             = "add block-withholding localnet tests, liveness metrics, and downtime/slashing evidence verification"
+    }
+    "COREEXP-11" = [ordered]@{
+      path            = "attempt fork choice manipulation with conflicting proposals, delayed commits, and reordered evidence delivery"
+      expected_state  = "CometBFT finality chooses only a 2/3+ committed block and ABCI replay produces one canonical app hash"
+      affected        = @("CometBFT consensus", "app FinalizeBlock", "x/slashing")
+      severity        = "Critical"
+      fix             = "add fork-choice replay fixtures, evidence ordering tests, and app-hash determinism checks under conflicting proposal scenarios"
+    }
+    "COREEXP-12" = [ordered]@{
+      path            = "attempt finality delay manipulation through validator delay, vote withholding, mempool spam, and block propagation lag"
+      expected_state  = "finality delay is bounded by consensus/liveness assumptions and does not mutate app state inconsistently"
+      affected        = @("CometBFT consensus", "mempool", "x/slashing", "observability")
+      severity        = "High"
+      fix             = "add deterministic chaos tests for delayed votes, delayed propagation, spam pressure, and finality health metrics"
+    }
+    "COREEXP-13" = [ordered]@{
+      path            = "simulate Byzantine majority to verify the test harness detects the safety boundary and does not mark the scope production safe"
+      expected_state  = "campaign records safety failure or Byzantine-boundary condition; production-safe decision is blocked until triaged"
+      affected        = @("CometBFT consensus", "app", "x/staking", "x/slashing", "test harness")
+      severity        = "Critical"
+      fix             = "keep Byzantine-majority scenario as a blocking stress test and document that protocol safety assumes less than one-third Byzantine voting power"
+    }
+  }
+  if ($overrides.ContainsKey($ExploitId)) {
+    return $overrides[$ExploitId]
+  }
+  return $null
+}
+
+function Get-AexsCoreExploitRecords {
+  param([string]$Text, [string]$CampaignId)
+  $section = Get-AexsMarkdownSection -Text $Text -Heading "Exploit Task Catalog"
+  if ([string]::IsNullOrWhiteSpace($section)) {
+    return @()
+  }
+
+  $capture = $false
+  $items = @()
+  foreach ($line in ($section -split "`r?`n")) {
+    if ($line -match '^###\s+1\.\s+Consensus And Aether Core Exploits\s*$') {
+      $capture = $true
+      continue
+    }
+    if ($capture -and $line -match '^###\s+') {
+      break
+    }
+    if ($capture -and $line -match '^- \[ \]\s+(.+?)\s*$') {
+      $items += $Matches[1].Trim().TrimEnd(".")
+    }
+  }
+
+  $records = @()
+  for ($i = 0; $i -lt $items.Count; $i++) {
+    $id = "COREEXP-{0:00}" -f ($i + 1)
+    $description = $items[$i]
+    $override = Get-AexsCoreExploitOverride -ExploitId $id
+    $seedHash = (Get-AexsSha256Hex -Text "$CampaignId|core-exploit|$id|$description").Substring(0, 16)
+    $seed = "aexs-$($id.ToLowerInvariant())-$seedHash"
+    $affected = if ($null -ne $override -and $override.Contains("affected")) { @($override["affected"]) } else { @("app", "x/staking", "x/slashing", "CometBFT consensus") }
+    $path = Get-AexsOverrideValue -Override $override -Field "path" -Fallback $description
+    $expected = Get-AexsOverrideValue -Override $override -Field "expected_state" -Fallback "exploit attempt must not violate Aether Core safety, validator-set, staking, slashing, or app-hash invariants"
+    $severity = Get-AexsOverrideValue -Override $override -Field "severity" -Fallback "High"
+    $fix = Get-AexsOverrideValue -Override $override -Field "fix" -Fallback "add deterministic replay, adversarial localnet, invariant, and regression coverage for this exploit path"
+
+    $records += [ordered]@{
+      exploit_id         = $id
+      category           = "Consensus And Aether Core Exploits"
+      description        = $description
+      exploit_path       = $path
+      seed               = $seed
+      step_list          = @(
+        "Run AEXS exploit scenario $id",
+        "Use seed $seed",
+        "Construct the adversarial consensus or staking sequence",
+        "Record expected state before execution",
+        "Record actual state after execution",
+        "If exploit succeeds, minimize the sequence and write AUDIT_RESULT.md"
+      )
+      expected_state     = $expected
+      actual_state       = "not_executed_preflight"
+      affected_modules   = $affected
+      severity           = $severity
+      fix_recommendation = $fix
+      status             = "planned_not_executed"
+      valid              = $true
+      invalid_reasons    = @()
+    }
+  }
+  return $records
+}
+
+function Test-AexsExploitRecord {
+  param([object]$Record)
+  $reasons = @()
+  foreach ($field in @(
+      "exploit_id",
+      "category",
+      "description",
+      "exploit_path",
+      "seed",
+      "expected_state",
+      "actual_state",
+      "severity",
+      "fix_recommendation",
+      "status"
+    )) {
+    if ([string]::IsNullOrWhiteSpace([string]$Record[$field])) {
+      $reasons += "missing $field"
+    }
+  }
+  if (@($Record["step_list"]).Count -eq 0) {
+    $reasons += "missing step_list"
+  }
+  if (@($Record["affected_modules"]).Count -eq 0) {
+    $reasons += "missing affected_modules"
+  }
+  if ([string]$Record["severity"] -notin @("Critical", "High", "Medium", "Low")) {
+    $reasons += "invalid severity"
+  }
+  return $reasons
+}
+
 function Get-AexsEvidence {
   param([object]$Module)
   $repoRoot = Get-AexsRepoRoot
@@ -2283,6 +2567,7 @@ $campaignSetupSection = Get-AexsMarkdownSection -Text $taskText -Heading "Campai
 $scenarioGeneratorSection = Get-AexsMarkdownSection -Text $taskText -Heading "Scenario Generator Tasks"
 $transactionMutatorSection = Get-AexsMarkdownSection -Text $taskText -Heading "Transaction Mutator Tasks"
 $invariantChecklistSection = Get-AexsMarkdownSection -Text $taskText -Heading "Invariant Checklist"
+$exploitCatalogSection = Get-AexsMarkdownSection -Text $taskText -Heading "Exploit Task Catalog"
 
 $requiredCampaignTerms = @(
   "Create a deterministic campaign id.",
@@ -2387,6 +2672,38 @@ $requiredInvariantChecklistTerms = @(
   "Subdomain ownership and resolver delegation do not bypass parent rules."
 )
 
+$requiredExecutionInvariantTerms = @(
+  "Execution, AVM, And Queue Invariants",
+  "AVM malformed input does not panic.",
+  "AVM gas is bounded and deterministic.",
+  "Infinite loops are stopped by gas or instruction limits.",
+  "Contract state updates are deterministic.",
+  "Queue ordering is deterministic.",
+  "Cross-zone message replay is rejected.",
+  "Bounce/refund cannot double-spend.",
+  "Message loops are bounded by depth and per-block limits.",
+  "Export/import preserves queue state exactly."
+)
+
+$requiredCoreExploitTerms = @(
+  "Every exploit task must produce a seed, step list, expected state, actual state,",
+  "affected module list, severity, and fix recommendation if it succeeds.",
+  "Consensus And Aether Core Exploits",
+  "Attempt double-sign fork creation.",
+  "Attempt equivocation across heights and rounds.",
+  "Attempt long-range history rewrite.",
+  "Attempt stake grinding.",
+  "Attempt validator cartel concentration scenario.",
+  "Attempt stake delegation manipulation.",
+  "Attempt self-delegation inflation.",
+  "Attempt fake validator liveness.",
+  "Attempt validator eclipse simulation.",
+  "Attempt block withholding.",
+  "Attempt fork choice manipulation.",
+  "Attempt finality delay manipulation.",
+  "Attempt Byzantine majority simulator scenario."
+)
+
 $sourceFailures = @()
 foreach ($term in $requiredSourceTerms) {
   if (-not (Test-AexsTextAny -Text $taskText -Terms @($term)) -and -not (Test-AexsTextAny -Text $pipelineText -Terms @($term))) {
@@ -2419,6 +2736,16 @@ if ([string]::IsNullOrWhiteSpace($invariantChecklistSection)) {
 } else {
   foreach ($term in @(Get-AexsMissingTerms -Text $invariantChecklistSection -Terms $requiredInvariantChecklistTerms)) {
     $sourceFailures += "missing invariant checklist term: $term"
+  }
+  foreach ($term in @(Get-AexsMissingTerms -Text $invariantChecklistSection -Terms $requiredExecutionInvariantTerms)) {
+    $sourceFailures += "missing execution invariant checklist term: $term"
+  }
+}
+if ([string]::IsNullOrWhiteSpace($exploitCatalogSection)) {
+  $sourceFailures += "missing Exploit Task Catalog section"
+} else {
+  foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredCoreExploitTerms)) {
+    $sourceFailures += "missing core exploit catalog term: $term"
   }
 }
 
@@ -2498,6 +2825,13 @@ foreach ($record in $invariantChecklistRecords) {
   $record["invalid_reasons"] = $invalidReasons
 }
 $invalidInvariantChecklistRecords = @($invariantChecklistRecords | Where-Object { -not $_["valid"] })
+$coreExploitRecords = @(Get-AexsCoreExploitRecords -Text $taskText -CampaignId $campaignId)
+foreach ($record in $coreExploitRecords) {
+  $invalidReasons = @(Test-AexsExploitRecord -Record $record)
+  $record["valid"] = $invalidReasons.Count -eq 0
+  $record["invalid_reasons"] = $invalidReasons
+}
+$invalidCoreExploitRecords = @($coreExploitRecords | Where-Object { -not $_["valid"] })
 $mandatoryInvariantPassRate = 0
 $auditPassed = $false
 $productionSafe = $false
@@ -3064,6 +3398,10 @@ $summary = [ordered]@{
   invariant_checklist_ids             = @($invariantChecklistRecords | ForEach-Object { $_["invariant_id"] })
   invariant_checklist_categories      = @($invariantChecklistRecords | ForEach-Object { $_["category"] } | Sort-Object -Unique)
   invalid_invariant_checklist_records = @($invalidInvariantChecklistRecords | ForEach-Object { $_["invariant_id"] })
+  core_exploit_count                  = $coreExploitRecords.Count
+  invalid_core_exploit_count          = $invalidCoreExploitRecords.Count
+  core_exploit_ids                    = @($coreExploitRecords | ForEach-Object { $_["exploit_id"] })
+  invalid_core_exploit_records        = @($invalidCoreExploitRecords | ForEach-Object { $_["exploit_id"] })
   atomic_task_count                   = $atomicTasks.Count
   invalid_atomic_task_count           = $invalidAtomicTasks.Count
   invalid_atomic_tasks                = @($invalidAtomicTasks | ForEach-Object { $_["task_id"] })
@@ -3086,6 +3424,8 @@ $atomicTasksPath = Join-Path $campaignDir "atomic-tasks.json"
 $atomicTasksMarkdownPath = Join-Path $campaignDir "atomic-tasks.md"
 $invariantChecklistPath = Join-Path $campaignDir "invariant-checklist.json"
 $invariantChecklistMarkdownPath = Join-Path $campaignDir "invariant-checklist.md"
+$coreExploitPath = Join-Path $campaignDir "exploit-catalog.json"
+$coreExploitMarkdownPath = Join-Path $campaignDir "exploit-catalog.md"
 $campaignSetupPath = Join-Path $campaignDir "campaign-setup.json"
 $scenarioCatalogPath = Join-Path $campaignDir "scenario-generator.json"
 $scenarioCatalogMarkdownPath = Join-Path $campaignDir "scenario-generator.md"
@@ -3097,6 +3437,7 @@ $taskCopyPath = Join-Path $campaignDir "TO_AUDIT.md"
 $moduleRows | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $coveragePath
 $atomicTasks | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $atomicTasksPath
 $invariantChecklistRecords | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $invariantChecklistPath
+$coreExploitRecords | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $coreExploitPath
 $campaignSetup | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $campaignSetupPath
 $scenarioCatalog | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $scenarioCatalogPath
 $transactionMutatorCatalog | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $transactionMutatorPath
@@ -3137,6 +3478,24 @@ foreach ($record in $invariantChecklistRecords) {
   $invariantReport += "| $($record["invariant_id"]) | $($record["category"]) | $($record["module"]) | $state | $attack | $($record["defensive_analysis_result"]["status"]) | $($record["adversarial_simulation_result"]["status"]) | $($record["pass_fail_result"]) | $seed |"
 }
 $invariantReport | Set-Content -LiteralPath $invariantChecklistMarkdownPath
+
+$coreExploitReport = @()
+$coreExploitReport += "# AEXS Consensus And Aether Core Exploit Catalog"
+$coreExploitReport += ""
+$coreExploitReport += "- campaign id: $campaignId"
+$coreExploitReport += "- exploit count: $($coreExploitRecords.Count)"
+$coreExploitReport += "- invalid exploit count: $($invalidCoreExploitRecords.Count)"
+$coreExploitReport += "- status: planned_not_executed"
+$coreExploitReport += ""
+$coreExploitReport += "| Exploit | Severity | Path | Expected state | Actual state | Affected modules | Seed |"
+$coreExploitReport += "| --- | --- | --- | --- | --- | --- | --- |"
+foreach ($record in $coreExploitRecords) {
+  $path = ([string]$record["exploit_path"]).Replace("|", "/")
+  $expected = ([string]$record["expected_state"]).Replace("|", "/")
+  $affected = (@($record["affected_modules"]) -join ", ").Replace("|", "/")
+  $coreExploitReport += "| $($record["exploit_id"]) | $($record["severity"]) | $path | $expected | $($record["actual_state"]) | $affected | $($record["seed"]) |"
+}
+$coreExploitReport | Set-Content -LiteralPath $coreExploitMarkdownPath
 
 $scenarioReport = @()
 $scenarioReport += "# AEXS Scenario Generator Catalog"
@@ -3196,6 +3555,8 @@ $report += "- transaction mutators: $($transactionMutators.Count)"
 $report += "- invalid transaction mutators: $($invalidTransactionMutators.Count)"
 $report += "- mandatory invariant checklist records: $($invariantChecklistRecords.Count)"
 $report += "- invalid mandatory invariant checklist records: $($invalidInvariantChecklistRecords.Count)"
+$report += "- consensus/aether core exploit records: $($coreExploitRecords.Count)"
+$report += "- invalid consensus/aether core exploit records: $($invalidCoreExploitRecords.Count)"
 $report += ""
 $report += "## Gate Decision"
 $report += ""
@@ -3209,6 +3570,7 @@ $report += "- modules without fuzz evidence: $(@($modulesWithoutFuzzEvidence | F
 $report += "- modules without adversarial evidence: $(@($modulesWithoutAdversarialEvidence | ForEach-Object { $_["module"] }) -join ', ')"
 $report += "- modules with invalid atomic tasks: $(@($modulesWithInvalidAtomicTasks | ForEach-Object { $_["module"] }) -join ', ')"
 $report += "- invalid mandatory invariant checklist records: $(@($invalidInvariantChecklistRecords | ForEach-Object { $_["invariant_id"] }) -join ', ')"
+$report += "- invalid consensus/aether core exploit records: $(@($invalidCoreExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 $report += ""
 $report += "## Module Matrix"
 $report += ""
@@ -3224,6 +3586,14 @@ $report += "| Invariant | Category | Scope | Result |"
 $report += "| --- | --- | --- | --- |"
 foreach ($record in $invariantChecklistRecords) {
   $report += "| $($record["invariant_id"]) | $($record["category"]) | $($record["module"]) | $($record["pass_fail_result"]) |"
+}
+$report += ""
+$report += "## Consensus And Aether Core Exploit Catalog"
+$report += ""
+$report += "| Exploit | Severity | Actual state | Status |"
+$report += "| --- | --- | --- | --- |"
+foreach ($record in $coreExploitRecords) {
+  $report += "| $($record["exploit_id"]) | $($record["severity"]) | $($record["actual_state"]) | $($record["status"]) |"
 }
 $report += ""
 $report += "## Required Next Step"
@@ -3251,6 +3621,12 @@ if ($invariantChecklistRecords.Count -lt 17) {
 }
 if ($invalidInvariantChecklistRecords.Count -gt 0) {
   throw "AEXS invariant checklist validation failed for record(s): $(@($invalidInvariantChecklistRecords | ForEach-Object { $_["invariant_id"] }) -join ', ')"
+}
+if ($coreExploitRecords.Count -lt 13) {
+  throw "AEXS core exploit catalog validation failed: fewer than required consensus and Aether Core exploit records"
+}
+if ($invalidCoreExploitRecords.Count -gt 0) {
+  throw "AEXS core exploit catalog validation failed for record(s): $(@($invalidCoreExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 }
 if ($modulesBelowPlan.Count -gt 0) {
   throw "AEXS planned coverage gate failed for module(s): $(@($modulesBelowPlan | ForEach-Object { $_["module"] }) -join ', ')"
