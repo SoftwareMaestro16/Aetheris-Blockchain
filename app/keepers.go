@@ -50,8 +50,16 @@ import (
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
+	loadtypes "github.com/sovereign-l1/l1/x/load/types"
+	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
+	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
+	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
+	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
 
 func (app *L1App) initKeepers(
@@ -227,5 +235,9 @@ func (app *L1App) initKeepers(
 		app.DistrKeeper,
 		govAuthority,
 	)
+	app.LoadKeeper = loadkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[loadtypes.StoreKey]))
+	app.RoutingKeeper = routingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[routingtypes.StoreKey]))
+	app.ZonesKeeper = zoneskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[zonestypes.StoreKey]))
+	app.MeshKeeper = meshkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[meshtypes.StoreKey]))
 	return txConfig
 }

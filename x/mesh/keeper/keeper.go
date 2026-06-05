@@ -1,11 +1,17 @@
 package keeper
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+
+	corestore "cosmossdk.io/core/store"
 
 	"github.com/sovereign-l1/l1/x/internal/prototype"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
 )
+
+var genesisKey = []byte{0x01}
 
 type GenesisState struct {
 	Version uint64
@@ -14,11 +20,16 @@ type GenesisState struct {
 }
 
 type Keeper struct {
-	genesis GenesisState
+	genesis      GenesisState
+	storeService corestore.KVStoreService
 }
 
 func NewKeeper() Keeper {
 	return Keeper{genesis: DefaultGenesis()}
+}
+
+func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
+	return Keeper{genesis: DefaultGenesis(), storeService: storeService}
 }
 
 func DefaultGenesis() GenesisState {
@@ -47,8 +58,43 @@ func (k *Keeper) InitGenesis(gs GenesisState) error {
 	return nil
 }
 
+func (k Keeper) InitGenesisState(ctx context.Context, gs GenesisState) error {
+	if err := gs.Validate(); err != nil {
+		return err
+	}
+	if k.storeService == nil {
+		return errors.New("mesh prototype persistent store is not configured")
+	}
+	bz, err := json.Marshal(cloneGenesis(gs))
+	if err != nil {
+		return err
+	}
+	return k.storeService.OpenKVStore(ctx).Set(genesisKey, bz)
+}
+
 func (k Keeper) ExportGenesis() GenesisState {
 	return cloneGenesis(k.genesis)
+}
+
+func (k Keeper) ExportGenesisState(ctx context.Context) (GenesisState, error) {
+	if k.storeService == nil {
+		return k.ExportGenesis(), nil
+	}
+	bz, err := k.storeService.OpenKVStore(ctx).Get(genesisKey)
+	if err != nil {
+		return GenesisState{}, err
+	}
+	if len(bz) == 0 {
+		return DefaultGenesis(), nil
+	}
+	var gs GenesisState
+	if err := json.Unmarshal(bz, &gs); err != nil {
+		return GenesisState{}, err
+	}
+	if err := gs.Validate(); err != nil {
+		return GenesisState{}, err
+	}
+	return cloneGenesis(gs), nil
 }
 
 func (k *Keeper) UpdateParams(authority string, params prototype.Params) error {
@@ -123,6 +169,11 @@ func (m Migrator) Migrate1to2() error {
 		return err
 	}
 	return nil
+}
+
+func (k Keeper) Migrate1to2State(ctx context.Context) error {
+	_, err := k.ExportGenesisState(ctx)
+	return err
 }
 
 func cloneGenesis(gs GenesisState) GenesisState {

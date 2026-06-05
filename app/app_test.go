@@ -30,7 +30,15 @@ import (
 	"github.com/sovereign-l1/l1/observability"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
+	loadtypes "github.com/sovereign-l1/l1/x/load/types"
+	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
+	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
+	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
+	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
 
 const fixtureTestAssetDenom = "testtoken"
@@ -113,6 +121,26 @@ func TestDefaultGenesisValidatesAndSetsCustomModuleDefaults(t *testing.T) {
 	app.AppCodec().MustUnmarshalJSON(genesis[dextypes.ModuleName], &dexGenState)
 	require.Equal(t, dextypes.DefaultNextPoolID, dexGenState.NextPoolId)
 	require.Empty(t, dexGenState.Pools)
+
+	var loadGenState loadkeeper.GenesisState
+	require.NoError(t, json.Unmarshal(genesis[loadtypes.ModuleName], &loadGenState))
+	require.False(t, loadGenState.Params.Enabled)
+	require.Empty(t, loadGenState.History)
+
+	var routingGenState routingkeeper.GenesisState
+	require.NoError(t, json.Unmarshal(genesis[routingtypes.ModuleName], &routingGenState))
+	require.False(t, routingGenState.Params.Enabled)
+	require.Empty(t, routingGenState.Shards)
+
+	var zonesGenState zoneskeeper.GenesisState
+	require.NoError(t, json.Unmarshal(genesis[zonestypes.ModuleName], &zonesGenState))
+	require.False(t, zonesGenState.Params.Enabled)
+	require.Empty(t, zonesGenState.State.Zones)
+
+	var meshGenState meshkeeper.GenesisState
+	require.NoError(t, json.Unmarshal(genesis[meshtypes.ModuleName], &meshGenState))
+	require.False(t, meshGenState.Params.Enabled)
+	require.Empty(t, meshGenState.State.Destinations)
 }
 
 func TestNativeTokenRuntimeMetadataSendAndSupply(t *testing.T) {
@@ -159,6 +187,26 @@ func TestCustomModuleGenesisInitExportRoundTrip(t *testing.T) {
 	require.Equal(t, dextypes.DefaultNextPoolID, dexGenState.NextPoolId)
 	require.Empty(t, dexGenState.Pools)
 	require.NoError(t, dexGenState.Validate())
+
+	var loadGenState loadkeeper.GenesisState
+	require.NoError(t, json.Unmarshal(exportedGenesis[loadtypes.ModuleName], &loadGenState))
+	require.NoError(t, loadGenState.Validate())
+	require.False(t, loadGenState.Params.Enabled)
+
+	var routingGenState routingkeeper.GenesisState
+	require.NoError(t, json.Unmarshal(exportedGenesis[routingtypes.ModuleName], &routingGenState))
+	require.NoError(t, routingGenState.Validate())
+	require.False(t, routingGenState.Params.Enabled)
+
+	var zonesGenState zoneskeeper.GenesisState
+	require.NoError(t, json.Unmarshal(exportedGenesis[zonestypes.ModuleName], &zonesGenState))
+	require.NoError(t, zonesGenState.Validate())
+	require.False(t, zonesGenState.Params.Enabled)
+
+	var meshGenState meshkeeper.GenesisState
+	require.NoError(t, json.Unmarshal(exportedGenesis[meshtypes.ModuleName], &meshGenState))
+	require.NoError(t, meshGenState.Validate())
+	require.False(t, meshGenState.Params.Enabled)
 }
 
 func TestDefaultGenesisRejectsCorruptedPrototypeModuleState(t *testing.T) {
@@ -197,6 +245,42 @@ func TestDefaultGenesisRejectsCorruptedPrototypeModuleState(t *testing.T) {
 				{Id: 2, Denom0: "aaa", Denom1: appparams.BaseDenom, Reserve0: "1", Reserve1: "1", TotalShares: "1", LpDenom: "lp/2"},
 			}}
 			genesis[dextypes.ModuleName] = cdc.MustMarshalJSON(&dexGenState)
+		},
+		"invalid load history ordering": func(genesis GenesisState) {
+			loadGenState := loadkeeper.DefaultGenesis()
+			loadGenState.History = []loadtypes.Result{
+				{EMA: loadtypes.EMAState{WindowHeight: 2}},
+				{EMA: loadtypes.EMAState{WindowHeight: 1}},
+			}
+			raw, err := json.Marshal(loadGenState)
+			require.NoError(t, err)
+			genesis[loadtypes.ModuleName] = raw
+		},
+		"duplicate routing shard config": func(genesis GenesisState) {
+			routingGenState := routingkeeper.DefaultGenesis()
+			routingGenState.Shards = []routingkeeper.ShardConfig{
+				{ZoneID: routingtypes.ZoneFinancial, ActiveShards: 1},
+				{ZoneID: routingtypes.ZoneFinancial, ActiveShards: 2},
+			}
+			raw, err := json.Marshal(routingGenState)
+			require.NoError(t, err)
+			genesis[routingtypes.ModuleName] = raw
+		},
+		"duplicate zone id": func(genesis GenesisState) {
+			zonesGenState := zoneskeeper.DefaultGenesis()
+			zone := zonestypes.Zone{ID: zonestypes.ZoneIDFinancial}
+			zonesGenState.State.Zones = []zonestypes.Zone{zone, zone}
+			raw, err := json.Marshal(zonesGenState)
+			require.NoError(t, err)
+			genesis[zonestypes.ModuleName] = raw
+		},
+		"duplicate mesh destination": func(genesis GenesisState) {
+			meshGenState := meshkeeper.DefaultGenesis()
+			destination := meshtypes.MeshDestination{ZoneID: "FINANCIAL_ZONE", ShardID: "0:0", Active: true}
+			meshGenState.State.Destinations = []meshtypes.MeshDestination{destination, destination}
+			raw, err := json.Marshal(meshGenState)
+			require.NoError(t, err)
+			genesis[meshtypes.ModuleName] = raw
 		},
 	}
 
@@ -525,12 +609,20 @@ func TestCustomModuleMigrationsFromV1ToCurrent(t *testing.T) {
 	fromVM[feestypes.ModuleName] = 1
 	fromVM[tokenfactorytypes.ModuleName] = 1
 	fromVM[dextypes.ModuleName] = 1
+	fromVM[loadtypes.ModuleName] = 1
+	fromVM[routingtypes.ModuleName] = 1
+	fromVM[zonestypes.ModuleName] = 1
+	fromVM[meshtypes.ModuleName] = 1
 
 	updated, err := app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), updated[feestypes.ModuleName])
 	require.Equal(t, uint64(2), updated[tokenfactorytypes.ModuleName])
 	require.Equal(t, uint64(2), updated[dextypes.ModuleName])
+	require.Equal(t, uint64(2), updated[loadtypes.ModuleName])
+	require.Equal(t, uint64(2), updated[routingtypes.ModuleName])
+	require.Equal(t, uint64(2), updated[zonestypes.ModuleName])
+	require.Equal(t, uint64(2), updated[meshtypes.ModuleName])
 }
 
 func runSingleBlockForTelemetryTest(t *testing.T, stateBytes []byte, telemetryEnabled bool) []byte {

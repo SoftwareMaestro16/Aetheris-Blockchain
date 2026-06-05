@@ -14,20 +14,12 @@ import (
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/vesting"
-	vestingtypes "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
-	"github.com/cosmos/cosmos-sdk/x/authz"
 	authzmodule "github.com/cosmos/cosmos-sdk/x/authz/module"
 	"github.com/cosmos/cosmos-sdk/x/bank"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/consensus"
-	consensusparamtypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	distr "github.com/cosmos/cosmos-sdk/x/distribution"
-	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	"github.com/cosmos/cosmos-sdk/x/epochs"
-	epochstypes "github.com/cosmos/cosmos-sdk/x/epochs/types"
 	"github.com/cosmos/cosmos-sdk/x/evidence"
-	evidencetypes "github.com/cosmos/cosmos-sdk/x/evidence/types"
-	"github.com/cosmos/cosmos-sdk/x/feegrant"
 	feegrantmodule "github.com/cosmos/cosmos-sdk/x/feegrant/module"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
@@ -35,22 +27,18 @@ import (
 	govclient "github.com/cosmos/cosmos-sdk/x/gov/client"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/cosmos/cosmos-sdk/x/mint"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	"github.com/cosmos/cosmos-sdk/x/protocolpool"
-	protocolpooltypes "github.com/cosmos/cosmos-sdk/x/protocolpool/types"
 	"github.com/cosmos/cosmos-sdk/x/slashing"
-	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	"github.com/cosmos/cosmos-sdk/x/staking"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/cosmos-sdk/x/upgrade"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
-	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
-	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	loadmodule "github.com/sovereign-l1/l1/x/load"
+	meshmodule "github.com/sovereign-l1/l1/x/mesh"
+	routingmodule "github.com/sovereign-l1/l1/x/routing"
 	tokenfactorymodule "github.com/sovereign-l1/l1/x/tokenfactory"
-	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	zonesmodule "github.com/sovereign-l1/l1/x/zones"
 )
 
 func (app *L1App) initModules(
@@ -76,6 +64,10 @@ func (app *L1App) initModules(
 		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		epochs.NewAppModule(app.EpochsKeeper),
 		protocolpool.NewAppModule(app.ProtocolPoolKeeper, app.AccountKeeper, app.BankKeeper),
+		loadmodule.NewAppModule(app.LoadKeeper),
+		routingmodule.NewAppModule(app.RoutingKeeper),
+		zonesmodule.NewAppModule(app.ZonesKeeper),
+		meshmodule.NewAppModule(app.MeshKeeper),
 		tokenfactorymodule.NewAppModule(appCodec, app.TokenFactoryKeeper),
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),
@@ -91,69 +83,11 @@ func (app *L1App) initModules(
 	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
 
-	app.ModuleManager.SetOrderPreBlockers(upgradetypes.ModuleName, authtypes.ModuleName)
-	app.ModuleManager.SetOrderBeginBlockers(
-		minttypes.ModuleName,
-		distrtypes.ModuleName,
-		protocolpooltypes.ModuleName,
-		slashingtypes.ModuleName,
-		evidencetypes.ModuleName,
-		stakingtypes.ModuleName,
-		genutiltypes.ModuleName,
-		authz.ModuleName,
-		epochstypes.ModuleName,
-	)
-	app.ModuleManager.SetOrderEndBlockers(
-		banktypes.ModuleName,
-		govtypes.ModuleName,
-		stakingtypes.ModuleName,
-		genutiltypes.ModuleName,
-		feegrant.ModuleName,
-		protocolpooltypes.ModuleName,
-	)
-
-	app.ModuleManager.SetOrderInitGenesis(
-		authtypes.ModuleName,
-		banktypes.ModuleName,
-		distrtypes.ModuleName,
-		stakingtypes.ModuleName,
-		slashingtypes.ModuleName,
-		govtypes.ModuleName,
-		minttypes.ModuleName,
-		genutiltypes.ModuleName,
-		evidencetypes.ModuleName,
-		authz.ModuleName,
-		feegrant.ModuleName,
-		upgradetypes.ModuleName,
-		vestingtypes.ModuleName,
-		consensusparamtypes.ModuleName,
-		epochstypes.ModuleName,
-		protocolpooltypes.ModuleName,
-		feestypes.ModuleName,
-		tokenfactorytypes.ModuleName,
-		dextypes.ModuleName,
-	)
-	app.ModuleManager.SetOrderExportGenesis(
-		consensusparamtypes.ModuleName,
-		authtypes.ModuleName,
-		protocolpooltypes.ModuleName,
-		banktypes.ModuleName,
-		distrtypes.ModuleName,
-		stakingtypes.ModuleName,
-		slashingtypes.ModuleName,
-		govtypes.ModuleName,
-		minttypes.ModuleName,
-		genutiltypes.ModuleName,
-		evidencetypes.ModuleName,
-		authz.ModuleName,
-		feegrant.ModuleName,
-		upgradetypes.ModuleName,
-		vestingtypes.ModuleName,
-		epochstypes.ModuleName,
-		feestypes.ModuleName,
-		tokenfactorytypes.ModuleName,
-		dextypes.ModuleName,
-	)
+	app.ModuleManager.SetOrderPreBlockers(aetherCorePreBlockerOrder()...)
+	app.ModuleManager.SetOrderBeginBlockers(aetherCoreBeginBlockerOrder()...)
+	app.ModuleManager.SetOrderEndBlockers(aetherCoreEndBlockerOrder()...)
+	app.ModuleManager.SetOrderInitGenesis(aetherCoreInitGenesisOrder()...)
+	app.ModuleManager.SetOrderExportGenesis(aetherCoreExportGenesisOrder()...)
 
 	app.configurator = module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter())
 	if err := app.ModuleManager.RegisterServices(app.configurator); err != nil {

@@ -119,7 +119,7 @@ function Send-LocalnetDelegateTx {
     [string]$FromKey = "node0",
     [string]$ValidatorAddress,
     [string]$Amount = "5000000naet",
-    [string]$Fees = "1000000naet",
+    [string]$Fees = "1000naet",
     [string]$ChainId = "aetheris-local-1",
     [int]$RPCPort = 26657,
     [int]$TimeoutSeconds = 60
@@ -173,7 +173,7 @@ function Send-LocalnetBankTx {
     [string]$FromKey = "node0",
     [string]$ToAddress,
     [string]$Amount = "1000naet",
-    [string]$Fees = "1000000naet",
+    [string]$Fees = "1000naet",
     [string]$ChainId = "aetheris-local-1",
     [int]$RPCPort = 26657,
     [int]$TimeoutSeconds = 60

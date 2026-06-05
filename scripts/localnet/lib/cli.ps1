@@ -298,6 +298,10 @@ function Send-LocalnetTx {
   if ($ExpectFailure -and (Get-LocalnetTxCode -Tx $tx) -ne 0) {
     return Assert-LocalnetTxFailure -Tx $tx -ExpectedLog $ExpectedLog
   }
+  $broadcastCode = Get-LocalnetTxCode -Tx $tx
+  if ($broadcastCode -ne 0) {
+    throw "broadcast failed with code $broadcastCode`: $(Get-LocalnetTxLog -Tx $tx)"
+  }
 
   return Wait-LocalnetTx `
     -Binary $Binary `

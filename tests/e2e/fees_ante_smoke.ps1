@@ -16,7 +16,7 @@ param(
   [bool]$EnableAPI = $true,
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
-  [string]$AcceptedFees = "1000000naet",
+  [string]$AcceptedFees = "1000naet",
   [string]$WrongFees = "1000testtoken",
   [string]$MultiDenomFees = "1000naet,1testtoken"
 )

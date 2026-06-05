@@ -56,8 +56,16 @@ import (
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
+	loadtypes "github.com/sovereign-l1/l1/x/load/types"
+	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
+	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
+	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
+	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
 
 const appName = appparams.ChainName
@@ -127,6 +135,10 @@ type L1App struct {
 	TokenFactoryKeeper tokenfactorykeeper.Keeper
 	DexKeeper          dexkeeper.Keeper
 	FeesKeeper         feeskeeper.Keeper
+	LoadKeeper         loadkeeper.Keeper
+	RoutingKeeper      routingkeeper.Keeper
+	ZonesKeeper        zoneskeeper.Keeper
+	MeshKeeper         meshkeeper.Keeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -229,6 +241,10 @@ func NewL1App(
 		tokenfactorytypes.StoreKey,
 		dextypes.StoreKey,
 		feestypes.StoreKey,
+		loadtypes.StoreKey,
+		routingtypes.StoreKey,
+		zonestypes.StoreKey,
+		meshtypes.StoreKey,
 	)
 
 	// register streaming services
@@ -247,6 +263,9 @@ func NewL1App(
 
 	txConfig = app.initKeepers(appCodec, legacyAmino, logger, appOpts, keys)
 	app.initModules(appCodec, legacyAmino, interfaceRegistry, txConfig)
+	if err := app.ValidateAetherCoreWiringGate(); err != nil {
+		panic(err)
+	}
 
 	// initialize stores
 	app.MountKVStores(keys)
