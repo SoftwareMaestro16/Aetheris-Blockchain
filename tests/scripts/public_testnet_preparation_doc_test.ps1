@@ -47,6 +47,8 @@ foreach ($term in @(
     "ValidatorProfile All",
     "ValidatorProfile 3",
     "ValidatorProfile 5",
+    "ValidatorProfile 10",
+    "10-validator profile is the stress profile",
     "Localnet Hardening",
     "Faucet Plan",
     "Explorer And Indexer Plan",
@@ -90,7 +92,8 @@ foreach ($term in @(
 }
 
 foreach ($term in @(
-    'ValidateSet("3", "5", "All")',
+    'ValidateSet("3", "5", "10", "All")',
+    '@(3, 5, 10)',
     "aetheris-testnet-preflight-1",
     "build\aetherisd.exe",
     "scripts\build-aetherisd.ps1",

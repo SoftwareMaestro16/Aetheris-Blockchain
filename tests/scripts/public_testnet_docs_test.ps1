@@ -28,6 +28,7 @@ $incidentText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Incident)
 foreach ($term in @(
     "public-testnet-preflight.ps1",
     "ValidatorProfile All",
+    "ValidatorProfile 10",
     "Faucet Plan",
     "Explorer And Indexer Plan",
     "Minimum Hardware",

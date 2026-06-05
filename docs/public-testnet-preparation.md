@@ -7,7 +7,7 @@ The full public testnet and production gate ledger is
 
 ## Profiles
 
-Run both local profiles before publishing testnet genesis:
+Run all local profiles before publishing testnet genesis:
 
 ```powershell
 .\scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile All
@@ -18,9 +18,10 @@ Individual profiles:
 ```powershell
 .\scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 3 -SkipBuild
 .\scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 5 -SkipBuild
+.\scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 10 -SkipBuild
 ```
 
-The preflight runs full prototype acceptance, validates the requested validator count, exercises bank, fees, staking, tokenfactory, DEX, query surfaces, restart persistence, and asserts CosmWasm remains disabled unless explicitly gated.
+The preflight runs full prototype acceptance, validates the requested validator count, exercises bank, fees, staking, tokenfactory, DEX, query surfaces, restart persistence, and asserts CosmWasm remains disabled unless explicitly gated. The 10-validator profile is the stress profile for public testnet readiness; it is expected to be slower and should run before advertising modular execution features.
 
 ## Localnet Hardening
 

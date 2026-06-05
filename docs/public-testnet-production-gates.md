@@ -24,9 +24,10 @@ Required checks:
   - dependency review
 - Deterministic execution gate passes:
   - `scripts\security\determinism-gate.ps1`
-- 3-validator and 5-validator localnet profiles pass:
+- 3-validator, 5-validator, and 10-validator localnet profiles pass:
   - `scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 3`
   - `scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 5`
+  - `scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 10`
   - `scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile All`
 - Snapshot and state-sync work from published trust height, trust hash, and at
   least two RPC servers.
@@ -46,6 +47,103 @@ Blocking rule:
 
 - Any untriaged `Critical` or `High` fund-safety, consensus-safety, or
   secret-leak finding blocks public testnet.
+
+## Phase 12 Modular Execution Public Testnet Gate
+
+Modular execution features cannot be advertised on public testnet until their
+specific gates have passed. This section is the minimum Phase 12 gate for
+Execution Zones, Compute Shards, Aether Mesh, Identity, routing, load scoring,
+and VM readiness. Passing the base public testnet gate does not automatically
+promote any modular execution feature from experimental to advertised.
+
+Required gates:
+
+- Base chain hardening complete.
+- Determinism gate passes:
+  - `tests\scripts\determinism_gate_test.ps1`
+  - `scripts\security\determinism-gate.ps1`
+- Export/import gate passes.
+- Genesis migration gate passes.
+- 3-validator localnet long-run passes.
+- 5-validator localnet long-run passes.
+- 10-validator stress profile passes:
+  - `scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 10`
+- State-sync and snapshot restore pass.
+- Load score and routing simulator pass:
+  - `go test ./x/load/... ./x/routing/...`
+  - `aetherisd execution-os smoke --profile execution-os-sim`
+- Sharding simulator pass:
+  - `go test ./x/sharding/sim`
+- Mesh simulator pass:
+  - `go test ./x/mesh/...`
+- Identity executable spec pass:
+  - `go test ./x/identity/types`
+- VM readiness tests pass:
+  - `go test ./x/aetherisvm/avm ./x/aetherisvm/async ./x/vm/types`
+- Security scans pass or findings are owner-triaged:
+  - `govulncheck`
+  - `gosec`
+  - CodeQL
+  - gitleaks
+  - dependency review
+- Independent audit findings are triaged.
+- Public docs do not overclaim production sharding or production
+  smart-contract execution.
+
+Acceptance:
+
+- Public testnet can advertise only the features that passed their gate.
+- Any feature still behind R&D remains documented as experimental.
+
+Suggested branch order:
+
+1. `feature/load-score-spec`
+2. `feature/routing-engine-spec`
+3. `feature/zone-registry-sim`
+4. `feature/load-driven-sharding-sim`
+5. `feature/aether-mesh-sim`
+6. `feature/identity-zone-spec`
+7. `feature/contract-zone-readiness`
+8. `prototype/execution-os-keepers`
+9. `prototype/aether-core-routing-wiring`
+10. `tooling/execution-os-localnet`
+11. `security/execution-os-invariants`
+12. `testnet/modular-execution-gate`
+
+Each branch must end with:
+
+```powershell
+go test ./...
+go vet ./...
+buf lint
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\scripts\determinism_gate_test.ps1
+```
+
+Run `buf generate` only when protobuf files are changed.
+
+Traceability matrix:
+
+| Design requirement | Implementation phase |
+| --- | --- |
+| Aether Core as control plane | Phase 9 |
+| Execution Zones | Phase 3, Phase 8 |
+| Compute Shards | Phase 4 |
+| Deterministic `LOAD_SCORE` | Phase 1 |
+| Load spike resistance | Phase 1, Phase 4 |
+| Deterministic routing | Phase 2 |
+| Aether Mesh | Phase 5 |
+| `.aet` Identity Layer | Phase 6 |
+| Economic security | Phase 0, Phase 9, Phase 12 |
+| Low-fee congestion model | Phase 1, Phase 2, Phase 11 |
+| Trilemma claim support | Phase 12 only after accepted gates |
+
+Final rule:
+
+Do not wire production Execution Zones, production Compute Shards, production
+Aether Mesh, or production contract execution into Aether Core until the
+corresponding executable spec and simulator have passed deterministic tests,
+adversarial tests, export/import tests, benchmarks, long-run localnet tests,
+and independent audit review.
 
 ## Production Gate
 
@@ -96,8 +194,13 @@ Production exclusions:
 | Base chain tests | `go test ./...`, `go vet ./...`, `buf lint` |
 | Security scans | `docs/security/security-audit-pack.md`, `.github/workflows/security.yml` |
 | Determinism | `scripts\security\determinism-gate.ps1`, `docs/security/prototype-audit-gate.md` |
-| Localnet 3/5 profiles | `scripts\testnet\public-testnet-preflight.ps1` |
+| Localnet 3/5/10 profiles | `scripts\testnet\public-testnet-preflight.ps1` |
 | Snapshot/state-sync | `docs/public-testnet-preparation.md`, `scripts\localnet\snapshot.ps1`, `scripts\localnet\statesync.ps1` |
+| Load/routing simulator | `x/load`, `x/routing`, `aetherisd execution-os smoke --profile execution-os-sim` |
+| Sharding simulator | `x/sharding/sim`, `docs/architecture/sharding-rd.md` |
+| Mesh simulator | `x/mesh`, `tests/adversarial/modular_execution_invariants_test.go` |
+| Identity executable spec | `x/identity/types` |
+| VM readiness | `x/aetherisvm/avm`, `x/aetherisvm/async`, `x/vm/types`, `app/wasmconfig` |
 | Validator onboarding | `docs/validator-onboarding.md` |
 | Faucet | `docs/public-testnet-preparation.md#faucet-plan` |
 | Explorer/indexer | `docs/public-testnet-preparation.md#explorer-and-indexer-plan` |

@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("3", "5", "All")]
+  [ValidateSet("3", "5", "10", "All")]
   [string]$ValidatorProfile = "All",
   [string]$Binary = "",
   [string]$ChainId = "aetheris-testnet-preflight-1",
@@ -21,13 +21,18 @@ if (-not $SkipBuild) {
   throw "Binary not found at $Binary and -SkipBuild was specified"
 }
 
-$profiles = if ($ValidatorProfile -eq "All") { @(3, 5) } else { @([int]$ValidatorProfile) }
+$profiles = if ($ValidatorProfile -eq "All") { @(3, 5, 10) } else { @([int]$ValidatorProfile) }
 
 Push-Location $RepoRoot
 try {
   foreach ($validators in $profiles) {
     $outputDir = Resolve-LocalnetPath -Path ".localnet-public-preflight-$validators" -DefaultRelativePath ".localnet-public-preflight-$validators"
-    $baseOffset = if ($validators -eq 3) { 3000 } else { 4000 }
+    $baseOffset = switch ($validators) {
+      3 { 3000 }
+      5 { 4000 }
+      10 { 5000 }
+      default { 6000 }
+    }
     Write-Host "Running public testnet preflight: validators=$validators output=$outputDir"
 
     & .\tests\e2e\prototype_acceptance.ps1 `
