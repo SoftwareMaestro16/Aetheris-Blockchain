@@ -6,12 +6,16 @@ until written spec, simulator, prototype, fuzz tests, adversarial tests,
 long-run testnet, independent audit, and consensus-safety proof are complete.
 
 This design uses masterchain, workchain, and shardchain terminology as an
-Aetheris-native R&D model. TON documentation is a useful terminology reference:
-TON describes workchains as domains with their own rules, address formats, and
-VMs; shardchains as workchain partitions keyed by a shard prefix; and the
-masterchain as the coordination chain for global configuration, validator
-state, and shard references. Aetheris must still define and audit its own
-consensus-safe architecture before implementation.
+Aetheris-native R&D model. In this model, workchains are execution domains with
+their own rules, address formats, and VM sets; shardchains are workchain
+partitions keyed by a shard prefix; and the masterchain is the coordination
+chain for global configuration, validator state, and shard references.
+Aetheris must define and audit its own consensus-safe architecture before
+implementation.
+
+The broader target-system design is defined in
+[Aetheris Modular L1 Execution OS](aetheris-modular-execution-os.md). This
+document remains the narrower sharding and partitioning R&D safety gate.
 
 ## Terminology
 

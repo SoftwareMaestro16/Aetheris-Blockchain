@@ -14,6 +14,7 @@ flowchart LR
   APP --> FEES["x/fees"]
   APP --> TF["x/tokenfactory"]
   APP --> DEX["x/dex"]
+  APP --> AVM["AVM readiness specs"]
   APP --> WASM["CosmWasm readiness gate"]
 ```
 
@@ -22,7 +23,10 @@ flowchart LR
 - `x/fees`: deterministic native fee-denom policy; v1 accepts only `naet` fees.
 - `x/tokenfactory`: factory asset creation, mint, burn, and admin lifecycle.
 - `x/dex`: local constant-product DEX module for pools, liquidity, swaps, and LP tokens.
-- `app/wasmconfig`: CosmWasm policy model. CosmWasm stays disabled until base-chain hardening passes.
+- `x/aetherisvm`: AVM and async execution executable specifications, not yet production state mutation.
+- `scripts/localnet`: local validator network initialization, startup, diagnostics, and smoke support.
+
+The full target design for Aether Core, Execution Zones, Compute Shards, deterministic `LOAD_SCORE`, routing, Aether Mesh, Identity, security, economics, and failure handling is documented in [Aetheris Modular L1 Execution OS](docs/architecture/aetheris-modular-execution-os.md). Production zones, compute shards, Aether Mesh, AVM state mutation, and CosmWasm execution remain target architecture until implementation, simulator, long-run testnet, consensus-safety proof, and independent audit gates pass.
 
 ## Build
 
@@ -154,10 +158,12 @@ Aetheris currently prioritizes base-chain hardening before public testnet expans
 - PoS staking lifecycle tests for validator creation, delegation, unbonding, redelegation, slashing, downtime, and restart persistence
 - security workflows for govulncheck, gosec, gitleaks, dependency review, and CodeQL
 
-## CosmWasm Readiness
+## AVM And CosmWasm Readiness
 
-CosmWasm is the planned smart-contract VM direction, but it remains disabled by default. Enabling it requires explicit feature/config gating, upload and instantiate permissions, contract admin/migration policy, gas limits, contract size limits, memory/cache limits, and adversarial tests for unauthorized migrate/admin takeover.
+AVM is the Aetheris-defined native VM direction for deterministic asynchronous contracts. CosmWasm remains an explicitly gated compatibility direction. Neither runtime mutates production chain state until base-chain safety, async queue semantics, gas accounting, storage bounds, adversarial tests, fuzzing, export/import, and independent audit gates pass.
+
+AVM contracts execute through explicit entrypoints for deploy, external call, internal call, bounced call, query, and migration. All protocol fees remain in `naet`, and AVM routing cannot bypass signer, address, zero-address, fee, memo, staking, slashing, or governance validation.
 
 ## Public Testnet
 
-Public testnet preparation lives in [Public Testnet Preparation](docs/public-testnet-preparation.md), with validator onboarding in [Validator Onboarding](docs/validator-onboarding.md). `ROADMAP.md` is a local operator planning file and is intentionally ignored.
+Public testnet preparation lives in [Public Testnet Preparation](docs/public-testnet-preparation.md), with validator onboarding in [Validator Onboarding](docs/validator-onboarding.md). Production zones, compute shards, Aether Mesh, and AVM state mutation remain target architecture until implementation, simulator, long-run testnet, audit, and production gates pass.
