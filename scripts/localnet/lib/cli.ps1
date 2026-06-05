@@ -98,12 +98,29 @@ function Assert-LocalnetCliFailure {
   return $text
 }
 
+function Get-LocalnetObjectProperty {
+  param(
+    [object]$InputObject,
+    [string]$Name
+  )
+
+  if ($null -eq $InputObject) {
+    return $null
+  }
+  $property = $InputObject.PSObject.Properties[$Name]
+  if ($null -eq $property) {
+    return $null
+  }
+  return $property.Value
+}
+
 function Get-LocalnetTxHash {
   param([object]$Tx)
 
-  $txHash = $Tx.txhash
-  if (-not $txHash -and $Tx.tx_response) {
-    $txHash = $Tx.tx_response.txhash
+  $txHash = Get-LocalnetObjectProperty -InputObject $Tx -Name "txhash"
+  $txResponse = Get-LocalnetObjectProperty -InputObject $Tx -Name "tx_response"
+  if (-not $txHash -and $txResponse) {
+    $txHash = Get-LocalnetObjectProperty -InputObject $txResponse -Name "txhash"
   }
   return $txHash
 }
@@ -111,11 +128,14 @@ function Get-LocalnetTxHash {
 function Get-LocalnetTxCode {
   param([object]$Tx)
 
-  if ($Tx.tx_response -and $null -ne $Tx.tx_response.code) {
-    return [int]$Tx.tx_response.code
+  $txResponse = Get-LocalnetObjectProperty -InputObject $Tx -Name "tx_response"
+  $responseCode = Get-LocalnetObjectProperty -InputObject $txResponse -Name "code"
+  if ($null -ne $responseCode) {
+    return [int]$responseCode
   }
-  if ($null -ne $Tx.code) {
-    return [int]$Tx.code
+  $code = Get-LocalnetObjectProperty -InputObject $Tx -Name "code"
+  if ($null -ne $code) {
+    return [int]$code
   }
   return 0
 }
@@ -123,14 +143,18 @@ function Get-LocalnetTxCode {
 function Get-LocalnetTxLog {
   param([object]$Tx)
 
-  if ($Tx.tx_response -and $Tx.tx_response.raw_log) {
-    return [string]$Tx.tx_response.raw_log
+  $txResponse = Get-LocalnetObjectProperty -InputObject $Tx -Name "tx_response"
+  $responseRawLog = Get-LocalnetObjectProperty -InputObject $txResponse -Name "raw_log"
+  if ($responseRawLog) {
+    return [string]$responseRawLog
   }
-  if ($Tx.raw_log) {
-    return [string]$Tx.raw_log
+  $rawLog = Get-LocalnetObjectProperty -InputObject $Tx -Name "raw_log"
+  if ($rawLog) {
+    return [string]$rawLog
   }
-  if ($Tx.log) {
-    return [string]$Tx.log
+  $log = Get-LocalnetObjectProperty -InputObject $Tx -Name "log"
+  if ($log) {
+    return [string]$log
   }
   return ""
 }
@@ -160,10 +184,13 @@ function Assert-LocalnetTxEvent {
   )
 
   $events = @()
-  if ($Tx.tx_response -and $Tx.tx_response.events) {
-    $events = @($Tx.tx_response.events)
-  } elseif ($Tx.events) {
-    $events = @($Tx.events)
+  $txResponse = Get-LocalnetObjectProperty -InputObject $Tx -Name "tx_response"
+  $responseEvents = Get-LocalnetObjectProperty -InputObject $txResponse -Name "events"
+  $topLevelEvents = Get-LocalnetObjectProperty -InputObject $Tx -Name "events"
+  if ($responseEvents) {
+    $events = @($responseEvents)
+  } elseif ($topLevelEvents) {
+    $events = @($topLevelEvents)
   }
 
   foreach ($event in $events) {

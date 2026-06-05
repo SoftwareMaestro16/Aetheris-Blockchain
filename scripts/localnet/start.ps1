@@ -16,6 +16,7 @@ param(
   [bool]$EnableRPC = $true,
   [switch]$NoInit,
   [switch]$Wait,
+  [switch]$CleanLogs,
   [int]$TimeoutSeconds = 60
 )
 
@@ -82,6 +83,7 @@ Assert-LocalnetPortsAvailable `
   -BaseRPCPort $BaseRPCPort `
   -BaseRESTPort $BaseRESTPort `
   -BaseGRPCPort $BaseGRPCPort `
+  -BasePprofPort $BasePprofPort `
   -PortStride $PortStride `
   -EnableAPI $EnableAPI `
   -EnableGRPC $EnableGRPC `

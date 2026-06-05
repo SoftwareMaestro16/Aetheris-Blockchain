@@ -132,11 +132,18 @@ function Test-LocalnetTcpPortOpen {
 function Test-LocalnetTcpPortAvailable {
   param([int]$Port)
 
+  if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
+    $existing = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+      Where-Object { $_.State -eq "Listen" }
+    if ($existing) {
+      return $false
+    }
+  }
+
   $listener = $null
   try {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, $Port)
     $listener.Start()
-    return $true
   } catch {
     return $false
   } finally {
@@ -144,6 +151,21 @@ function Test-LocalnetTcpPortAvailable {
       $listener.Stop()
     }
   }
+
+  $v6Listener = $null
+  try {
+    $v6Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Any, $Port)
+    $v6Listener.Start()
+    return $true
+  } catch {
+    return $false
+  } finally {
+    if ($null -ne $v6Listener) {
+      $v6Listener.Stop()
+    }
+  }
+
+  return $true
 }
 
 function Assert-LocalnetPortsAvailable {
@@ -153,6 +175,7 @@ function Assert-LocalnetPortsAvailable {
     [int]$BaseRPCPort = 26657,
     [int]$BaseRESTPort = 1317,
     [int]$BaseGRPCPort = 9090,
+    [int]$BasePprofPort = 6060,
     [int]$PortStride = 100,
     [bool]$EnableAPI = $true,
     [bool]$EnableGRPC = $true,
@@ -160,8 +183,8 @@ function Assert-LocalnetPortsAvailable {
   )
 
   for ($i = 0; $i -lt $ValidatorCount; $i++) {
-    $p = Get-LocalnetPortProfile -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -PortStride $PortStride
-    $ports = @($p.P2P)
+    $p = Get-LocalnetPortProfile -Index $i -BaseP2PPort $BaseP2PPort -BaseRPCPort $BaseRPCPort -BaseRESTPort $BaseRESTPort -BaseGRPCPort $BaseGRPCPort -BasePprofPort $BasePprofPort -PortStride $PortStride
+    $ports = @($p.P2P, $p.Pprof)
     if ($EnableRPC) { $ports += $p.RPC }
     if ($EnableAPI) { $ports += $p.REST }
     if ($EnableGRPC) { $ports += $p.GRPC }

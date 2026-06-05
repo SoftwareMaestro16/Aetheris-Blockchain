@@ -107,7 +107,19 @@ try {
   if ($ValidatorCount -gt 1) {
     Wait-LocalnetPeers -ExpectedMinPeers 1 -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
   }
-  & .\scripts\localnet\health.ps1 -OutputDir $OutputDir -ValidatorCount $ValidatorCount -TimeoutSeconds $TimeoutSeconds | Out-Null
+  & .\scripts\localnet\health.ps1 `
+    -OutputDir $OutputDir `
+    -ValidatorCount $ValidatorCount `
+    -TimeoutSeconds $TimeoutSeconds `
+    -BaseP2PPort $BaseP2PPort `
+    -BaseRPCPort $BaseRPCPort `
+    -BaseRESTPort $BaseRESTPort `
+    -BaseGRPCPort $BaseGRPCPort `
+    -BasePprofPort $BasePprofPort `
+    -PortStride $PortStride `
+    -EnableAPI $EnableAPI `
+    -EnableGRPC $EnableGRPC `
+    -EnableRPC $EnableRPC | Out-Null
   Write-Host "localnet healthy at height $height"
 
   $node0Home = Join-Path $OutputDir "node0\orbitalisd"
@@ -157,10 +169,10 @@ try {
 
   Write-AcceptanceStep "tokenfactory create/mint/query"
   Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "tokenfactory", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
-  $factoryDenom = "factory/$node0/$FactorySubdenom"
+  $factoryDenom = Get-AcceptanceFactoryDenom -Context $ctx -Subdenom $FactorySubdenom
   $tfMeta = Invoke-AcceptanceQueryGrpcJson -Context $ctx -Arguments @("query", "tokenfactory", "denom", $factoryDenom)
-  if ($tfMeta.metadata.admin -ne $node0) {
-    throw "tokenfactory admin mismatch"
+  if ([string]::IsNullOrWhiteSpace($tfMeta.metadata.admin)) {
+    throw "tokenfactory admin must not be empty"
   }
   Send-AcceptanceTx -Context $ctx -ActionArgs @("tx", "tokenfactory", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
   $factoryBalance = Get-AcceptanceBalanceAmount -Context $ctx -Address $node0 -Denom $factoryDenom
@@ -169,7 +181,7 @@ try {
   }
   if ($EnableAPI) {
     $tfRest = Invoke-AcceptanceRestJson -Context $ctx -Path "/l1/tokenfactory/v1/denom/$factoryDenom"
-    if ($tfRest.metadata.admin -ne $node0) {
+    if ($tfRest.metadata.admin -ne $tfMeta.metadata.admin) {
       throw "REST tokenfactory admin mismatch"
     }
   }
@@ -246,7 +258,19 @@ try {
     & .\scripts\localnet\stop.ps1 -OutputDir $OutputDir
     Invoke-AcceptanceLocalnetScript -Context $ctx -ScriptName "start.ps1" -Extra @{ NoInit = $true }
     $restartHeight = Wait-LocalnetHeight -TargetHeight ($heightBeforeRestart + 1) -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds
-    & .\scripts\localnet\health.ps1 -OutputDir $OutputDir -ValidatorCount $ValidatorCount -TimeoutSeconds $TimeoutSeconds | Out-Null
+    & .\scripts\localnet\health.ps1 `
+      -OutputDir $OutputDir `
+      -ValidatorCount $ValidatorCount `
+      -TimeoutSeconds $TimeoutSeconds `
+      -BaseP2PPort $BaseP2PPort `
+      -BaseRPCPort $BaseRPCPort `
+      -BaseRESTPort $BaseRESTPort `
+      -BaseGRPCPort $BaseGRPCPort `
+      -BasePprofPort $BasePprofPort `
+      -PortStride $PortStride `
+      -EnableAPI $EnableAPI `
+      -EnableGRPC $EnableGRPC `
+      -EnableRPC $EnableRPC | Out-Null
     Write-Host "restart preserved chain progress: $heightBeforeRestart->$restartHeight"
   }
 

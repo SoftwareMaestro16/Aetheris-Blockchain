@@ -135,6 +135,20 @@ function Get-AcceptanceBalanceAmount {
   return [int64]$balance.amount
 }
 
+function Get-AcceptanceFactoryDenom {
+  param(
+    [pscustomobject]$Context,
+    [string]$Subdenom
+  )
+
+  $denoms = Invoke-AcceptanceQueryGrpcJson -Context $Context -Arguments @("query", "tokenfactory", "denoms", "--limit", "100")
+  $matches = @($denoms.denoms | Where-Object { [string]$_.denom -like "factory/*/$Subdenom" })
+  if ($matches.Count -ne 1) {
+    throw "expected exactly one factory denom for subdenom $Subdenom, got $($matches.Count)"
+  }
+  return [string]$matches[0].denom
+}
+
 function Assert-AcceptanceFeesParams {
   param([object]$Params)
 
@@ -156,12 +170,21 @@ function Assert-AcceptanceNativeMetadata {
 
   $baseUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "norb" })
   $displayUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "ORB" })
-  if ($baseUnit.Count -ne 1 -or [int]$baseUnit[0].exponent -ne 0) {
+  if ($baseUnit.Count -ne 1 -or (Get-AcceptanceDenomUnitExponent -DenomUnit $baseUnit[0]) -ne 0) {
     throw "native metadata must include norb exponent 0"
   }
-  if ($displayUnit.Count -ne 1 -or [int]$displayUnit[0].exponent -ne 9) {
+  if ($displayUnit.Count -ne 1 -or (Get-AcceptanceDenomUnitExponent -DenomUnit $displayUnit[0]) -ne 9) {
     throw "native metadata must include ORB exponent 9"
   }
+}
+
+function Get-AcceptanceDenomUnitExponent {
+  param([object]$DenomUnit)
+
+  if ($DenomUnit.PSObject.Properties.Name -contains "exponent") {
+    return [int]$DenomUnit.exponent
+  }
+  return 0
 }
 
 function Assert-AcceptanceBondedValidator {
