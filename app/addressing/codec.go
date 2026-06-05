@@ -17,6 +17,8 @@ const (
 	RawAddressLength     = 66
 	UserFriendlyLength   = 48
 	UserFriendlyPrefix   = "ORB"
+	ZeroRawAddress       = "0:0000000000000000000000000000000000000000000000000000000000000000"
+	ZeroUserFriendly     = "ORBAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	rawPayloadLength     = 32
 	shortAddressLength   = 20
 	longAddressPadLength = rawPayloadLength - shortAddressLength
@@ -61,6 +63,23 @@ func FormatAccAddress(addr sdk.AccAddress) string {
 
 func FormatValAddress(addr sdk.ValAddress) string {
 	return Format(addr.Bytes())
+}
+
+func IsZero(bz []byte) bool {
+	raw, err := ToRawPayload(bz)
+	if err != nil {
+		return false
+	}
+	for _, b := range raw {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func IsZeroAccAddress(addr sdk.AccAddress) bool {
+	return IsZero(addr.Bytes())
 }
 
 func FormatUserFriendly(bz []byte) (string, error) {

@@ -20,6 +20,17 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 	return msgServer{Keeper: k}
 }
 
+func parseNonZeroAccAddress(field, text string) (sdk.AccAddress, error) {
+	addr, err := orbitaladdress.ParseAccAddress(text)
+	if err != nil {
+		return nil, err
+	}
+	if orbitaladdress.IsZeroAccAddress(addr) {
+		return nil, types.ErrInvalidAddress.Wrapf("%s must not be zero address", field)
+	}
+	return addr, nil
+}
+
 func (m msgServer) CreateDenom(ctx context.Context, msg *types.MsgCreateDenom) (*types.MsgCreateDenomResponse, error) {
 	params, err := m.GetParams(ctx)
 	if err != nil {
@@ -32,7 +43,7 @@ func (m msgServer) CreateDenom(ctx context.Context, msg *types.MsgCreateDenom) (
 	if err != nil {
 		return nil, err
 	}
-	creator, err := orbitaladdress.ParseAccAddress(msg.Creator)
+	creator, err := parseNonZeroAccAddress("creator", msg.Creator)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +75,7 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 	if !params.MintingEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("minting is disabled")
 	}
-	sender, err := orbitaladdress.ParseAccAddress(msg.Sender)
+	sender, err := parseNonZeroAccAddress("sender", msg.Sender)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +90,7 @@ func (m msgServer) Mint(ctx context.Context, msg *types.MsgMint) (*types.MsgMint
 	if meta.Admin != senderText {
 		return nil, types.ErrUnauthorized.Wrap("only denom admin can mint")
 	}
-	to, err := orbitaladdress.ParseAccAddress(msg.MintToAddress)
+	to, err := parseNonZeroAccAddress("mint_to_address", msg.MintToAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +128,7 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 	if !params.BurningEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("burning is disabled")
 	}
-	sender, err := orbitaladdress.ParseAccAddress(msg.Sender)
+	sender, err := parseNonZeroAccAddress("sender", msg.Sender)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +143,7 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 	if meta.Admin != senderText {
 		return nil, types.ErrUnauthorized.Wrap("only denom admin can burn")
 	}
-	from, err := orbitaladdress.ParseAccAddress(msg.BurnFromAddress)
+	from, err := parseNonZeroAccAddress("burn_from_address", msg.BurnFromAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +177,7 @@ func (m msgServer) Burn(ctx context.Context, msg *types.MsgBurn) (*types.MsgBurn
 }
 
 func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (*types.MsgChangeAdminResponse, error) {
-	sender, err := orbitaladdress.ParseAccAddress(msg.Sender)
+	sender, err := parseNonZeroAccAddress("sender", msg.Sender)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +192,7 @@ func (m msgServer) ChangeAdmin(ctx context.Context, msg *types.MsgChangeAdmin) (
 	if meta.Admin != senderText {
 		return nil, types.ErrUnauthorized.Wrap("only denom admin can change admin")
 	}
-	newAdmin, err := orbitaladdress.ParseAccAddress(msg.NewAdmin)
+	newAdmin, err := parseNonZeroAccAddress("new_admin", msg.NewAdmin)
 	if err != nil {
 		return nil, err
 	}

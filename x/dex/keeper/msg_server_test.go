@@ -79,6 +79,20 @@ func TestAddLiquidityRejectsMalformedMinShares(t *testing.T) {
 	require.Contains(t, err.Error(), "min_shares")
 }
 
+func TestDexRejectsZeroActorAddress(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	msgServer := dexkeeper.NewMsgServerImpl(app.DexKeeper)
+
+	_, err := msgServer.CreatePool(ctx, &types.MsgCreatePool{
+		Creator: orbitaladdress.ZeroRawAddress,
+		TokenA:  sdk.NewInt64Coin("uatom", 1_000),
+		TokenB:  sdk.NewInt64Coin(appparams.BaseDenom, 1_000),
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "creator must not be zero address")
+}
+
 func TestCreatePoolRejectsDuplicatePair(t *testing.T) {
 	app, ctx, msgServer, creator, poolID := setupDexPool(t)
 

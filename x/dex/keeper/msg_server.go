@@ -22,6 +22,17 @@ func NewMsgServerImpl(k Keeper) types.MsgServer {
 	return msgServer{Keeper: k}
 }
 
+func parseNonZeroAccAddress(field, text string) (sdk.AccAddress, error) {
+	addr, err := orbitaladdress.ParseAccAddress(text)
+	if err != nil {
+		return nil, err
+	}
+	if orbitaladdress.IsZeroAccAddress(addr) {
+		return nil, types.ErrInvalidAddress.Wrapf("%s must not be zero address", field)
+	}
+	return addr, nil
+}
+
 func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (res *types.MsgCreatePoolResponse, err error) {
 	defer recordDexResult("create_pool", &err)
 	params, err := m.GetParams(ctx)
@@ -31,7 +42,7 @@ func (m msgServer) CreatePool(ctx context.Context, msg *types.MsgCreatePool) (re
 	if !params.PoolCreationEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("pool creation is disabled")
 	}
-	creator, err := orbitaladdress.ParseAccAddress(msg.Creator)
+	creator, err := parseNonZeroAccAddress("creator", msg.Creator)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +130,7 @@ func (m msgServer) AddLiquidity(ctx context.Context, msg *types.MsgAddLiquidity)
 	if !params.LiquidityEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("liquidity operations are disabled")
 	}
-	depositor, err := orbitaladdress.ParseAccAddress(msg.Depositor)
+	depositor, err := parseNonZeroAccAddress("depositor", msg.Depositor)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +208,7 @@ func (m msgServer) RemoveLiquidity(ctx context.Context, msg *types.MsgRemoveLiqu
 	if !params.LiquidityEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("liquidity operations are disabled")
 	}
-	withdrawer, err := orbitaladdress.ParseAccAddress(msg.Withdrawer)
+	withdrawer, err := parseNonZeroAccAddress("withdrawer", msg.Withdrawer)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +280,7 @@ func (m msgServer) SwapExactAmountIn(ctx context.Context, msg *types.MsgSwapExac
 	if !params.SwapsEnabled {
 		return nil, types.ErrOperationDisabled.Wrap("swaps are disabled")
 	}
-	trader, err := orbitaladdress.ParseAccAddress(msg.Trader)
+	trader, err := parseNonZeroAccAddress("trader", msg.Trader)
 	if err != nil {
 		return nil, err
 	}

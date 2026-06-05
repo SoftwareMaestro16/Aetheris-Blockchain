@@ -10,4 +10,5 @@ var (
 	ErrInvalidParams     = errorsmod.Register(ModuleName, 6, "invalid params")
 	ErrUnauthorized      = errorsmod.Register(ModuleName, 7, "unauthorized")
 	ErrOperationDisabled = errorsmod.Register(ModuleName, 8, "operation disabled")
+	ErrInvalidAddress    = errorsmod.Register(ModuleName, 9, "invalid address")
 )

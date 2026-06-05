@@ -113,6 +113,9 @@ func (k Keeper) FullDenom(ctx context.Context, creator, subdenom string) (string
 	if err != nil {
 		return "", err
 	}
+	if orbitaladdress.IsZeroAccAddress(creatorAddr) {
+		return "", types.ErrInvalidAddress.Wrap("creator must not be zero address")
+	}
 	params, err := k.GetParams(ctx)
 	if err != nil {
 		return "", err

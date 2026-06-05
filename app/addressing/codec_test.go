@@ -53,6 +53,25 @@ func TestRawLongAddressRoundTrip(t *testing.T) {
 	require.Equal(t, raw, parsed)
 }
 
+func TestZeroAddressFormats(t *testing.T) {
+	zero := sdk.AccAddress(bytes20(0))
+
+	require.Equal(t, addressing.ZeroRawAddress, addressing.FormatAccAddress(zero))
+	require.True(t, addressing.IsZeroAccAddress(zero))
+
+	userFriendly, err := addressing.FormatUserFriendly(zero)
+	require.NoError(t, err)
+	require.Equal(t, addressing.ZeroUserFriendly, userFriendly)
+
+	rawParsed, err := addressing.ParseAccAddress(addressing.ZeroRawAddress)
+	require.NoError(t, err)
+	require.True(t, addressing.IsZeroAccAddress(rawParsed))
+
+	friendlyParsed, err := addressing.ParseAccAddress(addressing.ZeroUserFriendly)
+	require.NoError(t, err)
+	require.True(t, addressing.IsZeroAccAddress(friendlyParsed))
+}
+
 func bytes20(fill byte) []byte {
 	out := make([]byte, 20)
 	for i := range out {

@@ -9,4 +9,5 @@ var (
 	ErrDenomMissing      = errorsmod.Register(ModuleName, 5, "denom not found")
 	ErrInvalidParams     = errorsmod.Register(ModuleName, 6, "invalid params")
 	ErrOperationDisabled = errorsmod.Register(ModuleName, 7, "operation disabled")
+	ErrInvalidAddress    = errorsmod.Register(ModuleName, 8, "invalid address")
 )

@@ -72,6 +72,42 @@ func TestBurnRejectsBurnFromUnsignedAccount(t *testing.T) {
 	require.Equal(t, "100", balance.Amount.String())
 }
 
+func TestTokenfactoryRejectsZeroAddresses(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	admin := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
+	msgServer := tokenfactorykeeper.NewMsgServerImpl(app.TokenFactoryKeeper)
+
+	_, err := msgServer.CreateDenom(ctx, &types.MsgCreateDenom{
+		Creator:  orbitaladdress.ZeroRawAddress,
+		Subdenom: "zero",
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "creator must not be zero address")
+
+	createRes, err := msgServer.CreateDenom(ctx, &types.MsgCreateDenom{
+		Creator:  admin.String(),
+		Subdenom: "zeroaddr",
+	})
+	require.NoError(t, err)
+
+	_, err = msgServer.Mint(ctx, &types.MsgMint{
+		Sender:        admin.String(),
+		Amount:        sdk.NewInt64Coin(createRes.NewTokenDenom, 1),
+		MintToAddress: orbitaladdress.ZeroUserFriendly,
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "mint_to_address must not be zero address")
+
+	_, err = msgServer.ChangeAdmin(ctx, &types.MsgChangeAdmin{
+		Sender:   admin.String(),
+		Denom:    createRes.NewTokenDenom,
+		NewAdmin: orbitaladdress.ZeroRawAddress,
+	})
+	require.ErrorIs(t, err, types.ErrInvalidAddress)
+	require.Contains(t, err.Error(), "new_admin must not be zero address")
+}
+
 func TestTokenfactoryLifecycleEmitsStableEventsAndStateQueries(t *testing.T) {
 	app := l1app.Setup(t, false)
 	ctx := app.NewContext(false)
