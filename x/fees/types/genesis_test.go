@@ -84,6 +84,9 @@ func TestParamsRejectUnsafeProtocolFeeConfig(t *testing.T) {
 		"malformed min fee": func(params *Params) {
 			params.MinFeeAmount = "not-an-int"
 		},
+		"min fee above v1 cap": func(params *Params) {
+			params.MinFeeAmount = "1000000000000000001"
+		},
 		"unsafe fee collector": func(params *Params) {
 			params.FeeCollectorModule = ModuleName
 		},

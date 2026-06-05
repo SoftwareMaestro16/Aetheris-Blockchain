@@ -5,6 +5,7 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 
@@ -180,6 +181,54 @@ func TestMalformedProtobufTxBytesFailWithoutFeeAccounting(t *testing.T) {
 	afterFees, err := app.FeesKeeper.GetProtocolFeeState(testutil.NewContext(app, 1))
 	require.NoError(t, err)
 	require.Equal(t, beforeFees, afterFees)
+}
+
+func TestNativeFeeDeductionUpdatesCollectorAndAccounting(t *testing.T) {
+	app := testutil.NewInitializedApp(t, "orbitalis-integration-fee-deduction")
+	ctx := testutil.NewContext(app, 1)
+	senderPriv, sender := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	_, recipient := testutil.AddFundedSigner(t, app, ctx, sdkmath.NewInt(1_000_000))
+	feeCollector := app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName)
+	require.NotNil(t, feeCollector)
+
+	beforeSender := app.BankKeeper.GetBalance(ctx, sender, "norb")
+	beforeRecipient := app.BankKeeper.GetBalance(ctx, recipient, "norb")
+	beforeCollector := app.BankKeeper.GetBalance(ctx, feeCollector, "norb")
+	beforeFees, err := app.FeesKeeper.GetProtocolFeeState(ctx)
+	require.NoError(t, err)
+
+	msg := banktypes.NewMsgSend(sender, recipient, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)))
+	txBytes := testutil.EncodeSignedTx(t, app, ctx, senderPriv, []sdk.Msg{msg}, sdk.NewCoins(sdk.NewInt64Coin("norb", 100)), 200_000)
+	res := testutil.FinalizeBlock(t, app, 1, txBytes)
+	require.Len(t, res.TxResults, 1)
+	require.Zero(t, res.TxResults[0].Code, res.TxResults[0].Log)
+	testutil.Commit(t, app)
+
+	afterCtx := testutil.NewContext(app, 2)
+	require.Equal(t, beforeSender.Sub(sdk.NewInt64Coin("norb", 200)), app.BankKeeper.GetBalance(afterCtx, sender, "norb"))
+	require.Equal(t, beforeRecipient.Add(sdk.NewInt64Coin("norb", 100)), app.BankKeeper.GetBalance(afterCtx, recipient, "norb"))
+	collectorAfter := app.BankKeeper.GetBalance(afterCtx, feeCollector, "norb")
+	require.True(t, collectorAfter.Amount.GTE(beforeCollector.Amount.AddRaw(100)), "fee collector balance must increase by at least the tx fee")
+
+	state, err := app.FeesKeeper.GetProtocolFeeState(afterCtx)
+	require.NoError(t, err)
+	require.Equal(t, beforeFees.TotalCollected.Add(sdk.NewInt64Coin("norb", 100)), state.TotalCollected)
+	require.Equal(t, beforeFees.ValidatorRewards.Add(sdk.NewInt64Coin("norb", 98)), state.ValidatorRewards)
+	require.Equal(t, beforeFees.CommunityPool.Add(sdk.NewInt64Coin("norb", 2)), state.CommunityPool)
+	require.NoError(t, state.Validate())
+
+	moduleBalances, err := app.FeesKeeper.ModuleBalances(afterCtx, &feestypes.QueryModuleBalancesRequest{})
+	require.NoError(t, err)
+	feeCollectorFound := false
+	for _, balance := range moduleBalances.Balances {
+		if balance.ModuleName != feestypes.FeeCollectorModuleName {
+			continue
+		}
+		feeCollectorFound = true
+		require.Equal(t, orbitaladdress.FormatAccAddress(feeCollector), balance.Address)
+		require.Equal(t, app.BankKeeper.GetAllBalances(afterCtx, feeCollector), balance.Balance)
+	}
+	require.True(t, feeCollectorFound, "fee collector module balance must be exposed")
 }
 
 func TestTokenfactoryDexFeesCrossModuleLifecycle(t *testing.T) {

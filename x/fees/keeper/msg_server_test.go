@@ -92,3 +92,23 @@ func TestUpdateParamsRejectsInvalidParamsWithoutMutatingState(t *testing.T) {
 	require.Equal(t, types.DefaultParams(), params)
 	requireNoEvent(t, ctx, types.EventTypeUpdateParams)
 }
+
+func TestUpdateParamsRejectsOutOfBoundsMinFeeWithoutMutatingState(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	msgServer := feeskeeper.NewMsgServerImpl(app.FeesKeeper)
+
+	invalid := types.DefaultParams()
+	invalid.MinFeeAmount = "1000000000000000001"
+
+	_, err := msgServer.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: app.FeesKeeper.Authority(),
+		Params:    invalid,
+	})
+	require.ErrorIs(t, err, types.ErrInvalidParams)
+
+	params, getErr := app.FeesKeeper.GetParams(ctx)
+	require.NoError(t, getErr)
+	require.Equal(t, types.DefaultParams(), params)
+	requireNoEvent(t, ctx, types.EventTypeUpdateParams)
+}

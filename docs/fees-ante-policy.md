@@ -9,6 +9,7 @@ This document defines the prototype fee policy for Orbitalis.
 - Prototype example fee: `1000000norb`
 - Default localnet minimum gas price: `0norb`
 - Protocol `min_fee_amount`: `1`
+- Protocol `min_fee_amount` v1 cap: `1000000000000000000`
 - V1 allowed fee denom list size: exactly one denom
 - Fee split params: validator rewards `0.98`, community pool `0.02`
 
@@ -34,6 +35,8 @@ Rejected by `x/fees` policy:
 - transactions that do not expose the SDK `FeeTx` interface
 
 The localnet default `minimum-gas-prices = "0norb"` is a validator mempool setting. Orbitalis protocol fee policy is stricter: delivered transactions must include at least `1norb` unless they are height-0 genesis create-validator transactions.
+
+For public testnets, keep protocol `min_fee_amount >= 1` and set validator min-gas-prices independently for mempool filtering. Localnet keeps validator min-gas-prices at `0norb` only so development commands are not filtered before protocol ante can be exercised.
 
 ## One-Command Smoke
 
@@ -115,6 +118,7 @@ fee denom testtoken not accepted; use norb
 - Fee params are loaded once per tx; malformed, empty, zero, below-minimum, and wrong-denom fee lists are rejected before any wrapped ante handler can mutate state.
 - Protocol fee accounting is recorded only after wrapped SDK ante success, so invalid signer, wrong chain ID, stale sequence, insufficient fee funds, and malformed tx failures do not update fee accounting.
 - Empty allowed-denom lists, duplicate denoms, and multi-denom params are rejected by params validation.
+- `min_fee_amount` is bounded to a positive integer no greater than `1000000000000000000`.
 - `MsgUpdateParams` requires the governance module authority and validates params before writing state.
 - Wrong fee denoms return a stable error message without logging keys, mnemonics, env vars, or local paths.
 - This module only enforces fee denom policy. Protocol fee distribution/accounting remains separate future work.

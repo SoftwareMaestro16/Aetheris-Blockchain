@@ -15,7 +15,6 @@ const (
 	ProtocolPoolModuleName = "protocolpool"
 	ValidatorRewardsTarget = "distribution/validator_rewards"
 	CommunityPoolTarget    = "protocolpool/community_pool"
-	MaxAllowedFeeDenoms    = 8
 )
 
 func DefaultParams() Params {
@@ -63,9 +62,8 @@ func (p Params) Validate() error {
 	if !validatorRatio.Add(communityRatio).Equal(sdkmath.LegacyOneDec()) {
 		return fmt.Errorf("fee split ratios must sum to 1")
 	}
-	minFee, ok := sdkmath.NewIntFromString(p.MinFeeAmount)
-	if !ok || !minFee.IsPositive() {
-		return fmt.Errorf("min_fee_amount must be a positive integer")
+	if _, err := validateMinFeeAmount(p.MinFeeAmount); err != nil {
+		return err
 	}
 	if p.FeeCollectorModule != FeeCollectorModuleName {
 		return fmt.Errorf("fee_collector_module must be %s", FeeCollectorModuleName)
@@ -109,6 +107,21 @@ func validateRatio(name, value string) (sdkmath.LegacyDec, error) {
 	return ratio, nil
 }
 
+func validateMinFeeAmount(value string) (sdkmath.Int, error) {
+	minFee, ok := sdkmath.NewIntFromString(value)
+	if !ok || !minFee.IsPositive() {
+		return sdkmath.Int{}, fmt.Errorf("min_fee_amount must be a positive integer")
+	}
+	maxMinFee, ok := sdkmath.NewIntFromString(MaxMinFeeAmountV1)
+	if !ok {
+		return sdkmath.Int{}, fmt.Errorf("invalid max_min_fee_amount_v1")
+	}
+	if minFee.GT(maxMinFee) {
+		return sdkmath.Int{}, fmt.Errorf("min_fee_amount must be <= %s", MaxMinFeeAmountV1)
+	}
+	return minFee, nil
+}
+
 func (gs GenesisState) Validate() error {
 	params := NormalizeParams(gs.Params)
 	if err := params.Validate(); err != nil {
@@ -122,11 +135,7 @@ func (p Params) CommunityRatioDec() (sdkmath.LegacyDec, error) {
 }
 
 func (p Params) MinFeeInt() (sdkmath.Int, error) {
-	minFee, ok := sdkmath.NewIntFromString(p.MinFeeAmount)
-	if !ok || !minFee.IsPositive() {
-		return sdkmath.Int{}, fmt.Errorf("min_fee_amount must be a positive integer")
-	}
-	return minFee, nil
+	return validateMinFeeAmount(p.MinFeeAmount)
 }
 
 func ValidateFeeCoins(params Params, fees sdk.Coins, enforceMin bool) error {

@@ -16,6 +16,7 @@ var (
 const (
 	BondDenom              = appparams.BaseDenom
 	MaxAllowedFeeDenomsV1  = 1
+	MaxMinFeeAmountV1      = "1000000000000000000"
 	PrototypeBaseFeeAmount = "1000000"
 	PrototypeBaseFeeCoin   = PrototypeBaseFeeAmount + BondDenom
 	PrototypeMinGasPriceV1 = "0" + BondDenom
