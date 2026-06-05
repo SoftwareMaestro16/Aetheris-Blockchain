@@ -166,7 +166,7 @@ func (app *L1App) initKeepers(
 
 	skipUpgradeHeights := map[int64]bool{}
 	for _, h := range cast.ToIntSlice(appOpts.Get(server.FlagUnsafeSkipUpgrades)) {
-		skipUpgradeHeights[int64(h)] = true
+		skipUpgradeHeights[int64(h)] = true // #nosec G115 -- unsafe skip upgrade heights are non-negative CLI config values.
 	}
 	app.UpgradeKeeper = upgradekeeper.NewKeeper(
 		skipUpgradeHeights,

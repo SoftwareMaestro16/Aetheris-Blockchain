@@ -68,12 +68,13 @@ func (g *generator) createAccount() (*authtypes.BaseAccount, sdk.Coins) {
 	privKey := secp256k1.GenPrivKey()
 	addr := sdk.AccAddress(privKey.PubKey().Address())
 	accNum := len(g.accounts)
-	baseAcc := authtypes.NewBaseAccount(addr, privKey.PubKey(), uint64(accNum), 0)
+	accountNumber := uint64(accNum) // #nosec G115 -- speedtest account count is process-local and cannot approach uint64 overflow.
+	baseAcc := authtypes.NewBaseAccount(addr, privKey.PubKey(), accountNumber, 0)
 
 	g.accounts = append(g.accounts, accountInfo{
 		privKey: privKey,
 		address: addr,
-		accNum:  uint64(accNum),
+		accNum:  accountNumber,
 		seqNum:  0,
 	})
 

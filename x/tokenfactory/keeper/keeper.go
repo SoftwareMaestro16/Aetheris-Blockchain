@@ -96,7 +96,7 @@ func (k Keeper) GetDenomsPage(ctx context.Context, pageReq *sdkquery.PageRequest
 
 	var out []types.DenomAuthorityMetadata
 	for ; iter.Valid(); iter.Next() {
-		if uint64(len(out)) == bounds.Limit {
+		if len(out) == bounds.Limit {
 			return out, queryutil.PageResponse(iter.Key()), nil
 		}
 		var meta types.DenomAuthorityMetadata

@@ -89,7 +89,17 @@ jobs:
       - name: Run gosec
         run: |
           mapfile -t package_dirs < <(go list -f '{{.Dir}}' ./...)
-          gosec -exclude-generated -severity high -confidence medium -fmt sarif -out gosec.sarif "${package_dirs[@]}"
+          set +e
+          gosec -exclude-generated -severity high -confidence medium -fmt json -out gosec.json "${package_dirs[@]}"
+          gosec_status=$?
+          set -e
+
+          if [[ -s gosec.json ]]; then
+            cat gosec.json
+          fi
+
+          gosec -exclude-generated -severity high -confidence medium -fmt sarif -out gosec.sarif "${package_dirs[@]}" || true
+          exit "${gosec_status}"
 
       - name: Upload gosec SARIF
         if: always()

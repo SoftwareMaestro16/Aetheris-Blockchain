@@ -198,7 +198,7 @@ func (k Keeper) GetPoolsPage(ctx context.Context, pageReq *sdkquery.PageRequest)
 
 	var pools []types.Pool
 	for ; iter.Valid(); iter.Next() {
-		if uint64(len(pools)) == bounds.Limit {
+		if len(pools) == bounds.Limit {
 			return pools, queryutil.PageResponse(iter.Key()), nil
 		}
 		var pool types.Pool
@@ -316,6 +316,7 @@ func minInt(a, b sdkmath.Int) sdkmath.Int {
 }
 
 func calcSwapOut(reserveIn, reserveOut, amountIn sdkmath.Int, feeBps uint32) sdkmath.Int {
-	amountInAfterFee := amountIn.MulRaw(types.BpsDenominator - int64(feeBps)).QuoRaw(types.BpsDenominator)
+	feeBpsInt := int64(feeBps) // #nosec G115 -- feeBps is uint32 and always fits in int64.
+	amountInAfterFee := amountIn.MulRaw(types.BpsDenominator - feeBpsInt).QuoRaw(types.BpsDenominator)
 	return reserveOut.Mul(amountInAfterFee).Quo(reserveIn.Add(amountInAfterFee))
 }

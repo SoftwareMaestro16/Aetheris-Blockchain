@@ -70,7 +70,9 @@ func ValidateSubdenom(subdenom string, params Params) error {
 	if err := params.Validate(); err != nil {
 		return err
 	}
-	if len(subdenom) < int(params.MinSubdenomLength) || len(subdenom) > int(params.MaxSubdenomLength) {
+	minLen := int(params.MinSubdenomLength) // #nosec G115 -- params validation bounds this value to DefaultMaxSubdenomLength.
+	maxLen := int(params.MaxSubdenomLength) // #nosec G115 -- params validation bounds this value to DefaultMaxSubdenomLength.
+	if len(subdenom) < minLen || len(subdenom) > maxLen {
 		return fmt.Errorf("subdenom length must be between %d and %d", params.MinSubdenomLength, params.MaxSubdenomLength)
 	}
 	if !subdenomRe.MatchString(subdenom) || strings.Contains(subdenom, "//") {

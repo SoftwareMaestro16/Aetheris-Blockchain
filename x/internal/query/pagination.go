@@ -14,7 +14,7 @@ var ErrInvalidPagination = errors.New("invalid pagination")
 type PageBounds struct {
 	Start []byte
 	End   []byte
-	Limit uint64
+	Limit int
 }
 
 func ForwardPageBounds(req *sdkquery.PageRequest, prefix []byte, defaultLimit, maxLimit uint64) (PageBounds, error) {
@@ -57,7 +57,8 @@ func ForwardPageBounds(req *sdkquery.PageRequest, prefix []byte, defaultLimit, m
 		start = req.Key
 	}
 
-	return PageBounds{Start: start, End: end, Limit: limit}, nil
+	limitInt := int(limit) // #nosec G115 -- limit is bounded by module max query limits before conversion.
+	return PageBounds{Start: start, End: end, Limit: limitInt}, nil
 }
 
 func PageResponse(nextKey []byte) *sdkquery.PageResponse {
