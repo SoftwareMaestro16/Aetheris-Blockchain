@@ -289,6 +289,53 @@ func TestBidirectionalStateCommitmentIncludesDomainFields(t *testing.T) {
 	require.ErrorContains(t, badRoot.ValidateForChannel(channel, true), "conditions root")
 }
 
+func TestCanonicalChannelStateIncludesAllStateDomains(t *testing.T) {
+	alice := testAddress(0x3b)
+	bob := testAddress(0x3c)
+	channel := signedChannel(t, "canonical-state", "1000", alice, bob)
+	channel = channel.Normalize()
+
+	state := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "475"},
+		{Participant: bob, Amount: "525"},
+	})
+
+	require.Equal(t, CurrentAppVersion, state.AppVersion)
+	require.Equal(t, ModuleName, state.ModuleName)
+	require.Equal(t, ComputeParticipantSetHash(channel.Participants), state.ParticipantSetHash)
+	require.Equal(t, "0", state.AccruedFees)
+	require.Equal(t, channel.DisputePeriod, state.ChallengePeriod)
+	require.Equal(t, ComputeConditionsRoot(state.Conditions), state.ConditionRoot)
+	require.Equal(t, state.PendingConditionsRoot, state.ConditionRoot)
+	require.Equal(t, uint32(len(state.Conditions)), state.ConditionCount)
+	require.Equal(t, ComputeRequiredSignerBitmap(channel.Participants, channel.RequiredSigners), state.RequiredSignerBitmap)
+	require.Equal(t, SignatureSchemeEd25519, state.SignatureScheme)
+	require.Equal(t, ComputeStateSignaturePreimageHash(state), state.SignaturePreimageHash)
+
+	changedFees := state
+	changedFees.AccruedFees = "1"
+	changedFees.StateHash = ""
+	changedFees.Signatures = nil
+	changedFees, err := BuildState(changedFees)
+	require.NoError(t, err)
+	require.NotEqual(t, state.StateHash, changedFees.StateHash)
+
+	badParticipantSet := resignState(t, channel, mutateCanonicalState(state, func(s *ChannelState) {
+		s.ParticipantSetHash = HashParts("wrong-participant-set")
+	}))
+	require.ErrorContains(t, badParticipantSet.ValidateForChannel(channel, true), "participant set")
+
+	badChallenge := resignState(t, channel, mutateCanonicalState(state, func(s *ChannelState) {
+		s.ChallengePeriod++
+	}))
+	require.ErrorContains(t, badChallenge.ValidateForChannel(channel, true), "challenge period")
+
+	badScheme := resignState(t, channel, mutateCanonicalState(state, func(s *ChannelState) {
+		s.SignatureScheme = "secp256k1"
+	}))
+	require.ErrorContains(t, badScheme.ValidateForChannel(channel, true), "signature scheme")
+}
+
 func TestBidirectionalCloseAndUpdateRules(t *testing.T) {
 	alice := testAddress(0x39)
 	bob := testAddress(0x3a)
@@ -908,6 +955,27 @@ func signedState(t *testing.T, channel ChannelRecord, nonce uint64, previous str
 	state = state.Normalize()
 	require.NoError(t, state.ValidateForChannel(channel, true))
 	return state
+}
+
+func mutateCanonicalState(state ChannelState, mutate func(*ChannelState)) ChannelState {
+	state = state.Normalize()
+	state.Signatures = nil
+	mutate(&state)
+	state.SignaturePreimageHash = ComputeStateSignaturePreimageHash(state)
+	state.StateHash = ComputeStateHash(state)
+	return state.Normalize()
+}
+
+func resignState(t *testing.T, channel ChannelRecord, state ChannelState) ChannelState {
+	t.Helper()
+
+	state.Signatures = nil
+	for _, signer := range channel.Normalize().Participants {
+		sig, err := SignatureForState(state, signer)
+		require.NoError(t, err)
+		state.Signatures = append(state.Signatures, sig)
+	}
+	return state.Normalize()
 }
 
 func signedConditionalState(t *testing.T, channel ChannelRecord, nonce uint64, previous, conditionAmount string, balances []Balance) ChannelState {

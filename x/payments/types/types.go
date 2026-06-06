@@ -13,7 +13,9 @@ import (
 
 const (
 	NativeDenom              = "naet"
+	CurrentAppVersion        = uint32(1)
 	CurrentStateVersion      = uint32(1)
+	SignatureSchemeEd25519   = "ed25519-aetheris-v1"
 	DefaultDisputePeriod     = uint64(16)
 	DefaultOpeningFee        = "1"
 	MaxDisputeExtensions     = uint32(2)
@@ -181,8 +183,11 @@ type FinalSettlementRequest struct {
 
 type ChannelState struct {
 	ChainID               string
+	AppVersion            uint32
+	ModuleName            string
 	ChannelID             string
 	ChannelType           ChannelType
+	ParticipantSetHash    string
 	Denom                 string
 	Version               uint32
 	ParticipantA          string
@@ -191,17 +196,24 @@ type ChannelState struct {
 	BalanceB              string
 	ReserveA              string
 	ReserveB              string
+	AccruedFees           string
 	Epoch                 uint64
 	Nonce                 uint64
 	PendingConditionsRoot string
+	ConditionRoot         string
+	ConditionCount        uint32
 	Balances              []Balance
 	Conditions            []ConditionalPayment
 	PreviousStateHash     string
 	StateHash             string
 	TimeoutHeight         uint64
 	TimeoutTimestamp      int64
+	ChallengePeriod       uint64
 	CloseDelay            uint64
 	FeePolicyID           string
+	RequiredSignerBitmap  string
+	SignatureScheme       string
+	SignaturePreimageHash string
 	CheckpointNonce       uint64
 	CheckpointBalances    []Balance
 	AsyncUpdateRoot       string
@@ -393,6 +405,7 @@ type SettlementBatch struct {
 
 func BuildState(state ChannelState) (ChannelState, error) {
 	state = state.Normalize()
+	state.SignaturePreimageHash = ComputeStateSignaturePreimageHash(state)
 	if err := validateUnsignedStateShape(state); err != nil {
 		return ChannelState{}, err
 	}
@@ -762,26 +775,32 @@ func BuildAsyncCheckpointState(channel ChannelRecord, deltas []AsyncPaymentDelta
 		return ChannelState{}, err
 	}
 	state, err := BuildState(ChannelState{
-		ChainID:            channel.ChainID,
-		ChannelID:          channel.ChannelID,
-		ChannelType:        ChannelTypeAsync,
-		Denom:              channel.Denom,
-		Version:            CurrentStateVersion,
-		Epoch:              base.Epoch,
-		Nonce:              checkpointNonce,
-		Balances:           nextBalances,
-		CheckpointNonce:    checkpointNonce,
-		CheckpointBalances: nextBalances,
-		AsyncUpdateRoot:    ComputeAsyncDeltaRoot(normalizedDeltas),
-		AcceptedUpdateRoot: ComputeAsyncDeltaRoot(normalizedDeltas),
-		SendWindow:         base.SendWindow,
-		ReceiveWindow:      base.ReceiveWindow,
-		MaxUnackedAmount:   base.MaxUnackedAmount,
-		ExpiryHeight:       base.ExpiryHeight,
-		TimeoutHeight:      base.TimeoutHeight,
-		TimeoutTimestamp:   base.TimeoutTimestamp,
-		CloseDelay:         base.CloseDelay,
-		FeePolicyID:        NativeDenom,
+		ChainID:              channel.ChainID,
+		AppVersion:           CurrentAppVersion,
+		ModuleName:           ModuleName,
+		ChannelID:            channel.ChannelID,
+		ChannelType:          ChannelTypeAsync,
+		ParticipantSetHash:   ComputeParticipantSetHash(channel.Participants),
+		Denom:                channel.Denom,
+		Version:              CurrentStateVersion,
+		Epoch:                base.Epoch,
+		Nonce:                checkpointNonce,
+		Balances:             nextBalances,
+		CheckpointNonce:      checkpointNonce,
+		CheckpointBalances:   nextBalances,
+		AsyncUpdateRoot:      ComputeAsyncDeltaRoot(normalizedDeltas),
+		AcceptedUpdateRoot:   ComputeAsyncDeltaRoot(normalizedDeltas),
+		SendWindow:           base.SendWindow,
+		ReceiveWindow:        base.ReceiveWindow,
+		MaxUnackedAmount:     base.MaxUnackedAmount,
+		ExpiryHeight:         base.ExpiryHeight,
+		TimeoutHeight:        base.TimeoutHeight,
+		TimeoutTimestamp:     base.TimeoutTimestamp,
+		ChallengePeriod:      base.ChallengePeriod,
+		CloseDelay:           base.CloseDelay,
+		FeePolicyID:          NativeDenom,
+		RequiredSignerBitmap: ComputeRequiredSignerBitmap(channel.Participants, channel.RequiredSigners),
+		SignatureScheme:      SignatureSchemeEd25519,
 	})
 	if err != nil {
 		return ChannelState{}, err
@@ -838,7 +857,15 @@ func StreamingClaimForChannel(channel ChannelRecord, frame StreamingPaymentFrame
 
 func (s ChannelState) Normalize() ChannelState {
 	s.ChainID = strings.TrimSpace(s.ChainID)
+	if s.AppVersion == 0 {
+		s.AppVersion = CurrentAppVersion
+	}
+	s.ModuleName = strings.TrimSpace(s.ModuleName)
+	if s.ModuleName == "" {
+		s.ModuleName = ModuleName
+	}
 	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ParticipantSetHash = normalizeOptionalHash(s.ParticipantSetHash)
 	s.Denom = strings.TrimSpace(s.Denom)
 	if s.Version == 0 {
 		s.Version = CurrentStateVersion
@@ -849,17 +876,37 @@ func (s ChannelState) Normalize() ChannelState {
 	s.BalanceB = strings.TrimSpace(s.BalanceB)
 	s.ReserveA = strings.TrimSpace(s.ReserveA)
 	s.ReserveB = strings.TrimSpace(s.ReserveB)
+	s.AccruedFees = strings.TrimSpace(s.AccruedFees)
 	s.PreviousStateHash = normalizeOptionalHash(s.PreviousStateHash)
 	s.StateHash = normalizeOptionalHash(s.StateHash)
 	s.Balances = normalizeBalances(s.Balances)
 	s.Conditions = normalizeConditions(s.Conditions)
 	s.PendingConditionsRoot = normalizeOptionalHash(s.PendingConditionsRoot)
+	s.ConditionRoot = normalizeOptionalHash(s.ConditionRoot)
+	if s.ConditionRoot == "" && s.PendingConditionsRoot != "" {
+		s.ConditionRoot = s.PendingConditionsRoot
+	}
+	if s.ConditionRoot == "" {
+		s.ConditionRoot = ComputeConditionsRoot(s.Conditions)
+	}
 	if s.PendingConditionsRoot == "" {
-		s.PendingConditionsRoot = ComputeConditionsRoot(s.Conditions)
+		s.PendingConditionsRoot = s.ConditionRoot
+	}
+	if s.ConditionCount == 0 && len(s.Conditions) > 0 {
+		s.ConditionCount = uint32(len(s.Conditions))
+	}
+	if s.ChallengePeriod == 0 {
+		s.ChallengePeriod = s.CloseDelay
 	}
 	if s.FeePolicyID == "" {
 		s.FeePolicyID = NativeDenom
 	}
+	s.RequiredSignerBitmap = strings.TrimSpace(s.RequiredSignerBitmap)
+	s.SignatureScheme = strings.TrimSpace(s.SignatureScheme)
+	if s.SignatureScheme == "" {
+		s.SignatureScheme = SignatureSchemeEd25519
+	}
+	s.SignaturePreimageHash = normalizeOptionalHash(s.SignaturePreimageHash)
 	s.CheckpointBalances = normalizeBalances(s.CheckpointBalances)
 	s.AsyncUpdateRoot = normalizeOptionalHash(s.AsyncUpdateRoot)
 	s.AcceptedUpdateRoot = normalizeOptionalHash(s.AcceptedUpdateRoot)
@@ -900,6 +947,19 @@ func (s ChannelState) Normalize() ChannelState {
 	}
 	if s.ReserveB == "" {
 		s.ReserveB = "0"
+	}
+	if s.AccruedFees == "" {
+		s.AccruedFees = "0"
+	}
+	if s.ParticipantSetHash == "" {
+		s.ParticipantSetHash = ComputeParticipantSetHash(participantsFromBalances(s.Balances))
+	}
+	if s.RequiredSignerBitmap == "" {
+		participants := participantsFromBalances(s.Balances)
+		s.RequiredSignerBitmap = ComputeRequiredSignerBitmap(participants, participants)
+	}
+	if s.SignaturePreimageHash == "" {
+		s.SignaturePreimageHash = ComputeStateSignaturePreimageHash(s)
 	}
 	s.Signatures = normalizeSignatures(s.Signatures)
 	return s
@@ -1154,8 +1214,17 @@ func (s ChannelState) ValidateForChannel(channel ChannelRecord, requireAllPartic
 	if state.ChannelType != channel.ChannelType {
 		return errors.New("payments channel state type mismatch")
 	}
+	if expected := ComputeParticipantSetHash(channel.Participants); state.ParticipantSetHash != expected {
+		return errors.New("payments channel state participant set hash mismatch")
+	}
 	if state.Denom != channel.Denom {
 		return errors.New("payments channel state denom mismatch")
+	}
+	if state.ChallengePeriod != channel.DisputePeriod {
+		return errors.New("payments channel state challenge period mismatch")
+	}
+	if expected := ComputeRequiredSignerBitmap(channel.Participants, channel.RequiredSigners); state.RequiredSignerBitmap != expected {
+		return errors.New("payments channel state required signer bitmap mismatch")
 	}
 	if state.StateHash == "" {
 		return errors.New("payments channel state hash is required")
@@ -1936,17 +2005,29 @@ func validateUnsignedStateShape(state ChannelState) error {
 	if len(state.ChainID) > MaxTokenLength {
 		return fmt.Errorf("payments channel state chain id must be <= %d bytes", MaxTokenLength)
 	}
+	if state.AppVersion != CurrentAppVersion {
+		return fmt.Errorf("payments channel state app version must be %d", CurrentAppVersion)
+	}
+	if state.ModuleName != ModuleName {
+		return fmt.Errorf("payments channel state module name must be %s", ModuleName)
+	}
 	if err := ValidateHash("payments channel state channel id", state.ChannelID); err != nil {
 		return err
 	}
 	if !IsChannelType(state.ChannelType) {
 		return fmt.Errorf("unknown payments channel state type %q", state.ChannelType)
 	}
+	if err := ValidateHash("payments channel state participant set hash", state.ParticipantSetHash); err != nil {
+		return err
+	}
 	if state.Denom != NativeDenom {
 		return fmt.Errorf("payments channel state denom must be %s", NativeDenom)
 	}
 	if state.Version != CurrentStateVersion {
 		return fmt.Errorf("payments channel state version must be %d", CurrentStateVersion)
+	}
+	if err := validateNonNegativeInt("payments channel state accrued fees", state.AccruedFees); err != nil {
+		return err
 	}
 	if state.Epoch == 0 {
 		return errors.New("payments channel state epoch must be positive")
@@ -1962,14 +2043,41 @@ func validateUnsignedStateShape(state ChannelState) error {
 	if err := ValidateHash("payments pending conditions root", state.PendingConditionsRoot); err != nil {
 		return err
 	}
-	if expected := ComputeConditionsRoot(state.Conditions); state.PendingConditionsRoot != expected {
+	if err := ValidateHash("payments condition root", state.ConditionRoot); err != nil {
+		return err
+	}
+	if state.ConditionRoot != state.PendingConditionsRoot {
+		return errors.New("payments condition root must match pending conditions root")
+	}
+	if expected := ComputeConditionsRoot(state.Conditions); state.ConditionRoot != expected {
 		return errors.New("payments pending conditions root mismatch")
+	}
+	if state.ConditionCount != uint32(len(state.Conditions)) {
+		return errors.New("payments condition count mismatch")
 	}
 	if state.TimeoutTimestamp < 0 {
 		return errors.New("payments channel state timeout timestamp must be non-negative")
 	}
+	if state.ChallengePeriod == 0 {
+		return errors.New("payments channel state challenge period must be positive")
+	}
+	if err := validateChallengePeriod(state.ChallengePeriod); err != nil {
+		return err
+	}
 	if state.FeePolicyID != NativeDenom {
 		return fmt.Errorf("payments channel state fee policy must be %s", NativeDenom)
+	}
+	if err := validateRequiredSignerBitmap(state.RequiredSignerBitmap); err != nil {
+		return err
+	}
+	if state.SignatureScheme != SignatureSchemeEd25519 {
+		return fmt.Errorf("payments channel state signature scheme must be %s", SignatureSchemeEd25519)
+	}
+	if err := ValidateHash("payments channel state signature preimage hash", state.SignaturePreimageHash); err != nil {
+		return err
+	}
+	if expected := ComputeStateSignaturePreimageHash(state); state.SignaturePreimageHash != expected {
+		return errors.New("payments channel state signature preimage hash mismatch")
 	}
 	if err := validateBalances(state.Balances); err != nil {
 		return err
@@ -1978,18 +2086,25 @@ func validateUnsignedStateShape(state ChannelState) error {
 }
 
 func openingStateForRequest(req ChannelOpenRequest, channel ChannelRecord) ChannelState {
+	channel = channel.Normalize()
 	state := ChannelState{
-		ChainID:       req.ChainID,
-		ChannelID:     req.ChannelID,
-		ChannelType:   req.ChannelType,
-		Denom:         NativeDenom,
-		Version:       CurrentStateVersion,
-		Epoch:         1,
-		Nonce:         1,
-		Balances:      req.InitialBalances,
-		TimeoutHeight: req.OpenHeight + req.ChallengePeriod,
-		CloseDelay:    req.CloseDelay,
-		FeePolicyID:   req.FeePolicyID,
+		ChainID:              req.ChainID,
+		AppVersion:           CurrentAppVersion,
+		ModuleName:           ModuleName,
+		ChannelID:            req.ChannelID,
+		ChannelType:          req.ChannelType,
+		ParticipantSetHash:   ComputeParticipantSetHash(channel.Participants),
+		Denom:                NativeDenom,
+		Version:              CurrentStateVersion,
+		Epoch:                1,
+		Nonce:                1,
+		Balances:             req.InitialBalances,
+		TimeoutHeight:        req.OpenHeight + req.ChallengePeriod,
+		ChallengePeriod:      req.ChallengePeriod,
+		CloseDelay:           req.CloseDelay,
+		FeePolicyID:          req.FeePolicyID,
+		RequiredSignerBitmap: ComputeRequiredSignerBitmap(channel.Participants, channel.RequiredSigners),
+		SignatureScheme:      SignatureSchemeEd25519,
 	}
 	if req.ChannelType == ChannelTypeUnidirectional {
 		state.TimeoutHeight = req.ExpirationHeight
@@ -2436,6 +2551,28 @@ func validateSignatureQuorum(signatures []StateSignature, required []string, sta
 	return nil
 }
 
+func validateRequiredSignerBitmap(bitmap string) error {
+	if bitmap == "" {
+		return errors.New("payments required signer bitmap is required")
+	}
+	if len(bitmap) > MaxParticipants {
+		return fmt.Errorf("payments required signer bitmap must be <= %d bits", MaxParticipants)
+	}
+	hasRequired := false
+	for _, bit := range bitmap {
+		if bit != '0' && bit != '1' {
+			return errors.New("payments required signer bitmap must contain only 0 or 1")
+		}
+		if bit == '1' {
+			hasRequired = true
+		}
+	}
+	if !hasRequired {
+		return errors.New("payments required signer bitmap must require at least one signer")
+	}
+	return nil
+}
+
 func validateBalances(balances []Balance) error {
 	if len(balances) == 0 || len(balances) > MaxParticipants {
 		return fmt.Errorf("payments balances must be between 1 and %d", MaxParticipants)
@@ -2598,6 +2735,16 @@ func normalizeBalances(balances []Balance) []Balance {
 		return out[i].Participant < out[j].Participant
 	})
 	return out
+}
+
+func participantsFromBalances(balances []Balance) []string {
+	participants := make([]string, 0, len(balances))
+	for _, balance := range normalizeBalances(balances) {
+		if balance.Participant != "" {
+			participants = append(participants, balance.Participant)
+		}
+	}
+	return normalizeAddressSet(participants)
 }
 
 func normalizeConditions(conditions []ConditionalPayment) []ConditionalPayment {

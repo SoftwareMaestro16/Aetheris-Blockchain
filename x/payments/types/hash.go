@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 const HashHexLength = 64
@@ -25,8 +26,11 @@ func ComputeStateHash(state ChannelState) string {
 	h := sha256.New()
 	writeString(h, "aetheris-payment-channel-state-v1")
 	writeString(h, state.ChainID)
+	writeUint64(h, uint64(state.AppVersion))
+	writeString(h, state.ModuleName)
 	writeString(h, state.ChannelID)
 	writeString(h, string(state.ChannelType))
+	writeString(h, state.ParticipantSetHash)
 	writeString(h, state.Denom)
 	writeUint64(h, uint64(state.Version))
 	writeString(h, state.ParticipantA)
@@ -35,14 +39,21 @@ func ComputeStateHash(state ChannelState) string {
 	writeString(h, state.BalanceB)
 	writeString(h, state.ReserveA)
 	writeString(h, state.ReserveB)
+	writeString(h, state.AccruedFees)
 	writeUint64(h, state.Epoch)
 	writeUint64(h, state.Nonce)
 	writeString(h, state.PendingConditionsRoot)
+	writeString(h, state.ConditionRoot)
+	writeUint64(h, uint64(state.ConditionCount))
 	writeString(h, state.PreviousStateHash)
 	writeUint64(h, state.TimeoutHeight)
 	writeInt64(h, state.TimeoutTimestamp)
+	writeUint64(h, state.ChallengePeriod)
 	writeUint64(h, state.CloseDelay)
 	writeString(h, state.FeePolicyID)
+	writeString(h, state.RequiredSignerBitmap)
+	writeString(h, state.SignatureScheme)
+	writeString(h, state.SignaturePreimageHash)
 	writeUint64(h, state.CheckpointNonce)
 	writeString(h, state.AsyncUpdateRoot)
 	writeString(h, state.AcceptedUpdateRoot)
@@ -59,6 +70,149 @@ func ComputeStateHash(state ChannelState) string {
 		writeString(h, balance.Amount)
 	}
 	for _, condition := range state.Conditions {
+		writeString(h, condition.ConditionID)
+		writeString(h, string(condition.ConditionType))
+		writeString(h, condition.Payer)
+		writeString(h, condition.Payee)
+		writeString(h, condition.Amount)
+		writeString(h, condition.HashLock)
+		writeUint64(h, condition.TimeoutHeight)
+		writeUint64(h, condition.NonceStart)
+		writeUint64(h, condition.NonceEnd)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeParticipantSetHash(participants []string) string {
+	h := sha256.New()
+	writeString(h, "aetheris-payment-participant-set-v1")
+	for _, participant := range normalizeAddressSet(participants) {
+		writeString(h, participant)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeRequiredSignerBitmap(participants, required []string) string {
+	participants = normalizeAddressSet(participants)
+	required = normalizeAddressSet(required)
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, signer := range required {
+		requiredSet[signer] = struct{}{}
+	}
+	var buf bytes.Buffer
+	for _, participant := range participants {
+		if _, found := requiredSet[participant]; found {
+			buf.WriteByte('1')
+			continue
+		}
+		buf.WriteByte('0')
+	}
+	return buf.String()
+}
+
+func ComputeStateSignaturePreimageHash(state ChannelState) string {
+	appVersion := state.AppVersion
+	if appVersion == 0 {
+		appVersion = CurrentAppVersion
+	}
+	moduleName := strings.TrimSpace(state.ModuleName)
+	if moduleName == "" {
+		moduleName = ModuleName
+	}
+	version := state.Version
+	if version == 0 {
+		version = CurrentStateVersion
+	}
+	balances := normalizeBalances(state.Balances)
+	conditions := normalizeConditions(state.Conditions)
+	conditionRoot := normalizeOptionalHash(state.ConditionRoot)
+	pendingRoot := normalizeOptionalHash(state.PendingConditionsRoot)
+	if conditionRoot == "" && pendingRoot != "" {
+		conditionRoot = pendingRoot
+	}
+	if conditionRoot == "" {
+		conditionRoot = ComputeConditionsRoot(conditions)
+	}
+	if pendingRoot == "" {
+		pendingRoot = conditionRoot
+	}
+	conditionCount := state.ConditionCount
+	if conditionCount == 0 && len(conditions) > 0 {
+		conditionCount = uint32(len(conditions))
+	}
+	participantSetHash := normalizeOptionalHash(state.ParticipantSetHash)
+	if participantSetHash == "" {
+		participantSetHash = ComputeParticipantSetHash(participantsFromBalances(balances))
+	}
+	accruedFees := strings.TrimSpace(state.AccruedFees)
+	if accruedFees == "" {
+		accruedFees = "0"
+	}
+	challengePeriod := state.ChallengePeriod
+	if challengePeriod == 0 {
+		challengePeriod = state.CloseDelay
+	}
+	feePolicyID := strings.TrimSpace(state.FeePolicyID)
+	if feePolicyID == "" {
+		feePolicyID = NativeDenom
+	}
+	requiredSignerBitmap := strings.TrimSpace(state.RequiredSignerBitmap)
+	if requiredSignerBitmap == "" {
+		participants := participantsFromBalances(balances)
+		requiredSignerBitmap = ComputeRequiredSignerBitmap(participants, participants)
+	}
+	signatureScheme := strings.TrimSpace(state.SignatureScheme)
+	if signatureScheme == "" {
+		signatureScheme = SignatureSchemeEd25519
+	}
+	checkpointBalances := normalizeBalances(state.CheckpointBalances)
+
+	h := sha256.New()
+	writeString(h, "aetheris-payment-state-signature-preimage-hash-v1")
+	writeString(h, strings.TrimSpace(state.ChainID))
+	writeUint64(h, uint64(appVersion))
+	writeString(h, moduleName)
+	writeString(h, normalizeHash(state.ChannelID))
+	writeString(h, string(state.ChannelType))
+	writeString(h, participantSetHash)
+	writeString(h, strings.TrimSpace(state.Denom))
+	writeUint64(h, uint64(version))
+	writeString(h, strings.TrimSpace(state.ParticipantA))
+	writeString(h, strings.TrimSpace(state.ParticipantB))
+	writeString(h, strings.TrimSpace(state.BalanceA))
+	writeString(h, strings.TrimSpace(state.BalanceB))
+	writeString(h, strings.TrimSpace(state.ReserveA))
+	writeString(h, strings.TrimSpace(state.ReserveB))
+	writeString(h, accruedFees)
+	writeUint64(h, state.Epoch)
+	writeUint64(h, state.Nonce)
+	writeString(h, pendingRoot)
+	writeString(h, conditionRoot)
+	writeUint64(h, uint64(conditionCount))
+	writeString(h, normalizeOptionalHash(state.PreviousStateHash))
+	writeUint64(h, state.TimeoutHeight)
+	writeInt64(h, state.TimeoutTimestamp)
+	writeUint64(h, challengePeriod)
+	writeUint64(h, state.CloseDelay)
+	writeString(h, feePolicyID)
+	writeString(h, requiredSignerBitmap)
+	writeString(h, signatureScheme)
+	writeUint64(h, state.CheckpointNonce)
+	writeString(h, normalizeOptionalHash(state.AsyncUpdateRoot))
+	writeString(h, normalizeOptionalHash(state.AcceptedUpdateRoot))
+	writeUint64(h, state.SendWindow)
+	writeUint64(h, state.ReceiveWindow)
+	writeString(h, strings.TrimSpace(state.MaxUnackedAmount))
+	writeUint64(h, state.ExpiryHeight)
+	for _, balance := range balances {
+		writeString(h, balance.Participant)
+		writeString(h, balance.Amount)
+	}
+	for _, balance := range checkpointBalances {
+		writeString(h, balance.Participant)
+		writeString(h, balance.Amount)
+	}
+	for _, condition := range conditions {
 		writeString(h, condition.ConditionID)
 		writeString(h, string(condition.ConditionType))
 		writeString(h, condition.Payer)
