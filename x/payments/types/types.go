@@ -157,6 +157,11 @@ type SignedNonceRecord struct {
 	IsolationMode string
 }
 
+type SignerPersistence struct {
+	Records       []SignedNonceRecord
+	IsolationMode string
+}
+
 func (r SignedNonceRecord) Normalize() SignedNonceRecord {
 	r.Signer = strings.TrimSpace(r.Signer)
 	r.ChainID = strings.TrimSpace(r.ChainID)
@@ -168,6 +173,39 @@ func (r SignedNonceRecord) Normalize() SignedNonceRecord {
 		r.IsolationMode = SignerIsolationProcess
 	}
 	return r
+}
+
+func (p SignerPersistence) Normalize() SignerPersistence {
+	p.IsolationMode = strings.TrimSpace(p.IsolationMode)
+	if p.IsolationMode == "" {
+		p.IsolationMode = SignerIsolationProcess
+	}
+	p.Records = normalizeSignedNonceRecords(p.Records)
+	return p
+}
+
+func (p SignerPersistence) HighestSignedNonce(signer, chainID, channelID string, epoch uint64) uint64 {
+	p = p.Normalize()
+	signer = strings.TrimSpace(signer)
+	chainID = strings.TrimSpace(chainID)
+	channelID = normalizeHash(channelID)
+	var highest uint64
+	for _, record := range p.Records {
+		if record.Signer == signer && record.ChainID == chainID && record.ChannelID == channelID && record.Epoch == epoch && record.Nonce > highest {
+			highest = record.Nonce
+		}
+	}
+	return highest
+}
+
+func (p SignerPersistence) SignState(state ChannelState, signer string) (SignerPersistence, StateSignature, error) {
+	p = p.Normalize()
+	records, sig, err := SignStateWithWriteAhead(p.Records, state, signer, p.IsolationMode)
+	if err != nil {
+		return p, StateSignature{}, err
+	}
+	p.Records = records
+	return p.Normalize(), sig, nil
 }
 
 type ClaimSignature struct {
@@ -271,6 +309,16 @@ type ChannelDisputeRequest struct {
 	ConditionProofs       []ConditionResolution
 	Submitter             string
 	CurrentHeight         uint64
+}
+
+type WatchDisputeSubmission struct {
+	WatchService          string
+	Delegator             string
+	ChannelID             string
+	ClosingStateReference string
+	NewerState            ChannelState
+	CurrentHeight         uint64
+	EvidenceHash          string
 }
 
 type FinalSettlementRequest struct {
@@ -592,6 +640,15 @@ func SignStateWithWriteAhead(records []SignedNonceRecord, state ChannelState, si
 		return nil, StateSignature{}, errors.New("payments signer isolation mode is unsupported")
 	}
 	normalized := normalizeSignedNonceRecords(records)
+	var highest uint64
+	for _, record := range normalized {
+		if record.Signer == signer && record.ChainID == state.ChainID && record.ChannelID == state.ChannelID && record.Epoch == state.Epoch && record.Nonce > highest {
+			highest = record.Nonce
+		}
+	}
+	if highest > 0 && state.Nonce < highest {
+		return nil, StateSignature{}, errors.New("payments signer refuses nonce below highest signed nonce")
+	}
 	for i, record := range normalized {
 		if record.Signer != signer || record.ChainID != state.ChainID || record.ChannelID != state.ChannelID || record.Epoch != state.Epoch || record.Nonce != state.Nonce {
 			continue
@@ -771,6 +828,45 @@ func (r ChannelDisputeRequest) Normalize() ChannelDisputeRequest {
 	return r
 }
 
+func (w WatchDisputeSubmission) Normalize() WatchDisputeSubmission {
+	w.WatchService = strings.TrimSpace(w.WatchService)
+	w.Delegator = strings.TrimSpace(w.Delegator)
+	w.ChannelID = normalizeHash(w.ChannelID)
+	w.ClosingStateReference = normalizeHash(w.ClosingStateReference)
+	w.NewerState = w.NewerState.Normalize()
+	w.EvidenceHash = normalizeOptionalHash(w.EvidenceHash)
+	return w
+}
+
+func (w WatchDisputeSubmission) ValidateForChannel(channel ChannelRecord) error {
+	w = w.Normalize()
+	channel = channel.Normalize()
+	if err := addressing.ValidateUserAddress("payments watch service", w.WatchService); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments watch delegator", w.Delegator); err != nil {
+		return err
+	}
+	if !containsString(channel.Participants, w.Delegator) {
+		return errors.New("payments watch delegator must be channel participant")
+	}
+	if w.ChannelID != channel.ChannelID {
+		return errors.New("payments watch dispute channel mismatch")
+	}
+	if err := ValidateHash("payments watch dispute closing reference", w.ClosingStateReference); err != nil {
+		return err
+	}
+	if w.CurrentHeight == 0 {
+		return errors.New("payments watch dispute height must be positive")
+	}
+	if w.EvidenceHash != "" {
+		if err := ValidateHash("payments watch dispute evidence hash", w.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return w.NewerState.ValidateForChannel(channel, false)
+}
+
 func (r FinalSettlementRequest) Normalize() FinalSettlementRequest {
 	r.ChannelID = normalizeHash(r.ChannelID)
 	r.ResolvedConditions = normalizeConditionResolutions(r.ResolvedConditions)
@@ -847,8 +943,8 @@ func ValidateOffchainUpdate(channel ChannelRecord, req ChannelUpdateRequest) (Ch
 	if req.State.Nonce <= channel.LatestState.Nonce {
 		return ChannelUpdateResult{}, errors.New("payments update nonce must increase")
 	}
-	if channel.ChannelType != ChannelTypeAsync && req.State.PreviousStateHash != channel.LatestState.StateHash {
-		return ChannelUpdateResult{}, errors.New("payments update previous hash must match latest state")
+	if err := ValidatePreviousHashContinuity(channel, req.State); err != nil {
+		return ChannelUpdateResult{}, err
 	}
 	if len(req.ConditionCommitments) > 0 {
 		if !channel.ConditionalPayments {
@@ -1602,6 +1698,21 @@ func (s ChannelState) ValidateForChannel(channel ChannelRecord, requireAllPartic
 		required = channel.Participants
 	}
 	return validateSignatureQuorum(state.Signatures, required, state)
+}
+
+func ValidatePreviousHashContinuity(channel ChannelRecord, nextState ChannelState) error {
+	channel = channel.Normalize()
+	nextState = nextState.Normalize()
+	if channel.ChannelType == ChannelTypeAsync {
+		return nil
+	}
+	if nextState.Nonce <= 1 {
+		return nil
+	}
+	if nextState.PreviousStateHash != channel.LatestState.StateHash {
+		return errors.New("payments channel state previous hash must match latest state")
+	}
+	return nil
 }
 
 func (s StateSignature) Normalize() StateSignature {

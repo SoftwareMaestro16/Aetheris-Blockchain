@@ -611,12 +611,56 @@ func TestLocalSignerWriteAheadPreventsDoubleSign(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, records, 1)
 
+	next := signedState(t, channel, 3, state.StateHash, []Balance{
+		{Participant: alice, Amount: "480"},
+		{Participant: bob, Amount: "520"},
+	})
+	persistence := SignerPersistence{Records: records, IsolationMode: SignerIsolationHardware}
+	persistence, _, err = persistence.SignState(next, alice)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), persistence.HighestSignedNonce(alice, channel.ChainID, channel.ChannelID, 1))
+	_, _, err = SignStateWithWriteAhead(persistence.Records, state, alice, SignerIsolationHardware)
+	require.ErrorContains(t, err, "below highest signed nonce")
+
 	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
 		{Participant: alice, Amount: "510"},
 		{Participant: bob, Amount: "490"},
 	})
 	_, _, err = SignStateWithWriteAhead(records, conflicting, alice, SignerIsolationHardware)
 	require.ErrorContains(t, err, "same nonce replacement")
+}
+
+func TestRollbackVectorsRejectNonceAndPreviousHashRollback(t *testing.T) {
+	alice := testAddress(0x67)
+	bob := testAddress(0x68)
+	channel := signedChannel(t, "rollback-vectors", "1000", alice, bob)
+	state := EmptyState()
+
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+
+	update := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "490"},
+		{Participant: bob, Amount: "510"},
+	})
+	state, err = AcceptSignedState(state, channel.ChannelID, update, 18)
+	require.NoError(t, err)
+
+	lowerNonce := signedState(t, channel, 1, "", []Balance{
+		{Participant: alice, Amount: "1000"},
+		{Participant: bob, Amount: "0"},
+	})
+	_, err = AcceptSignedState(state, channel.ChannelID, lowerNonce, 19)
+	require.ErrorContains(t, err, "strictly increase")
+
+	wrongPrevious := signedState(t, channel, 3, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "480"},
+		{Participant: bob, Amount: "520"},
+	})
+	require.ErrorContains(t, ValidatePreviousHashContinuity(state.Channels[0], wrongPrevious), "previous hash")
+	_, err = AcceptSignedState(state, channel.ChannelID, wrongPrevious, 20)
+	require.ErrorContains(t, err, "previous hash")
 }
 
 func TestDoubleSignFraudAppliesIndependentPenalties(t *testing.T) {
@@ -1237,6 +1281,51 @@ func TestForcedClosePreservesDisputeWindowAfterTimeout(t *testing.T) {
 	state, err = DisputeClose(state, channel.ChannelID, newer, bob, channel.LatestState.TimeoutHeight+2)
 	require.NoError(t, err)
 	require.Equal(t, newer.StateHash, state.Channels[0].PendingClose.State.StateHash)
+}
+
+func TestWatchServiceSubmitsStaleCloseDispute(t *testing.T) {
+	alice := testAddress(0x69)
+	bob := testAddress(0x6a)
+	watch := testAddress(0x6b)
+	channel := signedChannel(t, "watch-stale-close", "1000", alice, bob)
+	state := EmptyState()
+
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+
+	stale := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "500"},
+		{Participant: bob, Amount: "500"},
+	})
+	newer := signedState(t, channel, 3, stale.StateHash, []Balance{
+		{Participant: alice, Amount: "450"},
+		{Participant: bob, Amount: "550"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, stale, alice, 20, "0")
+	require.NoError(t, err)
+
+	state, err = SubmitWatchDispute(state, WatchDisputeSubmission{
+		WatchService:          watch,
+		Delegator:             bob,
+		ChannelID:             channel.ChannelID,
+		ClosingStateReference: stale.StateHash,
+		NewerState:            newer,
+		CurrentHeight:         21,
+		EvidenceHash:          HashParts("watch-dispute", channel.ChannelID, newer.StateHash),
+	})
+	require.NoError(t, err)
+	require.Equal(t, newer.StateHash, state.Channels[0].PendingClose.State.StateHash)
+
+	_, err = SubmitWatchDispute(state, WatchDisputeSubmission{
+		WatchService:          watch,
+		Delegator:             watch,
+		ChannelID:             channel.ChannelID,
+		ClosingStateReference: newer.StateHash,
+		NewerState:            newer,
+		CurrentHeight:         22,
+	})
+	require.ErrorContains(t, err, "delegator")
 }
 
 func TestFraudCloseSettlesAfterAcceptedProof(t *testing.T) {

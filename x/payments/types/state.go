@@ -134,8 +134,8 @@ func AcceptSignedState(state PaymentsState, channelID string, nextState ChannelS
 	if nextState.Nonce <= channel.LatestState.Nonce {
 		return PaymentsState{}, errors.New("payments channel state nonce must strictly increase")
 	}
-	if channel.ChannelType != ChannelTypeAsync && nextState.PreviousStateHash != channel.LatestState.StateHash {
-		return PaymentsState{}, errors.New("payments channel state previous hash must match latest state")
+	if err := ValidatePreviousHashContinuity(channel, nextState); err != nil {
+		return PaymentsState{}, err
 	}
 	nextChannel := channel
 	nextChannel.LatestState = nextState
@@ -577,6 +577,25 @@ func DisputeChannel(state PaymentsState, req ChannelDisputeRequest) (PaymentsSta
 	next.Events = append(next.Events, ChannelDisputeEvent(nextChannel, req.Submitter, req.CurrentHeight))
 	sortChannels(next.Channels)
 	return next, next.Validate()
+}
+
+func SubmitWatchDispute(state PaymentsState, submission WatchDisputeSubmission) (PaymentsState, error) {
+	state = state.Export()
+	submission = submission.Normalize()
+	channel, found := state.ChannelByID(submission.ChannelID)
+	if !found {
+		return PaymentsState{}, errors.New("payments channel not found")
+	}
+	if err := submission.ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, err
+	}
+	return DisputeChannel(state, ChannelDisputeRequest{
+		ChannelID:             submission.ChannelID,
+		ClosingStateReference: submission.ClosingStateReference,
+		NewerState:            submission.NewerState,
+		Submitter:             submission.Delegator,
+		CurrentHeight:         submission.CurrentHeight,
+	})
 }
 
 func SubmitFraudProof(state PaymentsState, channelID string, proof FraudProof, currentHeight uint64) (PaymentsState, error) {

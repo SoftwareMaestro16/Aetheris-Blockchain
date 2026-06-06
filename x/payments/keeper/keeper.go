@@ -252,6 +252,18 @@ func (k *Keeper) DisputeChannel(req paymentstypes.ChannelDisputeRequest) error {
 	return nil
 }
 
+func (k *Keeper) SubmitWatchDispute(submission paymentstypes.WatchDisputeSubmission) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.SubmitWatchDispute(k.genesis.State, submission)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) SubmitFraudProof(channelID string, proof paymentstypes.FraudProof, currentHeight uint64) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err
