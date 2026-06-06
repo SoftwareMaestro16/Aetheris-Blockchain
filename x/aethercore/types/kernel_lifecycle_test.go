@@ -112,14 +112,21 @@ func TestKernelLifecycleRejectsReceiptRootMismatchAndDuplicateReceipts(t *testin
 
 func TestAetherKernelStateKeysMatchSpecification(t *testing.T) {
 	require.Equal(t, AetherKernelParamsKey, "aek/params")
+	require.Equal(t, CoreParamsKey, "core/params")
 
 	zoneKey, err := AetherKernelZoneKey(ZoneIDFinancial)
 	require.NoError(t, err)
 	require.Equal(t, "aek/zones/FINANCIAL_ZONE", zoneKey)
+	coreZoneKey, err := CoreZoneKey(ZoneIDFinancial)
+	require.NoError(t, err)
+	require.Equal(t, "core/zones/FINANCIAL_ZONE", coreZoneKey)
 
 	commitmentKey, err := AetherKernelZoneCommitmentKey(7, ZoneIDFinancial)
 	require.NoError(t, err)
 	require.Equal(t, "aek/zone_commitments/00000000000000000007/FINANCIAL_ZONE", commitmentKey)
+	coreZoneRootKey, err := CoreZoneRootKey(7, ZoneIDFinancial)
+	require.NoError(t, err)
+	require.Equal(t, "core/zone_roots/00000000000000000007/FINANCIAL_ZONE", coreZoneRootKey)
 
 	for _, tc := range []struct {
 		name string
@@ -143,4 +150,20 @@ func TestAetherKernelStateKeysMatchSpecification(t *testing.T) {
 	routingKey, err := AetherKernelRoutingTableKey(3)
 	require.NoError(t, err)
 	require.Equal(t, "aek/routing/table/00000000000000000003", routingKey)
+
+	coreMessageKey, err := CoreMessageRootKey(7)
+	require.NoError(t, err)
+	require.Equal(t, "core/message_roots/00000000000000000007", coreMessageKey)
+	coreShardLayoutKey, err := CoreShardLayoutKey(ZoneIDFinancial, 2)
+	require.NoError(t, err)
+	require.Equal(t, "core/shard_layouts/FINANCIAL_ZONE/00000000000000000002", coreShardLayoutKey)
+	coreRoutingKey, err := CoreRoutingTableKey(3)
+	require.NoError(t, err)
+	require.Equal(t, "core/routing_table/00000000000000000003", coreRoutingKey)
+	coreProofKey, err := CoreProofRootKey(7, MessageProofRootType)
+	require.NoError(t, err)
+	require.Equal(t, "core/proof_roots/00000000000000000007/messages", coreProofKey)
+	coreFinalityKey, err := CoreFinalityKey(7)
+	require.NoError(t, err)
+	require.Equal(t, "core/finality/00000000000000000007", coreFinalityKey)
 }

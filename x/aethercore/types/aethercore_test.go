@@ -354,6 +354,30 @@ func TestAetherisNextTopologyBootstrapMatchesArchitectureDiagram(t *testing.T) {
 	require.Len(t, stateA.Export().RoutingTables, 1)
 }
 
+func TestFinalityRecordCommitsCoreFinalityState(t *testing.T) {
+	nodeA := nextReadyState(t,
+		[]ZoneID{ZoneIDFinancial, ZoneIDIdentity, ZoneIDApplication, ZoneIDContract},
+		[]ZoneID{ZoneIDFinancial, ZoneIDIdentity, ZoneIDApplication, ZoneIDContract},
+	)
+	nodeB := nextReadyState(t,
+		[]ZoneID{ZoneIDContract, ZoneIDApplication, ZoneIDIdentity, ZoneIDFinancial},
+		[]ZoneID{ZoneIDContract, ZoneIDApplication, ZoneIDIdentity, ZoneIDFinancial},
+	)
+
+	nodeA, recordA := appendTestFinalityRecord(t, nodeA, 10)
+	nodeB, recordB := appendTestFinalityRecord(t, nodeB, 10)
+
+	require.Equal(t, recordA, recordB)
+	require.Equal(t, uint64(11), recordA.EligibleDeliveryHeight)
+	require.Equal(t, recordA.GlobalStateRoot, nodeA.RootSnapshots[0].Finality.GlobalStateRoot)
+	require.NoError(t, ValidateRootAggregationInvariants(nodeA))
+	require.NoError(t, AssertReplayIdenticalRoots(nodeA, nodeB))
+
+	stored, found := nodeA.FinalityRecordAtHeight(10)
+	require.True(t, found)
+	require.Equal(t, recordA, stored)
+}
+
 func TestAetherisNextCommitmentRejectsMissingShardLayout(t *testing.T) {
 	state := EmptyState(TestnetParams())
 	var err error
@@ -887,6 +911,19 @@ func hasTopologyEdge(plan AetherisNextTopologyPlan, from string, to string, rela
 		}
 	}
 	return false
+}
+
+func appendTestFinalityRecord(t *testing.T, state AetherCoreState, height uint64) (AetherCoreState, FinalityRecord) {
+	t.Helper()
+	next, snapshot, err := CommitBlockRootsWithContributions(state, height, testContributions(height))
+	require.NoError(t, err)
+	table, found := next.LatestRoutingTableAtHeight(height)
+	require.True(t, found)
+	record, err := NewFinalityRecord(snapshot, testHash(fmt.Sprintf("%d/apphash", height)), uint64(len(next.CommitmentsAtHeight(height))), table.TableHash, next.Params.CrossZoneFinalityDelay)
+	require.NoError(t, err)
+	next, err = AppendFinalityRecord(next, record)
+	require.NoError(t, err)
+	return next, record
 }
 
 func testHash(value string) string {

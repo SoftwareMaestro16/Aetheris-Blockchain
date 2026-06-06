@@ -47,6 +47,21 @@ func ValidateRootAggregationInvariants(state CoreState) error {
 			return fmt.Errorf("aethercore invariant snapshot zone count mismatch at height %d", snapshot.Height)
 		}
 	}
+	for _, record := range state.FinalityRecords {
+		snapshot, found := state.RootSnapshotAtHeight(record.Height)
+		if !found {
+			return fmt.Errorf("aethercore invariant finality record missing snapshot at height %d", record.Height)
+		}
+		if record.GlobalStateRoot != snapshot.Finality.GlobalStateRoot {
+			return fmt.Errorf("aethercore invariant finality record global root mismatch at height %d", record.Height)
+		}
+		if record.GlobalMessageRoot != snapshot.Finality.GlobalMessageRoot {
+			return fmt.Errorf("aethercore invariant finality record message root mismatch at height %d", record.Height)
+		}
+		if record.ExecutionReceiptRoot != snapshot.Finality.ExecutionReceiptRoot {
+			return fmt.Errorf("aethercore invariant finality record receipt root mismatch at height %d", record.Height)
+		}
+	}
 	for _, manifest := range state.ExportManifests {
 		if err := ValidateKernelImport(state, manifest); err != nil {
 			return err
@@ -78,6 +93,14 @@ func AssertReplayIdenticalRoots(left CoreState, right CoreState) error {
 	for i := range left.RootSnapshots {
 		if left.RootSnapshots[i].Finality != right.RootSnapshots[i].Finality {
 			return fmt.Errorf("aethercore replay finality root mismatch at index %d", i)
+		}
+	}
+	if len(left.FinalityRecords) != len(right.FinalityRecords) {
+		return errors.New("aethercore replay finality record count mismatch")
+	}
+	for i := range left.FinalityRecords {
+		if left.FinalityRecords[i] != right.FinalityRecords[i] {
+			return fmt.Errorf("aethercore replay finality record mismatch at index %d", i)
 		}
 	}
 	return nil

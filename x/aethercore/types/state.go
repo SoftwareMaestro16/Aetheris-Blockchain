@@ -40,6 +40,7 @@ type CoreState struct {
 	ZoneCommitments    []ZoneCommitment
 	GlobalRoots        []GlobalStateRoot
 	RootSnapshots      []RootSnapshot
+	FinalityRecords    []FinalityRecord
 	ExportManifests    []ExportManifest
 }
 
@@ -60,6 +61,7 @@ func EmptyState(params ...AetherCoreParams) CoreState {
 		ZoneCommitments:    []ZoneCommitment{},
 		GlobalRoots:        []GlobalStateRoot{},
 		RootSnapshots:      []RootSnapshot{},
+		FinalityRecords:    []FinalityRecord{},
 		ExportManifests:    []ExportManifest{},
 	}
 }
@@ -349,6 +351,37 @@ func AddExportManifest(state CoreState, manifest ExportManifest) (CoreState, err
 	return next.Export(), next.Validate()
 }
 
+func AppendFinalityRecord(state CoreState, record FinalityRecord) (CoreState, error) {
+	if err := state.Validate(); err != nil {
+		return CoreState{}, err
+	}
+	if err := record.ValidateHash(); err != nil {
+		return CoreState{}, err
+	}
+	snapshot, found := state.RootSnapshotAtHeight(record.Height)
+	if !found {
+		return CoreState{}, fmt.Errorf("aethercore finality record missing root snapshot at height %d", record.Height)
+	}
+	if record.GlobalStateRoot != snapshot.Finality.GlobalStateRoot {
+		return CoreState{}, errors.New("aethercore finality record global root mismatch")
+	}
+	if record.GlobalMessageRoot != snapshot.Finality.GlobalMessageRoot {
+		return CoreState{}, errors.New("aethercore finality record message root mismatch")
+	}
+	if record.ExecutionReceiptRoot != snapshot.Finality.ExecutionReceiptRoot {
+		return CoreState{}, errors.New("aethercore finality record receipt root mismatch")
+	}
+	for _, existing := range state.FinalityRecords {
+		if existing.Height == record.Height {
+			return CoreState{}, errors.New("duplicate aethercore finality record height")
+		}
+	}
+	next := state.Clone()
+	next.FinalityRecords = append(next.FinalityRecords, record)
+	sortFinalityRecords(next.FinalityRecords)
+	return next.Export(), next.Validate()
+}
+
 func ImportState(state CoreState) (CoreState, error) {
 	if err := state.Validate(); err != nil {
 		return CoreState{}, err
@@ -367,6 +400,7 @@ func (s CoreState) Export() CoreState {
 	sortZoneCommitments(out.ZoneCommitments)
 	sortGlobalRoots(out.GlobalRoots)
 	sortRootSnapshots(out.RootSnapshots)
+	sortFinalityRecords(out.FinalityRecords)
 	sortExportManifests(out.ExportManifests)
 	return out
 }
@@ -383,6 +417,7 @@ func (s CoreState) Clone() CoreState {
 		ZoneCommitments:    append([]ZoneCommitment(nil), s.ZoneCommitments...),
 		GlobalRoots:        append([]GlobalStateRoot(nil), s.GlobalRoots...),
 		RootSnapshots:      cloneRootSnapshots(s.RootSnapshots),
+		FinalityRecords:    append([]FinalityRecord(nil), s.FinalityRecords...),
 		ExportManifests:    append([]ExportManifest(nil), s.ExportManifests...),
 	}
 	for i, descriptor := range zones {
@@ -420,6 +455,9 @@ func (s CoreState) Validate() error {
 		return err
 	}
 	if err := validateRootSnapshots(s.RootSnapshots); err != nil {
+		return err
+	}
+	if err := validateFinalityRecords(s.FinalityRecords, s.RootSnapshots); err != nil {
 		return err
 	}
 	return validateExportManifests(s.ExportManifests, s.GlobalRoots)
@@ -551,6 +589,15 @@ func (s CoreState) LatestRootSnapshot() (RootSnapshot, bool) {
 		return RootSnapshot{}, false
 	}
 	return s.RootSnapshots[len(s.RootSnapshots)-1], true
+}
+
+func (s CoreState) FinalityRecordAtHeight(height uint64) (FinalityRecord, bool) {
+	for _, record := range s.FinalityRecords {
+		if record.Height == height {
+			return record, true
+		}
+	}
+	return FinalityRecord{}, false
 }
 
 func (s CoreState) CommitmentsAtHeight(height uint64) []ZoneCommitment {
@@ -823,6 +870,38 @@ func validateRootSnapshots(snapshots []RootSnapshot) error {
 	return nil
 }
 
+func validateFinalityRecords(records []FinalityRecord, snapshots []RootSnapshot) error {
+	var previous uint64
+	seen := make(map[uint64]struct{}, len(records))
+	for i, record := range records {
+		if err := record.ValidateHash(); err != nil {
+			return err
+		}
+		if _, found := seen[record.Height]; found {
+			return errors.New("duplicate aethercore finality record height")
+		}
+		seen[record.Height] = struct{}{}
+		if i > 0 && previous >= record.Height {
+			return errors.New("aethercore finality records must be sorted canonically by height")
+		}
+		snapshot, found := rootSnapshotByHeight(snapshots, record.Height)
+		if !found {
+			return fmt.Errorf("aethercore finality record missing root snapshot at height %d", record.Height)
+		}
+		if record.GlobalStateRoot != snapshot.Finality.GlobalStateRoot {
+			return fmt.Errorf("aethercore finality record global root mismatch at height %d", record.Height)
+		}
+		if record.GlobalMessageRoot != snapshot.Finality.GlobalMessageRoot {
+			return fmt.Errorf("aethercore finality record message root mismatch at height %d", record.Height)
+		}
+		if record.ExecutionReceiptRoot != snapshot.Finality.ExecutionReceiptRoot {
+			return fmt.Errorf("aethercore finality record receipt root mismatch at height %d", record.Height)
+		}
+		previous = record.Height
+	}
+	return nil
+}
+
 func validateExportManifests(manifests []ExportManifest, roots []GlobalStateRoot) error {
 	var previous uint64
 	seen := make(map[uint64]struct{}, len(manifests))
@@ -879,6 +958,12 @@ func sortRootSnapshots(snapshots []RootSnapshot) {
 	})
 }
 
+func sortFinalityRecords(records []FinalityRecord) {
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].Height < records[j].Height
+	})
+}
+
 func sortExportManifests(manifests []ExportManifest) {
 	sort.SliceStable(manifests, func(i, j int) bool {
 		return manifests[i].Height < manifests[j].Height
@@ -901,4 +986,15 @@ func globalRootByHeight(roots []GlobalStateRoot, height uint64) (GlobalStateRoot
 		}
 	}
 	return GlobalStateRoot{}, false
+}
+
+func rootSnapshotByHeight(snapshots []RootSnapshot, height uint64) (RootSnapshot, bool) {
+	for _, snapshot := range snapshots {
+		if snapshot.Height == height {
+			out := snapshot
+			out.ProofRoots = append([]ProofRoot(nil), snapshot.ProofRoots...)
+			return out, true
+		}
+	}
+	return RootSnapshot{}, false
 }
