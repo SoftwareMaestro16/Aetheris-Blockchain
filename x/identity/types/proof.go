@@ -73,7 +73,7 @@ func IdentityStateLeaves(state IdentityState) ([]IdentityProofLeaf, error) {
 	if err := state.Validate(); err != nil {
 		return nil, err
 	}
-	leaves := make([]IdentityProofLeaf, 0, 1+len(state.Domains)+len(state.DomainNFTs)+len(state.Commits)+len(state.Resolvers)+len(state.ReverseRecords)+len(state.Subdomains)+len(state.Auctions)+len(state.PendingResolverUpdates))
+	leaves := make([]IdentityProofLeaf, 0, 1+len(state.Domains)+len(state.DomainNFTs)+len(state.Commits)+len(state.UsedCommitments)+len(state.Resolvers)+len(state.ReverseRecords)+len(state.Subdomains)+len(state.Auctions)+len(state.PendingResolverUpdates))
 	leaves = append(leaves, identityLeaf(identityParamsStoreKey, identityHash(
 		"identity-params",
 		fmt.Sprintf("%020d", state.Params.RegistrationPeriodBlocks),
@@ -98,6 +98,13 @@ func IdentityStateLeaves(state IdentityState) ([]IdentityProofLeaf, error) {
 	}
 	for _, commit := range state.Commits {
 		leaf, err := identityCommitLeaf(commit)
+		if err != nil {
+			return nil, err
+		}
+		leaves = append(leaves, leaf)
+	}
+	for _, commitment := range state.UsedCommitments {
+		leaf, err := identityUsedCommitmentLeaf(commitment)
 		if err != nil {
 			return nil, err
 		}
@@ -601,6 +608,23 @@ func identityCommitLeaf(commit DomainCommit) (IdentityProofLeaf, error) {
 		commit.CommitmentHash,
 		fmt.Sprintf("%020d", commit.CommitHeight),
 		fmt.Sprintf("%020d", commit.ExpiresHeight),
+	)), nil
+}
+
+func identityUsedCommitmentLeaf(commitment UsedDomainCommitment) (IdentityProofLeaf, error) {
+	key := IdentityStoreV2Prefix + "/used_commitments/" + commitment.CommitmentHash
+	return identityLeaf(key, identityHash(
+		"used-commitment",
+		commitment.CommitmentHash,
+		commitment.Name,
+		hex.EncodeToString(commitment.Owner),
+		fmt.Sprintf("%020d", commitment.RevealedHeight),
+		fmt.Sprintf("%020d", commitment.ExpiresHeight),
+		commitment.ChainID,
+		commitment.ModuleName,
+		fmt.Sprintf("%020d", commitment.ModuleVersion),
+		commitment.RegistrationClass,
+		commitment.MaxPrice,
 	)), nil
 }
 

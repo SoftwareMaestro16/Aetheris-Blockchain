@@ -39,6 +39,19 @@ func cloneDomainCommits(commits []DomainCommit) []DomainCommit {
 	return out
 }
 
+func cloneUsedDomainCommitment(commitment UsedDomainCommitment) UsedDomainCommitment {
+	commitment.Owner = cloneSpecAddress(commitment.Owner)
+	return commitment
+}
+
+func cloneUsedDomainCommitments(commitments []UsedDomainCommitment) []UsedDomainCommitment {
+	out := make([]UsedDomainCommitment, len(commitments))
+	for i, commitment := range commitments {
+		out[i] = cloneUsedDomainCommitment(commitment)
+	}
+	return out
+}
+
 func cloneResolver(record ResolverRecord) ResolverRecord {
 	record.Owner = cloneSpecAddress(record.Owner)
 	record.Primary = cloneSpecAddress(record.Primary)

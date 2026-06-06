@@ -23,27 +23,43 @@ type ZoneCommitment struct {
 }
 
 type GlobalStateRoot struct {
-	Height       uint64
-	ZonesRoot    string
-	ServicesRoot string
-	IdentityRoot string
-	StorageRoot  string
-	MessageRoot  string
-	ReceiptsRoot string
-	PaymentsRoot string
-	VMRoot       string
-	ParamsHash   string
-	GlobalRoot   string
+	Height        uint64
+	ZonesRoot     string
+	ServicesRoot  string
+	IdentityRoot  string
+	StorageRoot   string
+	MessageRoot   string
+	ReceiptsRoot  string
+	RoutingRoot   string
+	PaymentsRoot  string
+	ContractsRoot string
+	VMRoot        string
+	ParamsHash    string
+	GlobalRoot    string
 }
 
 type RootContributions struct {
-	IdentityRoot string
-	StorageRoot  string
-	MessageRoot  string
-	ReceiptsRoot string
-	PaymentsRoot string
-	VMRoot       string
-	ParamsHash   string
+	IdentityRoot  string
+	StorageRoot   string
+	MessageRoot   string
+	ReceiptsRoot  string
+	RoutingRoot   string
+	PaymentsRoot  string
+	ContractsRoot string
+	VMRoot        string
+	ParamsHash    string
+}
+
+type UnifiedStateRootSet struct {
+	ZonesRoot     string
+	ServicesRoot  string
+	IdentityRoot  string
+	StorageRoot   string
+	MessageRoot   string
+	ReceiptsRoot  string
+	RoutingRoot   string
+	PaymentsRoot  string
+	ContractsRoot string
 }
 
 func NewZoneCommitment(
@@ -145,16 +161,18 @@ func ComputeZoneCommitmentHash(c ZoneCommitment) string {
 
 func NewGlobalStateRoot(height uint64, zonesRoot string, servicesRoot string, contributions RootContributions) (GlobalStateRoot, error) {
 	root := GlobalStateRoot{
-		Height:       height,
-		ZonesRoot:    zonesRoot,
-		ServicesRoot: servicesRoot,
-		IdentityRoot: contributions.IdentityRoot,
-		StorageRoot:  contributions.StorageRoot,
-		MessageRoot:  contributions.MessageRoot,
-		ReceiptsRoot: contributions.ReceiptsRoot,
-		PaymentsRoot: contributions.PaymentsRoot,
-		VMRoot:       contributions.VMRoot,
-		ParamsHash:   contributions.ParamsHash,
+		Height:        height,
+		ZonesRoot:     zonesRoot,
+		ServicesRoot:  servicesRoot,
+		IdentityRoot:  contributions.IdentityRoot,
+		StorageRoot:   contributions.StorageRoot,
+		MessageRoot:   contributions.MessageRoot,
+		ReceiptsRoot:  contributions.ReceiptsRoot,
+		RoutingRoot:   contributions.RoutingRoot,
+		PaymentsRoot:  contributions.PaymentsRoot,
+		ContractsRoot: contributions.ContractsRoot,
+		VMRoot:        contributions.VMRoot,
+		ParamsHash:    contributions.ParamsHash,
 	}
 	if err := root.ValidateFormat(); err != nil {
 		return GlobalStateRoot{}, err
@@ -176,7 +194,13 @@ func (r RootContributions) Validate() error {
 	if err := ValidateHash("aethercore receipts root", r.ReceiptsRoot); err != nil {
 		return err
 	}
+	if err := ValidateHash("aethercore routing root", r.RoutingRoot); err != nil {
+		return err
+	}
 	if err := ValidateHash("aethercore payments root", r.PaymentsRoot); err != nil {
+		return err
+	}
+	if err := ValidateHash("aethercore contracts root", r.ContractsRoot); err != nil {
 		return err
 	}
 	if err := ValidateHash("aethercore VM root", r.VMRoot); err != nil {
@@ -207,7 +231,13 @@ func (r GlobalStateRoot) ValidateFormat() error {
 	if err := ValidateHash("aethercore receipts root", r.ReceiptsRoot); err != nil {
 		return err
 	}
+	if err := ValidateHash("aethercore routing root", r.RoutingRoot); err != nil {
+		return err
+	}
 	if err := ValidateHash("aethercore payments root", r.PaymentsRoot); err != nil {
+		return err
+	}
+	if err := ValidateHash("aethercore contracts root", r.ContractsRoot); err != nil {
 		return err
 	}
 	if err := ValidateHash("aethercore VM root", r.VMRoot); err != nil {
@@ -237,7 +267,7 @@ func (r GlobalStateRoot) ValidateHash() error {
 
 func ComputeGlobalStateRootHash(r GlobalStateRoot) string {
 	h := sha256.New()
-	writePart(h, "aetheris-aek-global-state-root-v1")
+	writePart(h, "aetheris-aek-global-state-root-v2")
 	writeUint64(h, r.Height)
 	writePart(h, r.ZonesRoot)
 	writePart(h, r.ServicesRoot)
@@ -245,10 +275,65 @@ func ComputeGlobalStateRootHash(r GlobalStateRoot) string {
 	writePart(h, r.StorageRoot)
 	writePart(h, r.MessageRoot)
 	writePart(h, r.ReceiptsRoot)
+	writePart(h, r.RoutingRoot)
 	writePart(h, r.PaymentsRoot)
+	writePart(h, r.ContractsRoot)
 	writePart(h, r.VMRoot)
 	writePart(h, r.ParamsHash)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (r GlobalStateRoot) RootSet() UnifiedStateRootSet {
+	return UnifiedStateRootSet{
+		ZonesRoot:     r.ZonesRoot,
+		ServicesRoot:  r.ServicesRoot,
+		IdentityRoot:  r.IdentityRoot,
+		StorageRoot:   r.StorageRoot,
+		MessageRoot:   r.MessageRoot,
+		ReceiptsRoot:  r.ReceiptsRoot,
+		RoutingRoot:   r.RoutingRoot,
+		PaymentsRoot:  r.PaymentsRoot,
+		ContractsRoot: r.ContractsRoot,
+	}
+}
+
+func (s UnifiedStateRootSet) Validate() error {
+	for _, item := range []struct {
+		name string
+		root string
+	}{
+		{"zones", s.ZonesRoot},
+		{"services", s.ServicesRoot},
+		{"identity", s.IdentityRoot},
+		{"storage", s.StorageRoot},
+		{"message", s.MessageRoot},
+		{"receipts", s.ReceiptsRoot},
+		{"routing", s.RoutingRoot},
+		{"payments", s.PaymentsRoot},
+		{"contracts", s.ContractsRoot},
+	} {
+		if err := ValidateHash("aethercore unified "+item.name+" root", item.root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ComputeUnifiedStateRootSetHash(s UnifiedStateRootSet) (string, error) {
+	if err := s.Validate(); err != nil {
+		return "", err
+	}
+	return hashRoot("aetheris-aek-unified-state-root-set-v1", func(w byteWriter) {
+		writePart(w, s.ZonesRoot)
+		writePart(w, s.ServicesRoot)
+		writePart(w, s.IdentityRoot)
+		writePart(w, s.StorageRoot)
+		writePart(w, s.MessageRoot)
+		writePart(w, s.ReceiptsRoot)
+		writePart(w, s.RoutingRoot)
+		writePart(w, s.PaymentsRoot)
+		writePart(w, s.ContractsRoot)
+	}), nil
 }
 
 func ComputeZoneCommitmentsRoot(height uint64, commitments []ZoneCommitment) (string, error) {
