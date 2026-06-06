@@ -10,10 +10,12 @@ import (
 type ImplementationRoadmapPhaseID string
 
 const (
-	RoadmapPhaseBaselineAudit     ImplementationRoadmapPhaseID = "phase-0-baseline-audit"
-	RoadmapPhaseKernelRootModel   ImplementationRoadmapPhaseID = "phase-1-kernel-root-model"
-	RoadmapPhaseCrossZoneMessages ImplementationRoadmapPhaseID = "phase-2-cross-zone-messages"
-	RoadmapPhaseCanonicalZones    ImplementationRoadmapPhaseID = "phase-3-canonical-zones"
+	RoadmapPhaseBaselineAudit              ImplementationRoadmapPhaseID = "phase-0-baseline-audit"
+	RoadmapPhaseKernelRootModel            ImplementationRoadmapPhaseID = "phase-1-kernel-root-model"
+	RoadmapPhaseCrossZoneMessages          ImplementationRoadmapPhaseID = "phase-2-cross-zone-messages"
+	RoadmapPhaseCanonicalZones             ImplementationRoadmapPhaseID = "phase-3-canonical-zones"
+	RoadmapPhaseServiceStorageRouting      ImplementationRoadmapPhaseID = "phase-4-services-storage-routing"
+	RoadmapPhaseIdentityPaymentIntegration ImplementationRoadmapPhaseID = "phase-5-identity-payment-integration"
 )
 
 type ImplementationRoadmap struct {
@@ -38,41 +40,62 @@ type RoadmapChecklistItem struct {
 }
 
 type RoadmapEvidence struct {
-	ModuleInventory                  []RoadmapModuleInventoryEntry
-	CanonicalZones                   []RoadmapCanonicalZoneEntry
-	CrossModuleDirectWritesAudited   bool
-	ExportImportTestsAdded           bool
-	ModuleInvariantHarnessAdded      bool
-	RootContributionInterfaceDesign  bool
-	CurrentStateReproducible         bool
-	ModuleBoundariesDocumented       bool
-	MigrationRiskListComplete        bool
-	AetherCoreModuleImplemented      bool
-	ZonesModuleImplemented           bool
-	ZoneRegistryImplemented          bool
-	GlobalStateRootImplemented       bool
-	BlockCommitmentMetadataQueries   bool
-	DefaultZoneRunnable              bool
-	DefaultZoneRootIncluded          bool
-	ExportImportPreservesRootMeta    bool
-	MessagesModuleImplemented        bool
-	MessageEnvelopeAdded             bool
-	FIFOPerSenderQueuesAdded         bool
-	NonceReplayProtectionAdded       bool
-	MessageReceiptsAdded             bool
-	BounceAndExpiryAdded             bool
-	MessageReceiptRootsAdded         bool
-	SameChainAsyncDeterministic      bool
-	MessageReceiptProofsAvailable    bool
-	ReplayAttemptsRejected           bool
-	FinancialZoneBoundaryMoved       bool
-	IdentityZoneActivated            bool
-	ApplicationZoneSchedulerBoundary bool
-	ContractZoneSkeletonAdded        bool
-	ZoneSpecificQueriesRoots         bool
-	FourCanonicalZonesExist          bool
-	CanonicalZoneSurfacesComplete    bool
-	CrossZoneMutationMessagesOnly    bool
+	ModuleInventory                    []RoadmapModuleInventoryEntry
+	CanonicalZones                     []RoadmapCanonicalZoneEntry
+	IdentityResolverOutputs            []string
+	CrossModuleDirectWritesAudited     bool
+	ExportImportTestsAdded             bool
+	ModuleInvariantHarnessAdded        bool
+	RootContributionInterfaceDesign    bool
+	CurrentStateReproducible           bool
+	ModuleBoundariesDocumented         bool
+	MigrationRiskListComplete          bool
+	AetherCoreModuleImplemented        bool
+	ZonesModuleImplemented             bool
+	ZoneRegistryImplemented            bool
+	GlobalStateRootImplemented         bool
+	BlockCommitmentMetadataQueries     bool
+	DefaultZoneRunnable                bool
+	DefaultZoneRootIncluded            bool
+	ExportImportPreservesRootMeta      bool
+	MessagesModuleImplemented          bool
+	MessageEnvelopeAdded               bool
+	FIFOPerSenderQueuesAdded           bool
+	NonceReplayProtectionAdded         bool
+	MessageReceiptsAdded               bool
+	BounceAndExpiryAdded               bool
+	MessageReceiptRootsAdded           bool
+	SameChainAsyncDeterministic        bool
+	MessageReceiptProofsAvailable      bool
+	ReplayAttemptsRejected             bool
+	FinancialZoneBoundaryMoved         bool
+	IdentityZoneActivated              bool
+	ApplicationZoneSchedulerBoundary   bool
+	ContractZoneSkeletonAdded          bool
+	ZoneSpecificQueriesRoots           bool
+	FourCanonicalZonesExist            bool
+	CanonicalZoneSurfacesComplete      bool
+	CrossZoneMutationMessagesOnly      bool
+	ServicesModuleImplemented          bool
+	StorageModuleImplemented           bool
+	RoutingModuleImplemented           bool
+	ServiceDescriptorsAdded            bool
+	StorageObjectCommitmentsAdded      bool
+	NodeRecordsRoutingEpochsAdded      bool
+	ProofAttachedLookupQueriesAdded    bool
+	ServiceDiscoveryDeterministic      bool
+	StorageCommitmentsProofVerifiable  bool
+	RoutingTableCommittedQueryable     bool
+	AETResolverOutputsUpgraded         bool
+	IdentityGraphAdded                 bool
+	CrossZoneIdentityBindingAdded      bool
+	PaymentsModuleImplemented          bool
+	PaymentEnvelopeAdded               bool
+	ConditionalTransfersAdded          bool
+	FinancialZoneSettlementAdded       bool
+	IdentityResolvesAllOutputTypes     bool
+	PaymentsSettleThroughFinancialZone bool
+	PaymentDisputesDeterministicReplay bool
 }
 
 type RoadmapModuleInventoryEntry struct {
@@ -104,6 +127,8 @@ func DefaultImplementationRoadmap() (ImplementationRoadmap, error) {
 		roadmapPhaseOne(inventory),
 		roadmapPhaseTwo(inventory),
 		roadmapPhaseThree(inventory),
+		roadmapPhaseFour(inventory),
+		roadmapPhaseFive(inventory),
 	}
 	return NewImplementationRoadmap(phases)
 }
@@ -138,8 +163,8 @@ func BuildRoadmapModuleInventory(manifest CosmosModuleRequirementManifest) []Roa
 
 func (roadmap ImplementationRoadmap) ValidateFormat() error {
 	roadmap.Phases = normalizeRoadmapPhases(roadmap.Phases)
-	if len(roadmap.Phases) != 4 {
-		return errors.New("aethercore implementation roadmap must include phases 0 through 3")
+	if len(roadmap.Phases) != 6 {
+		return errors.New("aethercore implementation roadmap must include phases 0 through 5")
 	}
 	if roadmap.Phases[0].PhaseID != RoadmapPhaseBaselineAudit || roadmap.Phases[0].PhaseNumber != 0 {
 		return errors.New("aethercore implementation roadmap phase 0 baseline audit is required")
@@ -152,6 +177,12 @@ func (roadmap ImplementationRoadmap) ValidateFormat() error {
 	}
 	if roadmap.Phases[3].PhaseID != RoadmapPhaseCanonicalZones || roadmap.Phases[3].PhaseNumber != 3 {
 		return errors.New("aethercore implementation roadmap phase 3 canonical zones is required")
+	}
+	if roadmap.Phases[4].PhaseID != RoadmapPhaseServiceStorageRouting || roadmap.Phases[4].PhaseNumber != 4 {
+		return errors.New("aethercore implementation roadmap phase 4 services storage routing is required")
+	}
+	if roadmap.Phases[5].PhaseID != RoadmapPhaseIdentityPaymentIntegration || roadmap.Phases[5].PhaseNumber != 5 {
+		return errors.New("aethercore implementation roadmap phase 5 identity payment integration is required")
 	}
 	for _, phase := range roadmap.Phases {
 		if err := phase.ValidateFormat(); err != nil {
@@ -196,6 +227,12 @@ func (phase ImplementationRoadmapPhase) ValidateFormat() error {
 	}
 	if phase.PhaseID == RoadmapPhaseCanonicalZones && phase.PhaseNumber != 3 {
 		return errors.New("aethercore canonical zones phase number must be 3")
+	}
+	if phase.PhaseID == RoadmapPhaseServiceStorageRouting && phase.PhaseNumber != 4 {
+		return errors.New("aethercore services storage routing phase number must be 4")
+	}
+	if phase.PhaseID == RoadmapPhaseIdentityPaymentIntegration && phase.PhaseNumber != 5 {
+		return errors.New("aethercore identity payment integration phase number must be 5")
 	}
 	if err := validateRoadmapText("aethercore implementation roadmap phase name", phase.Name); err != nil {
 		return err
@@ -350,6 +387,71 @@ func (e RoadmapEvidence) Validate(phaseID ImplementationRoadmapPhaseID) error {
 		if err := validateRoadmapCanonicalZones(e.CanonicalZones); err != nil {
 			return err
 		}
+	case RoadmapPhaseServiceStorageRouting:
+		if !e.ServicesModuleImplemented {
+			return errors.New("aethercore phase 4 must implement x/services")
+		}
+		if !e.StorageModuleImplemented {
+			return errors.New("aethercore phase 4 must implement x/storage")
+		}
+		if !e.RoutingModuleImplemented {
+			return errors.New("aethercore phase 4 must implement x/routing")
+		}
+		if !e.ServiceDescriptorsAdded {
+			return errors.New("aethercore phase 4 must add service descriptors")
+		}
+		if !e.StorageObjectCommitmentsAdded {
+			return errors.New("aethercore phase 4 must add storage object commitments")
+		}
+		if !e.NodeRecordsRoutingEpochsAdded {
+			return errors.New("aethercore phase 4 must add node records and routing table epochs")
+		}
+		if !e.ProofAttachedLookupQueriesAdded {
+			return errors.New("aethercore phase 4 must add proof-attached lookup queries")
+		}
+		if !e.ServiceDiscoveryDeterministic {
+			return errors.New("aethercore phase 4 exit requires deterministic service discovery")
+		}
+		if !e.StorageCommitmentsProofVerifiable {
+			return errors.New("aethercore phase 4 exit requires proof-verifiable storage commitments")
+		}
+		if !e.RoutingTableCommittedQueryable {
+			return errors.New("aethercore phase 4 exit requires committed and queryable routing table")
+		}
+	case RoadmapPhaseIdentityPaymentIntegration:
+		if !e.AETResolverOutputsUpgraded {
+			return errors.New("aethercore phase 5 must upgrade .aet resolver outputs")
+		}
+		if !e.IdentityGraphAdded {
+			return errors.New("aethercore phase 5 must add identity graph")
+		}
+		if !e.CrossZoneIdentityBindingAdded {
+			return errors.New("aethercore phase 5 must add cross-zone identity binding")
+		}
+		if !e.PaymentsModuleImplemented {
+			return errors.New("aethercore phase 5 must implement x/payments")
+		}
+		if !e.PaymentEnvelopeAdded {
+			return errors.New("aethercore phase 5 must add payment envelope")
+		}
+		if !e.ConditionalTransfersAdded {
+			return errors.New("aethercore phase 5 must add conditional transfers")
+		}
+		if !e.FinancialZoneSettlementAdded {
+			return errors.New("aethercore phase 5 must add settlement in Financial Zone")
+		}
+		if !e.IdentityResolvesAllOutputTypes {
+			return errors.New("aethercore phase 5 exit requires all identity resolver output types")
+		}
+		if err := validateRoadmapIdentityResolverOutputs(e.IdentityResolverOutputs); err != nil {
+			return err
+		}
+		if !e.PaymentsSettleThroughFinancialZone {
+			return errors.New("aethercore phase 5 exit requires payments to settle through Financial Zone")
+		}
+		if !e.PaymentDisputesDeterministicReplay {
+			return errors.New("aethercore phase 5 exit requires deterministic replay payment disputes")
+		}
 	default:
 		return fmt.Errorf("unknown aethercore implementation roadmap phase %q", phaseID)
 	}
@@ -358,7 +460,12 @@ func (e RoadmapEvidence) Validate(phaseID ImplementationRoadmapPhaseID) error {
 
 func IsImplementationRoadmapPhaseID(phaseID ImplementationRoadmapPhaseID) bool {
 	switch phaseID {
-	case RoadmapPhaseBaselineAudit, RoadmapPhaseKernelRootModel, RoadmapPhaseCrossZoneMessages, RoadmapPhaseCanonicalZones:
+	case RoadmapPhaseBaselineAudit,
+		RoadmapPhaseKernelRootModel,
+		RoadmapPhaseCrossZoneMessages,
+		RoadmapPhaseCanonicalZones,
+		RoadmapPhaseServiceStorageRouting,
+		RoadmapPhaseIdentityPaymentIntegration:
 		return true
 	default:
 		return false
@@ -517,6 +624,81 @@ func roadmapPhaseThree(inventory []RoadmapModuleInventoryEntry) ImplementationRo
 	}
 }
 
+func roadmapPhaseFour(inventory []RoadmapModuleInventoryEntry) ImplementationRoadmapPhase {
+	return ImplementationRoadmapPhase{
+		PhaseID:     RoadmapPhaseServiceStorageRouting,
+		PhaseNumber: 4,
+		Name:        "Services, Storage, and Routing",
+		Tasks: roadmapChecklist(
+			"implement-x-services",
+			"implement-x-storage",
+			"implement-x-routing",
+			"add-service-descriptors",
+			"add-storage-object-commitments",
+			"add-node-records-and-routing-table-epochs",
+			"add-proof-attached-lookup-queries",
+		),
+		ExitCriteria: roadmapChecklist(
+			"service-discovery-deterministic",
+			"storage-commitments-proof-verifiable",
+			"routing-table-committed-and-queryable",
+		),
+		Evidence: RoadmapEvidence{
+			ModuleInventory:                   inventory,
+			ServicesModuleImplemented:         true,
+			StorageModuleImplemented:          true,
+			RoutingModuleImplemented:          true,
+			ServiceDescriptorsAdded:           true,
+			StorageObjectCommitmentsAdded:     true,
+			NodeRecordsRoutingEpochsAdded:     true,
+			ProofAttachedLookupQueriesAdded:   true,
+			ServiceDiscoveryDeterministic:     true,
+			StorageCommitmentsProofVerifiable: true,
+			RoutingTableCommittedQueryable:    true,
+		},
+	}
+}
+
+func roadmapPhaseFive(inventory []RoadmapModuleInventoryEntry) ImplementationRoadmapPhase {
+	return ImplementationRoadmapPhase{
+		PhaseID:     RoadmapPhaseIdentityPaymentIntegration,
+		PhaseNumber: 5,
+		Name:        "Identity and Payment Integration",
+		Tasks: roadmapChecklist(
+			"upgrade-aet-resolver-outputs",
+			"add-identity-graph",
+			"add-cross-zone-identity-binding",
+			"implement-x-payments",
+			"add-payment-envelope",
+			"add-conditional-transfers",
+			"add-settlement-in-financial-zone",
+		),
+		ExitCriteria: roadmapChecklist(
+			"identity-resolves-account-zone-service-contract-composite",
+			"payments-settle-through-financial-zone",
+			"payment-disputes-resolve-by-deterministic-replay",
+		),
+		Evidence: RoadmapEvidence{
+			ModuleInventory:                    inventory,
+			IdentityResolverOutputs:            DefaultRoadmapIdentityResolverOutputs(),
+			AETResolverOutputsUpgraded:         true,
+			IdentityGraphAdded:                 true,
+			CrossZoneIdentityBindingAdded:      true,
+			PaymentsModuleImplemented:          true,
+			PaymentEnvelopeAdded:               true,
+			ConditionalTransfersAdded:          true,
+			FinancialZoneSettlementAdded:       true,
+			IdentityResolvesAllOutputTypes:     true,
+			PaymentsSettleThroughFinancialZone: true,
+			PaymentDisputesDeterministicReplay: true,
+		},
+	}
+}
+
+func DefaultRoadmapIdentityResolverOutputs() []string {
+	return []string{"account", "composite", "contract", "service", "zone"}
+}
+
 func DefaultRoadmapCanonicalZones() []RoadmapCanonicalZoneEntry {
 	return normalizeRoadmapCanonicalZones([]RoadmapCanonicalZoneEntry{
 		roadmapCanonicalZone(ZoneIDFinancial, "financial", RootType("financial")),
@@ -568,6 +750,7 @@ func normalizeRoadmapPhase(phase ImplementationRoadmapPhase) ImplementationRoadm
 	phase.ExitCriteria = normalizeRoadmapChecklist(phase.ExitCriteria)
 	phase.Evidence.ModuleInventory = normalizeRoadmapModuleInventory(phase.Evidence.ModuleInventory)
 	phase.Evidence.CanonicalZones = normalizeRoadmapCanonicalZones(phase.Evidence.CanonicalZones)
+	phase.Evidence.IdentityResolverOutputs = normalizeRoadmapStringSet(phase.Evidence.IdentityResolverOutputs)
 	phase.PhaseHash = strings.ToLower(strings.TrimSpace(phase.PhaseHash))
 	return phase
 }
@@ -616,6 +799,15 @@ func normalizeRoadmapCanonicalZones(entries []RoadmapCanonicalZoneEntry) []Roadm
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].ZoneID < out[j].ZoneID
 	})
+	return out
+}
+
+func normalizeRoadmapStringSet(values []string) []string {
+	out := make([]string, len(values))
+	for i, value := range values {
+		out[i] = strings.TrimSpace(value)
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -727,6 +919,35 @@ func validateRoadmapCanonicalZones(entries []RoadmapCanonicalZoneEntry) error {
 	return nil
 }
 
+func validateRoadmapIdentityResolverOutputs(outputs []string) error {
+	outputs = normalizeRoadmapStringSet(outputs)
+	required := DefaultRoadmapIdentityResolverOutputs()
+	if len(outputs) != len(required) {
+		return fmt.Errorf("aethercore roadmap identity resolver outputs must include %d output types", len(required))
+	}
+	seen := make(map[string]struct{}, len(outputs))
+	var previous string
+	for i, output := range outputs {
+		if err := validatePolicyID("aethercore roadmap identity resolver output", output); err != nil {
+			return err
+		}
+		if _, found := seen[output]; found {
+			return fmt.Errorf("duplicate aethercore roadmap identity resolver output %s", output)
+		}
+		seen[output] = struct{}{}
+		if i > 0 && previous >= output {
+			return errors.New("aethercore roadmap identity resolver outputs must be sorted canonically")
+		}
+		previous = output
+	}
+	for _, output := range required {
+		if _, found := seen[output]; !found {
+			return fmt.Errorf("missing aethercore roadmap identity resolver output %s", output)
+		}
+	}
+	return nil
+}
+
 func validateRoadmapText(field string, value string) error {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -780,6 +1001,11 @@ func writeRoadmapEvidence(w byteWriter, evidence RoadmapEvidence) {
 		writePart(w, fmt.Sprint(zone.QueryServer))
 		writePart(w, fmt.Sprint(zone.Keeper))
 	}
+	resolverOutputs := normalizeRoadmapStringSet(evidence.IdentityResolverOutputs)
+	writeUint64(w, uint64(len(resolverOutputs)))
+	for _, output := range resolverOutputs {
+		writePart(w, output)
+	}
 	writePart(w, fmt.Sprint(evidence.CrossModuleDirectWritesAudited))
 	writePart(w, fmt.Sprint(evidence.ExportImportTestsAdded))
 	writePart(w, fmt.Sprint(evidence.ModuleInvariantHarnessAdded))
@@ -813,4 +1039,24 @@ func writeRoadmapEvidence(w byteWriter, evidence RoadmapEvidence) {
 	writePart(w, fmt.Sprint(evidence.FourCanonicalZonesExist))
 	writePart(w, fmt.Sprint(evidence.CanonicalZoneSurfacesComplete))
 	writePart(w, fmt.Sprint(evidence.CrossZoneMutationMessagesOnly))
+	writePart(w, fmt.Sprint(evidence.ServicesModuleImplemented))
+	writePart(w, fmt.Sprint(evidence.StorageModuleImplemented))
+	writePart(w, fmt.Sprint(evidence.RoutingModuleImplemented))
+	writePart(w, fmt.Sprint(evidence.ServiceDescriptorsAdded))
+	writePart(w, fmt.Sprint(evidence.StorageObjectCommitmentsAdded))
+	writePart(w, fmt.Sprint(evidence.NodeRecordsRoutingEpochsAdded))
+	writePart(w, fmt.Sprint(evidence.ProofAttachedLookupQueriesAdded))
+	writePart(w, fmt.Sprint(evidence.ServiceDiscoveryDeterministic))
+	writePart(w, fmt.Sprint(evidence.StorageCommitmentsProofVerifiable))
+	writePart(w, fmt.Sprint(evidence.RoutingTableCommittedQueryable))
+	writePart(w, fmt.Sprint(evidence.AETResolverOutputsUpgraded))
+	writePart(w, fmt.Sprint(evidence.IdentityGraphAdded))
+	writePart(w, fmt.Sprint(evidence.CrossZoneIdentityBindingAdded))
+	writePart(w, fmt.Sprint(evidence.PaymentsModuleImplemented))
+	writePart(w, fmt.Sprint(evidence.PaymentEnvelopeAdded))
+	writePart(w, fmt.Sprint(evidence.ConditionalTransfersAdded))
+	writePart(w, fmt.Sprint(evidence.FinancialZoneSettlementAdded))
+	writePart(w, fmt.Sprint(evidence.IdentityResolvesAllOutputTypes))
+	writePart(w, fmt.Sprint(evidence.PaymentsSettleThroughFinancialZone))
+	writePart(w, fmt.Sprint(evidence.PaymentDisputesDeterministicReplay))
 }

@@ -6,11 +6,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultImplementationRoadmapCoversPhaseZeroThroughThree(t *testing.T) {
+func TestDefaultImplementationRoadmapCoversPhaseZeroThroughFive(t *testing.T) {
 	roadmap, err := DefaultImplementationRoadmap()
 	require.NoError(t, err)
 	require.NoError(t, roadmap.Validate())
-	require.Len(t, roadmap.Phases, 4)
+	require.Len(t, roadmap.Phases, 6)
 	require.Equal(t, RoadmapPhaseBaselineAudit, roadmap.Phases[0].PhaseID)
 	require.Equal(t, uint32(0), roadmap.Phases[0].PhaseNumber)
 	require.Equal(t, RoadmapPhaseKernelRootModel, roadmap.Phases[1].PhaseID)
@@ -19,6 +19,10 @@ func TestDefaultImplementationRoadmapCoversPhaseZeroThroughThree(t *testing.T) {
 	require.Equal(t, uint32(2), roadmap.Phases[2].PhaseNumber)
 	require.Equal(t, RoadmapPhaseCanonicalZones, roadmap.Phases[3].PhaseID)
 	require.Equal(t, uint32(3), roadmap.Phases[3].PhaseNumber)
+	require.Equal(t, RoadmapPhaseServiceStorageRouting, roadmap.Phases[4].PhaseID)
+	require.Equal(t, uint32(4), roadmap.Phases[4].PhaseNumber)
+	require.Equal(t, RoadmapPhaseIdentityPaymentIntegration, roadmap.Phases[5].PhaseID)
+	require.Equal(t, uint32(5), roadmap.Phases[5].PhaseNumber)
 	require.Equal(t, ComputeImplementationRoadmapHash(roadmap), roadmap.RoadmapHash)
 
 	phase0 := roadmap.Phases[0]
@@ -106,6 +110,51 @@ func TestDefaultImplementationRoadmapCoversPhaseZeroThroughThree(t *testing.T) {
 		require.NotEmpty(t, zone.StateNamespace)
 		require.NotEmpty(t, zone.RootType)
 	}
+
+	phase4 := roadmap.Phases[4]
+	requireRoadmapTask(t, phase4, "implement-x-services")
+	requireRoadmapTask(t, phase4, "implement-x-storage")
+	requireRoadmapTask(t, phase4, "implement-x-routing")
+	requireRoadmapTask(t, phase4, "add-service-descriptors")
+	requireRoadmapTask(t, phase4, "add-storage-object-commitments")
+	requireRoadmapTask(t, phase4, "add-node-records-and-routing-table-epochs")
+	requireRoadmapTask(t, phase4, "add-proof-attached-lookup-queries")
+	requireRoadmapExit(t, phase4, "service-discovery-deterministic")
+	requireRoadmapExit(t, phase4, "storage-commitments-proof-verifiable")
+	requireRoadmapExit(t, phase4, "routing-table-committed-and-queryable")
+	require.True(t, phase4.Evidence.ServicesModuleImplemented)
+	require.True(t, phase4.Evidence.StorageModuleImplemented)
+	require.True(t, phase4.Evidence.RoutingModuleImplemented)
+	require.True(t, phase4.Evidence.ServiceDescriptorsAdded)
+	require.True(t, phase4.Evidence.StorageObjectCommitmentsAdded)
+	require.True(t, phase4.Evidence.NodeRecordsRoutingEpochsAdded)
+	require.True(t, phase4.Evidence.ProofAttachedLookupQueriesAdded)
+	require.True(t, phase4.Evidence.ServiceDiscoveryDeterministic)
+	require.True(t, phase4.Evidence.StorageCommitmentsProofVerifiable)
+	require.True(t, phase4.Evidence.RoutingTableCommittedQueryable)
+
+	phase5 := roadmap.Phases[5]
+	requireRoadmapTask(t, phase5, "upgrade-aet-resolver-outputs")
+	requireRoadmapTask(t, phase5, "add-identity-graph")
+	requireRoadmapTask(t, phase5, "add-cross-zone-identity-binding")
+	requireRoadmapTask(t, phase5, "implement-x-payments")
+	requireRoadmapTask(t, phase5, "add-payment-envelope")
+	requireRoadmapTask(t, phase5, "add-conditional-transfers")
+	requireRoadmapTask(t, phase5, "add-settlement-in-financial-zone")
+	requireRoadmapExit(t, phase5, "identity-resolves-account-zone-service-contract-composite")
+	requireRoadmapExit(t, phase5, "payments-settle-through-financial-zone")
+	requireRoadmapExit(t, phase5, "payment-disputes-resolve-by-deterministic-replay")
+	require.Equal(t, []string{"account", "composite", "contract", "service", "zone"}, phase5.Evidence.IdentityResolverOutputs)
+	require.True(t, phase5.Evidence.AETResolverOutputsUpgraded)
+	require.True(t, phase5.Evidence.IdentityGraphAdded)
+	require.True(t, phase5.Evidence.CrossZoneIdentityBindingAdded)
+	require.True(t, phase5.Evidence.PaymentsModuleImplemented)
+	require.True(t, phase5.Evidence.PaymentEnvelopeAdded)
+	require.True(t, phase5.Evidence.ConditionalTransfersAdded)
+	require.True(t, phase5.Evidence.FinancialZoneSettlementAdded)
+	require.True(t, phase5.Evidence.IdentityResolvesAllOutputTypes)
+	require.True(t, phase5.Evidence.PaymentsSettleThroughFinancialZone)
+	require.True(t, phase5.Evidence.PaymentDisputesDeterministicReplay)
 }
 
 func TestImplementationRoadmapInventoryIsDerivedFromModuleManifest(t *testing.T) {
@@ -237,11 +286,77 @@ func TestImplementationRoadmapRejectsIncompletePhaseThreeEvidence(t *testing.T) 
 	require.ErrorContains(t, directMutation.Validate(), "cross-zone mutation only through messages")
 }
 
+func TestImplementationRoadmapRejectsIncompletePhaseFourEvidence(t *testing.T) {
+	roadmap, err := DefaultImplementationRoadmap()
+	require.NoError(t, err)
+
+	noServices := roadmap
+	noServices.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noServices.Phases[4].Evidence.ServicesModuleImplemented = false
+	noServices.Phases[4].PhaseHash = ComputeRoadmapPhaseHash(noServices.Phases[4])
+	noServices.RoadmapHash = ComputeImplementationRoadmapHash(noServices)
+	require.ErrorContains(t, noServices.Validate(), "x/services")
+
+	noStorageCommitments := roadmap
+	noStorageCommitments.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noStorageCommitments.Phases[4].Evidence.StorageObjectCommitmentsAdded = false
+	noStorageCommitments.Phases[4].PhaseHash = ComputeRoadmapPhaseHash(noStorageCommitments.Phases[4])
+	noStorageCommitments.RoadmapHash = ComputeImplementationRoadmapHash(noStorageCommitments)
+	require.ErrorContains(t, noStorageCommitments.Validate(), "storage object commitments")
+
+	noProofLookup := roadmap
+	noProofLookup.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noProofLookup.Phases[4].Evidence.ProofAttachedLookupQueriesAdded = false
+	noProofLookup.Phases[4].PhaseHash = ComputeRoadmapPhaseHash(noProofLookup.Phases[4])
+	noProofLookup.RoadmapHash = ComputeImplementationRoadmapHash(noProofLookup)
+	require.ErrorContains(t, noProofLookup.Validate(), "proof-attached lookup queries")
+
+	notQueryable := roadmap
+	notQueryable.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	notQueryable.Phases[4].Evidence.RoutingTableCommittedQueryable = false
+	notQueryable.Phases[4].PhaseHash = ComputeRoadmapPhaseHash(notQueryable.Phases[4])
+	notQueryable.RoadmapHash = ComputeImplementationRoadmapHash(notQueryable)
+	require.ErrorContains(t, notQueryable.Validate(), "committed and queryable routing table")
+}
+
+func TestImplementationRoadmapRejectsIncompletePhaseFiveEvidence(t *testing.T) {
+	roadmap, err := DefaultImplementationRoadmap()
+	require.NoError(t, err)
+
+	noResolverOutputUpgrade := roadmap
+	noResolverOutputUpgrade.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noResolverOutputUpgrade.Phases[5].Evidence.AETResolverOutputsUpgraded = false
+	noResolverOutputUpgrade.Phases[5].PhaseHash = ComputeRoadmapPhaseHash(noResolverOutputUpgrade.Phases[5])
+	noResolverOutputUpgrade.RoadmapHash = ComputeImplementationRoadmapHash(noResolverOutputUpgrade)
+	require.ErrorContains(t, noResolverOutputUpgrade.Validate(), ".aet resolver outputs")
+
+	missingOutput := roadmap
+	missingOutput.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	missingOutput.Phases[5].Evidence.IdentityResolverOutputs = []string{"account", "composite", "contract", "service"}
+	missingOutput.Phases[5].PhaseHash = ComputeRoadmapPhaseHash(missingOutput.Phases[5])
+	missingOutput.RoadmapHash = ComputeImplementationRoadmapHash(missingOutput)
+	require.ErrorContains(t, missingOutput.Validate(), "must include 5 output types")
+
+	noFinancialSettlement := roadmap
+	noFinancialSettlement.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noFinancialSettlement.Phases[5].Evidence.PaymentsSettleThroughFinancialZone = false
+	noFinancialSettlement.Phases[5].PhaseHash = ComputeRoadmapPhaseHash(noFinancialSettlement.Phases[5])
+	noFinancialSettlement.RoadmapHash = ComputeImplementationRoadmapHash(noFinancialSettlement)
+	require.ErrorContains(t, noFinancialSettlement.Validate(), "settle through Financial Zone")
+
+	noDeterministicDisputes := roadmap
+	noDeterministicDisputes.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noDeterministicDisputes.Phases[5].Evidence.PaymentDisputesDeterministicReplay = false
+	noDeterministicDisputes.Phases[5].PhaseHash = ComputeRoadmapPhaseHash(noDeterministicDisputes.Phases[5])
+	noDeterministicDisputes.RoadmapHash = ComputeImplementationRoadmapHash(noDeterministicDisputes)
+	require.ErrorContains(t, noDeterministicDisputes.Validate(), "deterministic replay payment disputes")
+}
+
 func TestImplementationRoadmapHashIsCanonical(t *testing.T) {
 	roadmap, err := DefaultImplementationRoadmap()
 	require.NoError(t, err)
 
-	reversed, err := NewImplementationRoadmap([]ImplementationRoadmapPhase{roadmap.Phases[3], roadmap.Phases[2], roadmap.Phases[1], roadmap.Phases[0]})
+	reversed, err := NewImplementationRoadmap([]ImplementationRoadmapPhase{roadmap.Phases[5], roadmap.Phases[4], roadmap.Phases[3], roadmap.Phases[2], roadmap.Phases[1], roadmap.Phases[0]})
 	require.NoError(t, err)
 	require.Equal(t, roadmap.RoadmapHash, reversed.RoadmapHash)
 	require.Equal(t, roadmap.Phases, reversed.Phases)
