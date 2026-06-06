@@ -3941,6 +3941,74 @@ func TestNetworkingAPIIntegrationBuildsDiagnosticsProofsAndRouteHints(t *testing
 	require.NotEmpty(t, routeResponse.ResultHash)
 }
 
+func TestNetworkingComponentMapCoversNodeComponentsAndSupportModules(t *testing.T) {
+	componentMap := DefaultNetworkingComponentMap()
+	require.NoError(t, ValidateNetworkingComponentMap(componentMap))
+	require.Len(t, componentMap.NodeComponents, 7)
+	require.Len(t, componentMap.SupportModules, 5)
+	require.Equal(t, ComputeNetworkingComponentMapRoot(componentMap), componentMap.MapRoot)
+
+	ana, found, err := ComponentByName(componentMap, ComponentANA)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, LayerL0Physical, ana.Layer)
+	require.True(t, ana.RuntimeOnly)
+	require.True(t, ana.AdvisoryUntilCommitted)
+	require.False(t, ana.WritesCommittedState)
+	require.Contains(t, ana.Channels, ChannelConsensus)
+
+	mesh, found, err := ComponentByName(componentMap, ComponentMesh)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, LayerL3Application, mesh.Layer)
+	require.Contains(t, mesh.DependsOn, ComponentOverlayMgr)
+	require.Contains(t, mesh.DependsOn, ComponentRL2)
+
+	messages, found, err := SupportModuleByName(componentMap, SupportModuleMessages)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, messages.OwnsCommittedState)
+	require.True(t, messages.ConsumesNetworkProofs)
+	require.Contains(t, messages.StateObjects, "cross-zone message receipts")
+	require.Contains(t, messages.StateObjects, "replay protection")
+}
+
+func TestNetworkingComponentMapRejectsUnsafeBoundariesAndMissingLinks(t *testing.T) {
+	componentMap := DefaultNetworkingComponentMap()
+	componentMap.NodeComponents[0].WritesCommittedState = true
+	componentMap.MapRoot = ComputeNetworkingComponentMapRoot(componentMap)
+	require.ErrorContains(t, ValidateNetworkingComponentMap(componentMap), "committed state")
+
+	componentMap = DefaultNetworkingComponentMap()
+	for i := range componentMap.NodeComponents {
+		if componentMap.NodeComponents[i].Component == ComponentMesh {
+			componentMap.NodeComponents[i].DependsOn = []NodeSideComponent{ComponentOverlayMgr, "missing"}
+		}
+	}
+	componentMap.MapRoot = ComputeNetworkingComponentMapRoot(componentMap)
+	require.ErrorContains(t, ValidateNetworkingComponentMap(componentMap), "missing dependency")
+
+	componentMap = DefaultNetworkingComponentMap()
+	componentMap.SupportModules[0].AllowsExternalNetworkCall = true
+	componentMap.MapRoot = ComputeNetworkingComponentMapRoot(componentMap)
+	require.ErrorContains(t, ValidateNetworkingComponentMap(componentMap), "external network calls")
+
+	componentMap = DefaultNetworkingComponentMap()
+	filteredModules := make([]OnChainSupportModuleSpec, 0, len(componentMap.SupportModules)-1)
+	for _, module := range componentMap.SupportModules {
+		if module.Module != SupportModuleMessages {
+			filteredModules = append(filteredModules, module)
+		}
+	}
+	componentMap.SupportModules = filteredModules
+	componentMap.MapRoot = ComputeNetworkingComponentMapRoot(componentMap)
+	require.ErrorContains(t, ValidateNetworkingComponentMap(componentMap), "x/messages")
+
+	componentMap = DefaultNetworkingComponentMap()
+	componentMap.MapRoot = HashParts("wrong-component-map-root")
+	require.ErrorContains(t, ValidateNetworkingComponentMap(componentMap), "root mismatch")
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
