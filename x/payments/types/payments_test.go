@@ -331,6 +331,95 @@ func TestPaymentAPISurfaceVirtualChannelMessagesAndQueries(t *testing.T) {
 	require.Equal(t, string(PaymentAPIEventFraudProofRejected), rejected.EventType)
 }
 
+func TestPaymentRoadmapPhase0ThroughPhase2VectorsAndExitCriteria(t *testing.T) {
+	report := BuildPaymentImplementationRoadmap()
+	require.NoError(t, ValidatePaymentImplementationRoadmap(report))
+	require.Equal(t, report.TotalTaskCount, report.CompletedTaskCount)
+	require.Equal(t, uint64(22), report.TotalTaskCount)
+	require.Equal(t, uint64(10), report.ExitCriteriaCount)
+
+	alice := testAddress(0x46)
+	router := testAddress(0x47)
+	bob := testAddress(0x48)
+	channel := signedChannel(t, "roadmap-base-channel", "1000", alice, bob)
+	state := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "700"},
+		{Participant: bob, Amount: "300"},
+	})
+	promise := signedPromiseWithHashLock(t, channel, "roadmap-promise", alice, bob, "10", "1", 3, 32, HashParts("roadmap-preimage"))
+	asyncChannel := signedAsyncChannel(t, "roadmap-async-channel", "1000", []Balance{
+		{Participant: alice, Amount: "1000"},
+		{Participant: bob, Amount: "0"},
+	}, 10, 10, "50", 60, alice, bob)
+	delta := signedAsyncDelta(t, asyncChannel, "roadmap-delta", alice, bob, "5", 3, 4, 35)
+	_, vc, _ := virtualChannelFixture(t, "roadmap-virtual", alice, router, bob, "100", 60)
+
+	vectors, err := BuildPaymentRoadmapCanonicalTestVectors(channel, state, promise, delta, vc)
+	require.NoError(t, err)
+	require.NoError(t, ValidatePaymentRoadmapCanonicalTestVectors(vectors))
+	vectorTypes := make([]string, 0, len(vectors))
+	for _, vector := range vectors {
+		vectorTypes = append(vectorTypes, vector.ObjectType)
+	}
+	require.ElementsMatch(t, []string{SignatureObjectState, SignatureObjectPromise, SignatureObjectDelta, SignatureObjectVirtual}, vectorTypes)
+
+	closeState := signedState(t, channel, 3, state.StateHash, []Balance{
+		{Participant: alice, Amount: "650"},
+		{Participant: bob, Amount: "350"},
+	})
+	conflicting := signedState(t, channel, 3, state.StateHash, []Balance{
+		{Participant: alice, Amount: "640"},
+		{Participant: bob, Amount: "360"},
+	})
+	proof := FraudProof{
+		ProofID:         HashParts("roadmap-double-sign-proof", channel.ChannelID),
+		ProofType:       FraudProofTypeDoubleSign,
+		SubmittedBy:     bob,
+		OffendingSigner: alice,
+		StateA:          closeState,
+		StateB:          conflicting,
+		PenaltyDenom:    NativeDenom,
+		PenaltyAmount:   "20",
+		EvidenceHash:    HashParts("roadmap-double-sign-evidence", closeState.StateHash, conflicting.StateHash),
+	}
+	fraudVectors, err := BuildPaymentRoadmapFraudProofVectors(channel, []FraudProof{proof})
+	require.NoError(t, err)
+	require.NoError(t, ValidatePaymentRoadmapFraudProofVectors(fraudVectors))
+	require.Equal(t, PenaltyClassDoubleSign, fraudVectors[0].PenaltyClass)
+
+	upstream := signedPromiseWithHashLock(t, channel, "roadmap-upstream", alice, bob, "10", "0", 4, 58, HashParts("roadmap-route-preimage"))
+	downstream := signedPromiseWithHashLock(t, channel, "roadmap-downstream", alice, bob, "10", "0", 5, 40, HashParts("roadmap-route-preimage"))
+	validTimeout := BuildPaymentRoadmapTimeoutOrderingVector(channel, upstream, downstream, DefaultTimeoutMargin)
+	require.NoError(t, ValidatePaymentRoadmapTimeoutVector(validTimeout, true))
+	unsafeDownstream := signedPromiseWithHashLock(t, channel, "roadmap-downstream-unsafe", alice, bob, "10", "0", 6, 55, HashParts("roadmap-route-preimage"))
+	invalidTimeout := BuildPaymentRoadmapTimeoutOrderingVector(channel, upstream, unsafeDownstream, DefaultTimeoutMargin)
+	require.NoError(t, ValidatePaymentRoadmapTimeoutVector(invalidTimeout, false))
+
+	firstPlan, err := AccessPlanForSettlementOperation(SettlementOperation{
+		OperationID:   HashParts("roadmap-plan-first"),
+		OperationType: BatchOperationSettle,
+		ChannelID:     channel.ChannelID,
+		Nonce:         3,
+		StateHash:     closeState.StateHash,
+	}, 50)
+	require.NoError(t, err)
+	secondChannel := signedChannel(t, "roadmap-second-channel", "1000", alice, router)
+	secondPlan, err := AccessPlanForSettlementOperation(SettlementOperation{
+		OperationID:   HashParts("roadmap-plan-second"),
+		OperationType: BatchOperationSettle,
+		ChannelID:     secondChannel.ChannelID,
+		Nonce:         2,
+		StateHash:     secondChannel.LatestState.StateHash,
+	}, 50)
+	require.NoError(t, err)
+	blockPlan, err := BuildPaymentRoadmapBlockSTMPlan([]BlockSTMAccessPlan{firstPlan, secondPlan})
+	require.NoError(t, err)
+	require.Zero(t, blockPlan.ConflictCount)
+	require.True(t, blockPlan.DeferredAccounting)
+	require.NotEmpty(t, blockPlan.IndependentGroups)
+	require.NoError(t, ValidateHash("roadmap blockstm plan hash", blockPlan.PlanHash))
+}
+
 func TestSettlementArbitrationBoundaryRejectsNonDeterministicInputs(t *testing.T) {
 	alice := testAddress(0x12)
 	bob := testAddress(0x13)
