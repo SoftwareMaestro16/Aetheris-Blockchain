@@ -38,6 +38,7 @@ import (
 	storagerenttypes "github.com/sovereign-l1/l1/x/storage-rent/types"
 	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	validatorregistrytypes "github.com/sovereign-l1/l1/x/validator-registry/types"
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
 
@@ -67,6 +68,7 @@ var aetherCorePrototypeModules = []string{
 var aetherCoreSystemModules = []string{
 	constitutiontypes.ModuleName,
 	systemregistrytypes.ModuleName,
+	validatorregistrytypes.ModuleName,
 	configtypes.ModuleName,
 }
 
@@ -103,6 +105,7 @@ func AetherCoreSystemStoreKeys() []string {
 	return []string{
 		constitutiontypes.StoreKey,
 		systemregistrytypes.StoreKey,
+		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,
 	}
 }
@@ -124,6 +127,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		epochstypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
@@ -150,6 +154,7 @@ func aetherCoreEndBlockerOrder() []string {
 		protocolpooltypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
@@ -186,6 +191,7 @@ func aetherCoreInitGenesisOrder() []string {
 		protocolpooltypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
@@ -225,6 +231,7 @@ func aetherCoreExportGenesisOrder() []string {
 		epochstypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,

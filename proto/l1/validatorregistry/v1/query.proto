@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package l1.validatorregistry.v1;
+
+import "l1/validatorregistry/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/validatorregistry/v1;validatorregistryv1";
+
+service Query {
+  rpc Validator(QueryValidatorRequest) returns (QueryValidatorResponse);
+  rpc Validators(QueryValidatorsRequest) returns (QueryValidatorsResponse);
+  rpc ValidatorKeys(QueryValidatorKeysRequest) returns (QueryValidatorKeysResponse);
+  rpc ValidatorPerformance(QueryValidatorPerformanceRequest) returns (QueryValidatorPerformanceResponse);
+  rpc ValidatorSecurityStatus(QueryValidatorSecurityStatusRequest) returns (QueryValidatorSecurityStatusResponse);
+  rpc ValidatorHistory(QueryValidatorHistoryRequest) returns (QueryValidatorHistoryResponse);
+}
+
+message QueryValidatorRequest {
+  string operator_address = 1;
+}
+
+message QueryValidatorResponse {
+  ValidatorRecord validator = 1;
+}
+
+message QueryValidatorsRequest {}
+
+message QueryValidatorsResponse {
+  repeated ValidatorRecord validators = 1;
+}
+
+message QueryValidatorKeysRequest {
+  string operator_address = 1;
+}
+
+message QueryValidatorKeysResponse {
+  string operator_address = 1;
+  string consensus_public_key = 2;
+  string pending_consensus_public_key = 3;
+  uint64 consensus_key_activation_height = 4;
+  string treasury_address = 5;
+  string withdrawal_address = 6;
+  string emergency_address = 7;
+}
+
+message QueryValidatorPerformanceRequest {
+  string operator_address = 1;
+}
+
+message QueryValidatorPerformanceResponse {
+  string operator_address = 1;
+  repeated UptimeSample uptime_history = 2;
+  repeated LatencySample latency_history = 3;
+  uint64 missed_block_counter = 4;
+  uint32 reputation_score = 5;
+  uint32 performance_score = 6;
+}
+
+message QueryValidatorSecurityStatusRequest {
+  string operator_address = 1;
+}
+
+message QueryValidatorSecurityStatusResponse {
+  string operator_address = 1;
+  string status = 2;
+  repeated SlashingEvent slashing_history = 3;
+  repeated string external_audit_flags = 4;
+}
+
+message QueryValidatorHistoryRequest {
+  string operator_address = 1;
+}
+
+message QueryValidatorHistoryResponse {
+  repeated ValidatorHistoryEvent history = 1;
+}

@@ -80,6 +80,8 @@ import (
 	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	validatorregistrykeeper "github.com/sovereign-l1/l1/x/validator-registry/keeper"
+	validatorregistrytypes "github.com/sovereign-l1/l1/x/validator-registry/types"
 	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
@@ -238,6 +240,7 @@ func (app *L1App) initKeepers(
 	app.EpochsKeeper.SetHooks(epochstypes.NewMultiEpochHooks())
 	app.ConstitutionKeeper = constitutionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[constitutiontypes.StoreKey]))
 	app.SystemRegistryKeeper = systemregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[systemregistrytypes.StoreKey]))
+	app.ValidatorRegistryKeeper = validatorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorregistrytypes.StoreKey]))
 	app.ConfigKeeper = configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey]))
 
 	app.TokenFactoryKeeper = tokenfactorykeeper.NewKeeper(

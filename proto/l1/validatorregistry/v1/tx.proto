@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package l1.validatorregistry.v1;
+
+import "l1/validatorregistry/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/validatorregistry/v1;validatorregistryv1";
+
+service Msg {
+  rpc RegisterValidator(MsgRegisterValidator) returns (MsgRegisterValidatorResponse);
+  rpc UpdateValidatorMetadata(MsgUpdateValidatorMetadata) returns (MsgUpdateValidatorMetadataResponse);
+  rpc RotateConsensusKey(MsgRotateConsensusKey) returns (MsgRotateConsensusKeyResponse);
+  rpc UpdateWithdrawalAddress(MsgUpdateWithdrawalAddress) returns (MsgUpdateWithdrawalAddressResponse);
+  rpc UpdateTreasuryAddress(MsgUpdateTreasuryAddress) returns (MsgUpdateTreasuryAddressResponse);
+  rpc RetireValidator(MsgRetireValidator) returns (MsgRetireValidatorResponse);
+  rpc SetValidatorCapabilities(MsgSetValidatorCapabilities) returns (MsgSetValidatorCapabilitiesResponse);
+}
+
+message MsgRegisterValidator {
+  string authority = 1;
+  ValidatorRecord validator = 2;
+  uint64 height = 3;
+}
+
+message MsgRegisterValidatorResponse {
+  ValidatorRecord validator = 1;
+}
+
+message MsgUpdateValidatorMetadata {
+  string authority = 1;
+  string operator_address = 2;
+  string metadata = 3;
+  uint64 height = 4;
+}
+
+message MsgUpdateValidatorMetadataResponse {
+  ValidatorRecord validator = 1;
+}
+
+message MsgRotateConsensusKey {
+  string authority = 1;
+  string operator_address = 2;
+  string new_consensus_public_key = 3;
+  uint64 activation_height = 4;
+  uint64 height = 5;
+}
+
+message MsgRotateConsensusKeyResponse {
+  ValidatorRecord validator = 1;
+}
+
+message MsgUpdateWithdrawalAddress {
+  string authority = 1;
+  string operator_address = 2;
+  string withdrawal_address = 3;
+  uint64 height = 4;
+}
+
+message MsgUpdateWithdrawalAddressResponse {
+  ValidatorRecord validator = 1;
+}
+
+message MsgUpdateTreasuryAddress {
+  string authority = 1;
+  string operator_address = 2;
+  string treasury_address = 3;
+  uint64 height = 4;
+}
+
+message MsgUpdateTreasuryAddressResponse {
+  ValidatorRecord validator = 1;
+}
+
+message MsgRetireValidator {
+  string authority = 1;
+  string operator_address = 2;
+  uint64 height = 3;
+}
+
+message MsgRetireValidatorResponse {
+  ValidatorRecord validator = 1;
+}
+
+message MsgSetValidatorCapabilities {
+  string authority = 1;
+  string operator_address = 2;
+  repeated string capabilities = 3;
+  uint64 height = 4;
+}
+
+message MsgSetValidatorCapabilitiesResponse {
+  ValidatorRecord validator = 1;
+}

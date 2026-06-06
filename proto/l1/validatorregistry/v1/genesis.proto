@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package l1.validatorregistry.v1;
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/validatorregistry/v1;validatorregistryv1";
+
+message Params {
+  string authority = 1;
+  uint32 max_validators = 2;
+  uint32 max_metadata_bytes = 3;
+  uint32 max_consensus_key_bytes = 4;
+  uint32 max_capabilities = 5;
+  uint32 max_capability_bytes = 6;
+  uint32 max_history_entries = 7;
+  uint32 max_audit_flags = 8;
+  uint32 max_audit_flag_bytes = 9;
+  uint64 consensus_key_rotation_delay = 10;
+}
+
+message CommissionPolicy {
+  uint32 current_rate_bps = 1;
+  uint32 max_rate_bps = 2;
+  uint32 max_change_rate_bps = 3;
+}
+
+message UptimeSample {
+  uint64 height = 1;
+  uint32 uptime_bps = 2;
+}
+
+message LatencySample {
+  uint64 height = 1;
+  uint64 latency_ms = 2;
+}
+
+message SlashingEvent {
+  uint64 height = 1;
+  uint32 fraction_bps = 2;
+  string reason = 3;
+}
+
+message ValidatorHistoryEvent {
+  uint64 height = 1;
+  string type = 2;
+  string detail = 3;
+}
+
+message ValidatorRecord {
+  string operator_address = 1;
+  string consensus_public_key = 2;
+  string pending_consensus_public_key = 3;
+  uint64 consensus_key_activation_height = 4;
+  string treasury_address = 5;
+  string withdrawal_address = 6;
+  string emergency_address = 7;
+  string metadata = 8;
+  CommissionPolicy commission_policy = 9;
+  repeated UptimeSample uptime_history = 10;
+  repeated LatencySample latency_history = 11;
+  uint64 missed_block_counter = 12;
+  repeated SlashingEvent slashing_history = 13;
+  uint32 reputation_score = 14;
+  uint32 performance_score = 15;
+  string status = 16;
+  repeated string capabilities = 17;
+  uint64 self_bond = 18;
+  repeated string external_audit_flags = 19;
+  repeated ValidatorHistoryEvent history = 20;
+}
+
+message State {
+  repeated ValidatorRecord validators = 1;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  Params params = 2;
+  State state = 3;
+}
