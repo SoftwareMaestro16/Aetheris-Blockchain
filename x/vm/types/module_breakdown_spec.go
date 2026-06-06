@@ -10,8 +10,10 @@ import (
 )
 
 const (
-	AVMModulePathAVM   AVMCosmosModulePath = "x/avm"
-	AVMModulePathAsync AVMCosmosModulePath = "x/async"
+	AVMModulePathActors        AVMCosmosModulePath = "x/actors"
+	AVMModulePathAVM           AVMCosmosModulePath = "x/avm"
+	AVMModulePathAsync         AVMCosmosModulePath = "x/async"
+	AVMModulePathContinuations AVMCosmosModulePath = "x/continuations"
 
 	AVMModuleStateAVMParams        AVMModuleStateObject = "AVMParams"
 	AVMModuleStateRouteDescriptor  AVMModuleStateObject = "RouteDescriptor"
@@ -25,6 +27,15 @@ const (
 	AVMModuleStateDeadLetter      AVMModuleStateObject = "DeadLetterRecord"
 	AVMModuleStateReplayTombstone AVMModuleStateObject = "ReplayTombstone"
 
+	AVMModuleStateActorRecord     AVMModuleStateObject = "ActorRecord"
+	AVMModuleStateActorMailbox    AVMModuleStateObject = "ActorMailbox"
+	AVMModuleStateActorState      AVMModuleStateObject = "ActorState"
+	AVMModuleStateActorPermission AVMModuleStateObject = "ActorPermission"
+
+	AVMModuleStateContinuation        AVMModuleStateObject = "Continuation"
+	AVMModuleStateContinuationQueue   AVMModuleStateObject = "ContinuationQueue"
+	AVMModuleStateContinuationReceipt AVMModuleStateObject = "ContinuationReceipt"
+
 	AVMModuleMsgSubmitAVMMessage       AVMModuleMessageName = "MsgSubmitAVMMessage"
 	AVMModuleMsgRegisterRoute          AVMModuleMessageName = "MsgRegisterRoute"
 	AVMModuleMsgUpdateAVMParams        AVMModuleMessageName = "MsgUpdateAVMParams"
@@ -34,6 +45,16 @@ const (
 	AVMModuleMsgCancelAsyncMessage AVMModuleMessageName = "MsgCancelAsyncMessage"
 	AVMModuleMsgRetryAsyncMessage  AVMModuleMessageName = "MsgRetryAsyncMessage"
 	AVMModuleMsgExpireAsyncMessage AVMModuleMessageName = "MsgExpireAsyncMessage"
+
+	AVMModuleMsgCreateActor      AVMModuleMessageName = "MsgCreateActor"
+	AVMModuleMsgSendActorMessage AVMModuleMessageName = "MsgSendActorMessage"
+	AVMModuleMsgUpdateActor      AVMModuleMessageName = "MsgUpdateActor"
+	AVMModuleMsgPauseActor       AVMModuleMessageName = "MsgPauseActor"
+
+	AVMModuleMsgCreateContinuation AVMModuleMessageName = "MsgCreateContinuation"
+	AVMModuleMsgResumeContinuation AVMModuleMessageName = "MsgResumeContinuation"
+	AVMModuleMsgCancelContinuation AVMModuleMessageName = "MsgCancelContinuation"
+	AVMModuleMsgExpireContinuation AVMModuleMessageName = "MsgExpireContinuation"
 
 	AVMModuleQueryAVMParams        AVMModuleQueryName = "QueryAVMParams"
 	AVMModuleQueryAVMRoot          AVMModuleQueryName = "QueryAVMRoot"
@@ -45,6 +66,14 @@ const (
 	AVMModuleQueryZoneQueue       AVMModuleQueryName = "QueryZoneQueue"
 	AVMModuleQueryDeadLetter      AVMModuleQueryName = "QueryDeadLetter"
 	AVMModuleQueryReplayTombstone AVMModuleQueryName = "QueryReplayTombstone"
+
+	AVMModuleQueryActor        AVMModuleQueryName = "QueryActor"
+	AVMModuleQueryActorMailbox AVMModuleQueryName = "QueryActorMailbox"
+	AVMModuleQueryActorState   AVMModuleQueryName = "QueryActorState"
+
+	AVMModuleQueryContinuation         AVMModuleQueryName = "QueryContinuation"
+	AVMModuleQueryContinuationsByActor AVMModuleQueryName = "QueryContinuationsByActor"
+	AVMModuleQueryContinuationReceipt  AVMModuleQueryName = "QueryContinuationReceipt"
 
 	MaxAVMModulePurposeItems = 16
 	MaxAVMModuleSurfaceItems = 32
@@ -79,8 +108,16 @@ func DefaultAVMCosmosModuleRegistry() (AVMCosmosModuleRegistry, error) {
 	if err != nil {
 		return AVMCosmosModuleRegistry{}, err
 	}
+	actors, err := DefaultXActorsModuleBreakdown()
+	if err != nil {
+		return AVMCosmosModuleRegistry{}, err
+	}
+	continuations, err := DefaultXContinuationsModuleBreakdown()
+	if err != nil {
+		return AVMCosmosModuleRegistry{}, err
+	}
 	return NewAVMCosmosModuleRegistry(AVMCosmosModuleRegistry{
-		Modules: []AVMCosmosModuleBreakdown{avm, async},
+		Modules: []AVMCosmosModuleBreakdown{avm, async, actors, continuations},
 	})
 }
 
@@ -149,6 +186,65 @@ func DefaultXAsyncModuleBreakdown() (AVMCosmosModuleBreakdown, error) {
 	})
 }
 
+func DefaultXActorsModuleBreakdown() (AVMCosmosModuleBreakdown, error) {
+	return NewAVMCosmosModuleBreakdown(AVMCosmosModuleBreakdown{
+		ModulePath: AVMModulePathActors,
+		Purpose: []string{
+			"actor_records",
+			"actor_state",
+			"continuation_integration",
+			"mailboxes",
+			"permissions",
+		},
+		StateObjects: []AVMModuleStateObject{
+			AVMModuleStateActorRecord,
+			AVMModuleStateActorMailbox,
+			AVMModuleStateActorState,
+			AVMModuleStateActorPermission,
+		},
+		Messages: []AVMModuleMessageName{
+			AVMModuleMsgCreateActor,
+			AVMModuleMsgSendActorMessage,
+			AVMModuleMsgUpdateActor,
+			AVMModuleMsgPauseActor,
+		},
+		Queries: []AVMModuleQueryName{
+			AVMModuleQueryActor,
+			AVMModuleQueryActorMailbox,
+			AVMModuleQueryActorState,
+		},
+	})
+}
+
+func DefaultXContinuationsModuleBreakdown() (AVMCosmosModuleBreakdown, error) {
+	return NewAVMCosmosModuleBreakdown(AVMCosmosModuleBreakdown{
+		ModulePath: AVMModulePathContinuations,
+		Purpose: []string{
+			"async_workflow_state",
+			"continuation_queues",
+			"continuation_receipts",
+			"expiry",
+			"resume",
+		},
+		StateObjects: []AVMModuleStateObject{
+			AVMModuleStateContinuation,
+			AVMModuleStateContinuationQueue,
+			AVMModuleStateContinuationReceipt,
+		},
+		Messages: []AVMModuleMessageName{
+			AVMModuleMsgCreateContinuation,
+			AVMModuleMsgResumeContinuation,
+			AVMModuleMsgCancelContinuation,
+			AVMModuleMsgExpireContinuation,
+		},
+		Queries: []AVMModuleQueryName{
+			AVMModuleQueryContinuation,
+			AVMModuleQueryContinuationsByActor,
+			AVMModuleQueryContinuationReceipt,
+		},
+	})
+}
+
 func NewAVMCosmosModuleBreakdown(breakdown AVMCosmosModuleBreakdown) (AVMCosmosModuleBreakdown, error) {
 	breakdown = canonicalAVMCosmosModuleBreakdown(breakdown)
 	breakdown.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(breakdown)
@@ -194,7 +290,7 @@ func (r AVMCosmosModuleRegistry) Validate() error {
 	r = canonicalAVMCosmosModuleRegistry(r)
 	required := AllAVMCosmosModulePaths()
 	if len(r.Modules) != len(required) {
-		return errors.New("AVM module registry must contain x/avm and x/async")
+		return errors.New("AVM module registry must contain x/actors, x/avm, x/async, and x/continuations")
 	}
 	seen := make(map[AVMCosmosModulePath]struct{}, len(r.Modules))
 	for i, module := range r.Modules {
@@ -227,12 +323,12 @@ func (r AVMCosmosModuleRegistry) Validate() error {
 }
 
 func AllAVMCosmosModulePaths() []AVMCosmosModulePath {
-	return []AVMCosmosModulePath{AVMModulePathAVM, AVMModulePathAsync}
+	return []AVMCosmosModulePath{AVMModulePathActors, AVMModulePathAVM, AVMModulePathAsync, AVMModulePathContinuations}
 }
 
 func IsAVMCosmosModulePath(path AVMCosmosModulePath) bool {
 	switch path {
-	case AVMModulePathAVM, AVMModulePathAsync:
+	case AVMModulePathActors, AVMModulePathAVM, AVMModulePathAsync, AVMModulePathContinuations:
 		return true
 	default:
 		return false
@@ -322,10 +418,14 @@ func validateAVMModuleQueries(module AVMCosmosModulePath, values []AVMModuleQuer
 
 func requiredAVMModuleStateObjects(module AVMCosmosModulePath) []AVMModuleStateObject {
 	switch module {
+	case AVMModulePathActors:
+		return []AVMModuleStateObject{AVMModuleStateActorRecord, AVMModuleStateActorMailbox, AVMModuleStateActorState, AVMModuleStateActorPermission}
 	case AVMModulePathAVM:
 		return []AVMModuleStateObject{AVMModuleStateAVMParams, AVMModuleStateRouteDescriptor, AVMModuleStateAVMRoot, AVMModuleStateExecutionReceipt, AVMModuleStateRuntimeVersion}
 	case AVMModulePathAsync:
 		return []AVMModuleStateObject{AVMModuleStateAsyncMessage, AVMModuleStateZoneQueue, AVMModuleStateRetryRecord, AVMModuleStateDeadLetter, AVMModuleStateReplayTombstone}
+	case AVMModulePathContinuations:
+		return []AVMModuleStateObject{AVMModuleStateContinuation, AVMModuleStateContinuationQueue, AVMModuleStateContinuationReceipt}
 	default:
 		return nil
 	}
@@ -333,10 +433,14 @@ func requiredAVMModuleStateObjects(module AVMCosmosModulePath) []AVMModuleStateO
 
 func requiredAVMModuleMessages(module AVMCosmosModulePath) []AVMModuleMessageName {
 	switch module {
+	case AVMModulePathActors:
+		return []AVMModuleMessageName{AVMModuleMsgCreateActor, AVMModuleMsgSendActorMessage, AVMModuleMsgUpdateActor, AVMModuleMsgPauseActor}
 	case AVMModulePathAVM:
 		return []AVMModuleMessageName{AVMModuleMsgSubmitAVMMessage, AVMModuleMsgRegisterRoute, AVMModuleMsgUpdateAVMParams, AVMModuleMsgScheduleRuntimeUpgrade}
 	case AVMModulePathAsync:
 		return []AVMModuleMessageName{AVMModuleMsgSubmitAsyncMessage, AVMModuleMsgCancelAsyncMessage, AVMModuleMsgRetryAsyncMessage, AVMModuleMsgExpireAsyncMessage}
+	case AVMModulePathContinuations:
+		return []AVMModuleMessageName{AVMModuleMsgCreateContinuation, AVMModuleMsgResumeContinuation, AVMModuleMsgCancelContinuation, AVMModuleMsgExpireContinuation}
 	default:
 		return nil
 	}
@@ -344,10 +448,14 @@ func requiredAVMModuleMessages(module AVMCosmosModulePath) []AVMModuleMessageNam
 
 func requiredAVMModuleQueries(module AVMCosmosModulePath) []AVMModuleQueryName {
 	switch module {
+	case AVMModulePathActors:
+		return []AVMModuleQueryName{AVMModuleQueryActor, AVMModuleQueryActorMailbox, AVMModuleQueryActorState}
 	case AVMModulePathAVM:
 		return []AVMModuleQueryName{AVMModuleQueryAVMParams, AVMModuleQueryAVMRoot, AVMModuleQueryRoute, AVMModuleQueryExecutionReceipt, AVMModuleQueryRuntimeVersion}
 	case AVMModulePathAsync:
 		return []AVMModuleQueryName{AVMModuleQueryAsyncMessage, AVMModuleQueryZoneQueue, AVMModuleQueryDeadLetter, AVMModuleQueryReplayTombstone}
+	case AVMModulePathContinuations:
+		return []AVMModuleQueryName{AVMModuleQueryContinuation, AVMModuleQueryContinuationsByActor, AVMModuleQueryContinuationReceipt}
 	default:
 		return nil
 	}

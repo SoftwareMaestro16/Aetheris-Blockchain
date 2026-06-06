@@ -11,15 +11,17 @@ func TestAVMCosmosModuleRegistryCoversSection18(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, registry.Validate())
 	require.Equal(t, ComputeAVMCosmosModuleRegistryHash(registry), registry.RegistryHash)
-	require.Len(t, registry.Modules, 2)
+	require.Len(t, registry.Modules, 4)
 
 	byPath := map[AVMCosmosModulePath]AVMCosmosModuleBreakdown{}
 	for _, module := range registry.Modules {
 		require.NoError(t, module.Validate())
 		byPath[module.ModulePath] = module
 	}
+	require.Contains(t, byPath, AVMModulePathActors)
 	require.Contains(t, byPath, AVMModulePathAVM)
 	require.Contains(t, byPath, AVMModulePathAsync)
+	require.Contains(t, byPath, AVMModulePathContinuations)
 }
 
 func TestXAVMModuleBreakdownMatchesSection181(t *testing.T) {
@@ -89,6 +91,67 @@ func TestXAsyncModuleBreakdownMatchesSection182(t *testing.T) {
 	}, breakdown.Queries)
 }
 
+func TestXActorsModuleBreakdownMatchesSection183(t *testing.T) {
+	breakdown, err := DefaultXActorsModuleBreakdown()
+	require.NoError(t, err)
+	require.NoError(t, breakdown.Validate())
+	require.Equal(t, AVMModulePathActors, breakdown.ModulePath)
+
+	require.Contains(t, breakdown.Purpose, "actor_records")
+	require.Contains(t, breakdown.Purpose, "mailboxes")
+	require.Contains(t, breakdown.Purpose, "actor_state")
+	require.Contains(t, breakdown.Purpose, "permissions")
+	require.Contains(t, breakdown.Purpose, "continuation_integration")
+
+	require.ElementsMatch(t, []AVMModuleStateObject{
+		AVMModuleStateActorRecord,
+		AVMModuleStateActorMailbox,
+		AVMModuleStateActorState,
+		AVMModuleStateActorPermission,
+	}, breakdown.StateObjects)
+	require.ElementsMatch(t, []AVMModuleMessageName{
+		AVMModuleMsgCreateActor,
+		AVMModuleMsgSendActorMessage,
+		AVMModuleMsgUpdateActor,
+		AVMModuleMsgPauseActor,
+	}, breakdown.Messages)
+	require.ElementsMatch(t, []AVMModuleQueryName{
+		AVMModuleQueryActor,
+		AVMModuleQueryActorMailbox,
+		AVMModuleQueryActorState,
+	}, breakdown.Queries)
+}
+
+func TestXContinuationsModuleBreakdownMatchesSection184(t *testing.T) {
+	breakdown, err := DefaultXContinuationsModuleBreakdown()
+	require.NoError(t, err)
+	require.NoError(t, breakdown.Validate())
+	require.Equal(t, AVMModulePathContinuations, breakdown.ModulePath)
+
+	require.Contains(t, breakdown.Purpose, "async_workflow_state")
+	require.Contains(t, breakdown.Purpose, "continuation_queues")
+	require.Contains(t, breakdown.Purpose, "continuation_receipts")
+	require.Contains(t, breakdown.Purpose, "resume")
+	require.Contains(t, breakdown.Purpose, "expiry")
+
+	require.ElementsMatch(t, []AVMModuleStateObject{
+		AVMModuleStateContinuation,
+		AVMModuleStateContinuationQueue,
+		AVMModuleStateContinuationReceipt,
+	}, breakdown.StateObjects)
+	require.ElementsMatch(t, []AVMModuleMessageName{
+		AVMModuleMsgCreateContinuation,
+		AVMModuleMsgResumeContinuation,
+		AVMModuleMsgCancelContinuation,
+		AVMModuleMsgExpireContinuation,
+	}, breakdown.Messages)
+	require.ElementsMatch(t, []AVMModuleQueryName{
+		AVMModuleQueryContinuation,
+		AVMModuleQueryContinuationsByActor,
+		AVMModuleQueryContinuationReceipt,
+	}, breakdown.Queries)
+}
+
 func TestAVMModuleBreakdownRejectsMissingAndCrossOwnedSurface(t *testing.T) {
 	breakdown, err := DefaultXAVMModuleBreakdown()
 	require.NoError(t, err)
@@ -107,6 +170,18 @@ func TestAVMModuleBreakdownRejectsMissingAndCrossOwnedSurface(t *testing.T) {
 	async.Queries = removeAVMModuleQueryForTest(async.Queries, AVMModuleQueryReplayTombstone)
 	async.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(async)
 	require.ErrorContains(t, async.Validate(), "query")
+
+	actors, err := DefaultXActorsModuleBreakdown()
+	require.NoError(t, err)
+	actors.StateObjects = append(actors.StateObjects, AVMModuleStateContinuation)
+	actors.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(actors)
+	require.ErrorContains(t, actors.Validate(), "state object")
+
+	continuations, err := DefaultXContinuationsModuleBreakdown()
+	require.NoError(t, err)
+	continuations.Messages = removeAVMModuleMessageForTest(continuations.Messages, AVMModuleMsgExpireContinuation)
+	continuations.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(continuations)
+	require.ErrorContains(t, continuations.Validate(), "message")
 }
 
 func TestAVMModuleRegistryRejectsMissingModuleAndHashMismatch(t *testing.T) {
@@ -116,7 +191,7 @@ func TestAVMModuleRegistryRejectsMissingModuleAndHashMismatch(t *testing.T) {
 	missing := registry
 	missing.Modules = missing.Modules[:1]
 	missing.RegistryHash = ComputeAVMCosmosModuleRegistryHash(missing)
-	require.ErrorContains(t, missing.Validate(), "x/avm and x/async")
+	require.ErrorContains(t, missing.Validate(), "x/actors, x/avm, x/async, and x/continuations")
 
 	mutated := registry
 	mutated.Modules[0].Purpose[0] = "changed"
