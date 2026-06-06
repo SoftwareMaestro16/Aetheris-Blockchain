@@ -4048,6 +4048,131 @@ func blockSTMConflictKeys(conflicts []BlockSTMConflict) []string {
 	return out
 }
 
+func TestSecurityThreatModelCoversRequiredThreats(t *testing.T) {
+	threats := DefaultThreatModel()
+	require.NoError(t, ValidateThreatModelCoverage(threats))
+	require.Len(t, threats, 15)
+
+	seen := make(map[SecurityThreat]struct{}, len(threats))
+	for _, entry := range threats {
+		require.True(t, IsSecurityThreat(entry.Threat))
+		require.NotEmpty(t, entry.Controls)
+		for _, control := range entry.Controls {
+			require.True(t, IsSecurityGuarantee(control))
+		}
+		seen[entry.Threat] = struct{}{}
+	}
+	require.Contains(t, seen, SecurityThreatStaleStateClose)
+	require.Contains(t, seen, SecurityThreatSameNonceDoubleSign)
+	require.Contains(t, seen, SecurityThreatReplayAcrossDomain)
+	require.Contains(t, seen, SecurityThreatSettlementBatchConflictAmplify)
+
+	require.ErrorContains(t, ValidateThreatModelCoverage(threats[:len(threats)-1]), "missing payments security threat")
+	withDuplicate := append([]ThreatModelEntry{}, threats...)
+	withDuplicate[1] = withDuplicate[0]
+	require.ErrorContains(t, ValidateThreatModelCoverage(withDuplicate), "duplicate payments security threat")
+}
+
+func TestSecurityModelReportTracksCloseDisputeReplayAndCollateralGuarantees(t *testing.T) {
+	alice := testAddress(0xf1)
+	bob := testAddress(0xf2)
+	channel := signedChannel(t, "security-model-report", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+
+	report, err := BuildSecurityModelReport(state)
+	require.NoError(t, err)
+	require.NoError(t, report.Validate())
+	require.Len(t, report.Guarantees, 8)
+
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "450"},
+		{Participant: bob, Amount: "550"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+	require.NoError(t, ValidateLockedCollateralForFinality(state))
+	report, err = BuildSecurityModelReport(state)
+	require.NoError(t, err)
+	require.NoError(t, report.Validate())
+
+	newerState := signedState(t, channel, 3, closeState.StateHash, []Balance{
+		{Participant: alice, Amount: "425"},
+		{Participant: bob, Amount: "575"},
+	})
+	state, err = DisputeClose(state, channel.ChannelID, newerState, bob, 21)
+	require.NoError(t, err)
+	require.Equal(t, newerState.Nonce, state.Channels[0].PendingClose.State.Nonce)
+	require.Equal(t, newerState.Nonce, state.Channels[0].DisputedNonce)
+	require.NoError(t, ValidateLockedCollateralForFinality(state))
+	report, err = BuildSecurityModelReport(state)
+	require.NoError(t, err)
+	require.NoError(t, report.Validate())
+
+	state, settlement, err := FinalizeSettlement(state, channel.ChannelID, 40)
+	require.NoError(t, err)
+	require.NoError(t, settlement.ValidateForChannel(state.Channels[0]))
+	require.NoError(t, ValidateLockedCollateralForFinality(state))
+	report, err = BuildSecurityModelReport(state)
+	require.NoError(t, err)
+	require.NoError(t, report.Validate())
+	require.NotEmpty(t, state.ClosedChannels)
+}
+
+func TestSecurityModelReportFailsWhenGuaranteeStateIsBroken(t *testing.T) {
+	alice := testAddress(0xf3)
+	bob := testAddress(0xf4)
+	channel := signedChannel(t, "security-model-broken", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+	state.Channels[0].Participants = nil
+
+	_, err := BuildSecurityModelReport(state)
+	require.ErrorContains(t, err, string(SecurityGuaranteeUnilateralClose))
+}
+
+func TestSecurityModelUsesPenaltyAndConditionEnforcement(t *testing.T) {
+	alice := testAddress(0xf5)
+	bob := testAddress(0xf6)
+	channel := signedChannel(t, "security-model-enforcement", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+
+	entry, err := PenaltyMatrixEntryForProof(FraudProofTypeDoubleSign, DefaultPenaltyMatrix())
+	require.NoError(t, err)
+	require.Equal(t, PenaltyClassDoubleSign, entry.Class)
+
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "480"},
+		{Participant: bob, Amount: "520"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "500"},
+		{Participant: bob, Amount: "500"},
+	})
+	state, err = SubmitFraudProof(state, channel.ChannelID, FraudProof{
+		ProofID:         HashParts("security-double-sign", channel.ChannelID),
+		ProofType:       FraudProofTypeDoubleSign,
+		SubmittedBy:     bob,
+		OffendingSigner: alice,
+		StateA:          closeState,
+		StateB:          conflicting,
+		PenaltyAmount:   "10",
+		EvidenceHash:    HashParts("security-double-sign-evidence", closeState.StateHash, conflicting.StateHash),
+	}, 21)
+	require.NoError(t, err)
+	require.Len(t, state.Channels[0].PendingClose.Penalties, 1)
+
+	promise := signedPromiseWithHashLock(t, channel, "security-condition", alice, bob, "10", "0", 7, 11, HashParts("security-preimage"))
+	_, _, err = RevealPromisePreimage(EmptyStateWithChannel(t, channel), PreimageRevealRequest{
+		ChannelID:     channel.ChannelID,
+		Promises:      []ConditionalPromise{promise},
+		Preimage:      "wrong-preimage",
+		Revealer:      bob,
+		CurrentHeight: 10,
+	})
+	require.ErrorContains(t, err, "does not satisfy hash lock")
+}
+
 func signedChannel(t *testing.T, salt, collateral, left, right string) ChannelRecord {
 	t.Helper()
 
