@@ -13,6 +13,8 @@ const (
 	RoadmapPhaseBaselineInstrumentation NetworkingRoadmapPhase = "phase_0_baseline_and_instrumentation"
 	RoadmapPhaseAetherNetworkingAdapter NetworkingRoadmapPhase = "phase_1_aether_networking_adapter"
 	RoadmapPhaseNodeIdentitySessions    NetworkingRoadmapPhase = "phase_2_node_identity_and_sessions"
+	RoadmapPhaseOverlayRouting          NetworkingRoadmapPhase = "phase_3_overlay_routing"
+	RoadmapPhaseRL2Streaming            NetworkingRoadmapPhase = "phase_4_rl2_streaming"
 )
 
 type NetworkingRoadmapTask string
@@ -36,6 +38,18 @@ const (
 	RoadmapTaskSessionHandshake            NetworkingRoadmapTask = "implement_session_handshake"
 	RoadmapTaskMultiplexedStreams          NetworkingRoadmapTask = "implement_multiplexed_streams"
 	RoadmapTaskSessionKeyRotation          NetworkingRoadmapTask = "implement_session_key_rotation"
+	RoadmapTaskOverlayDescriptor           NetworkingRoadmapTask = "define_overlay_descriptor"
+	RoadmapTaskOverlayMembership           NetworkingRoadmapTask = "implement_overlay_membership"
+	RoadmapTaskOverlayPeerSets             NetworkingRoadmapTask = "implement_overlay_peer_sets"
+	RoadmapTaskRouteGraph                  NetworkingRoadmapTask = "implement_route_graph"
+	RoadmapTaskRoutingTableCommitment      NetworkingRoadmapTask = "implement_routing_table_commitment"
+	RoadmapTaskZoneServiceOverlays         NetworkingRoadmapTask = "add_zone_and_service_overlays"
+	RoadmapTaskTransferOfferProtocol       NetworkingRoadmapTask = "implement_transfer_offer_protocol"
+	RoadmapTaskChunkDescriptors            NetworkingRoadmapTask = "implement_chunk_descriptors"
+	RoadmapTaskChunkMerkleVerification     NetworkingRoadmapTask = "implement_chunk_merkle_verification"
+	RoadmapTaskResumableTransfer           NetworkingRoadmapTask = "implement_resumable_transfer"
+	RoadmapTaskAdaptiveChunkSizingRL2      NetworkingRoadmapTask = "implement_adaptive_chunk_sizing"
+	RoadmapTaskRL2Backpressure             NetworkingRoadmapTask = "implement_backpressure"
 )
 
 type NetworkingExitCriterion string
@@ -49,6 +63,12 @@ const (
 	ExitCryptographicNodeAuth        NetworkingExitCriterion = "nodes_authenticate_through_cryptographic_identity"
 	ExitLogicalStreamsShareSession   NetworkingExitCriterion = "logical_streams_share_one_peer_session"
 	ExitExpiredForgedRecordsRejected NetworkingExitCriterion = "expired_or_forged_node_records_are_rejected"
+	ExitOverlayJoinSupported         NetworkingExitCriterion = "nodes_can_join_validator_zone_service_data_and_discovery_overlays"
+	ExitCommittedRoutesReproducible  NetworkingExitCriterion = "overlay_routing_decisions_are_reproducible_when_committed"
+	ExitPeerRotationConnectivity     NetworkingExitCriterion = "peer_rotation_preserves_connectivity"
+	ExitChunkedStreamingPayloads     NetworkingExitCriterion = "blocks_state_snapshots_and_proof_bundles_stream_in_chunks"
+	ExitInterruptedTransfersResume   NetworkingExitCriterion = "interrupted_transfers_can_resume"
+	ExitInvalidChunksRejected        NetworkingExitCriterion = "invalid_chunks_are_rejected"
 )
 
 type RoadmapTaskStatus string
@@ -82,6 +102,20 @@ type NetworkingRoadmapEvidence struct {
 	SignedDiscoveryRecords  []DiscoveryRecord
 	HandshakeReplayRejected bool
 	KeyRotationAvailable    bool
+	OverlayDescriptors      []OverlayDescriptor
+	OverlayMemberships      []OverlayMembershipRecord
+	AdaptiveGraph           AdaptiveOverlayGraph
+	RoutingGraph            RoutingGraph
+	RoutingTableUse         RoutingTableUse
+	PeerRotationPreserved   bool
+	RL2Offer                RL2TransferOffer
+	RL2ChunkDescriptors     []RL2ChunkDescriptor
+	RL2Session              RL2TransferSession
+	RL2StreamingPlan        RL2StreamingPlan
+	RL2PayloadTypes         []RL2PayloadType
+	RL2BackpressureSignal   RL2BackpressureSignal
+	RL2InvalidChunkRejected bool
+	RL2InterruptedResumed   bool
 }
 
 type NetworkingRoadmapPhaseReport struct {
@@ -152,6 +186,42 @@ func DefaultNetworkingImplementationRoadmap() NetworkingImplementationRoadmap {
 				},
 				DependsOn: []NetworkingRoadmapPhase{RoadmapPhaseAetherNetworkingAdapter},
 			},
+			{
+				Phase: RoadmapPhaseOverlayRouting,
+				Title: "Overlay Routing",
+				Tasks: []NetworkingRoadmapTask{
+					RoadmapTaskOverlayDescriptor,
+					RoadmapTaskOverlayMembership,
+					RoadmapTaskOverlayPeerSets,
+					RoadmapTaskRouteGraph,
+					RoadmapTaskRoutingTableCommitment,
+					RoadmapTaskZoneServiceOverlays,
+				},
+				ExitCriteria: []NetworkingExitCriterion{
+					ExitOverlayJoinSupported,
+					ExitCommittedRoutesReproducible,
+					ExitPeerRotationConnectivity,
+				},
+				DependsOn: []NetworkingRoadmapPhase{RoadmapPhaseNodeIdentitySessions},
+			},
+			{
+				Phase: RoadmapPhaseRL2Streaming,
+				Title: "RL2 Streaming",
+				Tasks: []NetworkingRoadmapTask{
+					RoadmapTaskTransferOfferProtocol,
+					RoadmapTaskChunkDescriptors,
+					RoadmapTaskChunkMerkleVerification,
+					RoadmapTaskResumableTransfer,
+					RoadmapTaskAdaptiveChunkSizingRL2,
+					RoadmapTaskRL2Backpressure,
+				},
+				ExitCriteria: []NetworkingExitCriterion{
+					ExitChunkedStreamingPayloads,
+					ExitInterruptedTransfersResume,
+					ExitInvalidChunksRejected,
+				},
+				DependsOn: []NetworkingRoadmapPhase{RoadmapPhaseOverlayRouting},
+			},
 		},
 	}
 	roadmap.RoadmapRoot = ComputeNetworkingRoadmapRoot(roadmap)
@@ -160,8 +230,8 @@ func DefaultNetworkingImplementationRoadmap() NetworkingImplementationRoadmap {
 
 func ValidateNetworkingImplementationRoadmap(roadmap NetworkingImplementationRoadmap) error {
 	roadmap = NormalizeNetworkingImplementationRoadmap(roadmap)
-	if len(roadmap.Phases) != 3 {
-		return errors.New("networking roadmap must define phases 0-2")
+	if len(roadmap.Phases) != 5 {
+		return errors.New("networking roadmap must define phases 0-4")
 	}
 	if roadmap.RoadmapRoot != ComputeNetworkingRoadmapRoot(roadmap) {
 		return errors.New("networking roadmap root mismatch")
@@ -176,7 +246,7 @@ func ValidateNetworkingImplementationRoadmap(roadmap NetworkingImplementationRoa
 		}
 		seen[phase.Phase] = struct{}{}
 	}
-	for _, required := range []NetworkingRoadmapPhase{RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions} {
+	for _, required := range []NetworkingRoadmapPhase{RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions, RoadmapPhaseOverlayRouting, RoadmapPhaseRL2Streaming} {
 		if _, found := seen[required]; !found {
 			return fmt.Errorf("networking roadmap missing phase %s", required)
 		}
@@ -255,6 +325,10 @@ func EvaluateRoadmapPhaseReadiness(phase NetworkingRoadmapPhase, evidence Networ
 		tasks, criteria, err = evaluatePhase1(evidence)
 	case RoadmapPhaseNodeIdentitySessions:
 		tasks, criteria, err = evaluatePhase2(evidence)
+	case RoadmapPhaseOverlayRouting:
+		tasks, criteria, err = evaluatePhase3(evidence)
+	case RoadmapPhaseRL2Streaming:
+		tasks, criteria, err = evaluatePhase4(evidence)
 	}
 	if err != nil {
 		return NetworkingRoadmapPhaseReport{}, err
@@ -300,7 +374,7 @@ func ComputeRoadmapPhaseReportHash(report NetworkingRoadmapPhaseReport) string {
 
 func IsNetworkingRoadmapPhase(phase NetworkingRoadmapPhase) bool {
 	switch phase {
-	case RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions:
+	case RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions, RoadmapPhaseOverlayRouting, RoadmapPhaseRL2Streaming:
 		return true
 	default:
 		return false
@@ -326,7 +400,19 @@ func IsNetworkingRoadmapTask(task NetworkingRoadmapTask) bool {
 		RoadmapTaskSignedNodeAdvertisements,
 		RoadmapTaskSessionHandshake,
 		RoadmapTaskMultiplexedStreams,
-		RoadmapTaskSessionKeyRotation:
+		RoadmapTaskSessionKeyRotation,
+		RoadmapTaskOverlayDescriptor,
+		RoadmapTaskOverlayMembership,
+		RoadmapTaskOverlayPeerSets,
+		RoadmapTaskRouteGraph,
+		RoadmapTaskRoutingTableCommitment,
+		RoadmapTaskZoneServiceOverlays,
+		RoadmapTaskTransferOfferProtocol,
+		RoadmapTaskChunkDescriptors,
+		RoadmapTaskChunkMerkleVerification,
+		RoadmapTaskResumableTransfer,
+		RoadmapTaskAdaptiveChunkSizingRL2,
+		RoadmapTaskRL2Backpressure:
 		return true
 	default:
 		return false
@@ -342,7 +428,13 @@ func IsNetworkingExitCriterion(criterion NetworkingExitCriterion) bool {
 		ExitServiceCannotStarveConsensus,
 		ExitCryptographicNodeAuth,
 		ExitLogicalStreamsShareSession,
-		ExitExpiredForgedRecordsRejected:
+		ExitExpiredForgedRecordsRejected,
+		ExitOverlayJoinSupported,
+		ExitCommittedRoutesReproducible,
+		ExitPeerRotationConnectivity,
+		ExitChunkedStreamingPayloads,
+		ExitInterruptedTransfersResume,
+		ExitInvalidChunksRejected:
 		return true
 	default:
 		return false
@@ -437,6 +529,62 @@ func evaluatePhase2(evidence NetworkingRoadmapEvidence) ([]NetworkingRoadmapTask
 	return tasks, criteria, nil
 }
 
+func evaluatePhase3(evidence NetworkingRoadmapEvidence) ([]NetworkingRoadmapTaskEvidence, []NetworkingExitCriterion, error) {
+	descriptorsOK := ValidateOverlayDescriptors(evidence.OverlayDescriptors, 0) == nil
+	membershipOK := roadmapOverlayMembershipsValid(evidence.OverlayMemberships)
+	peerSetsOK := roadmapAdaptiveGraphValid(evidence.AdaptiveGraph, evidence.OverlayDescriptors)
+	routeGraphOK := roadmapRoutingGraphValid(evidence.RoutingGraph, evidence.OverlayDescriptors)
+	routingCommitmentOK := ValidateRoutingTableUse(evidence.RoutingTableUse) == nil && evidence.RoutingTableUse.Committed
+	zoneServiceOK := roadmapHasOverlayTypes(evidence.OverlayDescriptors, OverlayTypeZone, OverlayTypeService)
+	tasks := []NetworkingRoadmapTaskEvidence{
+		taskEvidence(RoadmapTaskOverlayDescriptor, descriptorsOK, "overlay descriptors validate"),
+		taskEvidence(RoadmapTaskOverlayMembership, membershipOK, "overlay membership records validate"),
+		taskEvidence(RoadmapTaskOverlayPeerSets, peerSetsOK, "adaptive peer sets validate"),
+		taskEvidence(RoadmapTaskRouteGraph, routeGraphOK, "routing graph validates"),
+		taskEvidence(RoadmapTaskRoutingTableCommitment, routingCommitmentOK, "routing table commitment validates"),
+		taskEvidence(RoadmapTaskZoneServiceOverlays, zoneServiceOK, "zone and service overlays present"),
+	}
+	criteria := make([]NetworkingExitCriterion, 0, 3)
+	if roadmapMembershipsCoverOverlayTypes(evidence.OverlayDescriptors, evidence.OverlayMemberships, OverlayTypeValidator, OverlayTypeZone, OverlayTypeService, OverlayTypeData, OverlayTypeDiscovery) && membershipOK {
+		criteria = append(criteria, ExitOverlayJoinSupported)
+	}
+	if routingCommitmentOK && evidence.RoutingTableUse.UsedForExecutionScheduling {
+		criteria = append(criteria, ExitCommittedRoutesReproducible)
+	}
+	if peerSetsOK && evidence.PeerRotationPreserved {
+		criteria = append(criteria, ExitPeerRotationConnectivity)
+	}
+	return tasks, criteria, nil
+}
+
+func evaluatePhase4(evidence NetworkingRoadmapEvidence) ([]NetworkingRoadmapTaskEvidence, []NetworkingExitCriterion, error) {
+	offerOK := evidence.RL2Offer.Validate(0) == nil
+	descriptorsOK := offerOK && ValidateRL2ChunkDescriptors(evidence.RL2Offer.Transfer, evidence.RL2ChunkDescriptors) == nil
+	merkleOK := descriptorsOK && roadmapRL2DescriptorsHaveProofs(evidence.RL2ChunkDescriptors)
+	resumeOK := evidence.RL2InterruptedResumed && evidence.RL2Session.Validate() == nil && evidence.RL2Session.Acceptance.ResumeToken != ""
+	adaptiveOK := offerOK && evidence.RL2Offer.SuggestedChunkSize > 0 && evidence.RL2Offer.SuggestedChunkSize <= evidence.RL2Offer.Transfer.ChunkSize
+	backpressureOK := offerOK && evidence.RL2BackpressureSignal.TransferID == evidence.RL2Offer.Transfer.TransferID && evidence.RL2BackpressureSignal.ResumeToken != ""
+	tasks := []NetworkingRoadmapTaskEvidence{
+		taskEvidence(RoadmapTaskTransferOfferProtocol, offerOK, "RL2 transfer offer validates"),
+		taskEvidence(RoadmapTaskChunkDescriptors, descriptorsOK, "RL2 chunk descriptors validate"),
+		taskEvidence(RoadmapTaskChunkMerkleVerification, merkleOK, "RL2 Merkle proof paths present"),
+		taskEvidence(RoadmapTaskResumableTransfer, resumeOK, "RL2 resume token/session validate"),
+		taskEvidence(RoadmapTaskAdaptiveChunkSizingRL2, adaptiveOK, "RL2 suggested chunk size validates"),
+		taskEvidence(RoadmapTaskRL2Backpressure, backpressureOK, "RL2 backpressure signal validates"),
+	}
+	criteria := make([]NetworkingExitCriterion, 0, 3)
+	if offerOK && descriptorsOK && roadmapHasRL2PayloadTypes(evidence.RL2PayloadTypes, RL2PayloadLargeBlock, RL2PayloadStateSyncStream, RL2PayloadProofSet) {
+		criteria = append(criteria, ExitChunkedStreamingPayloads)
+	}
+	if resumeOK {
+		criteria = append(criteria, ExitInterruptedTransfersResume)
+	}
+	if evidence.RL2InvalidChunkRejected {
+		criteria = append(criteria, ExitInvalidChunksRejected)
+	}
+	return tasks, criteria, nil
+}
+
 func taskEvidence(task NetworkingRoadmapTask, complete bool, evidence string) NetworkingRoadmapTaskEvidence {
 	status := RoadmapTaskPending
 	if complete {
@@ -484,6 +632,32 @@ func roadmapRequirementsForPhase(phase NetworkingRoadmapPhase) ([]NetworkingRoad
 				ExitCryptographicNodeAuth,
 				ExitLogicalStreamsShareSession,
 				ExitExpiredForgedRecordsRejected,
+			}
+	case RoadmapPhaseOverlayRouting:
+		return []NetworkingRoadmapTask{
+				RoadmapTaskOverlayDescriptor,
+				RoadmapTaskOverlayMembership,
+				RoadmapTaskOverlayPeerSets,
+				RoadmapTaskRouteGraph,
+				RoadmapTaskRoutingTableCommitment,
+				RoadmapTaskZoneServiceOverlays,
+			}, []NetworkingExitCriterion{
+				ExitOverlayJoinSupported,
+				ExitCommittedRoutesReproducible,
+				ExitPeerRotationConnectivity,
+			}
+	case RoadmapPhaseRL2Streaming:
+		return []NetworkingRoadmapTask{
+				RoadmapTaskTransferOfferProtocol,
+				RoadmapTaskChunkDescriptors,
+				RoadmapTaskChunkMerkleVerification,
+				RoadmapTaskResumableTransfer,
+				RoadmapTaskAdaptiveChunkSizingRL2,
+				RoadmapTaskRL2Backpressure,
+			}, []NetworkingExitCriterion{
+				ExitChunkedStreamingPayloads,
+				ExitInterruptedTransfersResume,
+				ExitInvalidChunksRejected,
 			}
 	default:
 		return nil, nil
@@ -549,6 +723,100 @@ func roadmapNodeIDKey(record NodeRecord) []byte {
 		return record.ValidatorPubKey
 	}
 	return record.NodePubKey
+}
+
+func roadmapOverlayMembershipsValid(records []OverlayMembershipRecord) bool {
+	if len(records) == 0 {
+		return false
+	}
+	for _, record := range records {
+		if err := record.Validate(0); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func roadmapRoutingGraphValid(graph RoutingGraph, descriptors []OverlayDescriptor) bool {
+	graph = NormalizeRoutingGraph(graph)
+	for _, desc := range descriptors {
+		desc = NormalizeOverlayDescriptor(desc)
+		if desc.OverlayID == graph.OverlayID {
+			return graph.Validate(desc) == nil
+		}
+	}
+	return false
+}
+
+func roadmapAdaptiveGraphValid(graph AdaptiveOverlayGraph, descriptors []OverlayDescriptor) bool {
+	graph = NormalizeAdaptiveOverlayGraph(graph)
+	for _, desc := range descriptors {
+		desc = NormalizeOverlayDescriptor(desc)
+		if desc.OverlayID == graph.OverlayID {
+			return graph.Validate(desc) == nil
+		}
+	}
+	return false
+}
+
+func roadmapHasOverlayTypes(descriptors []OverlayDescriptor, required ...OverlayType) bool {
+	seen := make(map[OverlayType]struct{}, len(descriptors))
+	for _, desc := range descriptors {
+		desc = NormalizeOverlayDescriptor(desc)
+		seen[desc.OverlayType] = struct{}{}
+	}
+	for _, overlayType := range required {
+		if _, found := seen[overlayType]; !found {
+			return false
+		}
+	}
+	return true
+}
+
+func roadmapMembershipsCoverOverlayTypes(descriptors []OverlayDescriptor, memberships []OverlayMembershipRecord, required ...OverlayType) bool {
+	overlayTypes := make(map[string]OverlayType, len(descriptors))
+	for _, desc := range descriptors {
+		desc = NormalizeOverlayDescriptor(desc)
+		overlayTypes[desc.OverlayID] = desc.OverlayType
+	}
+	covered := make(map[OverlayType]struct{}, len(required))
+	for _, membership := range memberships {
+		membership = NormalizeOverlayMembershipRecord(membership)
+		if overlayType, found := overlayTypes[membership.OverlayID]; found {
+			covered[overlayType] = struct{}{}
+		}
+	}
+	for _, overlayType := range required {
+		if _, found := covered[overlayType]; !found {
+			return false
+		}
+	}
+	return true
+}
+
+func roadmapRL2DescriptorsHaveProofs(descriptors []RL2ChunkDescriptor) bool {
+	if len(descriptors) == 0 {
+		return false
+	}
+	for _, descriptor := range descriptors {
+		if len(descriptor.ProofPath) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func roadmapHasRL2PayloadTypes(payloadTypes []RL2PayloadType, required ...RL2PayloadType) bool {
+	seen := make(map[RL2PayloadType]struct{}, len(payloadTypes))
+	for _, payloadType := range payloadTypes {
+		seen[payloadType] = struct{}{}
+	}
+	for _, payloadType := range required {
+		if _, found := seen[payloadType]; !found {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeRoadmapTaskSet(values []NetworkingRoadmapTask) []NetworkingRoadmapTask {

@@ -4136,7 +4136,7 @@ func TestXNetworkStateRejectsInvalidKeysMessagesAndConsensusReputation(t *testin
 func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *testing.T) {
 	roadmap := DefaultNetworkingImplementationRoadmap()
 	require.NoError(t, ValidateNetworkingImplementationRoadmap(roadmap))
-	require.Len(t, roadmap.Phases, 3)
+	require.Len(t, roadmap.Phases, 5)
 	require.Equal(t, ComputeNetworkingRoadmapRoot(roadmap), roadmap.RoadmapRoot)
 
 	phase0 := roadmap.Phases[0]
@@ -4155,7 +4155,7 @@ func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *t
 	require.ErrorContains(t, ValidateNetworkingImplementationRoadmap(broken), "root mismatch")
 }
 
-func TestNetworkingRoadmapReadinessForPhasesZeroToTwo(t *testing.T) {
+func TestNetworkingRoadmapReadinessForPhasesZeroToFour(t *testing.T) {
 	evidence := testRoadmapEvidence(t)
 
 	phase0, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseBaselineInstrumentation, evidence)
@@ -4178,6 +4178,20 @@ func TestNetworkingRoadmapReadinessForPhasesZeroToTwo(t *testing.T) {
 	require.Contains(t, phase2.SatisfiedExitCriteria, ExitCryptographicNodeAuth)
 	require.Contains(t, phase2.SatisfiedExitCriteria, ExitLogicalStreamsShareSession)
 	require.Contains(t, phase2.SatisfiedExitCriteria, ExitExpiredForgedRecordsRejected)
+
+	phase3, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseOverlayRouting, evidence)
+	require.NoError(t, err)
+	require.True(t, phase3.Ready)
+	require.Contains(t, phase3.SatisfiedExitCriteria, ExitOverlayJoinSupported)
+	require.Contains(t, phase3.SatisfiedExitCriteria, ExitCommittedRoutesReproducible)
+	require.Contains(t, phase3.SatisfiedExitCriteria, ExitPeerRotationConnectivity)
+
+	phase4, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseRL2Streaming, evidence)
+	require.NoError(t, err)
+	require.True(t, phase4.Ready)
+	require.Contains(t, phase4.SatisfiedExitCriteria, ExitChunkedStreamingPayloads)
+	require.Contains(t, phase4.SatisfiedExitCriteria, ExitInterruptedTransfersResume)
+	require.Contains(t, phase4.SatisfiedExitCriteria, ExitInvalidChunksRejected)
 }
 
 func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
@@ -4201,6 +4215,20 @@ func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, phase2.Ready)
 	require.NotContains(t, phase2.SatisfiedExitCriteria, ExitExpiredForgedRecordsRejected)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.PeerRotationPreserved = false
+	phase3, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseOverlayRouting, evidence)
+	require.NoError(t, err)
+	require.False(t, phase3.Ready)
+	require.NotContains(t, phase3.SatisfiedExitCriteria, ExitPeerRotationConnectivity)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.RL2InvalidChunkRejected = false
+	phase4, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseRL2Streaming, evidence)
+	require.NoError(t, err)
+	require.False(t, phase4.Ready)
+	require.NotContains(t, phase4.SatisfiedExitCriteria, ExitInvalidChunksRejected)
 }
 
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
@@ -4588,6 +4616,82 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 	session, err := NegotiateSession(local, remote, testSessionRequest(local, remote, 10, 80, "roadmap-session", []ChannelClass{ChannelConsensus, ChannelService, ChannelData}))
 	require.NoError(t, err)
 	discovery := testSignedDiscoveryObjectRecord(t, remote, 0x89, salt, DRTObjectServiceEndpoint, HashParts("roadmap-target"), HashParts("roadmap-ad"), "", "svc.roadmap", "", 90)
+	descriptors := DefaultOverlayDescriptors()
+	memberships := make([]OverlayMembershipRecord, 0, 5)
+	for _, overlayType := range []OverlayType{OverlayTypeValidator, OverlayTypeZone, OverlayTypeService, OverlayTypeData, OverlayTypeDiscovery} {
+		desc := testDefaultOverlayDescriptor(t, overlayType)
+		memberships = append(memberships, OverlayMembershipRecord{
+			OverlayID:     desc.OverlayID,
+			NodeID:        remote.NodeID,
+			ProofID:       HashParts("roadmap-membership-proof", string(overlayType)),
+			Membership:    desc.Membership,
+			Mode:          OverlayMembershipModeCryptographicAuth,
+			JoinedHeight:  10,
+			ExpiresHeight: 90,
+		})
+	}
+	serviceDesc := testDefaultOverlayDescriptor(t, OverlayTypeService)
+	peerA := testAdaptivePeer(t, local, 8_000, 20, 9_000, true)
+	peerB := testAdaptivePeer(t, remote, 8_500, 15, 9_250, true)
+	peerC := AdaptivePeer{
+		NodeID:          HashParts("roadmap-peer-c"),
+		ScoreBps:        7_500,
+		LatencyMillis:   30,
+		ReliabilityBps:  8_500,
+		Roles:           []NodeRole{NodeRoleFull},
+		LastSeenHeight:  10,
+		LastScoreHeight: 10,
+	}
+	adaptiveGraph := NormalizeAdaptiveOverlayGraph(AdaptiveOverlayGraph{
+		OverlayID:    serviceDesc.OverlayID,
+		LocalNodeID:  local.NodeID,
+		RoutingEpoch: 10,
+		RandomSet:    []AdaptivePeer{peerA, peerC},
+		ServiceSet:   []AdaptivePeer{peerB},
+		FallbackSet:  []AdaptivePeer{peerA},
+		PolicyHash:   HashParts("roadmap-adaptive-policy"),
+	})
+	routingGraph := NormalizeRoutingGraph(RoutingGraph{
+		OverlayID:             serviceDesc.OverlayID,
+		Version:               10,
+		Committed:             true,
+		DeterministicHintHash: HashParts("roadmap-routing-hint"),
+		Edges: []RoutingEdge{{
+			FromNodeID:    local.NodeID,
+			ToNodeID:      remote.NodeID,
+			LatencyMillis: 20,
+			Weight:        1,
+			Priority:      PriorityForChannel(ChannelService),
+			ZoneID:        "zone-roadmap",
+		}},
+	})
+	commitment, err := NewRoutingTableCommitment(RoutingTableCommitment{
+		RoutingEpoch:           10,
+		OverlayRoots:           []OverlayRouteRoot{{OverlayID: serviceDesc.OverlayID, RootHash: routingGraph.GraphHash}},
+		ZoneRouteRoot:          HashParts("roadmap-zone-route-root"),
+		ServiceRouteRoot:       HashParts("roadmap-service-route-root"),
+		PeerClassRoot:          HashParts("roadmap-peer-class-root"),
+		CongestionSnapshotRoot: HashParts("roadmap-congestion-root"),
+		PolicyHash:             HashParts("roadmap-routing-policy"),
+	})
+	require.NoError(t, err)
+	chunks, err := ChunkPayload(bytes.Repeat([]byte("roadmap-rl2"), 128), 64)
+	require.NoError(t, err)
+	offer, rl2Descriptors, err := NewRL2TransferOfferFromChunks(local.NodeID, remote.NodeID, RL2PayloadLargeBlock, chunks, PriorityForChannel(ChannelBlock), 10, 80, RL2FECNone, PeerScore{ScoreBps: 9_000}, 4096, 2)
+	require.NoError(t, err)
+	rl2Session, err := AcceptRL2TransferOffer(offer, []uint32{0}, 11)
+	require.NoError(t, err)
+	rl2Session, err = StartRL2Transfer(rl2Session, PeerScore{ScoreBps: 9_000}, 4096, 0)
+	require.NoError(t, err)
+	signal, err := NewRL2BackpressureSignal(offer.Transfer, 2048, 512, []uint32{0})
+	require.NoError(t, err)
+	paused, err := PauseRL2Transfer(rl2Session, signal, 12)
+	require.NoError(t, err)
+	resumed, err := ResumeRL2Transfer(paused, []uint32{0}, 13)
+	require.NoError(t, err)
+	badChunk := chunks[0]
+	badChunk.ChunkHash = HashParts("roadmap-invalid-chunk")
+	invalidChunkErr := VerifyRL2Chunk(offer.Transfer, rl2Descriptors[0], badChunk)
 	return NetworkingRoadmapEvidence{
 		CometBFTInventory: adapter,
 		PerformanceSnapshot: PerformanceMetricsSnapshot{
@@ -4617,6 +4721,24 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 		SignedDiscoveryRecords:  []DiscoveryRecord{discovery},
 		HandshakeReplayRejected: true,
 		KeyRotationAvailable:    true,
+		OverlayDescriptors:      descriptors,
+		OverlayMemberships:      memberships,
+		AdaptiveGraph:           adaptiveGraph,
+		RoutingGraph:            routingGraph,
+		RoutingTableUse: RoutingTableUse{
+			Commitment:                 commitment,
+			Committed:                  true,
+			UsedForExecutionScheduling: true,
+		},
+		PeerRotationPreserved:   true,
+		RL2Offer:                offer,
+		RL2ChunkDescriptors:     rl2Descriptors,
+		RL2Session:              resumed,
+		RL2StreamingPlan:        resumed.StreamingPlan,
+		RL2PayloadTypes:         []RL2PayloadType{RL2PayloadLargeBlock, RL2PayloadStateSyncStream, RL2PayloadProofSet},
+		RL2BackpressureSignal:   signal,
+		RL2InvalidChunkRejected: invalidChunkErr != nil,
+		RL2InterruptedResumed:   true,
 	}
 }
 
