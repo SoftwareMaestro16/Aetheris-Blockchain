@@ -22,6 +22,21 @@ const (
 	IdentityStoreV2SubdomainIndexPrefix  = IdentityStoreV2Prefix + "/subdomain"
 	IdentityStoreV2AuctionPrefix         = IdentityStoreV2Prefix + "/auction"
 	IdentityStoreV2PendingResolverPrefix = IdentityStoreV2Prefix + "/pending-resolver"
+
+	IdentityStoreV2SpecDomainsPrefix           = IdentityStoreV2Prefix + "/domains"
+	IdentityStoreV2SpecDomainNamesPrefix       = IdentityStoreV2Prefix + "/domain_names"
+	IdentityStoreV2SpecCommitmentsPrefix       = IdentityStoreV2Prefix + "/commitments"
+	IdentityStoreV2SpecNFTBindingsPrefix       = IdentityStoreV2Prefix + "/nft_bindings"
+	IdentityStoreV2SpecNFTBindingsByNamePrefix = IdentityStoreV2Prefix + "/nft_bindings_by_name"
+	IdentityStoreV2SpecResolversPrefix         = IdentityStoreV2Prefix + "/resolvers"
+	IdentityStoreV2SpecDelegationsPrefix       = IdentityStoreV2Prefix + "/delegations"
+	IdentityStoreV2SpecSubdomainsPrefix        = IdentityStoreV2Prefix + "/subdomains"
+	IdentityStoreV2SpecAuctionsPrefix          = IdentityStoreV2Prefix + "/auctions"
+	IdentityStoreV2SpecAuctionsByNamePrefix    = IdentityStoreV2Prefix + "/auctions_by_name"
+	IdentityStoreV2SpecResolutionCachePrefix   = IdentityStoreV2Prefix + "/resolution_cache"
+	IdentityStoreV2SpecExpiryIndexPrefix       = IdentityStoreV2Prefix + "/expiry_index"
+	IdentityStoreV2SpecOwnerIndexPrefix        = IdentityStoreV2Prefix + "/owner_index"
+	IdentityStoreV2SpecResolverIndexPrefix     = IdentityStoreV2Prefix + "/resolver_index"
 )
 
 type IdentityAccessSet struct {
@@ -116,6 +131,192 @@ func IdentityPendingResolverStoreKey(domain string, actor sdk.AccAddress, nonce 
 		return "", err
 	}
 	return fmt.Sprintf("%s/%s/%s/%s/%020d", IdentityStoreV2PendingResolverPrefix, identityStoreShard(normalized), reversedDomainStorePath(normalized), hex.EncodeToString(actor), nonce), nil
+}
+
+func IdentityStoreV2SpecDomainKey(name string) (string, error) {
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	return IdentityStoreV2SpecDomainKeyByHash(nameHash)
+}
+
+func IdentityStoreV2SpecDomainKeyByHash(nameHash string) (string, error) {
+	if err := validateHexHash("identity v2 domain name hash", nameHash); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2SpecDomainsPrefix, nameHash), nil
+}
+
+func IdentityStoreV2SpecDomainNameKey(name string) (string, error) {
+	normalized, err := NormalizeAETDomain(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2SpecDomainNamesPrefix, normalized), nil
+}
+
+func IdentityStoreV2SpecCommitmentKey(commitmentHash string) (string, error) {
+	if err := validateHexHash("identity v2 commitment hash", commitmentHash); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2SpecCommitmentsPrefix, commitmentHash), nil
+}
+
+func IdentityStoreV2SpecNFTBindingKey(nftClassID string, nftItemID string) (string, error) {
+	if err := validateStorePathSegmentV2("identity v2 nft class id", nftClassID); err != nil {
+		return "", err
+	}
+	if err := validateStorePathSegmentV2("identity v2 nft item id", nftItemID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s", IdentityStoreV2SpecNFTBindingsPrefix, nftClassID, nftItemID), nil
+}
+
+func IdentityStoreV2SpecNFTBindingByNameKey(name string) (string, error) {
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2SpecNFTBindingsByNamePrefix, nameHash), nil
+}
+
+func IdentityStoreV2SpecResolverKey(name string) (string, error) {
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2SpecResolversPrefix, nameHash), nil
+}
+
+func IdentityStoreV2SpecReverseKey(address sdk.AccAddress) (string, error) {
+	if err := validateSpecAddress("identity v2 reverse address", address); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2ReversePrefix, hex.EncodeToString(address)), nil
+}
+
+func IdentityStoreV2SpecDelegationKey(name string, delegate sdk.AccAddress, scope DelegationScopeV2) (string, error) {
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	if err := validateSpecAddress("identity v2 delegation delegate", delegate); err != nil {
+		return "", err
+	}
+	if err := validateDelegationScopeV2(scope); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s/%s", IdentityStoreV2SpecDelegationsPrefix, nameHash, hex.EncodeToString(delegate), scope), nil
+}
+
+func IdentityStoreV2SpecSubdomainKey(parentName string, childLabel string) (string, error) {
+	parentHash, err := DomainRecordV2NameHash(parentName)
+	if err != nil {
+		return "", err
+	}
+	if err := validateDomainLabel(childLabel); err != nil {
+		return "", err
+	}
+	childLabelHash := identityHash("identity-v2-child-label", childLabel)
+	return fmt.Sprintf("%s/%s/%s", IdentityStoreV2SpecSubdomainsPrefix, parentHash, childLabelHash), nil
+}
+
+func IdentityStoreV2SpecAuctionKey(auctionID string) (string, error) {
+	if err := validateHexHash("identity v2 auction id", auctionID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", IdentityStoreV2SpecAuctionsPrefix, auctionID), nil
+}
+
+func IdentityStoreV2SpecAuctionByNameKey(name string, auctionID string) (string, error) {
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	if err := validateHexHash("identity v2 auction id", auctionID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s", IdentityStoreV2SpecAuctionsByNamePrefix, nameHash, auctionID), nil
+}
+
+func IdentityStoreV2SpecResolutionCacheKey(name string, pathHash string) (string, error) {
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	if err := validateHexHash("identity v2 resolution path hash", pathHash); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s", IdentityStoreV2SpecResolutionCachePrefix, nameHash, pathHash), nil
+}
+
+func IdentityStoreV2SpecExpiryIndexKey(expiryHeight uint64, name string) (string, error) {
+	if expiryHeight == 0 {
+		return "", errors.New("identity v2 expiry index height is required")
+	}
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%020d/%s", IdentityStoreV2SpecExpiryIndexPrefix, expiryHeight, nameHash), nil
+}
+
+func IdentityStoreV2SpecOwnerIndexKey(owner sdk.AccAddress, name string) (string, error) {
+	if err := validateSpecAddress("identity v2 owner index address", owner); err != nil {
+		return "", err
+	}
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s", IdentityStoreV2SpecOwnerIndexPrefix, hex.EncodeToString(owner), nameHash), nil
+}
+
+func IdentityStoreV2SpecResolverIndexKey(resolver sdk.AccAddress, name string) (string, error) {
+	if err := validateSpecAddress("identity v2 resolver index address", resolver); err != nil {
+		return "", err
+	}
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s", IdentityStoreV2SpecResolverIndexPrefix, hex.EncodeToString(resolver), nameHash), nil
+}
+
+func IdentityStoreV2SpecDirectResolverReadAccessSet(name string) (IdentityAccessSet, error) {
+	key, err := IdentityStoreV2SpecResolverKey(name)
+	if err != nil {
+		return IdentityAccessSet{}, err
+	}
+	return newIdentityAccessSet([]string{key}, nil), nil
+}
+
+func IdentityStoreV2SpecRecursiveResolutionPathKeys(name string) ([]string, error) {
+	candidates, err := resolverDomainCandidates(name)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(candidates)*2)
+	for _, candidate := range candidates {
+		domainKey, err := IdentityStoreV2SpecDomainKey(candidate)
+		if err != nil {
+			return nil, err
+		}
+		resolverKey, err := IdentityStoreV2SpecResolverKey(candidate)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, domainKey, resolverKey)
+	}
+	return keys, nil
+}
+
+func IdentityStoreV2SpecBoundedExpiryScanPrefix(expiryHeight uint64) (string, error) {
+	if expiryHeight == 0 {
+		return "", errors.New("identity v2 expiry scan height is required")
+	}
+	return fmt.Sprintf("%s/%020d", IdentityStoreV2SpecExpiryIndexPrefix, expiryHeight), nil
 }
 
 func IdentityNameShard(name string) (string, error) {
@@ -219,4 +420,23 @@ func stringSet(values []string) map[string]struct{} {
 		out[value] = struct{}{}
 	}
 	return out
+}
+
+func validateStorePathSegmentV2(field string, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if strings.TrimSpace(value) != value {
+		return fmt.Errorf("%s must not have surrounding whitespace", field)
+	}
+	if strings.Contains(value, "/") {
+		return fmt.Errorf("%s must not contain path separators", field)
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c < 0x21 || c > 0x7e {
+			return fmt.Errorf("%s contains unsupported character %q", field, c)
+		}
+	}
+	return nil
 }
