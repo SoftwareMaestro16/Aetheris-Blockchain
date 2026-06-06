@@ -630,7 +630,7 @@ func (s SessionChannel) Validate() error {
 	if s.SessionKeys.CipherSuite != s.CipherSuite {
 		return errors.New("networking session key cipher suite mismatch")
 	}
-	if s.SessionKeys.EstablishedHeight != s.OpenedHeight || s.SessionKeys.ExpiresHeight != s.ExpiresHeight {
+	if s.SessionKeys.EstablishedHeight < s.OpenedHeight || s.SessionKeys.EstablishedHeight > s.ExpiresHeight || s.SessionKeys.ExpiresHeight > s.ExpiresHeight {
 		return errors.New("networking session key height range mismatch")
 	}
 	if len(s.ProtocolVersions) == 0 {
@@ -646,6 +646,9 @@ func (s SessionChannel) Validate() error {
 	for _, stream := range s.Streams {
 		if err := stream.Validate(); err != nil {
 			return err
+		}
+		if stream.EncryptionContext != streamEncryptionContext(s.SessionKeys.KeyID, stream.StreamID) {
+			return errors.New("networking stream encryption context does not match session key")
 		}
 		if _, found := seen[stream.StreamID]; found {
 			return errors.New("networking duplicate stream id")

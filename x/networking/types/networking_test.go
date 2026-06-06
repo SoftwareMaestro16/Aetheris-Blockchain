@@ -178,6 +178,68 @@ func TestSessionNegotiationCreatesDeterministicStreams(t *testing.T) {
 	require.ErrorContains(t, err, "expired")
 }
 
+func TestSessionHandshakeStateMachineRejectsReplaysAndExpiredRecords(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	local := signedNodeRecord(t, 0x25, salt, 100, NodeRoleFull)
+	remote := signedNodeRecord(t, 0x26, salt, 100, NodeRoleService)
+	req := testSessionRequest(local, remote, 20, 60, "state-machine-handshake", []ChannelClass{ChannelConsensus, ChannelService})
+
+	state, err := RunSessionHandshake(local, remote, req, salt, 20, nil)
+	require.NoError(t, err)
+	require.Equal(t, HandshakePhaseEstablished, state.Phase)
+	require.Equal(t, state.Session.SessionID, ComputeSessionID(req.Normalize(), state.CipherSuite, state.ProtocolVersions, state.ChannelClasses))
+	require.NotEmpty(t, state.ReplayID)
+	require.NotEmpty(t, state.SessionKeys.KeyID)
+	require.Equal(t, state.Session.SessionKeys, state.SessionKeys)
+
+	replayed, err := RunSessionHandshake(local, remote, req, salt, 20, []string{state.ReplayID})
+	require.ErrorContains(t, err, "replayed")
+	require.Equal(t, HandshakePhaseRejected, replayed.Phase)
+	require.Contains(t, replayed.RejectReason, "replayed")
+
+	expiredRemote := signedNodeRecord(t, 0x27, salt, 19, NodeRoleService)
+	expiredReq := testSessionRequest(local, expiredRemote, 20, 60, "expired-handshake", nil)
+	rejected, err := RunSessionHandshake(local, expiredRemote, expiredReq, salt, 20, nil)
+	require.ErrorContains(t, err, "expired")
+	require.Equal(t, HandshakePhaseRejected, rejected.Phase)
+}
+
+func TestSessionKeyRotationUpdatesKeysWithoutChangingSessionID(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	local := signedNodeRecord(t, 0x28, salt, 100, NodeRoleFull)
+	remote := signedNodeRecord(t, 0x29, salt, 100, NodeRoleService)
+	handshake, err := RunSessionHandshake(local, remote, testSessionRequest(local, remote, 20, 80, "rotate-session-keys", nil), salt, 20, nil)
+	require.NoError(t, err)
+
+	rotated, err := RotateSessionKeys(handshake.Session, SessionKeyRotationRequest{
+		SessionID:                handshake.Session.SessionID,
+		NewLocalEphemeralPubKey:  bytes.Repeat([]byte{0xc3}, SessionEphemeralKeyBytes),
+		NewRemoteEphemeralPubKey: bytes.Repeat([]byte{0xd4}, SessionEphemeralKeyBytes),
+		NewSecretCommitmentHash:  HashParts("rotated-session-secret", handshake.Session.SessionID),
+		RotatedAtHeight:          40,
+		ExpiresHeight:            80,
+		Nonce:                    []byte("rotation-nonce"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, handshake.Session.SessionID, rotated.SessionID)
+	require.NotEqual(t, handshake.Session.SessionKeys.KeyID, rotated.SessionKeys.KeyID)
+	require.Equal(t, uint64(40), rotated.SessionKeys.EstablishedHeight)
+	for _, stream := range rotated.Streams {
+		require.Equal(t, streamEncryptionContext(rotated.SessionKeys.KeyID, stream.StreamID), stream.EncryptionContext)
+	}
+
+	_, err = RotateSessionKeys(handshake.Session, SessionKeyRotationRequest{
+		SessionID:                handshake.Session.SessionID,
+		NewLocalEphemeralPubKey:  bytes.Repeat([]byte{0xc3}, SessionEphemeralKeyBytes),
+		NewRemoteEphemeralPubKey: bytes.Repeat([]byte{0xd4}, SessionEphemeralKeyBytes),
+		NewSecretCommitmentHash:  HashParts("rotated-session-secret", handshake.Session.SessionID),
+		RotatedAtHeight:          81,
+		ExpiresHeight:            90,
+		Nonce:                    []byte("late-rotation"),
+	})
+	require.ErrorContains(t, err, "outside session range")
+}
+
 func TestMultiplexedStreamsEnforceEncryptionCapacityAndResetPolicy(t *testing.T) {
 	salt := []byte("aetheris-test-network")
 	local := signedNodeRecord(t, 0x23, salt, 100, NodeRoleFull)
