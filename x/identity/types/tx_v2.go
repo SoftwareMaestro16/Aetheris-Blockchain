@@ -126,6 +126,13 @@ type MsgCreateSubdomainV2 struct {
 	Label                 string
 	ChildOwner            sdk.AccAddress
 	ParentControlsRecord  bool
+	DelegationType        SubdomainDelegationTypeV2
+	ChildExpiryHeight     uint64
+	DetachedPaid          bool
+	IndependentPayment    bool
+	ParentAuthorization   bool
+	Ephemeral             bool
+	TimeLockedUntilHeight uint64
 	ExpectedParentVersion uint64
 }
 
@@ -401,6 +408,25 @@ func (m MsgCreateSubdomainV2) ValidateBasic() error {
 	}
 	if err := validateSpecAddress("identity v2 tx subdomain child owner", m.ChildOwner); err != nil {
 		return err
+	}
+	if m.DelegationType != "" {
+		if err := validateSubdomainDelegationTypeV2(m.DelegationType); err != nil {
+			return err
+		}
+	}
+	if m.DetachedPaid {
+		if m.DelegationType != SubdomainDelegationDetachedPaidV2 {
+			return errors.New("identity v2 tx detached subdomain requires detached_paid delegation type")
+		}
+		if !m.IndependentPayment || !m.ParentAuthorization {
+			return errors.New("identity v2 tx detached subdomain requires independent payment and parent authorization")
+		}
+	}
+	if m.Ephemeral && m.DelegationType != SubdomainDelegationEphemeralServiceV2 {
+		return errors.New("identity v2 tx ephemeral subdomain requires ephemeral_service delegation type")
+	}
+	if m.TimeLockedUntilHeight != 0 && m.ChildExpiryHeight != 0 && m.TimeLockedUntilHeight >= m.ChildExpiryHeight {
+		return errors.New("identity v2 tx subdomain time lock must end before child expiry")
 	}
 	return validateExpectedRecordVersionV2(m.ExpectedParentVersion)
 }

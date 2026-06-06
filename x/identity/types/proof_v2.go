@@ -261,7 +261,7 @@ func ComputeIdentityLightClientResolutionProofHashV2(proof IdentityLightClientRe
 		parts = append(parts, "reverse-absence", proof.ReverseAbsence.Key, absenceProofBoundaryHashV2(*proof.ReverseAbsence))
 	}
 	for _, subdomain := range proof.SubdomainChain {
-		parts = append(parts, "subdomain", subdomain.ParentName, subdomain.Name, hex.EncodeToString(subdomain.Owner), fmt.Sprintf("%t", subdomain.ParentControlsRecord), fmt.Sprintf("%020d", subdomain.CreatedHeight))
+		parts = append(parts, "subdomain", subdomain.ParentName, subdomain.Name, hex.EncodeToString(subdomain.Owner), fmt.Sprintf("%t", subdomain.ParentControlsRecord), fmt.Sprintf("%020d", subdomain.CreatedHeight), string(subdomain.DelegationType), fmt.Sprintf("%t", subdomain.Detached), fmt.Sprintf("%t", subdomain.Ephemeral), fmt.Sprintf("%020d", subdomain.ExpiryHeight), fmt.Sprintf("%020d", subdomain.TimeLockedUntilHeight), fmt.Sprintf("%t", subdomain.ParentAuthorized))
 	}
 	for _, subdomainProof := range proof.SubdomainProofs {
 		parts = append(parts, "subdomain-proof", subdomainProof.LeafHash)

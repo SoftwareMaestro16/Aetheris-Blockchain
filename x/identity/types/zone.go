@@ -958,7 +958,7 @@ func ComputeIdentityZoneGrantRoot(grants []DelegationRecordV2) string {
 	})
 	parts := []string{"identity-zone-grant-root-v1", fmt.Sprintf("%020d", len(ordered))}
 	for _, grant := range ordered {
-		parts = append(parts, grant.NameHash, string(grant.Delegate), string(grant.Scope), fmt.Sprintf("%020d", grant.ExpiresAtHeight), fmt.Sprintf("%020d", grant.CreatedAtHeight))
+		parts = append(parts, grant.NameHash, string(grant.Delegate), string(grant.Scope), fmt.Sprintf("%020d", grant.ScopeBits), fmt.Sprintf("%020d", grant.ExpiresAtHeight), fmt.Sprintf("%020d", grant.CreatedAtHeight), fmt.Sprintf("%020d", grant.TimeLockedUntilHeight))
 		parts = append(parts, grant.Permissions...)
 	}
 	return identityHash(parts...)

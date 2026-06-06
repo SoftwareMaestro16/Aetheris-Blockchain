@@ -52,6 +52,8 @@ type IdentityQueryResponseV2 struct {
 	RecordVersion  uint64
 	Page           IdentityQueryPageResponseV2
 	Proof          *IdentityResolutionProof
+	RecursiveProof *RecursiveResolutionProofV2
+	PathCommitment *IdentityPathCommitmentV2
 	AbsenceProof   *IdentityAbsenceProof
 	Domain         *DomainRecordV2
 	Domains        []DomainRecordV2
@@ -370,6 +372,31 @@ func (q IdentityQueryServiceV2) QueryRecursiveResolutionProof(name string) Ident
 	}
 	proofResp.ProofResult = &resolution
 	return proofResp
+}
+
+func (q IdentityQueryServiceV2) QueryOptimizedRecursiveResolutionProof(rootName string, targetName string, cache *ResolutionCacheRecordV2, sourceVersion uint64, parentEpoch uint64, childEpoch uint64, lightClient bool, proofVerified bool) IdentityQueryResponseV2 {
+	proof, commitment, err := BuildOptimizedRecursiveResolutionProofV2(OptimizedRecursiveResolutionProofRequestV2{
+		State:         q.ctx.State,
+		ChainID:       "identity-query-local",
+		RootName:      rootName,
+		TargetName:    targetName,
+		Height:        q.ctx.Height,
+		TTL:           q.ctx.DefaultTTL,
+		Cache:         cache,
+		SourceVersion: sourceVersion,
+		ParentEpoch:   parentEpoch,
+		ChildEpoch:    childEpoch,
+		LightClient:   lightClient,
+		ProofVerified: proofVerified,
+	})
+	if err != nil {
+		return q.failure(IdentityQueryVerificationFailed, err)
+	}
+	resp := q.ok()
+	resp.RecursiveProof = &proof
+	resp.PathCommitment = &commitment
+	resp.RecordVersion = sourceVersion
+	return resp
 }
 
 func (q IdentityQueryServiceV2) QueryDomainLifecycle(name string) IdentityQueryResponseV2 {

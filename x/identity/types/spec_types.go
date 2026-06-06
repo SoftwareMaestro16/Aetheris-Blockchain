@@ -59,11 +59,17 @@ type DomainCommit struct {
 type ReverseRecord = ReverseResolverRecord
 
 type SubdomainRecord struct {
-	ParentName           string
-	Name                 string
-	Owner                sdk.AccAddress
-	ParentControlsRecord bool
-	CreatedHeight        uint64
+	ParentName            string
+	Name                  string
+	Owner                 sdk.AccAddress
+	ParentControlsRecord  bool
+	CreatedHeight         uint64
+	DelegationType        SubdomainDelegationTypeV2
+	Detached              bool
+	Ephemeral             bool
+	ExpiryHeight          uint64
+	TimeLockedUntilHeight uint64
+	ParentAuthorized      bool
 }
 
 type ResolverUpdateIntent struct {

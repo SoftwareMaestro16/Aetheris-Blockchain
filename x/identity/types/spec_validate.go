@@ -259,6 +259,26 @@ func validateSubdomain(record SubdomainRecord, domains []Domain) error {
 	if !found || !bytes.Equal(domain.Owner, record.Owner) {
 		return errors.New("identity subdomain registry mismatch")
 	}
+	if record.DelegationType != "" {
+		if err := validateSubdomainDelegationTypeV2(record.DelegationType); err != nil {
+			return err
+		}
+		if record.ExpiryHeight == 0 {
+			return errors.New("identity v2 subdomain expiry height is required")
+		}
+		if record.ExpiryHeight != domain.ExpiryHeight {
+			return errors.New("identity v2 subdomain expiry must match registry domain")
+		}
+		if record.Detached && record.DelegationType != SubdomainDelegationDetachedPaidV2 {
+			return errors.New("identity v2 detached subdomain must use detached_paid delegation type")
+		}
+		if record.Ephemeral && record.DelegationType != SubdomainDelegationEphemeralServiceV2 {
+			return errors.New("identity v2 ephemeral subdomain must use ephemeral_service delegation type")
+		}
+		if record.TimeLockedUntilHeight != 0 && record.TimeLockedUntilHeight >= record.ExpiryHeight {
+			return errors.New("identity v2 subdomain time lock must end before expiry")
+		}
+	}
 	return nil
 }
 

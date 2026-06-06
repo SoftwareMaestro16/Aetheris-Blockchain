@@ -15,6 +15,8 @@ const (
 	MaxAuctionFeeSplitIDBytesV2      = 64
 )
 
+type DelegationScopeBitsV2 uint64
+
 type DelegationScopeV2 string
 
 const (
@@ -27,15 +29,27 @@ const (
 	DelegationScopeZoneAdmin             DelegationScopeV2 = "zone_admin"
 )
 
+const (
+	DelegationScopeBitResolverUpdateV2 DelegationScopeBitsV2 = 1 << iota
+	DelegationScopeBitSubdomainCreateV2
+	DelegationScopeBitSubdomainTransferV2
+	DelegationScopeBitServiceRecordUpdateV2
+	DelegationScopeBitInterfaceRecordUpdateV2
+	DelegationScopeBitRoutingRecordUpdateV2
+	DelegationScopeBitZoneAdminV2
+)
+
 type DelegationRecordV2 struct {
-	NameHash          string
-	Delegate          sdk.AccAddress
-	Scope             DelegationScopeV2
-	Permissions       []string
-	ExpiresAtHeight   uint64
-	SubtreeLimit      uint8
-	RecordPrefixLimit string
-	CreatedAtHeight   uint64
+	NameHash              string
+	Delegate              sdk.AccAddress
+	Scope                 DelegationScopeV2
+	ScopeBits             DelegationScopeBitsV2
+	Permissions           []string
+	ExpiresAtHeight       uint64
+	SubtreeLimit          uint8
+	RecordPrefixLimit     string
+	CreatedAtHeight       uint64
+	TimeLockedUntilHeight uint64
 }
 
 type AuctionRecordV2Status string
@@ -75,6 +89,7 @@ func NewDelegationRecordV2(name string, delegate sdk.AccAddress, scope Delegatio
 		NameHash:          nameHash,
 		Delegate:          cloneSpecAddress(delegate),
 		Scope:             scope,
+		ScopeBits:         DelegationScopeBitForScopeV2(scope),
 		Permissions:       sortStringSet(permissions),
 		ExpiresAtHeight:   expiresAtHeight,
 		SubtreeLimit:      subtreeLimit,
@@ -99,6 +114,12 @@ func ValidateDelegationRecordV2(record DelegationRecordV2) error {
 	}
 	if record.ExpiresAtHeight <= record.CreatedAtHeight {
 		return errors.New("identity v2 delegation expires_at_height must be after created_at_height")
+	}
+	if record.TimeLockedUntilHeight != 0 && record.TimeLockedUntilHeight >= record.ExpiresAtHeight {
+		return errors.New("identity v2 delegation time lock must end before expires_at_height")
+	}
+	if err := ValidateDelegationScopeBitsV2(record.Scope, record.ScopeBits); err != nil {
+		return err
 	}
 	if record.SubtreeLimit > MaxResolverLabels {
 		return fmt.Errorf("identity v2 delegation subtree_limit must not exceed %d", MaxResolverLabels)
@@ -132,6 +153,41 @@ func ValidateDelegationRecordV2Use(record DelegationRecordV2, scope DelegationSc
 		if !strings.HasPrefix(recordKey, record.RecordPrefixLimit) {
 			return errors.New("identity v2 delegation record prefix limit exceeded")
 		}
+	}
+	return nil
+}
+
+func DelegationScopeBitForScopeV2(scope DelegationScopeV2) DelegationScopeBitsV2 {
+	switch scope {
+	case DelegationScopeResolverUpdate:
+		return DelegationScopeBitResolverUpdateV2
+	case DelegationScopeSubdomainCreate:
+		return DelegationScopeBitSubdomainCreateV2
+	case DelegationScopeSubdomainTransfer:
+		return DelegationScopeBitSubdomainTransferV2
+	case DelegationScopeServiceRecordUpdate:
+		return DelegationScopeBitServiceRecordUpdateV2
+	case DelegationScopeInterfaceRecordUpdate:
+		return DelegationScopeBitInterfaceRecordUpdateV2
+	case DelegationScopeRoutingRecordUpdate:
+		return DelegationScopeBitRoutingRecordUpdateV2
+	case DelegationScopeZoneAdmin:
+		return DelegationScopeBitZoneAdminV2
+	default:
+		return 0
+	}
+}
+
+func ValidateDelegationScopeBitsV2(scope DelegationScopeV2, bits DelegationScopeBitsV2) error {
+	if bits == 0 {
+		return nil
+	}
+	expected := DelegationScopeBitForScopeV2(scope)
+	if expected == 0 {
+		return errors.New("identity v2 delegation scope bit cannot be derived")
+	}
+	if bits&expected == 0 {
+		return errors.New("identity v2 delegation scope_bits must include scope")
 	}
 	return nil
 }

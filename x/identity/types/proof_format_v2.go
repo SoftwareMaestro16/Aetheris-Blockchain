@@ -761,18 +761,25 @@ func (e *identityProofBinaryEncoderV2) writeDelegations(records []DelegationReco
 		if ordered[i].NameHash != ordered[j].NameHash {
 			return ordered[i].NameHash < ordered[j].NameHash
 		}
-		return hex.EncodeToString(ordered[i].Delegate) < hex.EncodeToString(ordered[j].Delegate)
+		leftDelegate := hex.EncodeToString(ordered[i].Delegate)
+		rightDelegate := hex.EncodeToString(ordered[j].Delegate)
+		if leftDelegate != rightDelegate {
+			return leftDelegate < rightDelegate
+		}
+		return ordered[i].Scope < ordered[j].Scope
 	})
 	e.writeUint64(uint64(len(ordered)))
 	for _, record := range ordered {
 		e.writeString(record.NameHash)
 		e.writeAddress(record.Delegate)
 		e.writeString(string(record.Scope))
+		e.writeUint64(uint64(record.ScopeBits))
 		e.writeStringSlice(record.Permissions)
 		e.writeUint64(record.ExpiresAtHeight)
 		e.writeUint64(uint64(record.SubtreeLimit))
 		e.writeString(record.RecordPrefixLimit)
 		e.writeUint64(record.CreatedAtHeight)
+		e.writeUint64(record.TimeLockedUntilHeight)
 	}
 }
 
@@ -786,6 +793,12 @@ func (e *identityProofBinaryEncoderV2) writeSubdomains(records []SubdomainRecord
 		e.writeAddress(record.Owner)
 		e.writeBool(record.ParentControlsRecord)
 		e.writeUint64(record.CreatedHeight)
+		e.writeString(string(record.DelegationType))
+		e.writeBool(record.Detached)
+		e.writeBool(record.Ephemeral)
+		e.writeUint64(record.ExpiryHeight)
+		e.writeUint64(record.TimeLockedUntilHeight)
+		e.writeBool(record.ParentAuthorized)
 	}
 }
 

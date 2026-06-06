@@ -43,6 +43,7 @@ func TestIdentityTxV2CoreMessagesValidate(t *testing.T) {
 		MsgSetReverseRecordV2{Auth: txAuth(IdentitySignerScopeReverseUpdate, 8), Record: reverse, ExpectedRecordVersion: 1},
 		MsgVerifyReverseRecordV2{Auth: txAuth(IdentitySignerScopeReverseUpdate, 9), Record: reverse, AuthorizedAliasKeys: []string{ResolverKeyWallet}, ExpectedRecordVersion: 1},
 		MsgCreateSubdomainV2{Auth: txAuth(IdentitySignerScopeSubdomainAdmin, 10), ParentName: "parent.aet", ParentNameHash: parentHash, Label: "api", ChildOwner: addr(5), ExpectedParentVersion: 1},
+		MsgCreateSubdomainV2{Auth: txAuth(IdentitySignerScopeSubdomainAdmin, 10), ParentName: "parent.aet", ParentNameHash: parentHash, Label: "paid", ChildOwner: addr(5), DelegationType: SubdomainDelegationDetachedPaidV2, ChildExpiryHeight: 200, DetachedPaid: true, IndependentPayment: true, ParentAuthorization: true, ExpectedParentVersion: 1},
 		MsgDelegateSubdomainV2{Auth: txAuth(IdentitySignerScopeDelegationAdmin, 11), Delegation: delegation, ExpectedRecordVersion: 1},
 		MsgRevokeDelegationV2{Auth: txAuth(IdentitySignerScopeDelegationAdmin, 12), Name: "parent.aet", NameHash: parentHash, Delegate: addr(7), Scope: DelegationScopeSubdomainCreate, ExpectedRecordVersion: 1},
 		MsgStartAuctionV2{Auth: txAuth(IdentitySignerScopeAuctionAdmin, 13), Name: "alice.aet", NameHash: nameHash, MinBid: 100, FeeSplitID: "domain.fees"},
@@ -54,7 +55,7 @@ func TestIdentityTxV2CoreMessagesValidate(t *testing.T) {
 		MsgBatchRenewDomainsV2{Auth: txAuth(IdentitySignerScopeBatchAdmin, 19), Renewals: []RenewDomainBatchItemV2{{Name: "alice.aet", NameHash: nameHash, ExpectedRecordVersion: 1}}},
 		MsgInvalidateResolutionCacheV2{Auth: txAuth(IdentitySignerScopeCacheAdmin, 20), NameHash: nameHash, ResolutionPathHash: identityHash("path"), SourceVersion: 1, ParentEpoch: 2, ChildEpoch: 3, ExpectedRecordVersion: 1},
 	}
-	require.Len(t, msgs, 20)
+	require.Len(t, msgs, 21)
 	for _, msg := range msgs {
 		require.NoError(t, ValidateIdentityMsgV2(msg), msg.IdentityMessageName())
 		require.NotEmpty(t, msg.IdentityMessageName())

@@ -652,6 +652,12 @@ func identitySubdomainLeaf(record SubdomainRecord) (IdentityProofLeaf, error) {
 		hex.EncodeToString(record.Owner),
 		fmt.Sprintf("%t", record.ParentControlsRecord),
 		fmt.Sprintf("%020d", record.CreatedHeight),
+		string(record.DelegationType),
+		fmt.Sprintf("%t", record.Detached),
+		fmt.Sprintf("%t", record.Ephemeral),
+		fmt.Sprintf("%020d", record.ExpiryHeight),
+		fmt.Sprintf("%020d", record.TimeLockedUntilHeight),
+		fmt.Sprintf("%t", record.ParentAuthorized),
 	)), nil
 }
 
