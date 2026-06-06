@@ -3333,6 +3333,182 @@ func TestFeePolicyGossipRequiresValidityAndMaxFee(t *testing.T) {
 	require.Equal(t, "2", store.Edges[0].FeeAmount)
 }
 
+func TestGossipRateLimitRejectsTopologySpamLocally(t *testing.T) {
+	alice := testAddress(0xb0)
+	bob := testAddress(0xb1)
+	channel := signedChannel(t, "gossip-rate-limit", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+	policy := GossipRateLimitPolicy{WindowBlocks: 4, MaxMessagesPerNode: 2, MaxMessagesPerChannel: 4, MaxTopologyUpdates: 8, RejectPenalty: InvalidGossipPenalty}
+	store := TopologyStore{}
+
+	for seq := uint64(1); seq <= 2; seq++ {
+		envelope := signedGossipEnvelope(t, GossipMessage{
+			MessageType:      GossipChannelUpdate,
+			ChainID:          channel.ChainID,
+			ChannelID:        channel.ChannelID,
+			NodeID:           alice,
+			From:             alice,
+			To:               bob,
+			Capacity:         "500",
+			FeeAmount:        "1",
+			ValidAfterHeight: 20,
+			ValidUntilHeight: 40,
+			Sequence:         seq,
+		}, alice, 20)
+		var decision GossipRateLimitDecision
+		var err error
+		store, decision, err = ApplyGossipEnvelopeWithRateLimit(store, state, envelope, 20, policy)
+		require.NoError(t, err)
+		require.True(t, decision.Allowed)
+	}
+	require.Len(t, store.Messages, 2)
+
+	spam := signedGossipEnvelope(t, GossipMessage{
+		MessageType:      GossipChannelUpdate,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		NodeID:           alice,
+		From:             alice,
+		To:               bob,
+		Capacity:         "500",
+		FeeAmount:        "1",
+		ValidAfterHeight: 20,
+		ValidUntilHeight: 40,
+		Sequence:         3,
+	}, alice, 20)
+	next, decision, err := ApplyGossipEnvelopeWithRateLimit(store, state, spam, 20, policy)
+	require.ErrorContains(t, err, "node message rate limit")
+	require.False(t, decision.Allowed)
+	require.Equal(t, uint32(2), decision.NodeMessages)
+	require.Len(t, next.Messages, 2)
+	require.Len(t, next.Reputation, 1)
+	require.Equal(t, -InvalidGossipPenalty, next.Reputation[0].Score)
+	require.Empty(t, state.Edges)
+}
+
+func TestRouteFailureScoringReducesLocalRoutingScore(t *testing.T) {
+	alice := testAddress(0xb2)
+	bob := testAddress(0xb3)
+	channel := signedChannel(t, "route-failure-score", "1000", alice, bob)
+	edge := ChannelEdge{ChannelID: channel.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "1", Active: true}
+	reports := []RouteFailureReport{
+		{ChannelID: channel.ChannelID, From: alice, To: bob, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 30},
+		{ChannelID: channel.ChannelID, From: alice, To: bob, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 31},
+		{ChannelID: channel.ChannelID, From: alice, To: bob, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 32},
+	}
+
+	store, scores, err := ApplyRouteFailureScoring(TopologyStore{}, reports, DefaultRouteFailureScoringPolicy())
+	require.NoError(t, err)
+	require.Len(t, scores, 3)
+	require.Equal(t, int64(-30), scores[0].ScoreDelta)
+	require.Equal(t, int64(-40), scores[1].ScoreDelta)
+	require.Equal(t, int64(-50), scores[2].ScoreDelta)
+	require.Equal(t, int64(-120), RoutingScoreForEdge(store, edge))
+	require.NotEmpty(t, scores[2].ScoreHash)
+}
+
+func TestHighValueRouteRequiresBackedLiquidityProof(t *testing.T) {
+	alice := testAddress(0xb4)
+	bob := testAddress(0xb5)
+	channel := signedChannel(t, "liquidity-proof", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+
+	ad, err := BuildLiquidityAdvertisement(LiquidityAdvertisement{
+		ChannelID:           channel.ChannelID,
+		Advertiser:          alice,
+		Counterparty:        bob,
+		Capacity:            "300",
+		FeeDenom:            NativeDenom,
+		BaseFee:             "1",
+		ReservationFee:      "2",
+		ReliabilityBps:      9_000,
+		ValidUntilHeight:    60,
+		DepositAmount:       "10",
+		BackedByReservation: true,
+	}, "10")
+	require.NoError(t, err)
+	reservation, err := BuildSignedLiquidityReservation(SignedLiquidityReservation{
+		AdvertisementID:  ad.AdvertisementID,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		Reserver:         alice,
+		Counterparty:     bob,
+		Capacity:         "250",
+		FeeAmount:        "2",
+		ExpirationHeight: 55,
+		Nonce:            1,
+	}, alice)
+	require.NoError(t, err)
+	proof, err := BuildRouteLiquidityProof(RouteLiquidityProof{
+		ChannelID:          channel.ChannelID,
+		Amount:             "200",
+		HighValueThreshold: "100",
+		RequiredDeposit:    "10",
+		CurrentHeight:      40,
+		Advertisement:      ad,
+		Reservation:        reservation,
+	})
+	require.NoError(t, err)
+	require.NoError(t, VerifyRouteLiquidityProof(state, proof))
+
+	unbackedAd, err := BuildLiquidityAdvertisement(LiquidityAdvertisement{
+		ChannelID:        channel.ChannelID,
+		Advertiser:       alice,
+		Counterparty:     bob,
+		Capacity:         "300",
+		FeeDenom:         NativeDenom,
+		BaseFee:          "1",
+		ReservationFee:   "2",
+		ReliabilityBps:   9_000,
+		ValidUntilHeight: 60,
+		DepositAmount:    "10",
+	}, "10")
+	require.NoError(t, err)
+	unbacked := proof
+	unbacked.Advertisement = unbackedAd
+	unbacked.ProofHash = ComputeRouteLiquidityProofHash(unbacked)
+	require.ErrorContains(t, VerifyRouteLiquidityProof(state, unbacked), "requires backed advertisement")
+
+	lowValue := proof
+	lowValue.Amount = "50"
+	lowValue.ProofHash = ComputeRouteLiquidityProofHash(lowValue)
+	require.NoError(t, VerifyRouteLiquidityProof(state, lowValue))
+}
+
+func TestTopologySpamSimulationAppliesRateLimitsAndPenalties(t *testing.T) {
+	alice := testAddress(0xb6)
+	bob := testAddress(0xb7)
+	channel := signedChannel(t, "topology-spam", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+	policy := GossipRateLimitPolicy{WindowBlocks: 4, MaxMessagesPerNode: 2, MaxMessagesPerChannel: 8, MaxTopologyUpdates: 8, RejectPenalty: InvalidGossipPenalty}
+	envelopes := []SignedGossipEnvelope{}
+	for seq := uint64(1); seq <= 4; seq++ {
+		envelopes = append(envelopes, signedGossipEnvelope(t, GossipMessage{
+			MessageType:      GossipChannelUpdate,
+			ChainID:          channel.ChainID,
+			ChannelID:        channel.ChannelID,
+			NodeID:           alice,
+			From:             alice,
+			To:               bob,
+			Capacity:         "500",
+			FeeAmount:        "1",
+			ValidAfterHeight: 20,
+			ValidUntilHeight: 40,
+			Sequence:         seq,
+		}, alice, 20))
+	}
+
+	store, sim, err := SimulateTopologySpam(state, TopologyStore{}, envelopes, 20, policy)
+	require.NoError(t, err)
+	require.Equal(t, uint32(2), sim.Accepted)
+	require.Equal(t, uint32(2), sim.Rejected)
+	require.Equal(t, []string{alice}, sim.PenalizedNodes)
+	require.Len(t, sim.Decisions, 4)
+	require.NotEmpty(t, sim.SimulationHash)
+	require.Len(t, store.Messages, 2)
+	require.Equal(t, int64(-2*InvalidGossipPenalty), store.Reputation[0].Score)
+}
+
 func TestSettlementPrunesRoutingEdgesForAuthoritativeClosedChannel(t *testing.T) {
 	alice := testAddress(0x4c)
 	bob := testAddress(0x4d)
