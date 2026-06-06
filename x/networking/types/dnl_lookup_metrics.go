@@ -299,7 +299,7 @@ func SelectConsensusRouteFromCommittedMetrics(state DNLRoutingState, epoch uint6
 	if err := request.Validate(); err != nil {
 		return DNLRouteSelection{}, err
 	}
-	table, found := QueryRoutingTable(state, epoch)
+	table, found := LookupRoutingTable(state, epoch)
 	if !found {
 		return DNLRouteSelection{}, errors.New("networking DNL consensus routing requires committed routing table")
 	}

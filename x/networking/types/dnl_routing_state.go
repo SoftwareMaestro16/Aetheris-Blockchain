@@ -218,7 +218,7 @@ func QueryRoutingNodesByService(state DNLRoutingState, serviceID string) []NodeR
 	return normalizeRoutingNodeRecords(out)
 }
 
-func QueryRoutingTable(state DNLRoutingState, epoch uint64) (RoutingTable, bool) {
+func LookupRoutingTable(state DNLRoutingState, epoch uint64) (RoutingTable, bool) {
 	for _, table := range state.Tables {
 		if table.Epoch == epoch {
 			return table, true

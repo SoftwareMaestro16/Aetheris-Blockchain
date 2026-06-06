@@ -85,7 +85,7 @@ func TestDNLRoutingStateBuildsDeterministicIndexesAndRoots(t *testing.T) {
 	require.Equal(t, first.NodeID, got.NodeID)
 	require.Len(t, QueryRoutingNodesByZone(left, "financial"), 1)
 	require.Len(t, QueryRoutingNodesByService(left, "svc-pay"), 1)
-	gotTable, found := QueryRoutingTable(left, 3)
+	gotTable, found := LookupRoutingTable(left, 3)
 	require.True(t, found)
 	require.Equal(t, table.TableRoot, gotTable.TableRoot)
 }
