@@ -1,0 +1,802 @@
+package types
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+)
+
+const MigrationPathSpecVersion = uint64(1)
+
+type MigrationPhaseID string
+type MigrationTaskID string
+type MigrationExitCriterionID string
+
+const (
+	MigrationPhaseBaselineHardening MigrationPhaseID = "phase-0-baseline-hardening"
+	MigrationPhaseCoreCommitments   MigrationPhaseID = "phase-1-core-commitments"
+
+	MigrationTaskModuleBoundaryDocs        MigrationTaskID = "module-boundary-documentation"
+	MigrationTaskStateExportValidation     MigrationTaskID = "state-export-validation"
+	MigrationTaskDeterministicGenesis      MigrationTaskID = "deterministic-genesis-import"
+	MigrationTaskDynamicFeeBoundsTests     MigrationTaskID = "dynamic-fee-bounds-tests"
+	MigrationTaskLegacyModuleInvariants    MigrationTaskID = "staking-slashing-bank-distribution-invariants"
+	MigrationTaskStoreV2CompatibilityAudit MigrationTaskID = "store-v2-compatibility-audit"
+
+	MigrationTaskAetherCoreModule     MigrationTaskID = "aethercore-module"
+	MigrationTaskDefaultZoneRegistry  MigrationTaskID = "default-zone-registry"
+	MigrationTaskDefaultZoneStateRoot MigrationTaskID = "default-zone-state-root"
+	MigrationTaskEmptyMessageRoot     MigrationTaskID = "empty-message-root"
+	MigrationTaskProofRootRegistry    MigrationTaskID = "proof-root-registry"
+	MigrationTaskRootQueryAPIs        MigrationTaskID = "root-query-apis"
+
+	MigrationExitSingleChainReproducibleExport MigrationExitCriterionID = "single-chain-state-reproducible-exportable"
+	MigrationExitLegacyInvariantCoverage       MigrationExitCriterionID = "legacy-module-invariant-coverage"
+	MigrationExitSafePrefixMigration           MigrationExitCriterionID = "safe-prefix-migration-upgrade-handlers"
+
+	MigrationExitSingleZoneOperation       MigrationExitCriterionID = "current-chain-operates-as-one-zone"
+	MigrationExitAppHashCoreRoot           MigrationExitCriterionID = "app-hash-includes-core-root-structure"
+	MigrationExitProofRegistryRootMetadata MigrationExitCriterionID = "proof-registry-serves-root-metadata"
+)
+
+type MigrationTaskDescriptor struct {
+	PhaseID        MigrationPhaseID
+	TaskID         MigrationTaskID
+	Task           string
+	Target         string
+	Evidence       string
+	DescriptorHash string
+}
+
+type MigrationExitCriterion struct {
+	PhaseID        MigrationPhaseID
+	CriterionID    MigrationExitCriterionID
+	Criterion      string
+	Evidence       string
+	DescriptorHash string
+}
+
+type MigrationPhase struct {
+	PhaseID      MigrationPhaseID
+	Title        string
+	Tasks        []MigrationTaskDescriptor
+	ExitCriteria []MigrationExitCriterion
+	PhaseHash    string
+}
+
+type MigrationPathSpec struct {
+	Version uint64
+	Phases  []MigrationPhase
+	Root    string
+}
+
+type BaselineHardeningEvidence struct {
+	ModuleBoundaryDocsRoot   string
+	StateExportManifestHash  string
+	GenesisImportHash        string
+	DynamicFeeBoundsTestHash string
+	LegacyInvariantRoot      string
+	StoreV2AuditHash         string
+	UpgradeHandlerPrefixHash string
+	StateReproducible        bool
+	StateExportable          bool
+	InvariantCoverage        bool
+	PrefixMigrationSafe      bool
+	EvidenceHash             string
+}
+
+type CoreCommitmentMigrationEvidence struct {
+	AetherCoreModuleHash      string
+	DefaultZoneDescriptorHash string
+	DefaultZoneStateRoot      string
+	EmptyMessageRoot          string
+	ProofRegistryRoot         string
+	RootQueryAPIHash          string
+	AppHashCoreRoot           string
+	DefaultZoneID             ZoneID
+	SingleZoneMode            bool
+	ProofRegistryMetadata     bool
+	EvidenceHash              string
+}
+
+func DefaultMigrationPathSpec() (MigrationPathSpec, error) {
+	return BuildMigrationPathSpec([]MigrationPhase{
+		migrationPhase(MigrationPhaseBaselineHardening, "Phase 0: Baseline Hardening", MigrationPhase0Tasks(), MigrationPhase0ExitCriteria()),
+		migrationPhase(MigrationPhaseCoreCommitments, "Phase 1: Core Commitments", MigrationPhase1Tasks(), MigrationPhase1ExitCriteria()),
+	})
+}
+
+func BuildMigrationPathSpec(phases []MigrationPhase) (MigrationPathSpec, error) {
+	spec := MigrationPathSpec{
+		Version: MigrationPathSpecVersion,
+		Phases:  normalizeMigrationPhases(phases),
+	}
+	if err := spec.ValidateFormat(); err != nil {
+		return MigrationPathSpec{}, err
+	}
+	spec.Root = ComputeMigrationPathSpecRoot(spec.Phases)
+	return spec, spec.Validate()
+}
+
+func MigrationPhase0Tasks() []MigrationTaskDescriptor {
+	return []MigrationTaskDescriptor{
+		migrationTask(MigrationPhaseBaselineHardening, MigrationTaskModuleBoundaryDocs, "Finalize current module boundary documentation.", "module boundary manifest", "zone/core boundary matrix;module ownership table"),
+		migrationTask(MigrationPhaseBaselineHardening, MigrationTaskStateExportValidation, "Add state export validation.", "ExportManifest", "ExportManifest.ValidateHash;state root snapshots"),
+		migrationTask(MigrationPhaseBaselineHardening, MigrationTaskDeterministicGenesis, "Add deterministic genesis import for all active modules.", "genesis import replay", "canonical module import order;genesis import hash"),
+		migrationTask(MigrationPhaseBaselineHardening, MigrationTaskDynamicFeeBoundsTests, "Add dynamic fee bounds tests.", "fee module tests", "min/max fee bounds;forwarding fee escrow bounds"),
+		migrationTask(MigrationPhaseBaselineHardening, MigrationTaskLegacyModuleInvariants, "Add staking, slashing, bank, and distribution invariants.", "legacy invariant registry", "staking;slashing;bank;distribution invariant root"),
+		migrationTask(MigrationPhaseBaselineHardening, MigrationTaskStoreV2CompatibilityAudit, "Add Store v2 compatibility audit.", "Store v2 audit report", "prefix proof;bounded range scan;object store compatibility"),
+	}
+}
+
+func MigrationPhase1Tasks() []MigrationTaskDescriptor {
+	return []MigrationTaskDescriptor{
+		migrationTask(MigrationPhaseCoreCommitments, MigrationTaskAetherCoreModule, "Implement x/aethercore.", "x/aethercore", "CoreState;ZoneDescriptor;ZoneCommitment;RootSnapshot"),
+		migrationTask(MigrationPhaseCoreCommitments, MigrationTaskDefaultZoneRegistry, "Add zone registry with one default zone.", "zone registry", "one enabled default ZoneDescriptor"),
+		migrationTask(MigrationPhaseCoreCommitments, MigrationTaskDefaultZoneStateRoot, "Commit default zone state root.", "GlobalStateRoot", "default ZoneCommitment.zone_state_root"),
+		migrationTask(MigrationPhaseCoreCommitments, MigrationTaskEmptyMessageRoot, "Commit message root with empty queues.", "GlobalMessageRoot", "EmptyRootHash inbox and outbox queues"),
+		migrationTask(MigrationPhaseCoreCommitments, MigrationTaskProofRootRegistry, "Add proof root registry.", "ProofRoot registry", "state;message;zone;receipt root metadata"),
+		migrationTask(MigrationPhaseCoreCommitments, MigrationTaskRootQueryAPIs, "Add root query APIs.", "root query surface", "height-scoped root snapshot and proof metadata queries"),
+	}
+}
+
+func MigrationPhase0ExitCriteria() []MigrationExitCriterion {
+	return []MigrationExitCriterion{
+		migrationExitCriterion(MigrationPhaseBaselineHardening, MigrationExitSingleChainReproducibleExport, "Existing single-chain state is reproducible and exportable.", "state export manifest and genesis import hashes match after replay"),
+		migrationExitCriterion(MigrationPhaseBaselineHardening, MigrationExitLegacyInvariantCoverage, "Existing modules have invariant coverage.", "staking, slashing, bank, and distribution invariants are present in the invariant root"),
+		migrationExitCriterion(MigrationPhaseBaselineHardening, MigrationExitSafePrefixMigration, "Upgrade handlers can migrate state prefixes safely.", "upgrade handler prefix migration plan is hash-committed and replay-safe"),
+	}
+}
+
+func MigrationPhase1ExitCriteria() []MigrationExitCriterion {
+	return []MigrationExitCriterion{
+		migrationExitCriterion(MigrationPhaseCoreCommitments, MigrationExitSingleZoneOperation, "Current chain operates as one zone.", "exactly one enabled default zone is committed in the registry"),
+		migrationExitCriterion(MigrationPhaseCoreCommitments, MigrationExitAppHashCoreRoot, "App hash includes core root structure.", "app hash binds aether core, zone, message, receipt, and proof roots"),
+		migrationExitCriterion(MigrationPhaseCoreCommitments, MigrationExitProofRegistryRootMetadata, "Proof registry serves root metadata.", "proof root metadata is queryable by height and root type"),
+	}
+}
+
+func (s MigrationPathSpec) Normalize() MigrationPathSpec {
+	if s.Version == 0 {
+		s.Version = MigrationPathSpecVersion
+	}
+	s.Phases = normalizeMigrationPhases(s.Phases)
+	s.Root = normalizePerformanceHash(s.Root)
+	return s
+}
+
+func (s MigrationPathSpec) ValidateFormat() error {
+	s = s.Normalize()
+	if s.Version != MigrationPathSpecVersion {
+		return fmt.Errorf("aethercore migration path spec version must be %d", MigrationPathSpecVersion)
+	}
+	if len(s.Phases) != 2 {
+		return errors.New("aethercore migration path spec requires phase 0 and phase 1")
+	}
+	seen := make(map[MigrationPhaseID]struct{}, len(s.Phases))
+	var previous MigrationPhaseID
+	for i, phase := range s.Phases {
+		if err := phase.Validate(); err != nil {
+			return err
+		}
+		if _, found := seen[phase.PhaseID]; found {
+			return fmt.Errorf("duplicate aethercore migration phase %s", phase.PhaseID)
+		}
+		seen[phase.PhaseID] = struct{}{}
+		if i > 0 && previous >= phase.PhaseID {
+			return errors.New("aethercore migration phases must be sorted canonically")
+		}
+		previous = phase.PhaseID
+	}
+	if _, found := seen[MigrationPhaseBaselineHardening]; !found {
+		return errors.New("aethercore migration path missing phase 0 baseline hardening")
+	}
+	if _, found := seen[MigrationPhaseCoreCommitments]; !found {
+		return errors.New("aethercore migration path missing phase 1 core commitments")
+	}
+	if s.Root != "" {
+		if err := ValidateHash("aethercore migration path spec root", s.Root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s MigrationPathSpec) Validate() error {
+	s = s.Normalize()
+	if err := s.ValidateFormat(); err != nil {
+		return err
+	}
+	if s.Root == "" {
+		return errors.New("aethercore migration path spec root is required")
+	}
+	expected := ComputeMigrationPathSpecRoot(s.Phases)
+	if s.Root != expected {
+		return fmt.Errorf("aethercore migration path spec root mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (p MigrationPhase) Normalize() MigrationPhase {
+	p.Title = compactPerformanceText(p.Title)
+	p.Tasks = normalizeMigrationTasks(p.Tasks)
+	p.ExitCriteria = normalizeMigrationExitCriteria(p.ExitCriteria)
+	p.PhaseHash = normalizePerformanceHash(p.PhaseHash)
+	return p
+}
+
+func (p MigrationPhase) ValidateFormat() error {
+	p = p.Normalize()
+	if !IsMigrationPhaseID(p.PhaseID) {
+		return fmt.Errorf("unknown aethercore migration phase %q", p.PhaseID)
+	}
+	if p.Title == "" {
+		return errors.New("aethercore migration phase title is required")
+	}
+	if len(p.Tasks) == 0 || len(p.ExitCriteria) == 0 {
+		return errors.New("aethercore migration phase requires tasks and exit criteria")
+	}
+	seenTasks := make(map[MigrationTaskID]struct{}, len(p.Tasks))
+	var previousTask MigrationTaskID
+	for i, task := range p.Tasks {
+		if err := task.Validate(); err != nil {
+			return err
+		}
+		if task.PhaseID != p.PhaseID {
+			return errors.New("aethercore migration task phase mismatch")
+		}
+		if _, found := seenTasks[task.TaskID]; found {
+			return fmt.Errorf("duplicate aethercore migration task %s", task.TaskID)
+		}
+		seenTasks[task.TaskID] = struct{}{}
+		if i > 0 && previousTask >= task.TaskID {
+			return errors.New("aethercore migration tasks must be sorted canonically")
+		}
+		previousTask = task.TaskID
+	}
+	seenCriteria := make(map[MigrationExitCriterionID]struct{}, len(p.ExitCriteria))
+	var previousCriterion MigrationExitCriterionID
+	for i, criterion := range p.ExitCriteria {
+		if err := criterion.Validate(); err != nil {
+			return err
+		}
+		if criterion.PhaseID != p.PhaseID {
+			return errors.New("aethercore migration exit criterion phase mismatch")
+		}
+		if _, found := seenCriteria[criterion.CriterionID]; found {
+			return fmt.Errorf("duplicate aethercore migration exit criterion %s", criterion.CriterionID)
+		}
+		seenCriteria[criterion.CriterionID] = struct{}{}
+		if i > 0 && previousCriterion >= criterion.CriterionID {
+			return errors.New("aethercore migration exit criteria must be sorted canonically")
+		}
+		previousCriterion = criterion.CriterionID
+	}
+	if p.PhaseHash != "" {
+		if err := ValidateHash("aethercore migration phase hash", p.PhaseHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p MigrationPhase) Validate() error {
+	p = p.Normalize()
+	if err := p.ValidateFormat(); err != nil {
+		return err
+	}
+	if p.PhaseHash == "" {
+		return errors.New("aethercore migration phase hash is required")
+	}
+	expected := ComputeMigrationPhaseHash(p)
+	if p.PhaseHash != expected {
+		return fmt.Errorf("aethercore migration phase hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (d MigrationTaskDescriptor) Normalize() MigrationTaskDescriptor {
+	d.Task = compactPerformanceText(d.Task)
+	d.Target = compactPerformanceText(d.Target)
+	d.Evidence = compactPerformanceText(d.Evidence)
+	d.DescriptorHash = normalizePerformanceHash(d.DescriptorHash)
+	return d
+}
+
+func (d MigrationTaskDescriptor) ValidateFormat() error {
+	d = d.Normalize()
+	if !IsMigrationPhaseID(d.PhaseID) {
+		return fmt.Errorf("unknown aethercore migration task phase %q", d.PhaseID)
+	}
+	if !IsMigrationTaskID(d.PhaseID, d.TaskID) {
+		return fmt.Errorf("unknown aethercore migration task %q", d.TaskID)
+	}
+	if d.Task == "" || d.Target == "" || d.Evidence == "" {
+		return errors.New("aethercore migration task requires task, target, and evidence")
+	}
+	if d.DescriptorHash != "" {
+		if err := ValidateHash("aethercore migration task descriptor hash", d.DescriptorHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d MigrationTaskDescriptor) Validate() error {
+	d = d.Normalize()
+	if err := d.ValidateFormat(); err != nil {
+		return err
+	}
+	if d.DescriptorHash == "" {
+		return errors.New("aethercore migration task descriptor hash is required")
+	}
+	expected := ComputeMigrationTaskHash(d)
+	if d.DescriptorHash != expected {
+		return fmt.Errorf("aethercore migration task descriptor hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (c MigrationExitCriterion) Normalize() MigrationExitCriterion {
+	c.Criterion = compactPerformanceText(c.Criterion)
+	c.Evidence = compactPerformanceText(c.Evidence)
+	c.DescriptorHash = normalizePerformanceHash(c.DescriptorHash)
+	return c
+}
+
+func (c MigrationExitCriterion) ValidateFormat() error {
+	c = c.Normalize()
+	if !IsMigrationPhaseID(c.PhaseID) {
+		return fmt.Errorf("unknown aethercore migration exit criterion phase %q", c.PhaseID)
+	}
+	if !IsMigrationExitCriterionID(c.PhaseID, c.CriterionID) {
+		return fmt.Errorf("unknown aethercore migration exit criterion %q", c.CriterionID)
+	}
+	if c.Criterion == "" || c.Evidence == "" {
+		return errors.New("aethercore migration exit criterion requires criterion and evidence")
+	}
+	if c.DescriptorHash != "" {
+		if err := ValidateHash("aethercore migration exit criterion descriptor hash", c.DescriptorHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c MigrationExitCriterion) Validate() error {
+	c = c.Normalize()
+	if err := c.ValidateFormat(); err != nil {
+		return err
+	}
+	if c.DescriptorHash == "" {
+		return errors.New("aethercore migration exit criterion descriptor hash is required")
+	}
+	expected := ComputeMigrationExitCriterionHash(c)
+	if c.DescriptorHash != expected {
+		return fmt.Errorf("aethercore migration exit criterion descriptor hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (e BaselineHardeningEvidence) Normalize() BaselineHardeningEvidence {
+	e.ModuleBoundaryDocsRoot = normalizePerformanceHash(e.ModuleBoundaryDocsRoot)
+	e.StateExportManifestHash = normalizePerformanceHash(e.StateExportManifestHash)
+	e.GenesisImportHash = normalizePerformanceHash(e.GenesisImportHash)
+	e.DynamicFeeBoundsTestHash = normalizePerformanceHash(e.DynamicFeeBoundsTestHash)
+	e.LegacyInvariantRoot = normalizePerformanceHash(e.LegacyInvariantRoot)
+	e.StoreV2AuditHash = normalizePerformanceHash(e.StoreV2AuditHash)
+	e.UpgradeHandlerPrefixHash = normalizePerformanceHash(e.UpgradeHandlerPrefixHash)
+	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
+	return e
+}
+
+func (e BaselineHardeningEvidence) ValidateFormat() error {
+	e = e.Normalize()
+	hashes := []struct {
+		name  string
+		value string
+	}{
+		{"aethercore migration module boundary docs root", e.ModuleBoundaryDocsRoot},
+		{"aethercore migration state export manifest hash", e.StateExportManifestHash},
+		{"aethercore migration genesis import hash", e.GenesisImportHash},
+		{"aethercore migration dynamic fee bounds test hash", e.DynamicFeeBoundsTestHash},
+		{"aethercore migration legacy invariant root", e.LegacyInvariantRoot},
+		{"aethercore migration Store v2 audit hash", e.StoreV2AuditHash},
+		{"aethercore migration upgrade handler prefix hash", e.UpgradeHandlerPrefixHash},
+	}
+	for _, item := range hashes {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if !e.StateReproducible || !e.StateExportable {
+		return errors.New("aethercore migration baseline evidence requires reproducible and exportable state")
+	}
+	if !e.InvariantCoverage {
+		return errors.New("aethercore migration baseline evidence requires invariant coverage")
+	}
+	if !e.PrefixMigrationSafe {
+		return errors.New("aethercore migration baseline evidence requires safe prefix migration")
+	}
+	if e.EvidenceHash != "" {
+		if err := ValidateHash("aethercore migration baseline evidence hash", e.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e BaselineHardeningEvidence) Validate() error {
+	e = e.Normalize()
+	if err := e.ValidateFormat(); err != nil {
+		return err
+	}
+	if e.EvidenceHash == "" {
+		return errors.New("aethercore migration baseline evidence hash is required")
+	}
+	expected := ComputeBaselineHardeningEvidenceHash(e)
+	if e.EvidenceHash != expected {
+		return fmt.Errorf("aethercore migration baseline evidence hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (e CoreCommitmentMigrationEvidence) Normalize() CoreCommitmentMigrationEvidence {
+	e.AetherCoreModuleHash = normalizePerformanceHash(e.AetherCoreModuleHash)
+	e.DefaultZoneDescriptorHash = normalizePerformanceHash(e.DefaultZoneDescriptorHash)
+	e.DefaultZoneStateRoot = normalizePerformanceHash(e.DefaultZoneStateRoot)
+	e.EmptyMessageRoot = normalizePerformanceHash(e.EmptyMessageRoot)
+	e.ProofRegistryRoot = normalizePerformanceHash(e.ProofRegistryRoot)
+	e.RootQueryAPIHash = normalizePerformanceHash(e.RootQueryAPIHash)
+	e.AppHashCoreRoot = normalizePerformanceHash(e.AppHashCoreRoot)
+	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
+	return e
+}
+
+func (e CoreCommitmentMigrationEvidence) ValidateFormat() error {
+	e = e.Normalize()
+	hashes := []struct {
+		name  string
+		value string
+	}{
+		{"aethercore migration module hash", e.AetherCoreModuleHash},
+		{"aethercore migration default zone descriptor hash", e.DefaultZoneDescriptorHash},
+		{"aethercore migration default zone state root", e.DefaultZoneStateRoot},
+		{"aethercore migration empty message root", e.EmptyMessageRoot},
+		{"aethercore migration proof registry root", e.ProofRegistryRoot},
+		{"aethercore migration root query API hash", e.RootQueryAPIHash},
+		{"aethercore migration app hash core root", e.AppHashCoreRoot},
+	}
+	for _, item := range hashes {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if err := validateZoneID(string(e.DefaultZoneID)); err != nil {
+		return err
+	}
+	if e.EmptyMessageRoot != EmptyRootHash {
+		return errors.New("aethercore migration core evidence requires empty message queues to use EmptyRootHash")
+	}
+	if !e.SingleZoneMode {
+		return errors.New("aethercore migration core evidence requires single-zone operation")
+	}
+	if !e.ProofRegistryMetadata {
+		return errors.New("aethercore migration core evidence requires proof registry root metadata")
+	}
+	if e.EvidenceHash != "" {
+		if err := ValidateHash("aethercore migration core evidence hash", e.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e CoreCommitmentMigrationEvidence) Validate() error {
+	e = e.Normalize()
+	if err := e.ValidateFormat(); err != nil {
+		return err
+	}
+	if e.EvidenceHash == "" {
+		return errors.New("aethercore migration core evidence hash is required")
+	}
+	expected := ComputeCoreCommitmentMigrationEvidenceHash(e)
+	if e.EvidenceHash != expected {
+		return fmt.Errorf("aethercore migration core evidence hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func ValidateMigrationPathCoverage() error {
+	spec, err := DefaultMigrationPathSpec()
+	if err != nil {
+		return err
+	}
+	requiredTasks := map[MigrationPhaseID][]MigrationTaskID{
+		MigrationPhaseBaselineHardening: {
+			MigrationTaskModuleBoundaryDocs,
+			MigrationTaskStateExportValidation,
+			MigrationTaskDeterministicGenesis,
+			MigrationTaskDynamicFeeBoundsTests,
+			MigrationTaskLegacyModuleInvariants,
+			MigrationTaskStoreV2CompatibilityAudit,
+		},
+		MigrationPhaseCoreCommitments: {
+			MigrationTaskAetherCoreModule,
+			MigrationTaskDefaultZoneRegistry,
+			MigrationTaskDefaultZoneStateRoot,
+			MigrationTaskEmptyMessageRoot,
+			MigrationTaskProofRootRegistry,
+			MigrationTaskRootQueryAPIs,
+		},
+	}
+	requiredCriteria := map[MigrationPhaseID][]MigrationExitCriterionID{
+		MigrationPhaseBaselineHardening: {
+			MigrationExitSingleChainReproducibleExport,
+			MigrationExitLegacyInvariantCoverage,
+			MigrationExitSafePrefixMigration,
+		},
+		MigrationPhaseCoreCommitments: {
+			MigrationExitSingleZoneOperation,
+			MigrationExitAppHashCoreRoot,
+			MigrationExitProofRegistryRootMetadata,
+		},
+	}
+	phaseByID := make(map[MigrationPhaseID]MigrationPhase, len(spec.Phases))
+	for _, phase := range spec.Phases {
+		phaseByID[phase.PhaseID] = phase
+	}
+	for phaseID, tasks := range requiredTasks {
+		phase, found := phaseByID[phaseID]
+		if !found {
+			return fmt.Errorf("aethercore migration coverage missing phase %s", phaseID)
+		}
+		seen := make(map[MigrationTaskID]struct{}, len(phase.Tasks))
+		for _, task := range phase.Tasks {
+			seen[task.TaskID] = struct{}{}
+		}
+		for _, taskID := range tasks {
+			if _, found := seen[taskID]; !found {
+				return fmt.Errorf("aethercore migration coverage missing task %s", taskID)
+			}
+		}
+	}
+	for phaseID, criteria := range requiredCriteria {
+		phase, found := phaseByID[phaseID]
+		if !found {
+			return fmt.Errorf("aethercore migration coverage missing phase %s", phaseID)
+		}
+		seen := make(map[MigrationExitCriterionID]struct{}, len(phase.ExitCriteria))
+		for _, criterion := range phase.ExitCriteria {
+			seen[criterion.CriterionID] = struct{}{}
+		}
+		for _, criterionID := range criteria {
+			if _, found := seen[criterionID]; !found {
+				return fmt.Errorf("aethercore migration coverage missing exit criterion %s", criterionID)
+			}
+		}
+	}
+	return nil
+}
+
+func IsMigrationPhaseID(id MigrationPhaseID) bool {
+	return id == MigrationPhaseBaselineHardening || id == MigrationPhaseCoreCommitments
+}
+
+func IsMigrationTaskID(phaseID MigrationPhaseID, taskID MigrationTaskID) bool {
+	for _, task := range phaseTasksForID(phaseID) {
+		if task == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+func IsMigrationExitCriterionID(phaseID MigrationPhaseID, criterionID MigrationExitCriterionID) bool {
+	for _, criterion := range phaseExitCriteriaForID(phaseID) {
+		if criterion == criterionID {
+			return true
+		}
+	}
+	return false
+}
+
+func ComputeMigrationPathSpecRoot(phases []MigrationPhase) string {
+	phases = normalizeMigrationPhases(phases)
+	return hashRoot("aetheris-aek-migration-path-spec-v1", func(w byteWriter) {
+		writeUint64(w, uint64(len(phases)))
+		for _, phase := range phases {
+			writePart(w, string(phase.PhaseID))
+			writePart(w, phase.PhaseHash)
+		}
+	})
+}
+
+func ComputeMigrationPhaseHash(phase MigrationPhase) string {
+	phase = phase.Normalize()
+	return hashRoot("aetheris-aek-migration-phase-v1", func(w byteWriter) {
+		writePart(w, string(phase.PhaseID))
+		writePart(w, phase.Title)
+		writeUint64(w, uint64(len(phase.Tasks)))
+		for _, task := range phase.Tasks {
+			writePart(w, task.DescriptorHash)
+		}
+		writeUint64(w, uint64(len(phase.ExitCriteria)))
+		for _, criterion := range phase.ExitCriteria {
+			writePart(w, criterion.DescriptorHash)
+		}
+	})
+}
+
+func ComputeMigrationTaskHash(task MigrationTaskDescriptor) string {
+	task = task.Normalize()
+	return hashRoot("aetheris-aek-migration-task-v1", func(w byteWriter) {
+		writePart(w, string(task.PhaseID))
+		writePart(w, string(task.TaskID))
+		writePart(w, task.Task)
+		writePart(w, task.Target)
+		writePart(w, task.Evidence)
+	})
+}
+
+func ComputeMigrationExitCriterionHash(criterion MigrationExitCriterion) string {
+	criterion = criterion.Normalize()
+	return hashRoot("aetheris-aek-migration-exit-criterion-v1", func(w byteWriter) {
+		writePart(w, string(criterion.PhaseID))
+		writePart(w, string(criterion.CriterionID))
+		writePart(w, criterion.Criterion)
+		writePart(w, criterion.Evidence)
+	})
+}
+
+func ComputeBaselineHardeningEvidenceHash(e BaselineHardeningEvidence) string {
+	e = e.Normalize()
+	return hashRoot("aetheris-aek-migration-baseline-evidence-v1", func(w byteWriter) {
+		writePart(w, e.ModuleBoundaryDocsRoot)
+		writePart(w, e.StateExportManifestHash)
+		writePart(w, e.GenesisImportHash)
+		writePart(w, e.DynamicFeeBoundsTestHash)
+		writePart(w, e.LegacyInvariantRoot)
+		writePart(w, e.StoreV2AuditHash)
+		writePart(w, e.UpgradeHandlerPrefixHash)
+		writeBoolPart(w, e.StateReproducible)
+		writeBoolPart(w, e.StateExportable)
+		writeBoolPart(w, e.InvariantCoverage)
+		writeBoolPart(w, e.PrefixMigrationSafe)
+	})
+}
+
+func ComputeCoreCommitmentMigrationEvidenceHash(e CoreCommitmentMigrationEvidence) string {
+	e = e.Normalize()
+	return hashRoot("aetheris-aek-migration-core-commitment-evidence-v1", func(w byteWriter) {
+		writePart(w, e.AetherCoreModuleHash)
+		writePart(w, e.DefaultZoneDescriptorHash)
+		writePart(w, e.DefaultZoneStateRoot)
+		writePart(w, e.EmptyMessageRoot)
+		writePart(w, e.ProofRegistryRoot)
+		writePart(w, e.RootQueryAPIHash)
+		writePart(w, e.AppHashCoreRoot)
+		writePart(w, string(e.DefaultZoneID))
+		writeBoolPart(w, e.SingleZoneMode)
+		writeBoolPart(w, e.ProofRegistryMetadata)
+	})
+}
+
+func migrationPhase(phaseID MigrationPhaseID, title string, tasks []MigrationTaskDescriptor, criteria []MigrationExitCriterion) MigrationPhase {
+	phase := MigrationPhase{
+		PhaseID:      phaseID,
+		Title:        title,
+		Tasks:        normalizeMigrationTasks(tasks),
+		ExitCriteria: normalizeMigrationExitCriteria(criteria),
+	}
+	phase.PhaseHash = ComputeMigrationPhaseHash(phase)
+	return phase
+}
+
+func migrationTask(phaseID MigrationPhaseID, taskID MigrationTaskID, task, target, evidence string) MigrationTaskDescriptor {
+	descriptor := MigrationTaskDescriptor{
+		PhaseID:  phaseID,
+		TaskID:   taskID,
+		Task:     task,
+		Target:   target,
+		Evidence: evidence,
+	}
+	descriptor.DescriptorHash = ComputeMigrationTaskHash(descriptor)
+	return descriptor
+}
+
+func migrationExitCriterion(phaseID MigrationPhaseID, criterionID MigrationExitCriterionID, criterion, evidence string) MigrationExitCriterion {
+	descriptor := MigrationExitCriterion{
+		PhaseID:     phaseID,
+		CriterionID: criterionID,
+		Criterion:   criterion,
+		Evidence:    evidence,
+	}
+	descriptor.DescriptorHash = ComputeMigrationExitCriterionHash(descriptor)
+	return descriptor
+}
+
+func normalizeMigrationPhases(phases []MigrationPhase) []MigrationPhase {
+	normalized := make([]MigrationPhase, len(phases))
+	for i, phase := range phases {
+		normalized[i] = phase.Normalize()
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return normalized[i].PhaseID < normalized[j].PhaseID
+	})
+	return normalized
+}
+
+func normalizeMigrationTasks(tasks []MigrationTaskDescriptor) []MigrationTaskDescriptor {
+	normalized := make([]MigrationTaskDescriptor, len(tasks))
+	for i, task := range tasks {
+		normalized[i] = task.Normalize()
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return normalized[i].TaskID < normalized[j].TaskID
+	})
+	return normalized
+}
+
+func normalizeMigrationExitCriteria(criteria []MigrationExitCriterion) []MigrationExitCriterion {
+	normalized := make([]MigrationExitCriterion, len(criteria))
+	for i, criterion := range criteria {
+		normalized[i] = criterion.Normalize()
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return normalized[i].CriterionID < normalized[j].CriterionID
+	})
+	return normalized
+}
+
+func phaseTasksForID(phaseID MigrationPhaseID) []MigrationTaskID {
+	switch phaseID {
+	case MigrationPhaseBaselineHardening:
+		return []MigrationTaskID{
+			MigrationTaskModuleBoundaryDocs,
+			MigrationTaskStateExportValidation,
+			MigrationTaskDeterministicGenesis,
+			MigrationTaskDynamicFeeBoundsTests,
+			MigrationTaskLegacyModuleInvariants,
+			MigrationTaskStoreV2CompatibilityAudit,
+		}
+	case MigrationPhaseCoreCommitments:
+		return []MigrationTaskID{
+			MigrationTaskAetherCoreModule,
+			MigrationTaskDefaultZoneRegistry,
+			MigrationTaskDefaultZoneStateRoot,
+			MigrationTaskEmptyMessageRoot,
+			MigrationTaskProofRootRegistry,
+			MigrationTaskRootQueryAPIs,
+		}
+	default:
+		return nil
+	}
+}
+
+func phaseExitCriteriaForID(phaseID MigrationPhaseID) []MigrationExitCriterionID {
+	switch phaseID {
+	case MigrationPhaseBaselineHardening:
+		return []MigrationExitCriterionID{
+			MigrationExitSingleChainReproducibleExport,
+			MigrationExitLegacyInvariantCoverage,
+			MigrationExitSafePrefixMigration,
+		}
+	case MigrationPhaseCoreCommitments:
+		return []MigrationExitCriterionID{
+			MigrationExitSingleZoneOperation,
+			MigrationExitAppHashCoreRoot,
+			MigrationExitProofRegistryRootMetadata,
+		}
+	default:
+		return nil
+	}
+}
+
+func writeBoolPart(w byteWriter, value bool) {
+	if value {
+		writePart(w, "true")
+		return
+	}
+	writePart(w, "false")
+}
