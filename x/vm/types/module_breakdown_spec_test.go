@@ -11,7 +11,7 @@ func TestAVMCosmosModuleRegistryCoversSection18(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, registry.Validate())
 	require.Equal(t, ComputeAVMCosmosModuleRegistryHash(registry), registry.RegistryHash)
-	require.Len(t, registry.Modules, 4)
+	require.Len(t, registry.Modules, 6)
 
 	byPath := map[AVMCosmosModulePath]AVMCosmosModuleBreakdown{}
 	for _, module := range registry.Modules {
@@ -20,6 +20,8 @@ func TestAVMCosmosModuleRegistryCoversSection18(t *testing.T) {
 	}
 	require.Contains(t, byPath, AVMModulePathActors)
 	require.Contains(t, byPath, AVMModulePathAVM)
+	require.Contains(t, byPath, AVMModulePathAVMContracts)
+	require.Contains(t, byPath, AVMModulePathAVMInterfaces)
 	require.Contains(t, byPath, AVMModulePathAsync)
 	require.Contains(t, byPath, AVMModulePathContinuations)
 }
@@ -152,6 +154,66 @@ func TestXContinuationsModuleBreakdownMatchesSection184(t *testing.T) {
 	}, breakdown.Queries)
 }
 
+func TestXAVMContractsModuleBreakdownMatchesSection185(t *testing.T) {
+	breakdown, err := DefaultXAVMContractsModuleBreakdown()
+	require.NoError(t, err)
+	require.NoError(t, breakdown.Validate())
+	require.Equal(t, AVMModulePathAVMContracts, breakdown.ModulePath)
+
+	require.Contains(t, breakdown.Purpose, "contract_code")
+	require.Contains(t, breakdown.Purpose, "contract_instances")
+	require.Contains(t, breakdown.Purpose, "contract_storage")
+	require.Contains(t, breakdown.Purpose, "backend_adapters")
+
+	require.ElementsMatch(t, []AVMModuleStateObject{
+		AVMModuleStateCodeRecord,
+		AVMModuleStateContractRecord,
+		AVMModuleStateStorageValue,
+		AVMModuleStateBackendConfig,
+	}, breakdown.StateObjects)
+	require.ElementsMatch(t, []AVMModuleMessageName{
+		AVMModuleMsgStoreCode,
+		AVMModuleMsgInstantiateContract,
+		AVMModuleMsgExecuteContract,
+		AVMModuleMsgMigrateContract,
+	}, breakdown.Messages)
+	require.ElementsMatch(t, []AVMModuleQueryName{
+		AVMModuleQueryCode,
+		AVMModuleQueryContract,
+		AVMModuleQueryContractStorage,
+		AVMModuleQueryContractProof,
+	}, breakdown.Queries)
+}
+
+func TestXAVMInterfacesModuleBreakdownMatchesSection186(t *testing.T) {
+	breakdown, err := DefaultXAVMInterfacesModuleBreakdown()
+	require.NoError(t, err)
+	require.NoError(t, breakdown.Validate())
+	require.Equal(t, AVMModulePathAVMInterfaces, breakdown.ModulePath)
+
+	require.Contains(t, breakdown.Purpose, "contract_interface_schemas")
+	require.Contains(t, breakdown.Purpose, "actor_interface_schemas")
+	require.Contains(t, breakdown.Purpose, "service_interface_schemas")
+	require.Contains(t, breakdown.Purpose, "interface_schema_registry")
+
+	require.ElementsMatch(t, []AVMModuleStateObject{
+		AVMModuleStateInterfaceDescriptor,
+		AVMModuleStateMethodDescriptor,
+		AVMModuleStateEventDescriptor,
+		AVMModuleStateAsyncHandlerDescriptor,
+	}, breakdown.StateObjects)
+	require.ElementsMatch(t, []AVMModuleMessageName{
+		AVMModuleMsgRegisterInterface,
+		AVMModuleMsgUpdateInterface,
+		AVMModuleMsgDeprecateInterface,
+	}, breakdown.Messages)
+	require.ElementsMatch(t, []AVMModuleQueryName{
+		AVMModuleQueryInterface,
+		AVMModuleQueryMethod,
+		AVMModuleQueryInterfaceByTarget,
+	}, breakdown.Queries)
+}
+
 func TestAVMModuleBreakdownRejectsMissingAndCrossOwnedSurface(t *testing.T) {
 	breakdown, err := DefaultXAVMModuleBreakdown()
 	require.NoError(t, err)
@@ -182,6 +244,24 @@ func TestAVMModuleBreakdownRejectsMissingAndCrossOwnedSurface(t *testing.T) {
 	continuations.Messages = removeAVMModuleMessageForTest(continuations.Messages, AVMModuleMsgExpireContinuation)
 	continuations.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(continuations)
 	require.ErrorContains(t, continuations.Validate(), "message")
+
+	contracts, err := DefaultXAVMContractsModuleBreakdown()
+	require.NoError(t, err)
+	contracts.StateObjects = append(contracts.StateObjects, AVMModuleStateInterfaceDescriptor)
+	contracts.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(contracts)
+	require.ErrorContains(t, contracts.Validate(), "state object")
+
+	interfaces, err := DefaultXAVMInterfacesModuleBreakdown()
+	require.NoError(t, err)
+	interfaces.Messages = removeAVMModuleMessageForTest(interfaces.Messages, AVMModuleMsgDeprecateInterface)
+	interfaces.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(interfaces)
+	require.ErrorContains(t, interfaces.Validate(), "message")
+
+	interfaces, err = DefaultXAVMInterfacesModuleBreakdown()
+	require.NoError(t, err)
+	interfaces.Queries = append(interfaces.Queries, AVMModuleQueryContractProof)
+	interfaces.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(interfaces)
+	require.ErrorContains(t, interfaces.Validate(), "query")
 }
 
 func TestAVMModuleRegistryRejectsMissingModuleAndHashMismatch(t *testing.T) {
@@ -191,7 +271,7 @@ func TestAVMModuleRegistryRejectsMissingModuleAndHashMismatch(t *testing.T) {
 	missing := registry
 	missing.Modules = missing.Modules[:1]
 	missing.RegistryHash = ComputeAVMCosmosModuleRegistryHash(missing)
-	require.ErrorContains(t, missing.Validate(), "x/actors, x/avm, x/async, and x/continuations")
+	require.ErrorContains(t, missing.Validate(), "x/actors, x/avm, x/async, x/avmcontracts, x/avminterfaces, and x/continuations")
 
 	mutated := registry
 	mutated.Modules[0].Purpose[0] = "changed"

@@ -12,6 +12,8 @@ import (
 const (
 	AVMModulePathActors        AVMCosmosModulePath = "x/actors"
 	AVMModulePathAVM           AVMCosmosModulePath = "x/avm"
+	AVMModulePathAVMContracts  AVMCosmosModulePath = "x/avmcontracts"
+	AVMModulePathAVMInterfaces AVMCosmosModulePath = "x/avminterfaces"
 	AVMModulePathAsync         AVMCosmosModulePath = "x/async"
 	AVMModulePathContinuations AVMCosmosModulePath = "x/continuations"
 
@@ -36,6 +38,16 @@ const (
 	AVMModuleStateContinuationQueue   AVMModuleStateObject = "ContinuationQueue"
 	AVMModuleStateContinuationReceipt AVMModuleStateObject = "ContinuationReceipt"
 
+	AVMModuleStateCodeRecord     AVMModuleStateObject = "CodeRecord"
+	AVMModuleStateContractRecord AVMModuleStateObject = "ContractRecord"
+	AVMModuleStateStorageValue   AVMModuleStateObject = "StorageValue"
+	AVMModuleStateBackendConfig  AVMModuleStateObject = "BackendConfig"
+
+	AVMModuleStateInterfaceDescriptor    AVMModuleStateObject = "InterfaceDescriptor"
+	AVMModuleStateMethodDescriptor       AVMModuleStateObject = "MethodDescriptor"
+	AVMModuleStateEventDescriptor        AVMModuleStateObject = "EventDescriptor"
+	AVMModuleStateAsyncHandlerDescriptor AVMModuleStateObject = "AsyncHandlerDescriptor"
+
 	AVMModuleMsgSubmitAVMMessage       AVMModuleMessageName = "MsgSubmitAVMMessage"
 	AVMModuleMsgRegisterRoute          AVMModuleMessageName = "MsgRegisterRoute"
 	AVMModuleMsgUpdateAVMParams        AVMModuleMessageName = "MsgUpdateAVMParams"
@@ -56,6 +68,15 @@ const (
 	AVMModuleMsgCancelContinuation AVMModuleMessageName = "MsgCancelContinuation"
 	AVMModuleMsgExpireContinuation AVMModuleMessageName = "MsgExpireContinuation"
 
+	AVMModuleMsgStoreCode           AVMModuleMessageName = "MsgStoreCode"
+	AVMModuleMsgInstantiateContract AVMModuleMessageName = "MsgInstantiateContract"
+	AVMModuleMsgExecuteContract     AVMModuleMessageName = "MsgExecuteContract"
+	AVMModuleMsgMigrateContract     AVMModuleMessageName = "MsgMigrateContract"
+
+	AVMModuleMsgRegisterInterface  AVMModuleMessageName = "MsgRegisterInterface"
+	AVMModuleMsgUpdateInterface    AVMModuleMessageName = "MsgUpdateInterface"
+	AVMModuleMsgDeprecateInterface AVMModuleMessageName = "MsgDeprecateInterface"
+
 	AVMModuleQueryAVMParams        AVMModuleQueryName = "QueryAVMParams"
 	AVMModuleQueryAVMRoot          AVMModuleQueryName = "QueryAVMRoot"
 	AVMModuleQueryRoute            AVMModuleQueryName = "QueryRoute"
@@ -74,6 +95,15 @@ const (
 	AVMModuleQueryContinuation         AVMModuleQueryName = "QueryContinuation"
 	AVMModuleQueryContinuationsByActor AVMModuleQueryName = "QueryContinuationsByActor"
 	AVMModuleQueryContinuationReceipt  AVMModuleQueryName = "QueryContinuationReceipt"
+
+	AVMModuleQueryCode            AVMModuleQueryName = "QueryCode"
+	AVMModuleQueryContract        AVMModuleQueryName = "QueryContract"
+	AVMModuleQueryContractStorage AVMModuleQueryName = "QueryContractStorage"
+	AVMModuleQueryContractProof   AVMModuleQueryName = "QueryContractProof"
+
+	AVMModuleQueryInterface         AVMModuleQueryName = "QueryInterface"
+	AVMModuleQueryMethod            AVMModuleQueryName = "QueryMethod"
+	AVMModuleQueryInterfaceByTarget AVMModuleQueryName = "QueryInterfaceByTarget"
 
 	MaxAVMModulePurposeItems = 16
 	MaxAVMModuleSurfaceItems = 32
@@ -112,12 +142,20 @@ func DefaultAVMCosmosModuleRegistry() (AVMCosmosModuleRegistry, error) {
 	if err != nil {
 		return AVMCosmosModuleRegistry{}, err
 	}
+	contracts, err := DefaultXAVMContractsModuleBreakdown()
+	if err != nil {
+		return AVMCosmosModuleRegistry{}, err
+	}
+	interfaces, err := DefaultXAVMInterfacesModuleBreakdown()
+	if err != nil {
+		return AVMCosmosModuleRegistry{}, err
+	}
 	continuations, err := DefaultXContinuationsModuleBreakdown()
 	if err != nil {
 		return AVMCosmosModuleRegistry{}, err
 	}
 	return NewAVMCosmosModuleRegistry(AVMCosmosModuleRegistry{
-		Modules: []AVMCosmosModuleBreakdown{avm, async, actors, continuations},
+		Modules: []AVMCosmosModuleBreakdown{avm, async, actors, contracts, interfaces, continuations},
 	})
 }
 
@@ -245,6 +283,64 @@ func DefaultXContinuationsModuleBreakdown() (AVMCosmosModuleBreakdown, error) {
 	})
 }
 
+func DefaultXAVMContractsModuleBreakdown() (AVMCosmosModuleBreakdown, error) {
+	return NewAVMCosmosModuleBreakdown(AVMCosmosModuleBreakdown{
+		ModulePath: AVMModulePathAVMContracts,
+		Purpose: []string{
+			"backend_adapters",
+			"contract_code",
+			"contract_instances",
+			"contract_storage",
+		},
+		StateObjects: []AVMModuleStateObject{
+			AVMModuleStateCodeRecord,
+			AVMModuleStateContractRecord,
+			AVMModuleStateStorageValue,
+			AVMModuleStateBackendConfig,
+		},
+		Messages: []AVMModuleMessageName{
+			AVMModuleMsgStoreCode,
+			AVMModuleMsgInstantiateContract,
+			AVMModuleMsgExecuteContract,
+			AVMModuleMsgMigrateContract,
+		},
+		Queries: []AVMModuleQueryName{
+			AVMModuleQueryCode,
+			AVMModuleQueryContract,
+			AVMModuleQueryContractStorage,
+			AVMModuleQueryContractProof,
+		},
+	})
+}
+
+func DefaultXAVMInterfacesModuleBreakdown() (AVMCosmosModuleBreakdown, error) {
+	return NewAVMCosmosModuleBreakdown(AVMCosmosModuleBreakdown{
+		ModulePath: AVMModulePathAVMInterfaces,
+		Purpose: []string{
+			"actor_interface_schemas",
+			"contract_interface_schemas",
+			"interface_schema_registry",
+			"service_interface_schemas",
+		},
+		StateObjects: []AVMModuleStateObject{
+			AVMModuleStateInterfaceDescriptor,
+			AVMModuleStateMethodDescriptor,
+			AVMModuleStateEventDescriptor,
+			AVMModuleStateAsyncHandlerDescriptor,
+		},
+		Messages: []AVMModuleMessageName{
+			AVMModuleMsgRegisterInterface,
+			AVMModuleMsgUpdateInterface,
+			AVMModuleMsgDeprecateInterface,
+		},
+		Queries: []AVMModuleQueryName{
+			AVMModuleQueryInterface,
+			AVMModuleQueryMethod,
+			AVMModuleQueryInterfaceByTarget,
+		},
+	})
+}
+
 func NewAVMCosmosModuleBreakdown(breakdown AVMCosmosModuleBreakdown) (AVMCosmosModuleBreakdown, error) {
 	breakdown = canonicalAVMCosmosModuleBreakdown(breakdown)
 	breakdown.BreakdownHash = ComputeAVMCosmosModuleBreakdownHash(breakdown)
@@ -290,7 +386,7 @@ func (r AVMCosmosModuleRegistry) Validate() error {
 	r = canonicalAVMCosmosModuleRegistry(r)
 	required := AllAVMCosmosModulePaths()
 	if len(r.Modules) != len(required) {
-		return errors.New("AVM module registry must contain x/actors, x/avm, x/async, and x/continuations")
+		return errors.New("AVM module registry must contain x/actors, x/avm, x/async, x/avmcontracts, x/avminterfaces, and x/continuations")
 	}
 	seen := make(map[AVMCosmosModulePath]struct{}, len(r.Modules))
 	for i, module := range r.Modules {
@@ -323,12 +419,12 @@ func (r AVMCosmosModuleRegistry) Validate() error {
 }
 
 func AllAVMCosmosModulePaths() []AVMCosmosModulePath {
-	return []AVMCosmosModulePath{AVMModulePathActors, AVMModulePathAVM, AVMModulePathAsync, AVMModulePathContinuations}
+	return []AVMCosmosModulePath{AVMModulePathActors, AVMModulePathAVM, AVMModulePathAsync, AVMModulePathAVMContracts, AVMModulePathAVMInterfaces, AVMModulePathContinuations}
 }
 
 func IsAVMCosmosModulePath(path AVMCosmosModulePath) bool {
 	switch path {
-	case AVMModulePathActors, AVMModulePathAVM, AVMModulePathAsync, AVMModulePathContinuations:
+	case AVMModulePathActors, AVMModulePathAVM, AVMModulePathAsync, AVMModulePathAVMContracts, AVMModulePathAVMInterfaces, AVMModulePathContinuations:
 		return true
 	default:
 		return false
@@ -424,6 +520,10 @@ func requiredAVMModuleStateObjects(module AVMCosmosModulePath) []AVMModuleStateO
 		return []AVMModuleStateObject{AVMModuleStateAVMParams, AVMModuleStateRouteDescriptor, AVMModuleStateAVMRoot, AVMModuleStateExecutionReceipt, AVMModuleStateRuntimeVersion}
 	case AVMModulePathAsync:
 		return []AVMModuleStateObject{AVMModuleStateAsyncMessage, AVMModuleStateZoneQueue, AVMModuleStateRetryRecord, AVMModuleStateDeadLetter, AVMModuleStateReplayTombstone}
+	case AVMModulePathAVMContracts:
+		return []AVMModuleStateObject{AVMModuleStateCodeRecord, AVMModuleStateContractRecord, AVMModuleStateStorageValue, AVMModuleStateBackendConfig}
+	case AVMModulePathAVMInterfaces:
+		return []AVMModuleStateObject{AVMModuleStateInterfaceDescriptor, AVMModuleStateMethodDescriptor, AVMModuleStateEventDescriptor, AVMModuleStateAsyncHandlerDescriptor}
 	case AVMModulePathContinuations:
 		return []AVMModuleStateObject{AVMModuleStateContinuation, AVMModuleStateContinuationQueue, AVMModuleStateContinuationReceipt}
 	default:
@@ -439,6 +539,10 @@ func requiredAVMModuleMessages(module AVMCosmosModulePath) []AVMModuleMessageNam
 		return []AVMModuleMessageName{AVMModuleMsgSubmitAVMMessage, AVMModuleMsgRegisterRoute, AVMModuleMsgUpdateAVMParams, AVMModuleMsgScheduleRuntimeUpgrade}
 	case AVMModulePathAsync:
 		return []AVMModuleMessageName{AVMModuleMsgSubmitAsyncMessage, AVMModuleMsgCancelAsyncMessage, AVMModuleMsgRetryAsyncMessage, AVMModuleMsgExpireAsyncMessage}
+	case AVMModulePathAVMContracts:
+		return []AVMModuleMessageName{AVMModuleMsgStoreCode, AVMModuleMsgInstantiateContract, AVMModuleMsgExecuteContract, AVMModuleMsgMigrateContract}
+	case AVMModulePathAVMInterfaces:
+		return []AVMModuleMessageName{AVMModuleMsgRegisterInterface, AVMModuleMsgUpdateInterface, AVMModuleMsgDeprecateInterface}
 	case AVMModulePathContinuations:
 		return []AVMModuleMessageName{AVMModuleMsgCreateContinuation, AVMModuleMsgResumeContinuation, AVMModuleMsgCancelContinuation, AVMModuleMsgExpireContinuation}
 	default:
@@ -454,6 +558,10 @@ func requiredAVMModuleQueries(module AVMCosmosModulePath) []AVMModuleQueryName {
 		return []AVMModuleQueryName{AVMModuleQueryAVMParams, AVMModuleQueryAVMRoot, AVMModuleQueryRoute, AVMModuleQueryExecutionReceipt, AVMModuleQueryRuntimeVersion}
 	case AVMModulePathAsync:
 		return []AVMModuleQueryName{AVMModuleQueryAsyncMessage, AVMModuleQueryZoneQueue, AVMModuleQueryDeadLetter, AVMModuleQueryReplayTombstone}
+	case AVMModulePathAVMContracts:
+		return []AVMModuleQueryName{AVMModuleQueryCode, AVMModuleQueryContract, AVMModuleQueryContractStorage, AVMModuleQueryContractProof}
+	case AVMModulePathAVMInterfaces:
+		return []AVMModuleQueryName{AVMModuleQueryInterface, AVMModuleQueryMethod, AVMModuleQueryInterfaceByTarget}
 	case AVMModulePathContinuations:
 		return []AVMModuleQueryName{AVMModuleQueryContinuation, AVMModuleQueryContinuationsByActor, AVMModuleQueryContinuationReceipt}
 	default:
