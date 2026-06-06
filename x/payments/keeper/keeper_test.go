@@ -275,6 +275,63 @@ func TestKeeperAdaptiveSyncSnapshotRecovery(t *testing.T) {
 	require.Contains(t, recovered.PendingFinalizationIDs, channel.ChannelID)
 }
 
+func TestKeeperRoutingEngineModuleSelectsRetriesAndProbes(t *testing.T) {
+	k := NewKeeper()
+	gs := DefaultGenesis()
+	gs.Params = prototype.TestnetParams()
+	require.NoError(t, k.InitGenesis(gs))
+
+	alice := keeperAddress(0x74)
+	router := keeperAddress(0x75)
+	bob := keeperAddress(0x76)
+	direct := keeperSignedChannel(t, "keeper-routing-direct", "500", alice, bob)
+	first := keeperSignedChannel(t, "keeper-routing-first", "500", alice, router)
+	second := keeperSignedChannel(t, "keeper-routing-second", "500", router, bob)
+	require.NoError(t, k.OpenChannel(direct))
+	require.NoError(t, k.OpenChannel(first))
+	require.NoError(t, k.OpenChannel(second))
+
+	policy := paymentstypes.DefaultRoutePolicy()
+	policy.MaxHops = 4
+	policy.HopPenalty = "0"
+	engine, err := k.SnapshotRoutingEngine(paymentstypes.TopologyStore{}, policy, paymentstypes.DefaultGossipRateLimitPolicy(), paymentstypes.DefaultRouteFailureScoringPolicy())
+	require.NoError(t, err)
+
+	for _, env := range []paymentstypes.SignedGossipEnvelope{
+		keeperRoutingEnvelope(t, paymentstypes.GossipMessage{MessageType: paymentstypes.GossipChannelUpdate, ChainID: direct.ChainID, ChannelID: direct.ChannelID, NodeID: alice, From: alice, To: bob, Capacity: "500", FeeDenom: paymentstypes.NativeDenom, FeeAmount: "9", ValidAfterHeight: 10, ValidUntilHeight: 50, Sequence: 1}, alice, 11),
+		keeperRoutingEnvelope(t, paymentstypes.GossipMessage{MessageType: paymentstypes.GossipChannelUpdate, ChainID: first.ChainID, ChannelID: first.ChannelID, NodeID: alice, From: alice, To: router, Capacity: "500", FeeDenom: paymentstypes.NativeDenom, FeeAmount: "1", ValidAfterHeight: 10, ValidUntilHeight: 50, Sequence: 2}, alice, 11),
+		keeperRoutingEnvelope(t, paymentstypes.GossipMessage{MessageType: paymentstypes.GossipChannelUpdate, ChainID: second.ChainID, ChannelID: second.ChannelID, NodeID: router, From: router, To: bob, Capacity: "500", FeeDenom: paymentstypes.NativeDenom, FeeAmount: "1", ValidAfterHeight: 10, ValidUntilHeight: 50, Sequence: 3}, router, 11),
+	} {
+		engine, _, err = k.ApplyRoutingGossip(engine, paymentstypes.MsgGossipChannelUpdate{Gossip: env}, 11)
+		require.NoError(t, err)
+	}
+
+	engine, route, err := k.SelectRoutingPath(engine, paymentstypes.RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 20, Policy: policy})
+	require.NoError(t, err)
+	require.Len(t, route.Edges, 2)
+	require.Equal(t, "2", route.TotalFee)
+
+	probe, err := k.HandleCapacityProbe(engine, paymentstypes.CapacityProbeRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 20, MaxHops: 4, BlindedRouteHint: paymentstypes.HashParts("keeper-probe")}, router)
+	require.NoError(t, err)
+	require.True(t, probe.Available)
+	require.NotEmpty(t, probe.RouteHash)
+
+	engine, retry, err := k.RetryRoutingPath(engine, paymentstypes.RouteRetryRequest{
+		Selection: paymentstypes.RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 21, Policy: policy},
+		Failures:  []paymentstypes.RouteFailureReport{{ChannelID: first.ChannelID, From: alice, To: router, FailureClass: paymentstypes.RouteFailureCongestion, Retryable: true, ObservedHeight: 20}},
+		Policy:    paymentstypes.RouteRetryPolicy{MaxAttempts: 3, AlternateRouteLimit: 2, ExcludeFailedEdges: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(2), retry.Attempts)
+	require.Len(t, retry.Route.Edges, 1)
+	require.Equal(t, direct.ChannelID, retry.Route.Edges[0].ChannelID)
+
+	engine, scores, err := k.ApplyRoutingFailures(engine, []paymentstypes.RouteFailureReport{{ChannelID: direct.ChannelID, From: alice, To: bob, FailureClass: paymentstypes.RouteFailureLiquidityStale, Retryable: true, ObservedHeight: 22}})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.NotEmpty(t, engine.LocalPeerScores)
+}
+
 func TestKeeperValidatorAssistedWatchDispute(t *testing.T) {
 	k := NewKeeper()
 	gs := DefaultGenesis()
@@ -400,4 +457,11 @@ func keeperAmountFor(balances []paymentstypes.Balance, participant string) strin
 		}
 	}
 	return ""
+}
+
+func keeperRoutingEnvelope(t *testing.T, message paymentstypes.GossipMessage, signer string, receivedAt uint64) paymentstypes.SignedGossipEnvelope {
+	t.Helper()
+	envelope, err := paymentstypes.BuildRoutingGossipEnvelope(message, signer, receivedAt)
+	require.NoError(t, err)
+	return envelope
 }

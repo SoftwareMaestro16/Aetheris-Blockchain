@@ -3301,6 +3301,106 @@ func TestCongestionAwareRetryPolicySelectsAlternateRoute(t *testing.T) {
 	require.Contains(t, exhausted.Reason, "attempts exhausted")
 }
 
+func TestRoutingEngineModuleGossipSearchRetryProbeAndSpamResistance(t *testing.T) {
+	alice := testAddress(0xc1)
+	router := testAddress(0xc2)
+	bob := testAddress(0xc3)
+	direct := signedChannel(t, "routing-engine-direct", "500", alice, bob)
+	first := signedChannel(t, "routing-engine-first", "500", alice, router)
+	second := signedChannel(t, "routing-engine-second", "500", router, bob)
+	state := EmptyStateWithChannel(t, direct)
+	var err error
+	state, err = OpenChannel(state, first)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, second)
+	require.NoError(t, err)
+
+	policy := DefaultRoutePolicy()
+	policy.MaxHops = 4
+	policy.HopPenalty = "0"
+	engine, err := SnapshotRoutingEngineState(TopologyStore{}, policy, GossipRateLimitPolicy{
+		WindowBlocks:          8,
+		MaxMessagesPerNode:    8,
+		MaxMessagesPerChannel: 4,
+		MaxTopologyUpdates:    8,
+		RejectPenalty:         InvalidGossipPenalty,
+	}, DefaultRouteFailureScoringPolicy())
+	require.NoError(t, err)
+
+	node := routingEngineEnvelope(t, GossipMessage{
+		MessageType:      GossipNodeAnnouncement,
+		ChainID:          direct.ChainID,
+		NodeID:           router,
+		From:             router,
+		ValidAfterHeight: 10,
+		ValidUntilHeight: 50,
+	}, router, 10)
+	engine, decision, err := ApplyRoutingEngineMessage(engine, state, MsgGossipNodeAnnouncement{Gossip: node}, 10)
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.Len(t, engine.Nodes, 1)
+
+	for _, env := range []SignedGossipEnvelope{
+		routingEngineEnvelope(t, GossipMessage{MessageType: GossipChannelUpdate, ChainID: direct.ChainID, ChannelID: direct.ChannelID, NodeID: alice, From: alice, To: bob, Capacity: "500", FeeDenom: NativeDenom, FeeAmount: "9", ValidAfterHeight: 10, ValidUntilHeight: 50, Sequence: 1}, alice, 11),
+		routingEngineEnvelope(t, GossipMessage{MessageType: GossipChannelUpdate, ChainID: first.ChainID, ChannelID: first.ChannelID, NodeID: alice, From: alice, To: router, Capacity: "500", FeeDenom: NativeDenom, FeeAmount: "1", ValidAfterHeight: 10, ValidUntilHeight: 50, Sequence: 2}, alice, 11),
+		routingEngineEnvelope(t, GossipMessage{MessageType: GossipChannelUpdate, ChainID: second.ChainID, ChannelID: second.ChannelID, NodeID: router, From: router, To: bob, Capacity: "500", FeeDenom: NativeDenom, FeeAmount: "1", ValidAfterHeight: 10, ValidUntilHeight: 50, Sequence: 3}, router, 11),
+	} {
+		engine, _, err = ApplyRoutingEngineMessage(engine, state, MsgGossipChannelUpdate{Gossip: env}, 11)
+		require.NoError(t, err)
+	}
+	require.Len(t, engine.Topology.Edges, 3)
+
+	liquidity := routingEngineEnvelope(t, GossipMessage{MessageType: GossipLiquidityHint, ChainID: first.ChainID, ChannelID: first.ChannelID, NodeID: alice, From: alice, To: router, Capacity: "500", Liquidity: "450", FeeDenom: NativeDenom, FeeAmount: "1", ValidAfterHeight: 12, ValidUntilHeight: 40, Sequence: 4, Advisory: true}, alice, 12)
+	engine, _, err = ApplyRoutingEngineMessage(engine, state, MsgGossipLiquidityHint{Gossip: liquidity}, 12)
+	require.NoError(t, err)
+	require.Len(t, engine.LiquidityHints, 1)
+
+	feePolicy := routingEngineEnvelope(t, GossipMessage{MessageType: GossipFeePolicyUpdate, ChainID: direct.ChainID, ChannelID: direct.ChannelID, NodeID: alice, From: alice, To: bob, Capacity: "500", FeeDenom: NativeDenom, FeeAmount: "9", MaxFee: "20", ValidAfterHeight: 12, ValidUntilHeight: 40, Sequence: 5}, alice, 12)
+	engine, _, err = ApplyRoutingEngineMessage(engine, state, MsgGossipFeePolicyUpdate{Gossip: feePolicy}, 12)
+	require.NoError(t, err)
+	require.Len(t, engine.FeePolicies, 1)
+
+	engine, route, err := SelectRoutingEnginePath(engine, state, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 20, Policy: policy})
+	require.NoError(t, err)
+	require.Len(t, route.Edges, 2)
+	require.Equal(t, "2", route.TotalFee)
+	require.Len(t, engine.RouteAttempts, 1)
+
+	probe, err := HandleCapacityProbe(engine, state, CapacityProbeRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 20, MaxHops: 4, BlindedRouteHint: HashParts("probe-hint")}, router)
+	require.NoError(t, err)
+	require.True(t, probe.Available)
+	require.NotEmpty(t, probe.RouteHash)
+
+	engine, retry, err := RetryRoutingEnginePath(engine, state, RouteRetryRequest{
+		Selection: RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 21, Policy: policy},
+		Failures:  []RouteFailureReport{{ChannelID: first.ChannelID, From: alice, To: router, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 20}},
+		Policy:    RouteRetryPolicy{MaxAttempts: 3, AlternateRouteLimit: 2, ExcludeFailedEdges: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(2), retry.Attempts)
+	require.Len(t, retry.Route.Edges, 1)
+	require.Equal(t, direct.ChannelID, retry.Route.Edges[0].ChannelID)
+	require.NotEmpty(t, engine.RouteAttempts)
+
+	engine, scores, err := ApplyRoutingEngineFailures(engine, []RouteFailureReport{{ChannelID: direct.ChannelID, From: alice, To: bob, FailureClass: RouteFailureLiquidityStale, Retryable: true, ObservedHeight: 22}})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.NotEmpty(t, engine.LocalPeerScores)
+	require.Negative(t, RoutingScoreForEdge(engine.Topology, ChannelEdge{ChannelID: direct.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "9", Active: true}))
+
+	spamEngine, err := SnapshotRoutingEngineState(TopologyStore{}, policy, GossipRateLimitPolicy{WindowBlocks: 8, MaxMessagesPerNode: 2, MaxMessagesPerChannel: 8, MaxTopologyUpdates: 8, RejectPenalty: InvalidGossipPenalty}, DefaultRouteFailureScoringPolicy())
+	require.NoError(t, err)
+	for seq := uint64(1); seq <= 2; seq++ {
+		env := routingEngineEnvelope(t, GossipMessage{MessageType: GossipNodeAnnouncement, ChainID: direct.ChainID, NodeID: router, From: router, ValidAfterHeight: 30, ValidUntilHeight: 60, Sequence: seq}, router, 30+seq)
+		spamEngine, _, err = ApplyRoutingEngineMessage(spamEngine, state, MsgGossipNodeAnnouncement{Gossip: env}, 30+seq)
+		require.NoError(t, err)
+	}
+	spam := routingEngineEnvelope(t, GossipMessage{MessageType: GossipNodeAnnouncement, ChainID: direct.ChainID, NodeID: router, From: router, ValidAfterHeight: 30, ValidUntilHeight: 60, Sequence: 3}, router, 32)
+	_, decision, err = ApplyRoutingEngineMessage(spamEngine, state, MsgGossipNodeAnnouncement{Gossip: spam}, 32)
+	require.ErrorContains(t, err, "rate limit")
+	require.False(t, decision.Allowed)
+}
+
 func TestForwardingPacketsExposeOnlyPerHopMetadata(t *testing.T) {
 	alice := testAddress(0x67)
 	router1 := testAddress(0x68)
@@ -5043,6 +5143,14 @@ func signedGossipEnvelope(t *testing.T, message GossipMessage, signer string, re
 		ReceivedFrom: signer,
 		ReceivedAt:   receivedAt,
 	}.Normalize()
+}
+
+func routingEngineEnvelope(t *testing.T, message GossipMessage, signer string, receivedAt uint64) SignedGossipEnvelope {
+	t.Helper()
+
+	envelope, err := BuildRoutingGossipEnvelope(message, signer, receivedAt)
+	require.NoError(t, err)
+	return envelope
 }
 
 func signedVirtualChannel(t *testing.T, vc VirtualChannel, chainID string) VirtualChannel {
