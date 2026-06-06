@@ -169,6 +169,40 @@ type CollatorCandidateOutput struct {
 	CandidateOutputHash           string
 }
 
+type CollatorRegistry struct {
+	EpochID      uint64
+	Collators    []CollatorRecord
+	RegistryRoot string
+}
+
+const (
+	CollatorVerificationResultValid   = "valid"
+	CollatorVerificationResultInvalid = "invalid"
+	CollatorVerificationResultAbstain = "abstain"
+)
+
+type CollatorOutputVerification struct {
+	OutputHash       string
+	ValidatorAddress string
+	Result           string
+	SignatureHash    string
+	VerifiedHeight   int64
+}
+
+type CollatorOutputVerificationResult struct {
+	OutputHash           string
+	ValidVotes           uint32
+	InvalidVotes         uint32
+	AbstainVotes         uint32
+	TotalValidators      uint32
+	ParticipationBps     uint32
+	DecisionThresholdBps uint32
+	Accepted             bool
+	Rejected             bool
+	ValidSignatureHashes []string
+	VerificationRoot     string
+}
+
 type ValidatorCapacity struct {
 	MaxTaskGroups          uint32
 	SupportedWorkloads     []WorkloadType
@@ -301,6 +335,7 @@ const (
 	EvidenceTypeEquivocationProof            = "equivocation_proof"
 	EvidenceTypeDowntimeProof                = "downtime_proof"
 	EvidenceTypeInvalidTaskExecutionProof    = "invalid_task_execution_proof"
+	EvidenceTypeInvalidCollatorOutputProof   = "invalid_collator_output_proof"
 	EvidenceTypeInvalidProofAcceptance       = "invalid_proof_acceptance"
 	EvidenceTypeFalseCapacityDeclaration     = "false_capacity_declaration"
 	EvidenceTypeInvalidEvidenceSubmission    = "invalid_evidence_submission"
@@ -319,6 +354,7 @@ const (
 	DefaultEquivocationSlashBps              = uint32(2_000)
 	DefaultDowntimeSlashBps                  = uint32(100)
 	DefaultInvalidTaskExecutionSlashBps      = uint32(750)
+	DefaultInvalidCollatorOutputSlashBps     = uint32(500)
 	DefaultInvalidProofAcceptanceSlashBps    = uint32(1_000)
 	DefaultFalseCapacityDeclarationSlashBps  = uint32(500)
 	DefaultInvalidEvidenceSubmissionSlashBps = uint32(250)
@@ -1794,6 +1830,7 @@ func StructuredEvidenceTypes() []string {
 		EvidenceTypeEquivocationProof,
 		EvidenceTypeDowntimeProof,
 		EvidenceTypeInvalidTaskExecutionProof,
+		EvidenceTypeInvalidCollatorOutputProof,
 		EvidenceTypeInvalidProofAcceptance,
 		EvidenceTypeFalseCapacityDeclaration,
 		EvidenceTypeInvalidEvidenceSubmission,
@@ -1807,6 +1844,7 @@ func IsStructuredEvidenceType(evidenceType string) bool {
 		EvidenceTypeEquivocationProof,
 		EvidenceTypeDowntimeProof,
 		EvidenceTypeInvalidTaskExecutionProof,
+		EvidenceTypeInvalidCollatorOutputProof,
 		EvidenceTypeInvalidProofAcceptance,
 		EvidenceTypeFalseCapacityDeclaration,
 		EvidenceTypeInvalidEvidenceSubmission:
@@ -1828,6 +1866,8 @@ func DefaultEvidenceSlashPolicy(evidenceType string) (EvidenceSlashPolicy, error
 		return EvidenceSlashPolicy{EvidenceType: evidenceType, Misbehavior: MisbehaviorDowntime, SlashFractionBps: DefaultDowntimeSlashBps}, nil
 	case EvidenceTypeInvalidTaskExecutionProof:
 		return EvidenceSlashPolicy{EvidenceType: evidenceType, Misbehavior: MisbehaviorInvalidBlock, SlashFractionBps: DefaultInvalidTaskExecutionSlashBps}, nil
+	case EvidenceTypeInvalidCollatorOutputProof:
+		return EvidenceSlashPolicy{EvidenceType: evidenceType, Misbehavior: MisbehaviorInvalidBlock, SlashFractionBps: DefaultInvalidCollatorOutputSlashBps}, nil
 	case EvidenceTypeInvalidProofAcceptance:
 		return EvidenceSlashPolicy{EvidenceType: evidenceType, Misbehavior: MisbehaviorInvalidBlock, SlashFractionBps: DefaultInvalidProofAcceptanceSlashBps}, nil
 	case EvidenceTypeFalseCapacityDeclaration:
@@ -2847,12 +2887,332 @@ func ComputeCollatorCandidateOutputHash(output CollatorCandidateOutput) string {
 		posWritePart(w, output.StateTransitionRoot)
 		posWritePart(w, output.ProofBundleRoot)
 		posWriteUint64(w, boolAsUint64(output.RequiresValidatorVerification))
-		posWriteUint64(w, uint64(len(output.ValidatorSignatures)))
-		for _, signature := range output.ValidatorSignatures {
+	})
+}
+
+func NewCollatorRegistry(epochID uint64, collators []CollatorRecord) (CollatorRegistry, error) {
+	records := make([]CollatorRecord, len(collators))
+	for i, collator := range collators {
+		normalized, err := NewCollatorRecord(collator)
+		if err != nil {
+			return CollatorRegistry{}, err
+		}
+		records[i] = normalized
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].CollatorID < records[j].CollatorID
+	})
+	registry := CollatorRegistry{EpochID: epochID, Collators: records}
+	if len(records) == 0 {
+		registry.RegistryRoot = PosEmptyRootHash
+	} else {
+		registry.RegistryRoot = ComputeCollatorRegistryRoot(registry)
+	}
+	return registry, registry.Validate()
+}
+
+func (r CollatorRegistry) Validate() error {
+	if r.EpochID == 0 {
+		return errors.New("collator registry epoch id is required")
+	}
+	seen := make(map[string]struct{}, len(r.Collators))
+	for _, collator := range r.Collators {
+		if err := collator.Validate(); err != nil {
+			return err
+		}
+		if collator.RegisteredEpoch > r.EpochID {
+			return errors.New("collator registered epoch cannot exceed registry epoch")
+		}
+		if _, found := seen[collator.CollatorID]; found {
+			return fmt.Errorf("duplicate collator id %q", collator.CollatorID)
+		}
+		seen[collator.CollatorID] = struct{}{}
+	}
+	expectedRoot := PosEmptyRootHash
+	if len(r.Collators) > 0 {
+		expectedRoot = ComputeCollatorRegistryRoot(r)
+	}
+	if r.RegistryRoot != expectedRoot {
+		return errors.New("collator registry root mismatch")
+	}
+	return nil
+}
+
+func (r CollatorRegistry) CollatorByID(collatorID string) (CollatorRecord, bool, error) {
+	if err := validatePosToken("collator id", collatorID); err != nil {
+		return CollatorRecord{}, false, err
+	}
+	if err := r.Validate(); err != nil {
+		return CollatorRecord{}, false, err
+	}
+	for _, collator := range r.Collators {
+		if collator.CollatorID == collatorID {
+			return collator, true, nil
+		}
+	}
+	return CollatorRecord{}, false, nil
+}
+
+func (r CollatorRegistry) ActiveCollatorsForWorkload(workloadType WorkloadType) ([]CollatorRecord, error) {
+	if err := validateWorkloadType(workloadType); err != nil {
+		return nil, err
+	}
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	out := make([]CollatorRecord, 0, len(r.Collators))
+	for _, collator := range r.Collators {
+		if collator.Status == CollatorStatusActive && collator.SupportsWorkload(workloadType) {
+			out = append(out, collator)
+		}
+	}
+	return out, nil
+}
+
+func ComputeCollatorRegistryRoot(registry CollatorRegistry) string {
+	return posHashRoot("aetheris-pos-collator-registry-v1", func(w posByteWriter) {
+		posWriteUint64(w, registry.EpochID)
+		posWriteUint64(w, uint64(len(registry.Collators)))
+		for _, collator := range registry.Collators {
+			posWritePart(w, collator.CollatorID)
+			posWritePart(w, collator.OperatorAddress)
+			posWriteUint64(w, uint64(len(collator.SupportedWorkloads)))
+			for _, workloadType := range collator.SupportedWorkloads {
+				posWritePart(w, string(workloadType))
+			}
+			posWritePart(w, collator.BondOptional.String())
+			posWriteUint64(w, uint64(collator.Reputation))
+			posWritePart(w, collator.Status)
+			posWriteUint64(w, collator.RegisteredEpoch)
+		}
+	})
+}
+
+func NewCollatorOutputVerification(output CollatorCandidateOutput, validatorAddress string, result string, signatureHash string, verifiedHeight int64) (CollatorOutputVerification, error) {
+	if err := output.Validate(); err != nil {
+		return CollatorOutputVerification{}, err
+	}
+	verification := CollatorOutputVerification{
+		OutputHash:       output.CandidateOutputHash,
+		ValidatorAddress: strings.TrimSpace(validatorAddress),
+		Result:           strings.TrimSpace(result),
+		SignatureHash:    strings.TrimSpace(signatureHash),
+		VerifiedHeight:   verifiedHeight,
+	}
+	return verification, verification.Validate()
+}
+
+func (v CollatorOutputVerification) Validate() error {
+	if err := validatePosHash("collator output verification hash", v.OutputHash); err != nil {
+		return err
+	}
+	if err := validatePosToken("collator output verifier", v.ValidatorAddress); err != nil {
+		return err
+	}
+	if err := validateCollatorVerificationResult(v.Result); err != nil {
+		return err
+	}
+	if err := validatePosHash("collator output verification signature", v.SignatureHash); err != nil {
+		return err
+	}
+	if v.VerifiedHeight < 0 {
+		return errors.New("collator output verification height cannot be negative")
+	}
+	return nil
+}
+
+func VerifyCollatorOutputByValidators(output CollatorCandidateOutput, validatorSet []string, votes []CollatorOutputVerification, decisionThresholdBps uint32) (CollatorOutputVerificationResult, error) {
+	if err := output.Validate(); err != nil {
+		return CollatorOutputVerificationResult{}, err
+	}
+	if decisionThresholdBps == 0 {
+		decisionThresholdBps = DefaultEvidenceVerificationQuorumBps
+	}
+	if decisionThresholdBps > BasisPoints {
+		return CollatorOutputVerificationResult{}, fmt.Errorf("collator verification threshold must be <= %d bps", BasisPoints)
+	}
+	allowed, err := validatorSetMap("collator verification validator", validatorSet)
+	if err != nil {
+		return CollatorOutputVerificationResult{}, err
+	}
+	if len(validatorSet) == 0 {
+		return CollatorOutputVerificationResult{}, errors.New("collator verification validator set is required")
+	}
+	seen := make(map[string]struct{}, len(votes))
+	result := CollatorOutputVerificationResult{
+		OutputHash:           output.CandidateOutputHash,
+		TotalValidators:      uint32(len(validatorSet)),
+		DecisionThresholdBps: decisionThresholdBps,
+	}
+	for _, vote := range votes {
+		if err := vote.Validate(); err != nil {
+			return CollatorOutputVerificationResult{}, err
+		}
+		if vote.OutputHash != output.CandidateOutputHash {
+			return CollatorOutputVerificationResult{}, errors.New("collator output verification hash mismatch")
+		}
+		if _, ok := allowed[vote.ValidatorAddress]; !ok {
+			return CollatorOutputVerificationResult{}, errors.New("collator output verifier is not in validator set")
+		}
+		if _, found := seen[vote.ValidatorAddress]; found {
+			return CollatorOutputVerificationResult{}, fmt.Errorf("duplicate collator output verification by %q", vote.ValidatorAddress)
+		}
+		seen[vote.ValidatorAddress] = struct{}{}
+		switch vote.Result {
+		case CollatorVerificationResultValid:
+			result.ValidVotes++
+			result.ValidSignatureHashes = append(result.ValidSignatureHashes, vote.SignatureHash)
+		case CollatorVerificationResultInvalid:
+			result.InvalidVotes++
+		case CollatorVerificationResultAbstain:
+			result.AbstainVotes++
+		}
+	}
+	result.ParticipationBps = ratioBps(uint64(len(seen)), uint64(len(validatorSet)))
+	validBps := ratioBps(uint64(result.ValidVotes), uint64(len(validatorSet)))
+	invalidBps := ratioBps(uint64(result.InvalidVotes), uint64(len(validatorSet)))
+	result.Accepted = validBps >= decisionThresholdBps
+	result.Rejected = invalidBps >= decisionThresholdBps
+	if result.Accepted && result.Rejected {
+		return CollatorOutputVerificationResult{}, errors.New("collator output verification cannot be both accepted and rejected")
+	}
+	result.VerificationRoot = ComputeCollatorOutputVerificationRoot(result)
+	return result, nil
+}
+
+func FinalizeCollatorOutputAfterVerification(output CollatorCandidateOutput, verification CollatorOutputVerificationResult) (CollatorCandidateOutput, error) {
+	if err := output.Validate(); err != nil {
+		return CollatorCandidateOutput{}, err
+	}
+	if err := verification.Validate(); err != nil {
+		return CollatorCandidateOutput{}, err
+	}
+	if verification.OutputHash != output.CandidateOutputHash {
+		return CollatorCandidateOutput{}, errors.New("collator verification output hash mismatch")
+	}
+	if !verification.Accepted {
+		return CollatorCandidateOutput{}, errors.New("collator output is not accepted by validators")
+	}
+	out := output
+	out.ValidatorSignatures = append([]string(nil), verification.ValidSignatureHashes...)
+	out.Finalized = true
+	return out, out.Validate()
+}
+
+func (r CollatorOutputVerificationResult) Validate() error {
+	if err := validatePosHash("collator output verification result hash", r.OutputHash); err != nil {
+		return err
+	}
+	if r.TotalValidators == 0 {
+		return errors.New("collator output verification result requires validators")
+	}
+	if r.ValidVotes+r.InvalidVotes+r.AbstainVotes > r.TotalValidators {
+		return errors.New("collator output verification votes exceed validator set")
+	}
+	if r.ParticipationBps > BasisPoints || r.DecisionThresholdBps > BasisPoints {
+		return fmt.Errorf("collator output verification bps must be <= %d", BasisPoints)
+	}
+	if r.Accepted && r.Rejected {
+		return errors.New("collator output verification cannot be both accepted and rejected")
+	}
+	for _, signature := range r.ValidSignatureHashes {
+		if err := validatePosHash("collator output valid signature", signature); err != nil {
+			return err
+		}
+	}
+	if err := validatePosHash("collator output verification root", r.VerificationRoot); err != nil {
+		return err
+	}
+	if expected := ComputeCollatorOutputVerificationRoot(r); expected != r.VerificationRoot {
+		return errors.New("collator output verification root mismatch")
+	}
+	return nil
+}
+
+func ComputeCollatorOutputVerificationRoot(result CollatorOutputVerificationResult) string {
+	return posHashRoot("aetheris-pos-collator-verification-v1", func(w posByteWriter) {
+		posWritePart(w, result.OutputHash)
+		posWriteUint64(w, uint64(result.ValidVotes))
+		posWriteUint64(w, uint64(result.InvalidVotes))
+		posWriteUint64(w, uint64(result.AbstainVotes))
+		posWriteUint64(w, uint64(result.TotalValidators))
+		posWriteUint64(w, uint64(result.ParticipationBps))
+		posWriteUint64(w, uint64(result.DecisionThresholdBps))
+		posWriteUint64(w, boolAsUint64(result.Accepted))
+		posWriteUint64(w, boolAsUint64(result.Rejected))
+		posWriteUint64(w, uint64(len(result.ValidSignatureHashes)))
+		for _, signature := range result.ValidSignatureHashes {
 			posWritePart(w, signature)
 		}
-		posWriteUint64(w, boolAsUint64(output.Finalized))
 	})
+}
+
+func BuildInvalidCollatorOutputEvidence(evidenceID string, reporterID string, collator CollatorRecord, output CollatorCandidateOutput, verification CollatorOutputVerificationResult, submittedHeight int64) (StructuredEvidenceRecord, error) {
+	if err := collator.Validate(); err != nil {
+		return StructuredEvidenceRecord{}, err
+	}
+	if err := output.Validate(); err != nil {
+		return StructuredEvidenceRecord{}, err
+	}
+	if output.CollatorID != collator.CollatorID {
+		return StructuredEvidenceRecord{}, errors.New("invalid collator evidence collator id mismatch")
+	}
+	if err := verification.Validate(); err != nil {
+		return StructuredEvidenceRecord{}, err
+	}
+	if verification.OutputHash != output.CandidateOutputHash {
+		return StructuredEvidenceRecord{}, errors.New("invalid collator evidence output hash mismatch")
+	}
+	if !verification.Rejected {
+		return StructuredEvidenceRecord{}, errors.New("invalid collator evidence requires validator rejection")
+	}
+	return SubmitStructuredEvidence(StructuredEvidenceRecord{
+		EvidenceID:          evidenceID,
+		EvidenceType:        EvidenceTypeInvalidCollatorOutputProof,
+		ReporterID:          reporterID,
+		AccusedValidatorID:  collator.CollatorID,
+		SubjectID:           output.CandidateOutputHash,
+		EvidenceHash:        ComputeInvalidCollatorOutputEvidenceHash(collator, output, verification),
+		EvidenceHeight:      submittedHeight,
+		EvidenceEpoch:       output.EpochID,
+		SubmittedHeight:     submittedHeight,
+		VerificationGroupID: fmt.Sprintf("collator-output/%s", collator.CollatorID),
+	})
+}
+
+func ComputeInvalidCollatorOutputEvidenceHash(collator CollatorRecord, output CollatorCandidateOutput, verification CollatorOutputVerificationResult) string {
+	return posHashRoot("aetheris-pos-invalid-collator-output-evidence-v1", func(w posByteWriter) {
+		posWritePart(w, collator.CollatorID)
+		posWritePart(w, output.CandidateOutputHash)
+		posWritePart(w, verification.VerificationRoot)
+		posWritePart(w, collator.BondOptional.String())
+	})
+}
+
+func ComputeInvalidCollatorOutputPenalty(collator CollatorRecord, evidence StructuredEvidenceRecord) (sdkmath.Int, error) {
+	if err := collator.Validate(); err != nil {
+		return sdkmath.Int{}, err
+	}
+	if err := evidence.Validate(); err != nil {
+		return sdkmath.Int{}, err
+	}
+	if evidence.EvidenceType != EvidenceTypeInvalidCollatorOutputProof {
+		return sdkmath.Int{}, errors.New("invalid collator output penalty requires invalid collator evidence")
+	}
+	if evidence.AccusedValidatorID != collator.CollatorID {
+		return sdkmath.Int{}, errors.New("invalid collator output evidence accused collator mismatch")
+	}
+	if evidence.Status != EvidenceStatusAccepted && evidence.Status != EvidenceStatusFinalized && evidence.Status != EvidenceStatusSlashed {
+		return sdkmath.Int{}, errors.New("invalid collator output evidence must be accepted before penalty")
+	}
+	if !collator.BondOptional.IsPositive() {
+		return sdkmath.ZeroInt(), nil
+	}
+	penalty := collator.BondOptional.MulRaw(int64(DefaultInvalidCollatorOutputSlashBps)).QuoRaw(int64(BasisPoints))
+	if penalty.GT(collator.BondOptional) {
+		return collator.BondOptional, nil
+	}
+	return penalty, nil
 }
 
 func DefaultRoleRegistry() RoleRegistry {
@@ -3151,6 +3511,15 @@ func validateCollatorStatus(status string) error {
 	}
 }
 
+func validateCollatorVerificationResult(result string) error {
+	switch result {
+	case CollatorVerificationResultValid, CollatorVerificationResultInvalid, CollatorVerificationResultAbstain:
+		return nil
+	default:
+		return fmt.Errorf("unsupported collator verification result %q", result)
+	}
+}
+
 func validatePosLayer(layer PosLayer) error {
 	switch layer {
 	case PosLayerEconomicConsensus, PosLayerTaskAssignment, PosLayerValidatorExecution, PosLayerStakingCapital, PosLayerBaseCometBFT:
@@ -3280,6 +3649,20 @@ func validateExcludedValidators(validatorIDs []string) error {
 		seen[validatorID] = struct{}{}
 	}
 	return nil
+}
+
+func validatorSetMap(fieldName string, validatorIDs []string) (map[string]struct{}, error) {
+	seen := make(map[string]struct{}, len(validatorIDs))
+	for _, validatorID := range validatorIDs {
+		if err := validatePosToken(fieldName, validatorID); err != nil {
+			return nil, err
+		}
+		if _, found := seen[validatorID]; found {
+			return nil, fmt.Errorf("duplicate %s %q", fieldName, validatorID)
+		}
+		seen[validatorID] = struct{}{}
+	}
+	return seen, nil
 }
 
 func validatorsForTaskRole(validators []ScoredValidator, task WorkloadTask, role ValidatorRole, assignedTaskKeys map[string]map[string]struct{}, taskKey string) []ScoredValidator {

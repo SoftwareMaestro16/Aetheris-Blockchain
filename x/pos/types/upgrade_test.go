@@ -712,6 +712,7 @@ func TestStructuredEvidenceTypesMapToSlashPolicies(t *testing.T) {
 		EvidenceTypeEquivocationProof,
 		EvidenceTypeDowntimeProof,
 		EvidenceTypeInvalidTaskExecutionProof,
+		EvidenceTypeInvalidCollatorOutputProof,
 		EvidenceTypeInvalidProofAcceptance,
 		EvidenceTypeFalseCapacityDeclaration,
 		EvidenceTypeInvalidEvidenceSubmission,
@@ -1238,6 +1239,25 @@ func TestCollatorRecordMatchesSpecAndValidatesRegistration(t *testing.T) {
 	require.True(t, record.SupportsWorkload(WorkloadTypeShardExecution))
 	require.False(t, record.SupportsWorkload(WorkloadTypeEvidenceVerification))
 
+	active := record
+	active.CollatorID = "collator-2"
+	active.Status = CollatorStatusActive
+	registry, err := NewCollatorRegistry(13, []CollatorRecord{active, record})
+	require.NoError(t, err)
+	require.Equal(t, ComputeCollatorRegistryRoot(registry), registry.RegistryRoot)
+	found, ok, err := registry.CollatorByID("collator-1")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "operator-1", found.OperatorAddress)
+	activeForShard, err := registry.ActiveCollatorsForWorkload(WorkloadTypeShardExecution)
+	require.NoError(t, err)
+	require.Len(t, activeForShard, 1)
+	require.Equal(t, "collator-2", activeForShard[0].CollatorID)
+
+	tamperedRegistry := registry
+	tamperedRegistry.RegistryRoot = strings.Repeat("1", PosHashHexLength)
+	require.ErrorContains(t, tamperedRegistry.Validate(), "registry root")
+
 	_, err = NewCollatorRecord(CollatorRecord{
 		CollatorID:         "collator-dup",
 		OperatorAddress:    "operator-1",
@@ -1334,6 +1354,86 @@ func TestCollatorBuildsCandidateOutputButRequiresValidatorVerification(t *testin
 		ProofBundleRoot:     PosEmptyRootHash,
 	})
 	require.ErrorContains(t, err, "not eligible")
+}
+
+func TestCollatorOutputVerificationFinalizationAndInvalidEvidence(t *testing.T) {
+	params := DefaultParams()
+	collator, err := NewCollatorRecord(CollatorRecord{
+		CollatorID:         "collator-bonded",
+		OperatorAddress:    "operator-1",
+		SupportedWorkloads: []WorkloadType{WorkloadTypeShardExecution},
+		BondOptional:       sdkmath.NewInt(10_000),
+		Status:             CollatorStatusActive,
+		RegisteredEpoch:    13,
+	})
+	require.NoError(t, err)
+	task := WorkloadTask{
+		TaskID:             "task-1",
+		WorkloadID:         "workload-1",
+		WorkloadType:       WorkloadTypeShardExecution,
+		ZoneID:             "zone-a",
+		ShardID:            "shard-1",
+		WorkloadClass:      DefaultWorkloadClass,
+		RequiredValidators: params.MinTaskGroupValidators,
+		Roles:              []ValidatorRole{ValidatorRoleCollator, ValidatorRoleVerifier},
+	}
+	output, err := BuildCollatorCandidateOutput(params, CollatorCandidateOutputInput{
+		EpochID:             13,
+		Collator:            collator,
+		Task:                task,
+		TransactionRoot:     PosEmptyRootHash,
+		StateTransitionRoot: PosEmptyRootHash,
+		ProofBundleRoot:     PosEmptyRootHash,
+	})
+	require.NoError(t, err)
+
+	validA, err := NewCollatorOutputVerification(output, "val-a", CollatorVerificationResultValid, strings.Repeat("a", PosHashHexLength), 44)
+	require.NoError(t, err)
+	validB, err := NewCollatorOutputVerification(output, "val-b", CollatorVerificationResultValid, strings.Repeat("b", PosHashHexLength), 44)
+	require.NoError(t, err)
+	abstainC, err := NewCollatorOutputVerification(output, "val-c", CollatorVerificationResultAbstain, strings.Repeat("c", PosHashHexLength), 44)
+	require.NoError(t, err)
+	accepted, err := VerifyCollatorOutputByValidators(output, []string{"val-a", "val-b", "val-c"}, []CollatorOutputVerification{validA, validB, abstainC}, 6_000)
+	require.NoError(t, err)
+	require.True(t, accepted.Accepted)
+	require.False(t, accepted.Rejected)
+	finalized, err := FinalizeCollatorOutputAfterVerification(output, accepted)
+	require.NoError(t, err)
+	require.True(t, finalized.Finalized)
+	require.Equal(t, output.CandidateOutputHash, finalized.CandidateOutputHash)
+	require.Len(t, finalized.ValidatorSignatures, 2)
+
+	invalidA, err := NewCollatorOutputVerification(output, "val-a", CollatorVerificationResultInvalid, strings.Repeat("d", PosHashHexLength), 45)
+	require.NoError(t, err)
+	invalidB, err := NewCollatorOutputVerification(output, "val-b", CollatorVerificationResultInvalid, strings.Repeat("e", PosHashHexLength), 45)
+	require.NoError(t, err)
+	rejected, err := VerifyCollatorOutputByValidators(output, []string{"val-a", "val-b", "val-c"}, []CollatorOutputVerification{invalidA, invalidB, abstainC}, 6_000)
+	require.NoError(t, err)
+	require.False(t, rejected.Accepted)
+	require.True(t, rejected.Rejected)
+	_, err = FinalizeCollatorOutputAfterVerification(output, rejected)
+	require.ErrorContains(t, err, "not accepted")
+
+	evidence, err := BuildInvalidCollatorOutputEvidence("collator-evidence-1", "reporter-1", collator, output, rejected, 45)
+	require.NoError(t, err)
+	require.Equal(t, EvidenceTypeInvalidCollatorOutputProof, evidence.EvidenceType)
+	require.Equal(t, collator.CollatorID, evidence.AccusedValidatorID)
+	require.Equal(t, output.CandidateOutputHash, evidence.SubjectID)
+	policy, err := DefaultEvidenceSlashPolicy(EvidenceTypeInvalidCollatorOutputProof)
+	require.NoError(t, err)
+	require.Equal(t, DefaultInvalidCollatorOutputSlashBps, policy.SlashFractionBps)
+
+	evidence.Status = EvidenceStatusAccepted
+	evidence.StructuredRecordHash = computeStructuredEvidenceHash(evidence)
+	penalty, err := ComputeInvalidCollatorOutputPenalty(collator, evidence)
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(500), penalty)
+
+	unbonded := collator
+	unbonded.BondOptional = sdkmath.ZeroInt()
+	penalty, err = ComputeInvalidCollatorOutputPenalty(unbonded, evidence)
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.ZeroInt(), penalty)
 }
 
 func scoredCandidates(t *testing.T, params Params, candidates []Candidate) []ScoredValidator {
