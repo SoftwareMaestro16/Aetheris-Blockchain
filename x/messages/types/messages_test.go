@@ -110,6 +110,46 @@ func TestMsgServerAndQueryServerAdapters(t *testing.T) {
 var _ MsgServer = KeeperMsgServer{}
 var _ QueryServer = MessageKeeper{}
 
+func TestMsgCrossZoneCallValidatesEscrowPayloadAndEnqueues(t *testing.T) {
+	params := testMessageParams()
+	keeper, err := NewMessageKeeper(params)
+	require.NoError(t, err)
+
+	call := testCrossZoneCall()
+	admission := testCrossZoneAdmission(call)
+	keeper, response, err := keeper.SubmitCrossZoneCall(call, admission)
+	require.NoError(t, err)
+	require.Len(t, response.MessageID, MessageIDBytes)
+	require.Len(t, keeper.State().Outbox, 1)
+
+	queued := keeper.State().Outbox[0].Message
+	require.Equal(t, call.SourceZoneID, queued.SourceZone)
+	require.Equal(t, call.DestinationZoneID, queued.DestinationZone)
+	require.Equal(t, call.PayloadType, queued.Opcode)
+	require.Equal(t, call.ValueNAET, queued.Value)
+	require.Equal(t, call.ForwardingFee, queued.FeeLimit)
+	require.True(t, queued.Bounce)
+	require.Equal(t, "cross-zone-call/caller", queued.AuthScope)
+}
+
+func TestMsgCrossZoneCallRejectsUnsupportedPayloadReplyAndMissingEscrow(t *testing.T) {
+	params := testMessageParams()
+	call := testCrossZoneCall()
+	admission := testCrossZoneAdmission(call)
+
+	unsupportedPayload := call
+	unsupportedPayload.PayloadType = "identity.resolve"
+	require.ErrorContains(t, unsupportedPayload.Validate(admission, params), "payload type")
+
+	unsupportedReply := call
+	unsupportedReply.ReplyMode = "stream"
+	require.ErrorContains(t, unsupportedReply.Validate(admission, params), "reply mode")
+
+	missingEscrow := admission
+	missingEscrow.Escrows = nil
+	require.ErrorContains(t, call.Validate(missingEscrow, params), "escrow")
+}
+
 func TestMessageKeeperRoutesDrainsReceiptsAndTombstones(t *testing.T) {
 	params := testMessageParams()
 	keeper, err := NewMessageKeeper(params)
@@ -255,4 +295,42 @@ func msgWithoutCommitments(msg Message) Message {
 
 func addr(seed byte) sdk.AccAddress {
 	return sdk.AccAddress(bytes.Repeat([]byte{seed}, 20))
+}
+
+func testCrossZoneCall() MsgCrossZoneCall {
+	return MsgCrossZoneCall{
+		Caller:            addr(1),
+		Callee:            addr(2),
+		SourceZoneID:      zonestypes.ZoneIDFinancial,
+		DestinationZoneID: zonestypes.ZoneIDContract,
+		PayloadType:       "contract.execute",
+		Payload:           []byte("call-body"),
+		ValueNAET:         sdkmath.NewInt(10),
+		GasLimit:          10,
+		ForwardingFee:     sdkmath.NewInt(1),
+		ReplyMode:         ReplyModeCaller,
+		ExpiryHeight:      100,
+	}
+}
+
+func testCrossZoneAdmission(call MsgCrossZoneCall) CrossZoneCallAdmission {
+	return CrossZoneCallAdmission{
+		CreatedHeight:  20,
+		Nonce:          11,
+		SourceSequence: 12,
+		SupportedPayloadTypes: []DestinationPayloadTypes{{
+			ZoneID:       call.DestinationZoneID,
+			PayloadTypes: []string{call.PayloadType},
+		}},
+		SupportedReplyModes: []string{ReplyModeNone, ReplyModeCaller},
+		Escrows: []CrossZoneCallEscrow{{
+			Caller:            call.Caller,
+			SourceZoneID:      call.SourceZoneID,
+			DestinationZoneID: call.DestinationZoneID,
+			ValueNAET:         call.ValueNAET,
+			ForwardingFee:     call.ForwardingFee,
+			ExpiryHeight:      call.ExpiryHeight,
+			Escrowed:          true,
+		}},
+	}
 }

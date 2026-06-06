@@ -195,6 +195,7 @@ type QueryProofResponse struct {
 
 type MsgServer interface {
 	SubmitCrossZoneMessage(MsgSubmitCrossZoneMessage) (SubmitCrossZoneMessageResponse, error)
+	SubmitCrossZoneCall(MsgCrossZoneCall, CrossZoneCallAdmission) (SubmitCrossZoneMessageResponse, error)
 }
 
 type QueryServer interface {
