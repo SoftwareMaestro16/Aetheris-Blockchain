@@ -282,7 +282,7 @@ func TestPosMessageQueryManifestRejectsMissingDuplicateAndUnknownEntries(t *test
 	require.ErrorContains(t, rootMismatch.Validate(compatibility, boundaries), "root mismatch")
 }
 
-func TestPosMigrationStrategyCoversScoringSimulationAndTaskGroupPhases(t *testing.T) {
+func TestPosMigrationStrategyCoversAllActivationPhases(t *testing.T) {
 	compatibility := DefaultCosmosSDKCompatibilityManifest()
 	manifest := DefaultPosMigrationStrategyManifest()
 	require.NoError(t, manifest.Validate(compatibility))
@@ -332,6 +332,52 @@ func TestPosMigrationStrategyCoversScoringSimulationAndTaskGroupPhases(t *testin
 		"roles and task groups are queryable",
 		"assignment roots are reproducible",
 	}, phase2.ExitCriteria)
+
+	phase3, found := PosMigrationPhaseByName(manifest, "performance_based_rewards")
+	require.True(t, found)
+	require.Equal(t, uint32(3), phase3.PhaseID)
+	require.True(t, phase3.PreservesExistingStaking)
+	require.False(t, phase3.ReadOnlyUntilExit)
+	require.Equal(t, []uint32{2}, phase3.DependsOn)
+	require.Contains(t, phase3.Modules, "distribution")
+	require.Contains(t, phase3.Modules, "performance")
+	require.Contains(t, phase3.Modules, "delegation_market")
+	require.Equal(t, []string{
+		"activate reward multipliers",
+		"integrate x/performance with distribution",
+		"add task completion rewards",
+		"add missed task penalties to future score",
+		"add delegation risk queries",
+	}, phase3.Tasks)
+	require.Equal(t, []string{
+		"rewards reflect deterministic performance metrics",
+		"reward changes are bounded",
+		"performance impact is visible before delegation",
+	}, phase3.ExitCriteria)
+
+	phase4, found := PosMigrationPhaseByName(manifest, "full_economic_consensus_activation")
+	require.True(t, found)
+	require.Equal(t, uint32(4), phase4.PhaseID)
+	require.True(t, phase4.PreservesExistingStaking)
+	require.False(t, phase4.ReadOnlyUntilExit)
+	require.Equal(t, []uint32{3}, phase4.DependsOn)
+	require.Contains(t, phase4.Modules, "evidence")
+	require.Contains(t, phase4.Modules, "slashing")
+	require.Contains(t, phase4.Modules, "collators")
+	require.Contains(t, phase4.Modules, "fishermen")
+	require.Equal(t, []string{
+		"activate stake saturation in validator election",
+		"activate performance-weighted selection",
+		"activate structured evidence verification",
+		"activate severity-based slashing",
+		"activate reporter rewards and penalty routing",
+		"activate collator and fisherman roles where configured",
+	}, phase4.Tasks)
+	require.Equal(t, []string{
+		"validator selection uses stake and performance",
+		"evidence and slashing are structured and test-covered",
+		"task-based validator economy is live",
+	}, phase4.ExitCriteria)
 }
 
 func TestPosMigrationStrategyRejectsUnsafeOrIncompletePhases(t *testing.T) {
@@ -356,6 +402,12 @@ func TestPosMigrationStrategyRejectsUnsafeOrIncompletePhases(t *testing.T) {
 	missingCriteria.Phases[1].ExitCriteria = nil
 	missingCriteria.Root = ComputePosMigrationStrategyRoot(missingCriteria)
 	require.ErrorContains(t, missingCriteria.Validate(compatibility), "exit criteria")
+
+	missingRequiredPhase := manifest
+	missingRequiredPhase.Phases = append([]PosMigrationPhaseSpec{}, manifest.Phases...)
+	missingRequiredPhase.Phases = missingRequiredPhase.Phases[:len(missingRequiredPhase.Phases)-1]
+	missingRequiredPhase.Root = ComputePosMigrationStrategyRoot(missingRequiredPhase)
+	require.ErrorContains(t, missingRequiredPhase.Validate(compatibility), "full_economic_consensus_activation")
 
 	breaksStaking := manifest
 	breaksStaking.Phases = append([]PosMigrationPhaseSpec{}, manifest.Phases...)
