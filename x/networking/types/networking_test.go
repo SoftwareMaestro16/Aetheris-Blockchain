@@ -4287,6 +4287,75 @@ func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
 	require.NotContains(t, phase8.SatisfiedExitCriteria, ExitDiscoveryPoisoningDetected)
 }
 
+func TestNetworkingAcceptanceCriteriaDefineImplementationPlanningGate(t *testing.T) {
+	spec := DefaultNetworkingAcceptanceCriteriaSpec()
+	require.NoError(t, ValidateNetworkingAcceptanceCriteriaSpec(spec))
+	require.Len(t, spec.Criteria, 11)
+	require.NotEmpty(t, spec.SpecRoot)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionL0CometBFTProtected)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionANAChannelQoS)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionRL2Streaming)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionSecurityControls)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionRequiredTestCoverage)
+
+	missing := spec
+	missing.Criteria = append([]NetworkingAcceptanceCriterion(nil), spec.Criteria[:len(spec.Criteria)-1]...)
+	missing.SpecRoot = ComputeNetworkingAcceptanceCriteriaRoot(missing)
+	require.ErrorContains(t, ValidateNetworkingAcceptanceCriteriaSpec(missing), "must define 11 criteria")
+
+	unknown := spec
+	unknown.Criteria = append([]NetworkingAcceptanceCriterion(nil), spec.Criteria...)
+	unknown.Criteria[0] = NetworkingAcceptanceCriterion("ship_without_cometbft")
+	unknown.SpecRoot = ComputeNetworkingAcceptanceCriteriaRoot(unknown)
+	require.ErrorContains(t, ValidateNetworkingAcceptanceCriteriaSpec(unknown), "unknown networking acceptance criterion")
+}
+
+func TestNetworkingImplementationPlanningReadinessRequiresAllAcceptanceEvidence(t *testing.T) {
+	spec := DefaultNetworkingAcceptanceCriteriaSpec()
+	evidence := testNetworkingAcceptanceEvidence()
+	report, err := EvaluateNetworkingImplementationPlanningReadiness(spec, evidence)
+	require.NoError(t, err)
+	require.True(t, report.Ready)
+	require.Empty(t, report.Missing)
+	require.Empty(t, report.Rejected)
+	require.NotEmpty(t, report.ReadinessHash)
+
+	missing := make([]NetworkingAcceptanceEvidence, 0, len(evidence)-1)
+	for _, item := range evidence {
+		if item.Criterion != AcceptanceCriterionDRTDiscovery {
+			missing = append(missing, item)
+		}
+	}
+	report, err = EvaluateNetworkingImplementationPlanningReadiness(spec, missing)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Missing, AcceptanceCriterionDRTDiscovery)
+
+	rejected := append([]NetworkingAcceptanceEvidence(nil), evidence...)
+	for i := range rejected {
+		if rejected[i].Criterion == AcceptanceCriterionSecurityControls {
+			rejected[i].Accepted = false
+			break
+		}
+	}
+	report, err = EvaluateNetworkingImplementationPlanningReadiness(spec, rejected)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Rejected, AcceptanceCriterionSecurityControls)
+
+	emptyEvidence := append([]NetworkingAcceptanceEvidence(nil), evidence...)
+	for i := range emptyEvidence {
+		if emptyEvidence[i].Criterion == AcceptanceCriterionRequiredTestCoverage {
+			emptyEvidence[i].Evidence = nil
+			break
+		}
+	}
+	report, err = EvaluateNetworkingImplementationPlanningReadiness(spec, emptyEvidence)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Rejected, AcceptanceCriterionRequiredTestCoverage)
+}
+
 func TestRequiredNetworkingTestCoverageValidatesUnitAndIntegrationMatrix(t *testing.T) {
 	coverage := DefaultRequiredNetworkingTestCoverage()
 	require.NoError(t, ValidateRequiredNetworkingTestCoverage(coverage))
@@ -5424,6 +5493,72 @@ func requiredCoverageTests(specs []NetworkingTestCoverageSpec) []NetworkingRequi
 	}
 	sortRequiredTests(out)
 	return out
+}
+
+func networkingAcceptanceCriterionIDs(criteria []NetworkingAcceptanceCriterion) []NetworkingAcceptanceCriterion {
+	out := append([]NetworkingAcceptanceCriterion(nil), criteria...)
+	sortNetworkingAcceptanceCriteria(out)
+	return out
+}
+
+func testNetworkingAcceptanceEvidence() []NetworkingAcceptanceEvidence {
+	return []NetworkingAcceptanceEvidence{
+		{
+			Criterion: AcceptanceCriterionL0CometBFTProtected,
+			Evidence:  []string{"TestLayerStackPreservesCometBFTBaselineAndExtensionOrder", "TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionANAChannelQoS,
+			Evidence:  []string{"TestDefaultANAValidatesCometBFTBaselineAndResponsibilities", "TestANAPropagationKeepsConsensusOnCometBFTAndFanoutForService"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionL1IdentitySessions,
+			Evidence:  []string{"TestNodeRecordSignatureIdentityAndExpiry", "TestSessionHandshakeRejectsReplayExpiredRecordsAndMismatches"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionL2Overlays,
+			Evidence:  []string{"TestOverlayManagerFormsZoneAndServiceOverlays", "TestRoutingGraphBuildsDeterministicCommittedRoutesAndFallback"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionL3AetherMesh,
+			Evidence:  []string{"TestAetherMeshMessageTypesMapToChannels", "TestAetherMeshCrossZoneAndConsensusProofRules"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionRL2Streaming,
+			Evidence:  []string{"TestRL2ChunkDescriptorsVerifyOrderedMerkleRootAndChunkBytes", "TestRL2InterruptedTransferResumesAndRejectsInvalidChunks"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionDRTDiscovery,
+			Evidence:  []string{"TestDiscoveryRecordMustBeSignedExpiringAndProofChecked", "TestSignedDiscoveryRecordStoreFindRenewAndRevoke"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionHybridBroadcast,
+			Evidence:  []string{"TestBroadcastMessageSignsDeduplicatesAndRejectsForgedOrExpired", "TestBroadcastDedupCacheDropsDuplicatesDetectsConflictsAndPrunes"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionSecurityControls,
+			Evidence:  []string{"TestNetworkSecurityReplayChannelBindingAndQoSIsolation", "TestNetworkSecuritySimulationsCoverEclipseSpamAndRoutingManipulation"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionCosmosABCIIntegration,
+			Evidence:  []string{"TestCosmosCometBFTCompatibilityPlanPreservesRequiredSurfaces", "TestABCIIntegrationPlanKeepsLiveNetworkStateOutOfFinalizeBlock"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionRequiredTestCoverage,
+			Evidence:  []string{"TestRequiredNetworkingTestCoverageValidatesUnitAndIntegrationMatrix", "TestNetworkingTestCoverageReportRequiresAllRequiredEvidence"},
+			Accepted:  true,
+		},
+	}
 }
 
 func testNetworkingObservabilityMetrics() []NetworkingMetricSample {
