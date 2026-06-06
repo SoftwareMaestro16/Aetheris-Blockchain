@@ -20,24 +20,38 @@ type AetherMessageLifecycleRecord struct {
 }
 
 type AetherRoutingParams struct {
-	MaxHopCount      uint32
-	BaseHopCost      uint64
-	CongestionWeight uint64
-	QueueWeight      uint64
-	LatencyWeight    uint64
-	CapacityPenalty  uint64
-	RequiredCapacity uint64
-	GovernanceHash   string
+	MaxHopCount            uint32
+	BaseHopCost            uint64
+	CongestionWeight       uint64
+	QueueWeight            uint64
+	LatencyWeight          uint64
+	CapacityPenalty        uint64
+	RequiredCapacity       uint64
+	FailureRateWeight      uint64
+	GasUtilizationWeight   uint64
+	ExpiryRateWeight       uint64
+	FairnessCredit         uint64
+	CriticalPriorityCredit uint64
+	NormalPriorityFloor    uint64
+	GovernanceHash         string
 }
 
 type AetherRoutingMetric struct {
-	ZoneID          zonestypes.ZoneID
-	ShardID         string
-	CommittedHeight uint64
-	Capacity        uint64
-	CongestionScore uint64
-	QueueBacklog    uint64
-	MetricHash      string
+	ZoneID                zonestypes.ZoneID
+	ShardID               string
+	CommittedHeight       uint64
+	OutboxBacklog         uint64
+	InboxBacklog          uint64
+	AverageExecutionDelay uint64
+	FailedDeliveryRate    uint64
+	ShardGasUtilization   uint64
+	MessageExpiryRate     uint64
+	Capacity              uint64
+	CongestionScore       uint64
+	QueueBacklog          uint64
+	FairnessCredit        uint64
+	CriticalPriorityLane  bool
+	MetricHash            string
 }
 
 type AetherRoutingEdge struct {
@@ -220,6 +234,9 @@ func (p AetherRoutingParams) Validate() error {
 	if p.GovernanceHash != "" {
 		return zonestypes.ValidateHash("aether routing governance hash", p.GovernanceHash)
 	}
+	if p.NormalPriorityFloor > p.CriticalPriorityCredit {
+		return errors.New("aether routing normal priority floor must not exceed critical priority credit")
+	}
 	return nil
 }
 
@@ -334,7 +351,24 @@ func ComputeAetherMessageClassHash(msg AetherMessage) string {
 }
 
 func ComputeAetherRoutingMetricHash(metric AetherRoutingMetric) string {
-	return hashParts("aetheris-aether-routing-metric-v1", string(metric.ZoneID), metric.ShardID, fmt.Sprint(metric.CommittedHeight), fmt.Sprint(metric.Capacity), fmt.Sprint(metric.CongestionScore), fmt.Sprint(metric.QueueBacklog))
+	metric = normalizeAetherRoutingMetric(metric)
+	return hashParts(
+		"aetheris-aether-routing-metric-v2",
+		string(metric.ZoneID),
+		metric.ShardID,
+		fmt.Sprint(metric.CommittedHeight),
+		fmt.Sprint(metric.OutboxBacklog),
+		fmt.Sprint(metric.InboxBacklog),
+		fmt.Sprint(metric.AverageExecutionDelay),
+		fmt.Sprint(metric.FailedDeliveryRate),
+		fmt.Sprint(metric.ShardGasUtilization),
+		fmt.Sprint(metric.MessageExpiryRate),
+		fmt.Sprint(metric.Capacity),
+		fmt.Sprint(metric.CongestionScore),
+		fmt.Sprint(metric.QueueBacklog),
+		fmt.Sprint(metric.FairnessCredit),
+		fmt.Sprint(metric.CriticalPriorityLane),
+	)
 }
 
 func ComputeAetherRoutePlanCommitment(plan AetherRoutePlan) string {
@@ -354,11 +388,21 @@ func buildAetherRouteCandidate(path []AetherRoutingHop, table aethercoretypes.Ro
 	hopCount := uint32(len(hops) - 1)
 	total := uint64(hopCount)*params.BaseHopCost + uint64(hopCount)*params.LatencyWeight
 	for i := 1; i < len(hops); i++ {
-		metric := metricMap[routingNodeKey(hops[i].ZoneID, hops[i].ShardID)]
+		metric := normalizeAetherRoutingMetric(metricMap[routingNodeKey(hops[i].ZoneID, hops[i].ShardID)])
 		total += params.CongestionWeight * metric.CongestionScore
-		total += params.QueueWeight * metric.QueueBacklog
+		total += params.QueueWeight * (metric.OutboxBacklog + metric.InboxBacklog + metric.QueueBacklog)
+		total += params.LatencyWeight * metric.AverageExecutionDelay
+		total += params.FailureRateWeight * metric.FailedDeliveryRate
+		total += params.GasUtilizationWeight * metric.ShardGasUtilization
+		total += params.ExpiryRateWeight * metric.MessageExpiryRate
 		if params.RequiredCapacity > 0 && metric.Capacity < params.RequiredCapacity {
 			total += params.CapacityPenalty
+		}
+		if metric.FairnessCredit > 0 && params.FairnessCredit > 0 {
+			total = subtractCostFloor(total, params.FairnessCredit*metric.FairnessCredit, params.NormalPriorityFloor)
+		}
+		if metric.CriticalPriorityLane && params.CriticalPriorityCredit > 0 {
+			total = subtractCostFloor(total, params.CriticalPriorityCredit, params.NormalPriorityFloor)
 		}
 	}
 	for i := range hops {
@@ -410,6 +454,7 @@ func generateAetherCandidatePaths(source AetherRoutingHop, destination AetherRou
 func routingMetricMap(metrics []AetherRoutingMetric) (map[string]AetherRoutingMetric, error) {
 	out := make(map[string]AetherRoutingMetric, len(metrics))
 	for _, metric := range metrics {
+		metric = normalizeAetherRoutingMetric(metric)
 		if metric.MetricHash == "" {
 			metric.MetricHash = ComputeAetherRoutingMetricHash(metric)
 		}
@@ -432,6 +477,29 @@ func routingTableHasZone(table aethercoretypes.RoutingTableCommitment, zoneID zo
 
 func routingNodeKey(zoneID zonestypes.ZoneID, shardID string) string {
 	return string(zoneID) + "/" + shardID
+}
+
+func normalizeAetherRoutingMetric(metric AetherRoutingMetric) AetherRoutingMetric {
+	metric.ShardID = strings.TrimSpace(metric.ShardID)
+	if metric.QueueBacklog == 0 {
+		metric.QueueBacklog = metric.OutboxBacklog + metric.InboxBacklog
+	}
+	if metric.CongestionScore == 0 {
+		metric.CongestionScore = metric.AverageExecutionDelay + metric.FailedDeliveryRate + metric.ShardGasUtilization + metric.MessageExpiryRate
+	}
+	metric.MetricHash = strings.ToLower(strings.TrimSpace(metric.MetricHash))
+	return metric
+}
+
+func subtractCostFloor(total uint64, credit uint64, floor uint64) uint64 {
+	if total <= floor {
+		return total
+	}
+	available := total - floor
+	if credit >= available {
+		return floor
+	}
+	return total - credit
 }
 
 func normalizeAetherLifecycleRecord(record AetherMessageLifecycleRecord) AetherMessageLifecycleRecord {
