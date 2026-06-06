@@ -1,0 +1,36 @@
+syntax = "proto3";
+package l1.mintauthority.v1;
+
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/mint-authority/types/mintauthoritypb";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc MintProtocolCoins(MsgMintProtocolCoins) returns (MsgMintProtocolCoinsResponse);
+  rpc UpdateMintAuthorityParams(MsgUpdateMintAuthorityParams) returns (MsgUpdateMintAuthorityParamsResponse);
+}
+
+message MsgMintProtocolCoins {
+  option (cosmos.msg.v1.signer) = "caller";
+  string caller = 1;
+  string recipient = 2;
+  string denom = 3;
+  string amount = 4;
+  uint64 epoch = 5;
+  uint64 height = 6;
+  string emissions_decision_json = 7;
+  bool emergency = 8;
+  string emergency_authorization_json = 9;
+}
+
+message MsgMintProtocolCoinsResponse { string event_json = 1; }
+
+message MsgUpdateMintAuthorityParams {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string state_json = 2;
+}
+
+message MsgUpdateMintAuthorityParamsResponse {}

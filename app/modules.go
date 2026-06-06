@@ -41,6 +41,7 @@ import (
 	configvotingmodule "github.com/sovereign-l1/l1/x/config-voting"
 	constitutionmodule "github.com/sovereign-l1/l1/x/constitution"
 	crosschainregistrymodule "github.com/sovereign-l1/l1/x/cross-chain-registry"
+	delegatorprotectionmodule "github.com/sovereign-l1/l1/x/delegator-protection"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
 	dynamiccommissionmodule "github.com/sovereign-l1/l1/x/dynamic-commission"
 	emissionsmodule "github.com/sovereign-l1/l1/x/emissions"
@@ -50,10 +51,13 @@ import (
 	identityrootmodule "github.com/sovereign-l1/l1/x/identity-root"
 	loadmodule "github.com/sovereign-l1/l1/x/load"
 	meshmodule "github.com/sovereign-l1/l1/x/mesh"
+	mintauthoritymodule "github.com/sovereign-l1/l1/x/mint-authority"
 	networkingmodule "github.com/sovereign-l1/l1/x/networking"
 	nominatorpoolmodule "github.com/sovereign-l1/l1/x/nominator-pool"
 	paymentsmodule "github.com/sovereign-l1/l1/x/payments"
+	performancemodule "github.com/sovereign-l1/l1/x/performance"
 	reportermodule "github.com/sovereign-l1/l1/x/reporter"
+	reputationmodule "github.com/sovereign-l1/l1/x/reputation"
 	routingmodule "github.com/sovereign-l1/l1/x/routing"
 	schedulermodule "github.com/sovereign-l1/l1/x/scheduler"
 	shardingcoordinatormodule "github.com/sovereign-l1/l1/x/sharding-coordinator"
@@ -123,6 +127,10 @@ func (app *L1App) initModules(
 		burnmodule.NewAppModule(appCodec, app.BurnKeeper),
 		treasurymodule.NewAppModule(appCodec, app.TreasuryKeeper),
 		emissionsmodule.NewAppModule(appCodec, app.EmissionsKeeper),
+		mintauthoritymodule.NewAppModule(appCodec, app.MintAuthorityKeeper),
+		delegatorprotectionmodule.NewAppModule(appCodec, app.DelegatorProtectionKeeper),
+		reputationmodule.NewAppModule(appCodec, app.ReputationKeeper),
+		performancemodule.NewAppModule(appCodec, app.PerformanceKeeper),
 		dynamiccommissionmodule.NewAppModule(appCodec, app.DynamicCommissionKeeper),
 		stakeconcentrationmodule.NewAppModule(appCodec, app.StakeConcentrationKeeper),
 		feecollectormodule.NewAppModule(appCodec, app.FeeCollectorKeeper),

@@ -1,0 +1,59 @@
+syntax = "proto3";
+package l1.reputation.v1;
+
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/reputation/types/reputationpb";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc UpdateReputationParams(MsgUpdateReputationParams) returns (MsgUpdateReputationParamsResponse);
+  rpc ApplyReputationPenalty(MsgApplyReputationPenalty) returns (MsgApplyReputationPenaltyResponse);
+  rpc ApplyReputationReward(MsgApplyReputationReward) returns (MsgApplyReputationRewardResponse);
+  rpc RecomputeReputation(MsgRecomputeReputation) returns (MsgRecomputeReputationResponse);
+}
+
+message MsgUpdateReputationParams {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string params_json = 2;
+}
+
+message MsgUpdateReputationParamsResponse {}
+
+message MsgApplyReputationPenalty {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string subject_type = 2;
+  string subject = 3;
+  string component = 4;
+  uint32 amount = 5;
+  string reason = 6;
+  uint64 epoch = 7;
+}
+
+message MsgApplyReputationPenaltyResponse { string record_json = 1; }
+
+message MsgApplyReputationReward {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string subject_type = 2;
+  string subject = 3;
+  string component = 4;
+  uint32 amount = 5;
+  string reason = 6;
+  uint64 epoch = 7;
+}
+
+message MsgApplyReputationRewardResponse { string record_json = 1; }
+
+message MsgRecomputeReputation {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string subject_type = 2;
+  string subject = 3;
+  uint64 epoch = 4;
+}
+
+message MsgRecomputeReputationResponse { string record_json = 1; }

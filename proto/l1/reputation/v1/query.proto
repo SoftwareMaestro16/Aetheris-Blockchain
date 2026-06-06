@@ -1,0 +1,40 @@
+syntax = "proto3";
+package l1.reputation.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/reputation/types/reputationpb";
+
+service Query {
+  rpc ValidatorReputation(QueryValidatorReputationRequest) returns (QueryValidatorReputationResponse) {
+    option (google.api.http).get = "/l1/reputation/v1/validators/{address}";
+  }
+  rpc ReporterReputation(QueryReporterReputationRequest) returns (QueryReporterReputationResponse) {
+    option (google.api.http).get = "/l1/reputation/v1/reporters/{address}";
+  }
+  rpc ReputationHistory(QueryReputationHistoryRequest) returns (QueryReputationHistoryResponse) {
+    option (google.api.http).get = "/l1/reputation/v1/history/{subject_type}/{address}";
+  }
+  rpc ReputationParams(QueryReputationParamsRequest) returns (QueryReputationParamsResponse) {
+    option (google.api.http).get = "/l1/reputation/v1/params";
+  }
+}
+
+message QueryValidatorReputationRequest { string address = 1; }
+message QueryReporterReputationRequest { string address = 1; }
+message QueryValidatorReputationResponse { string record_json = 1; }
+message QueryReporterReputationResponse { string record_json = 1; }
+
+message QueryReputationHistoryRequest {
+  string subject_type = 1;
+  string address = 2;
+  uint32 limit = 3;
+}
+
+message QueryReputationHistoryResponse {
+  string snapshots_json = 1;
+  string events_json = 2;
+}
+
+message QueryReputationParamsRequest {}
+message QueryReputationParamsResponse { string params_json = 1; }

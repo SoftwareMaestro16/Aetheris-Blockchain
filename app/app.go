@@ -70,6 +70,8 @@ import (
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	crosschainregistrykeeper "github.com/sovereign-l1/l1/x/cross-chain-registry/keeper"
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
+	delegatorprotectionkeeper "github.com/sovereign-l1/l1/x/delegator-protection/keeper"
+	delegatorprotectiontypes "github.com/sovereign-l1/l1/x/delegator-protection/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	dynamiccommissionkeeper "github.com/sovereign-l1/l1/x/dynamic-commission/keeper"
@@ -88,14 +90,20 @@ import (
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	mintauthoritykeeper "github.com/sovereign-l1/l1/x/mint-authority/keeper"
+	mintauthoritytypes "github.com/sovereign-l1/l1/x/mint-authority/types"
 	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	nominatorpoolkeeper "github.com/sovereign-l1/l1/x/nominator-pool/keeper"
 	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	paymentskeeper "github.com/sovereign-l1/l1/x/payments/keeper"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
+	performancekeeper "github.com/sovereign-l1/l1/x/performance/keeper"
+	performancetypes "github.com/sovereign-l1/l1/x/performance/types"
 	reporterkeeper "github.com/sovereign-l1/l1/x/reporter/keeper"
 	reportertypes "github.com/sovereign-l1/l1/x/reporter/types"
+	reputationkeeper "github.com/sovereign-l1/l1/x/reputation/keeper"
+	reputationtypes "github.com/sovereign-l1/l1/x/reputation/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	schedulerkeeper "github.com/sovereign-l1/l1/x/scheduler/keeper"
@@ -158,6 +166,7 @@ var (
 		feecollectortypes.StorageRentReserveModuleName: nil,
 		feecollectortypes.BurnModuleName:               nil,
 		feecollectortypes.ReporterRewardsModuleName:    nil,
+		mintauthoritytypes.ModuleName:                  {authtypes.Minter},
 		feestypes.ModuleName:                           nil,
 	}
 )
@@ -205,6 +214,10 @@ type L1App struct {
 	BurnKeeper                burnkeeper.Keeper
 	TreasuryKeeper            treasurykeeper.Keeper
 	EmissionsKeeper           emissionskeeper.Keeper
+	MintAuthorityKeeper       mintauthoritykeeper.Keeper
+	DelegatorProtectionKeeper delegatorprotectionkeeper.Keeper
+	ReputationKeeper          reputationkeeper.Keeper
+	PerformanceKeeper         performancekeeper.Keeper
 	DynamicCommissionKeeper   dynamiccommissionkeeper.Keeper
 	StakeConcentrationKeeper  stakeconcentrationkeeper.Keeper
 	FeeCollectorKeeper        feecollectorkeeper.Keeper
@@ -347,6 +360,10 @@ func NewL1App(
 		burntypes.StoreKey,
 		treasurytypes.StoreKey,
 		emissionstypes.StoreKey,
+		mintauthoritytypes.StoreKey,
+		delegatorprotectiontypes.StoreKey,
+		reputationtypes.StoreKey,
+		performancetypes.StoreKey,
 		dynamiccommissiontypes.StoreKey,
 		stakeconcentrationtypes.StoreKey,
 		feecollectortypes.StoreKey,

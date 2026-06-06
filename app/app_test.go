@@ -36,6 +36,7 @@ import (
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	mintauthoritytypes "github.com/sovereign-l1/l1/x/mint-authority/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
@@ -569,6 +570,7 @@ func TestPrototypeModuleAccountPermissionsAreNarrow(t *testing.T) {
 		feecollectortypes.StorageRentReserveModuleName: nil,
 		feecollectortypes.BurnModuleName:               nil,
 		feecollectortypes.ReporterRewardsModuleName:    nil,
+		mintauthoritytypes.ModuleName:                  {authtypes.Minter},
 		feestypes.ModuleName:                           nil,
 	}
 	require.Equal(t, expected, GetMaccPerms())

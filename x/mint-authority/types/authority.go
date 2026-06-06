@@ -13,7 +13,7 @@ import (
 
 const (
 	ModuleName = "mint-authority"
-	StoreKey   = ModuleName
+	StoreKey   = "xmintauthority"
 
 	DefaultMintAuthorityParamsAuthority = "4:0000000000000000000000000000000000000000000000000000000000000001"
 	DefaultMintAuthorityModuleAccount   = "mint-authority"

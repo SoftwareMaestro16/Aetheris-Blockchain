@@ -1,0 +1,68 @@
+syntax = "proto3";
+package l1.delegatorprotection.v1;
+
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/delegator-protection/types/delegatorprotectionpb";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc SubmitDelegatorProtectionClaim(MsgSubmitDelegatorProtectionClaim) returns (MsgSubmitDelegatorProtectionClaimResponse);
+  rpc ApproveDelegatorProtectionClaim(MsgApproveDelegatorProtectionClaim) returns (MsgApproveDelegatorProtectionClaimResponse);
+  rpc RejectDelegatorProtectionClaim(MsgRejectDelegatorProtectionClaim) returns (MsgRejectDelegatorProtectionClaimResponse);
+  rpc ClaimDelegatorCompensation(MsgClaimDelegatorCompensation) returns (MsgClaimDelegatorCompensationResponse);
+  rpc UpdateProtectionParams(MsgUpdateProtectionParams) returns (MsgUpdateProtectionParamsResponse);
+}
+
+message MsgSubmitDelegatorProtectionClaim {
+  option (cosmos.msg.v1.signer) = "delegator";
+  string delegator = 1;
+  string validator = 2;
+  string loss_amount = 3;
+  string requested_payout = 4;
+  string eligibility_hash = 5;
+  string reason = 6;
+  uint64 epoch = 7;
+  uint64 height = 8;
+}
+
+message MsgSubmitDelegatorProtectionClaimResponse { string claim_json = 1; }
+
+message MsgApproveDelegatorProtectionClaim {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string claim_id = 2;
+  string approved_payout = 3;
+  uint64 height = 4;
+}
+
+message MsgApproveDelegatorProtectionClaimResponse {}
+
+message MsgRejectDelegatorProtectionClaim {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string claim_id = 2;
+  string reason = 3;
+  uint64 height = 4;
+}
+
+message MsgRejectDelegatorProtectionClaimResponse {}
+
+message MsgClaimDelegatorCompensation {
+  option (cosmos.msg.v1.signer) = "delegator";
+  string delegator = 1;
+  string claim_id = 2;
+  uint64 epoch = 3;
+  uint64 height = 4;
+}
+
+message MsgClaimDelegatorCompensationResponse { string payout_json = 1; }
+
+message MsgUpdateProtectionParams {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string params_json = 2;
+}
+
+message MsgUpdateProtectionParamsResponse {}

@@ -30,6 +30,7 @@ import (
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
+	delegatorprotectiontypes "github.com/sovereign-l1/l1/x/delegator-protection/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	dynamiccommissiontypes "github.com/sovereign-l1/l1/x/dynamic-commission/types"
 	emissionstypes "github.com/sovereign-l1/l1/x/emissions/types"
@@ -39,10 +40,13 @@ import (
 	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	mintauthoritytypes "github.com/sovereign-l1/l1/x/mint-authority/types"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
+	performancetypes "github.com/sovereign-l1/l1/x/performance/types"
 	reportertypes "github.com/sovereign-l1/l1/x/reporter/types"
+	reputationtypes "github.com/sovereign-l1/l1/x/reputation/types"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	schedulertypes "github.com/sovereign-l1/l1/x/scheduler/types"
 	shardingcoordinatortypes "github.com/sovereign-l1/l1/x/sharding-coordinator/types"
@@ -274,6 +278,10 @@ func aetherCoreInitGenesisOrder() []string {
 		burntypes.ModuleName,
 		treasurytypes.ModuleName,
 		emissionstypes.ModuleName,
+		mintauthoritytypes.ModuleName,
+		delegatorprotectiontypes.ModuleName,
+		reputationtypes.ModuleName,
+		performancetypes.ModuleName,
 		dynamiccommissiontypes.ModuleName,
 		stakeconcentrationtypes.ModuleName,
 		feecollectortypes.ModuleName,
@@ -330,6 +338,10 @@ func aetherCoreExportGenesisOrder() []string {
 		burntypes.ModuleName,
 		treasurytypes.ModuleName,
 		emissionstypes.ModuleName,
+		mintauthoritytypes.ModuleName,
+		delegatorprotectiontypes.ModuleName,
+		reputationtypes.ModuleName,
+		performancetypes.ModuleName,
 		dynamiccommissiontypes.ModuleName,
 		stakeconcentrationtypes.ModuleName,
 		feecollectortypes.ModuleName,

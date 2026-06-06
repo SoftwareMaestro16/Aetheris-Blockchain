@@ -64,6 +64,8 @@ import (
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	crosschainregistrykeeper "github.com/sovereign-l1/l1/x/cross-chain-registry/keeper"
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
+	delegatorprotectionkeeper "github.com/sovereign-l1/l1/x/delegator-protection/keeper"
+	delegatorprotectiontypes "github.com/sovereign-l1/l1/x/delegator-protection/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	dynamiccommissionkeeper "github.com/sovereign-l1/l1/x/dynamic-commission/keeper"
@@ -82,14 +84,20 @@ import (
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	mintauthoritykeeper "github.com/sovereign-l1/l1/x/mint-authority/keeper"
+	mintauthoritytypes "github.com/sovereign-l1/l1/x/mint-authority/types"
 	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	nominatorpoolkeeper "github.com/sovereign-l1/l1/x/nominator-pool/keeper"
 	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	paymentskeeper "github.com/sovereign-l1/l1/x/payments/keeper"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
+	performancekeeper "github.com/sovereign-l1/l1/x/performance/keeper"
+	performancetypes "github.com/sovereign-l1/l1/x/performance/types"
 	reporterkeeper "github.com/sovereign-l1/l1/x/reporter/keeper"
 	reportertypes "github.com/sovereign-l1/l1/x/reporter/types"
+	reputationkeeper "github.com/sovereign-l1/l1/x/reputation/keeper"
+	reputationtypes "github.com/sovereign-l1/l1/x/reputation/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	schedulerkeeper "github.com/sovereign-l1/l1/x/scheduler/keeper"
@@ -310,6 +318,23 @@ func (app *L1App) initKeepers(
 	app.EmissionsKeeper = emissionskeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[emissionstypes.StoreKey]),
+		govAuthority,
+	)
+	app.MintAuthorityKeeper = mintauthoritykeeper.NewKeeper(
+		runtime.NewKVStoreService(keys[mintauthoritytypes.StoreKey]),
+		app.BankKeeper,
+		govAuthority,
+	)
+	app.DelegatorProtectionKeeper = delegatorprotectionkeeper.NewKeeper(
+		runtime.NewKVStoreService(keys[delegatorprotectiontypes.StoreKey]),
+		govAuthority,
+	)
+	app.ReputationKeeper = reputationkeeper.NewKeeper(
+		runtime.NewKVStoreService(keys[reputationtypes.StoreKey]),
+		govAuthority,
+	)
+	app.PerformanceKeeper = performancekeeper.NewKeeper(
+		runtime.NewKVStoreService(keys[performancetypes.StoreKey]),
 		govAuthority,
 	)
 	app.DynamicCommissionKeeper = dynamiccommissionkeeper.NewKeeper(

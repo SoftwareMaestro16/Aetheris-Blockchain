@@ -1,0 +1,37 @@
+syntax = "proto3";
+package l1.mintauthority.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/mint-authority/types/mintauthoritypb";
+
+service Query {
+  rpc MintAuthority(QueryMintAuthorityRequest) returns (QueryMintAuthorityResponse) {
+    option (google.api.http).get = "/l1/mintauthority/v1/authority";
+  }
+  rpc MintedByEpoch(QueryMintedByEpochRequest) returns (QueryMintedByEpochResponse) {
+    option (google.api.http).get = "/l1/mintauthority/v1/minted_by_epoch/{epoch}/{denom}";
+  }
+  rpc MintedLifetime(QueryMintedLifetimeRequest) returns (QueryMintedLifetimeResponse) {
+    option (google.api.http).get = "/l1/mintauthority/v1/minted_lifetime/{denom}";
+  }
+  rpc MintCaps(QueryMintCapsRequest) returns (QueryMintCapsResponse) {
+    option (google.api.http).get = "/l1/mintauthority/v1/caps";
+  }
+}
+
+message QueryMintAuthorityRequest {}
+message QueryMintAuthorityResponse { string authority_json = 1; }
+
+message QueryMintedByEpochRequest {
+  uint64 epoch = 1;
+  string denom = 2;
+}
+
+message QueryMintedByEpochResponse { string minted_json = 1; }
+
+message QueryMintedLifetimeRequest { string denom = 1; }
+message QueryMintedLifetimeResponse { string minted_json = 1; }
+
+message QueryMintCapsRequest {}
+message QueryMintCapsResponse { string caps_json = 1; }

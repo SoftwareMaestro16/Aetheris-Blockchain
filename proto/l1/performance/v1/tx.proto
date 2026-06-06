@@ -1,0 +1,42 @@
+syntax = "proto3";
+package l1.performance.v1;
+
+import "cosmos/msg/v1/msg.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/performance/types/performancepb";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc SubmitPerformanceReport(MsgSubmitPerformanceReport) returns (MsgSubmitPerformanceReportResponse);
+  rpc FinalizePerformanceEpoch(MsgFinalizePerformanceEpoch) returns (MsgFinalizePerformanceEpochResponse);
+  rpc ChallengePerformanceReport(MsgChallengePerformanceReport) returns (MsgChallengePerformanceReportResponse);
+}
+
+message MsgSubmitPerformanceReport {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string report_json = 2;
+}
+
+message MsgSubmitPerformanceReportResponse {}
+
+message MsgFinalizePerformanceEpoch {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  uint64 epoch = 2;
+}
+
+message MsgFinalizePerformanceEpochResponse { string epoch_json = 1; }
+
+message MsgChallengePerformanceReport {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  uint64 epoch = 2;
+  string report_id = 3;
+  string challenger = 4;
+  string reason = 5;
+  bool accepted = 6;
+}
+
+message MsgChallengePerformanceReportResponse {}

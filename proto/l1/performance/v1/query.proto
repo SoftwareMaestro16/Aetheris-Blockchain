@@ -1,0 +1,41 @@
+syntax = "proto3";
+package l1.performance.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/performance/types/performancepb";
+
+service Query {
+  rpc ValidatorPerformance(QueryValidatorPerformanceRequest) returns (QueryValidatorPerformanceResponse) {
+    option (google.api.http).get = "/l1/performance/v1/validators/{validator_address}/{epoch}";
+  }
+  rpc PerformanceEpoch(QueryPerformanceEpochRequest) returns (QueryPerformanceEpochResponse) {
+    option (google.api.http).get = "/l1/performance/v1/epochs/{epoch}";
+  }
+  rpc PerformanceReports(QueryPerformanceReportsRequest) returns (QueryPerformanceReportsResponse) {
+    option (google.api.http).get = "/l1/performance/v1/reports/{epoch}";
+  }
+  rpc PerformanceParams(QueryPerformanceParamsRequest) returns (QueryPerformanceParamsResponse) {
+    option (google.api.http).get = "/l1/performance/v1/params";
+  }
+}
+
+message QueryValidatorPerformanceRequest {
+  uint64 epoch = 1;
+  string validator_address = 2;
+}
+
+message QueryValidatorPerformanceResponse { string aggregate_json = 1; }
+
+message QueryPerformanceEpochRequest { uint64 epoch = 1; }
+message QueryPerformanceEpochResponse { string epoch_json = 1; }
+
+message QueryPerformanceReportsRequest {
+  uint64 epoch = 1;
+  string validator_address = 2;
+}
+
+message QueryPerformanceReportsResponse { string reports_json = 1; }
+
+message QueryPerformanceParamsRequest {}
+message QueryPerformanceParamsResponse { string params_json = 1; }
