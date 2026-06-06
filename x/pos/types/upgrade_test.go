@@ -504,6 +504,107 @@ func TestEconomicSecurityMetricsRejectsManipulatedInputs(t *testing.T) {
 	require.ErrorContains(t, computeSecurity(tampered), "history root")
 }
 
+func TestCentralizationDashboardExposesControlsQueriesAndAlerts(t *testing.T) {
+	params := DefaultParams()
+	params.MinStakeNaet = sdkmath.NewInt(100)
+	params.StakeSaturationThresholdNaet = sdkmath.NewInt(1_000)
+	params.StakeSaturationCapFactorBps = BasisPoints
+	validators := scoredCandidates(t, params, []Candidate{
+		candidate("val-a", 3_000, 0),
+		candidate("val-b", 1_000, 0),
+		candidate("val-c", 100, 0),
+	})
+	securityInput := EconomicSecurityInput{
+		Validators:              validators,
+		RiskWindows:             []RiskWindowRecord{riskWindow("delegator-a", "val-a", 800, RiskWindowStatusActive), riskWindow("delegator-b", "val-b", 200, RiskWindowStatusActive)},
+		TopN:                    1,
+		ParticipatingValidators: 3,
+		EligibleValidators:      3,
+		AcceptedSlashEvents:     1,
+		DetectedFaultEvents:     1,
+		AcceptedEvidence:        1,
+		SubmittedEvidence:       1,
+		CompletedTasks:          5,
+		ExpectedTasks:           5,
+	}
+	query, err := QuerySecurityMetrics(SecurityMetricQuery{Input: securityInput})
+	require.NoError(t, err)
+	require.Equal(t, uint32(4_761), query.Metrics.TopNVotingPowerConcentrationBps)
+
+	controlParams := DefaultCentralizationControlParams(params)
+	controlParams.MaxValidatorShareBps = 3_000
+	controlParams.MaxTopNConcentrationBps = 4_500
+	controlParams.MaxStakeSaturationRatioBps = 3_000
+	controlParams.MaxDelegationRiskBucketBps = 5_000
+	controlParams.MaxTaskAssignmentShareBps = 6_000
+	controlParams.BootstrapMaxVotingPowerShareBps = 1_500
+	dashboard, err := BuildCentralizationDashboard(CentralizationDashboardInput{
+		SecurityInput: securityInput,
+		ControlParams: controlParams,
+		TaskAssignments: []CentralizationTaskAssignment{
+			{TaskGroupID: "tg-a", ValidatorAddress: "val-a", AssignmentCount: 4},
+			{TaskGroupID: "tg-b", ValidatorAddress: "val-b", AssignmentCount: 1},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(4_878), dashboard.Metrics.StakeSaturationRatioBps)
+	require.Equal(t, uint32(8_000), dashboard.TaskAssignmentDiversity.MaxAssignmentShareBps)
+	require.Equal(t, uint32(2_000), dashboard.TaskAssignmentDiversity.DiversityScoreBps)
+	require.Contains(t, dashboard.TaskAssignmentDiversity.Warnings, CentralizationWarningTaskAssignmentShare)
+	require.Len(t, dashboard.DelegationRiskWarnings, 1)
+	require.Equal(t, "val-a", dashboard.DelegationRiskWarnings[0].ValidatorAddress)
+	require.Equal(t, uint32(8_000), dashboard.DelegationRiskWarnings[0].ExposureShareBps)
+
+	valA := centralizationControlByID(t, dashboard.ValidatorControls, "val-a")
+	require.Equal(t, uint32(4_761), valA.VotingPowerShareBps)
+	require.Equal(t, uint32(2_515), valA.RewardDampeningBps)
+	require.Contains(t, valA.Warnings, CentralizationWarningValidatorShare)
+	require.Contains(t, valA.Warnings, CentralizationWarningStakeSaturation)
+	require.Contains(t, valA.Warnings, CentralizationWarningRewardDampeningActive)
+
+	valC := centralizationControlByID(t, dashboard.ValidatorControls, "val-c")
+	require.True(t, valC.BootstrapEligible)
+	require.Contains(t, valC.Warnings, CentralizationWarningBootstrapEligible)
+	requireAlert(t, dashboard.Alerts, CentralizationWarningTopNShare)
+	requireAlert(t, dashboard.Alerts, CentralizationWarningStakeSaturation)
+	requireAlert(t, dashboard.Alerts, CentralizationWarningDelegationRisk)
+	requireAlert(t, dashboard.Alerts, CentralizationWarningTaskAssignmentShare)
+}
+
+func TestStakeConcentrationAndSplittingSimulations(t *testing.T) {
+	params := DefaultParams()
+	params.MinStakeNaet = sdkmath.NewInt(100)
+	params.StakeSaturationThresholdNaet = sdkmath.NewInt(10_000)
+	params.StakeSaturationCapFactorBps = BasisPoints
+	concentration, err := SimulateStakeConcentration(StakeConcentrationSimulationInput{
+		Params:                  params,
+		Candidates:              []Candidate{candidate("val-a", 1_000, 0), candidate("val-b", 1_000, 0), candidate("val-c", 1_000, 0)},
+		TargetValidatorID:       "val-a",
+		AddedDelegatedStakeNaet: sdkmath.NewInt(4_000),
+		TopN:                    1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(3_333), concentration.Before.TopNVotingPowerConcentrationBps)
+	require.Equal(t, uint32(7_142), concentration.After.TopNVotingPowerConcentrationBps)
+	require.Equal(t, int32(3_809), concentration.TopNConcentrationDeltaBps)
+	require.Equal(t, sdkmath.NewInt(4_000), concentration.TargetEffectiveStakeDeltaNaet)
+	requireAlert(t, concentration.Alerts, CentralizationWarningTopNShare)
+
+	params.StakeSaturationThresholdNaet = sdkmath.NewInt(1_000)
+	split, err := SimulateStakeSplitting(StakeSplittingSimulationInput{
+		Params:     params,
+		Candidate:  candidate("val-heavy", 3_000, 0),
+		SplitCount: 3,
+		TopN:       1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(1_000), split.SingleEffectiveStakeNaet)
+	require.Equal(t, sdkmath.NewInt(3_000), split.SplitEffectiveStakeNaet)
+	require.Equal(t, sdkmath.NewInt(2_000), split.EffectiveStakeGainNaet)
+	require.Equal(t, uint32(10_000), split.SingleConcentrationBps)
+	require.Equal(t, uint32(3_333), split.SplitConcentrationBps)
+}
+
 func TestMaxValidatorSetChangesUsesConfiguredRate(t *testing.T) {
 	params := DefaultParams()
 	params.MaxValidatorSetChangeRateBps = 1_000
@@ -1875,6 +1976,24 @@ func riskWindow(stakeOwner string, validatorAddress string, amount int64, status
 func computeSecurity(input EconomicSecurityInput) error {
 	_, err := ComputeEconomicSecurityMetrics(input)
 	return err
+}
+
+func centralizationControlByID(t *testing.T, controls []CentralizationValidatorControl, validatorID string) CentralizationValidatorControl {
+	t.Helper()
+	for _, control := range controls {
+		if control.ValidatorAddress == validatorID {
+			return control
+		}
+	}
+	t.Fatalf("centralization control %s not found", validatorID)
+	return CentralizationValidatorControl{}
+}
+
+func requireAlert(t *testing.T, alerts []ConcentrationInvariantAlert, alertType string) {
+	t.Helper()
+	require.True(t, slices.ContainsFunc(alerts, func(alert ConcentrationInvariantAlert) bool {
+		return alert.AlertType == alertType
+	}), "missing concentration alert %s in %+v", alertType, alerts)
 }
 
 func posLayerSpecsByLayer(architecture LayeredPosArchitecture) map[PosLayer]PosLayerSpec {
