@@ -17,7 +17,27 @@ const (
 	MaxAsyncMessagePayloadType    = 96
 	MaxAsyncMessageRouteHint      = 128
 	MaxAsyncMessagePriority       = 255
+
+	AVMRetryModeNone           AVMRetryMode = "none"
+	AVMRetryModeFixed          AVMRetryMode = "fixed"
+	AVMRetryModeBoundedBackoff AVMRetryMode = "bounded_backoff"
+
+	AVMBackoffModeNone        AVMBackoffMode = "none"
+	AVMBackoffModeLinear      AVMBackoffMode = "linear"
+	AVMBackoffModeExponential AVMBackoffMode = "exponential"
 )
+
+type AVMRetryMode string
+type AVMBackoffMode string
+
+type AVMRetryPolicy struct {
+	Mode           AVMRetryMode
+	MaxAttempts    uint32
+	RetryDelay     uint64
+	BackoffMode    AVMBackoffMode
+	MaxRetryHeight uint64
+	ChargeRetryGas bool
+}
 
 type AVMAsyncMessage struct {
 	ID                       string
@@ -28,7 +48,7 @@ type AVMAsyncMessage struct {
 	GasLimit                 uint64
 	DelayHeight              uint64
 	ExpiryHeight             uint64
-	RetryPolicy              AsyncRetryPolicy
+	RetryPolicy              AVMRetryPolicy
 	BounceFlag               bool
 	SourceZone               zonestypes.ZoneID
 	DestinationZone          zonestypes.ZoneID
@@ -55,6 +75,17 @@ type AVMAsyncMessageRegistry struct {
 	Messages           []AVMAsyncMessage
 	ConsumedMessageIDs []string
 	ReplayTombstones   []AVMAsyncReplayTombstone
+}
+
+func DefaultAVMRetryPolicy(expiryHeight uint64) AVMRetryPolicy {
+	return AVMRetryPolicy{
+		Mode:           AVMRetryModeFixed,
+		MaxAttempts:    3,
+		RetryDelay:     1,
+		BackoffMode:    AVMBackoffModeNone,
+		MaxRetryHeight: expiryHeight,
+		ChargeRetryGas: true,
+	}
 }
 
 func NewAVMAsyncMessage(msg AVMAsyncMessage) (AVMAsyncMessage, error) {
@@ -124,7 +155,7 @@ func (m AVMAsyncMessage) Validate() error {
 			return errors.New("async message delay height must not exceed expiry")
 		}
 	}
-	if err := m.RetryPolicy.Validate(); err != nil {
+	if err := m.RetryPolicy.ValidateForMessage(m.ExpiryHeight); err != nil {
 		return err
 	}
 	if err := zonestypes.ValidateZoneID(m.SourceZone); err != nil {
@@ -165,6 +196,64 @@ func (m AVMAsyncMessage) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (p AVMRetryPolicy) ValidateForMessage(expiryHeight uint64) error {
+	if !IsAVMRetryMode(p.Mode) {
+		return fmt.Errorf("invalid async retry mode %q", p.Mode)
+	}
+	if !IsAVMBackoffMode(p.BackoffMode) {
+		return fmt.Errorf("invalid async retry backoff mode %q", p.BackoffMode)
+	}
+	if p.Mode == AVMRetryModeNone {
+		if p.MaxAttempts != 0 || p.RetryDelay != 0 || p.MaxRetryHeight != 0 || p.ChargeRetryGas {
+			return errors.New("async retry mode none must not configure retry attempts, delay, height, or gas charge")
+		}
+		if p.BackoffMode != "" && p.BackoffMode != AVMBackoffModeNone {
+			return errors.New("async retry mode none must use no backoff")
+		}
+		return nil
+	}
+	if p.MaxAttempts == 0 {
+		return errors.New("async retry count must be bounded")
+	}
+	if p.RetryDelay == 0 {
+		return errors.New("async retry delay must be deterministic and positive")
+	}
+	if p.MaxRetryHeight == 0 {
+		return errors.New("async max retry height must be explicit")
+	}
+	if expiryHeight > 0 && p.MaxRetryHeight > expiryHeight {
+		return errors.New("async retry cannot exceed message expiry")
+	}
+	if !p.ChargeRetryGas {
+		return errors.New("async retry gas must be reserved or explicitly charged")
+	}
+	if p.Mode == AVMRetryModeFixed && p.BackoffMode != AVMBackoffModeNone {
+		return errors.New("fixed async retry mode must use no backoff")
+	}
+	if p.Mode == AVMRetryModeBoundedBackoff && p.BackoffMode == AVMBackoffModeNone {
+		return errors.New("bounded backoff retry mode requires deterministic backoff")
+	}
+	return nil
+}
+
+func IsAVMRetryMode(mode AVMRetryMode) bool {
+	switch mode {
+	case AVMRetryModeNone, AVMRetryModeFixed, AVMRetryModeBoundedBackoff:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsAVMBackoffMode(mode AVMBackoffMode) bool {
+	switch mode {
+	case "", AVMBackoffModeNone, AVMBackoffModeLinear, AVMBackoffModeExponential:
+		return true
+	default:
+		return false
+	}
 }
 
 func (t AVMAsyncReplayTombstone) Validate() error {
@@ -246,6 +335,36 @@ func DeriveAVMAsyncMessageID(msg AVMAsyncMessage) string {
 	writeEnginePart(h, msg.PayloadHash)
 	writeEngineUint64(h, msg.CreatedHeight)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func NextAVMRetryHeight(createdHeight uint64, attempt uint32, policy AVMRetryPolicy) (uint64, error) {
+	if attempt == 0 {
+		return 0, errors.New("async retry attempt must be positive")
+	}
+	if err := policy.ValidateForMessage(policy.MaxRetryHeight); err != nil {
+		return 0, err
+	}
+	if attempt > policy.MaxAttempts {
+		return 0, errors.New("async retry attempt exceeds max attempts")
+	}
+	delay := policy.RetryDelay
+	switch policy.BackoffMode {
+	case AVMBackoffModeLinear:
+		delay *= uint64(attempt)
+	case AVMBackoffModeExponential:
+		if attempt > 63 {
+			return 0, errors.New("async retry exponential backoff attempt overflows")
+		}
+		delay *= uint64(1) << (attempt - 1)
+	}
+	if delay > ^uint64(0)-createdHeight {
+		return 0, errors.New("async retry height overflows")
+	}
+	next := createdHeight + delay
+	if next > policy.MaxRetryHeight {
+		return 0, errors.New("async retry cannot exceed max retry height")
+	}
+	return next, nil
 }
 
 func ComputeAVMAsyncPayloadHash(payload []byte) string {

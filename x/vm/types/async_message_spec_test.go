@@ -109,7 +109,7 @@ func testAVMAsyncMessage(source string, sourceZone zonestypes.ZoneID, destinatio
 		GasLimit:        100,
 		DelayHeight:     1,
 		ExpiryHeight:    createdHeight + 10,
-		RetryPolicy:     AsyncRetryPolicy{MaxRetries: 2, RetryDelayBlocks: 1, DeadlineBlock: createdHeight + 10},
+		RetryPolicy:     DefaultAVMRetryPolicy(createdHeight + 10),
 		BounceFlag:      true,
 		SourceZone:      sourceZone,
 		DestinationZone: destinationZone,
