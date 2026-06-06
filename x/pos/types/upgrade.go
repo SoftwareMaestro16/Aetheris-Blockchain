@@ -66,6 +66,13 @@ const (
 	RoleStatusInactive  = "inactive"
 )
 
+const (
+	CollatorStatusRegistered = "registered"
+	CollatorStatusActive     = "active"
+	CollatorStatusSuspended  = "suspended"
+	CollatorStatusRetired    = "retired"
+)
+
 type RoleRecord struct {
 	ValidatorAddress  string
 	Role              ValidatorRole
@@ -123,6 +130,43 @@ type RoleRewardInput struct {
 	TotalRewardsNaet sdkmath.Int
 	Records          []RoleRecord
 	Weights          []RoleRewardWeight
+}
+
+type CollatorRecord struct {
+	CollatorID         string
+	OperatorAddress    string
+	SupportedWorkloads []WorkloadType
+	BondOptional       sdkmath.Int
+	Reputation         uint32
+	Status             string
+	RegisteredEpoch    uint64
+}
+
+type CollatorCandidateOutputInput struct {
+	EpochID             uint64
+	Collator            CollatorRecord
+	Task                WorkloadTask
+	TaskGroupIDOptional string
+	TransactionRoot     string
+	StateTransitionRoot string
+	ProofBundleRoot     string
+}
+
+type CollatorCandidateOutput struct {
+	EpochID                       uint64
+	CollatorID                    string
+	OperatorAddress               string
+	TaskID                        string
+	TaskGroupIDOptional           string
+	WorkloadID                    string
+	WorkloadType                  WorkloadType
+	TransactionRoot               string
+	StateTransitionRoot           string
+	ProofBundleRoot               string
+	RequiresValidatorVerification bool
+	ValidatorSignatures           []string
+	Finalized                     bool
+	CandidateOutputHash           string
 }
 
 type ValidatorCapacity struct {
@@ -2564,6 +2608,27 @@ func RoleStatusValues() []string {
 	}
 }
 
+func CollatorRecordFieldNames() []string {
+	return []string{
+		"collator_id",
+		"operator_address",
+		"supported_workloads",
+		"bond_optional",
+		"reputation",
+		"status",
+		"registered_epoch",
+	}
+}
+
+func CollatorStatusValues() []string {
+	return []string{
+		CollatorStatusRegistered,
+		CollatorStatusActive,
+		CollatorStatusSuspended,
+		CollatorStatusRetired,
+	}
+}
+
 func NewRoleRecord(record RoleRecord) (RoleRecord, error) {
 	record.ValidatorAddress = strings.TrimSpace(record.ValidatorAddress)
 	record.Status = strings.TrimSpace(record.Status)
@@ -2617,6 +2682,177 @@ func ValidateRoleRecords(records []RoleRecord) error {
 		seen[key] = struct{}{}
 	}
 	return nil
+}
+
+func NewCollatorRecord(record CollatorRecord) (CollatorRecord, error) {
+	record.CollatorID = strings.TrimSpace(record.CollatorID)
+	record.OperatorAddress = strings.TrimSpace(record.OperatorAddress)
+	record.Status = strings.TrimSpace(record.Status)
+	if record.Status == "" {
+		record.Status = CollatorStatusRegistered
+	}
+	if record.BondOptional.IsNil() {
+		record.BondOptional = sdkmath.ZeroInt()
+	}
+	record.SupportedWorkloads = normalizedWorkloadTypes(record.SupportedWorkloads)
+	return record, record.Validate()
+}
+
+func (c CollatorRecord) Validate() error {
+	if err := validatePosToken("collator id", c.CollatorID); err != nil {
+		return err
+	}
+	if err := validatePosToken("collator operator address", c.OperatorAddress); err != nil {
+		return err
+	}
+	if len(c.SupportedWorkloads) == 0 {
+		return errors.New("collator supported workloads are required")
+	}
+	if err := validateWorkloadTypes(c.SupportedWorkloads); err != nil {
+		return err
+	}
+	if c.BondOptional.IsNil() {
+		return errors.New("collator bond optional must be set")
+	}
+	if c.BondOptional.IsNegative() {
+		return errors.New("collator bond optional cannot be negative")
+	}
+	if c.Reputation > BasisPoints {
+		return fmt.Errorf("collator reputation must be <= %d bps", BasisPoints)
+	}
+	if err := validateCollatorStatus(c.Status); err != nil {
+		return err
+	}
+	if c.RegisteredEpoch == 0 {
+		return errors.New("collator registered epoch is required")
+	}
+	return nil
+}
+
+func (c CollatorRecord) SupportsWorkload(workloadType WorkloadType) bool {
+	if err := validateWorkloadType(workloadType); err != nil {
+		return false
+	}
+	for _, supported := range c.SupportedWorkloads {
+		if supported == workloadType {
+			return true
+		}
+	}
+	return false
+}
+
+func BuildCollatorCandidateOutput(params Params, input CollatorCandidateOutputInput) (CollatorCandidateOutput, error) {
+	if err := params.Validate(); err != nil {
+		return CollatorCandidateOutput{}, err
+	}
+	collator, err := NewCollatorRecord(input.Collator)
+	if err != nil {
+		return CollatorCandidateOutput{}, err
+	}
+	if collator.Status == CollatorStatusSuspended || collator.Status == CollatorStatusRetired {
+		return CollatorCandidateOutput{}, errors.New("collator is not eligible to build candidate outputs")
+	}
+	task := normalizeWorkloadTask(params, input.Task)
+	if err := task.Validate(params); err != nil {
+		return CollatorCandidateOutput{}, err
+	}
+	if !collator.SupportsWorkload(task.WorkloadType) {
+		return CollatorCandidateOutput{}, fmt.Errorf("collator does not support workload %q", task.WorkloadType)
+	}
+	if input.EpochID == 0 {
+		return CollatorCandidateOutput{}, errors.New("collator candidate output epoch id is required")
+	}
+	output := CollatorCandidateOutput{
+		EpochID:                       input.EpochID,
+		CollatorID:                    collator.CollatorID,
+		OperatorAddress:               collator.OperatorAddress,
+		TaskID:                        task.TaskID,
+		TaskGroupIDOptional:           strings.TrimSpace(input.TaskGroupIDOptional),
+		WorkloadID:                    task.WorkloadID,
+		WorkloadType:                  task.WorkloadType,
+		TransactionRoot:               input.TransactionRoot,
+		StateTransitionRoot:           input.StateTransitionRoot,
+		ProofBundleRoot:               input.ProofBundleRoot,
+		RequiresValidatorVerification: true,
+		ValidatorSignatures:           nil,
+		Finalized:                     false,
+	}
+	output.CandidateOutputHash = ComputeCollatorCandidateOutputHash(output)
+	return output, output.Validate()
+}
+
+func (o CollatorCandidateOutput) Validate() error {
+	if o.EpochID == 0 {
+		return errors.New("collator candidate output epoch id is required")
+	}
+	if err := validatePosToken("collator output collator id", o.CollatorID); err != nil {
+		return err
+	}
+	if err := validatePosToken("collator output operator address", o.OperatorAddress); err != nil {
+		return err
+	}
+	if err := validatePosToken("collator output task id", o.TaskID); err != nil {
+		return err
+	}
+	if o.TaskGroupIDOptional != "" {
+		if err := validatePosToken("collator output task group id", o.TaskGroupIDOptional); err != nil {
+			return err
+		}
+	}
+	if err := validatePosToken("collator output workload id", o.WorkloadID); err != nil {
+		return err
+	}
+	if err := validateWorkloadType(o.WorkloadType); err != nil {
+		return err
+	}
+	if err := validatePosHash("collator output transaction root", o.TransactionRoot); err != nil {
+		return err
+	}
+	if err := validatePosHash("collator output state transition root", o.StateTransitionRoot); err != nil {
+		return err
+	}
+	if err := validatePosHash("collator output proof bundle root", o.ProofBundleRoot); err != nil {
+		return err
+	}
+	if !o.RequiresValidatorVerification {
+		return errors.New("collator output requires validator verification")
+	}
+	for _, signature := range o.ValidatorSignatures {
+		if err := validatePosHash("collator output validator signature", signature); err != nil {
+			return err
+		}
+	}
+	if o.Finalized && len(o.ValidatorSignatures) == 0 {
+		return errors.New("finalized collator output requires validator signatures")
+	}
+	if err := validatePosHash("collator output hash", o.CandidateOutputHash); err != nil {
+		return err
+	}
+	if expected := ComputeCollatorCandidateOutputHash(o); expected != o.CandidateOutputHash {
+		return errors.New("collator candidate output hash mismatch")
+	}
+	return nil
+}
+
+func ComputeCollatorCandidateOutputHash(output CollatorCandidateOutput) string {
+	return posHashRoot("aetheris-pos-collator-output-v1", func(w posByteWriter) {
+		posWriteUint64(w, output.EpochID)
+		posWritePart(w, output.CollatorID)
+		posWritePart(w, output.OperatorAddress)
+		posWritePart(w, output.TaskID)
+		posWritePart(w, output.TaskGroupIDOptional)
+		posWritePart(w, output.WorkloadID)
+		posWritePart(w, string(output.WorkloadType))
+		posWritePart(w, output.TransactionRoot)
+		posWritePart(w, output.StateTransitionRoot)
+		posWritePart(w, output.ProofBundleRoot)
+		posWriteUint64(w, boolAsUint64(output.RequiresValidatorVerification))
+		posWriteUint64(w, uint64(len(output.ValidatorSignatures)))
+		for _, signature := range output.ValidatorSignatures {
+			posWritePart(w, signature)
+		}
+		posWriteUint64(w, boolAsUint64(output.Finalized))
+	})
 }
 
 func DefaultRoleRegistry() RoleRegistry {
@@ -2906,6 +3142,15 @@ func validateRoleStatus(status string) error {
 	}
 }
 
+func validateCollatorStatus(status string) error {
+	switch status {
+	case CollatorStatusRegistered, CollatorStatusActive, CollatorStatusSuspended, CollatorStatusRetired:
+		return nil
+	default:
+		return fmt.Errorf("unsupported collator status %q", status)
+	}
+}
+
 func validatePosLayer(layer PosLayer) error {
 	switch layer {
 	case PosLayerEconomicConsensus, PosLayerTaskAssignment, PosLayerValidatorExecution, PosLayerStakingCapital, PosLayerBaseCometBFT:
@@ -2935,6 +3180,15 @@ func normalizedRoles(roles []ValidatorRole, defaults []ValidatorRole) []Validato
 	}
 	out := make([]ValidatorRole, len(roles))
 	copy(out, roles)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i] < out[j]
+	})
+	return out
+}
+
+func normalizedWorkloadTypes(workloadTypes []WorkloadType) []WorkloadType {
+	out := make([]WorkloadType, len(workloadTypes))
+	copy(out, workloadTypes)
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i] < out[j]
 	})
@@ -3721,4 +3975,11 @@ func posWriteUint64(w posByteWriter, value uint64) {
 	var bz [8]byte
 	binary.BigEndian.PutUint64(bz[:], value)
 	_, _ = w.Write(bz[:])
+}
+
+func boolAsUint64(value bool) uint64 {
+	if value {
+		return 1
+	}
+	return 0
 }

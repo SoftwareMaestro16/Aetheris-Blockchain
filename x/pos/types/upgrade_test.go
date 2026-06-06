@@ -2,6 +2,7 @@ package types
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
@@ -1206,6 +1207,133 @@ func TestRolePerformanceMetricsRewardsAndSuspensionRespectOverlap(t *testing.T) 
 	applied, err := ApplySlashingPenaltyToCandidate(candidate, penalty)
 	require.NoError(t, err)
 	require.Equal(t, []ValidatorRole{ValidatorRoleCollator}, applied.Roles)
+}
+
+func TestCollatorRecordMatchesSpecAndValidatesRegistration(t *testing.T) {
+	record, err := NewCollatorRecord(CollatorRecord{
+		CollatorID:         "collator-1",
+		OperatorAddress:    "operator-1",
+		SupportedWorkloads: []WorkloadType{WorkloadTypeShardExecution, WorkloadTypeZoneExecution},
+		BondOptional:       sdkmath.NewInt(100),
+		Reputation:         9_100,
+		RegisteredEpoch:    13,
+	})
+	require.NoError(t, err)
+	require.Equal(t, CollatorStatusRegistered, record.Status)
+	require.Equal(t, []string{
+		"collator_id",
+		"operator_address",
+		"supported_workloads",
+		"bond_optional",
+		"reputation",
+		"status",
+		"registered_epoch",
+	}, CollatorRecordFieldNames())
+	require.Equal(t, []string{
+		CollatorStatusRegistered,
+		CollatorStatusActive,
+		CollatorStatusSuspended,
+		CollatorStatusRetired,
+	}, CollatorStatusValues())
+	require.True(t, record.SupportsWorkload(WorkloadTypeShardExecution))
+	require.False(t, record.SupportsWorkload(WorkloadTypeEvidenceVerification))
+
+	_, err = NewCollatorRecord(CollatorRecord{
+		CollatorID:         "collator-dup",
+		OperatorAddress:    "operator-1",
+		SupportedWorkloads: []WorkloadType{WorkloadTypeShardExecution, WorkloadTypeShardExecution},
+		RegisteredEpoch:    13,
+	})
+	require.ErrorContains(t, err, "duplicate supported workload")
+
+	_, err = NewCollatorRecord(CollatorRecord{
+		CollatorID:         "collator-bad-bond",
+		OperatorAddress:    "operator-1",
+		SupportedWorkloads: []WorkloadType{WorkloadTypeShardExecution},
+		BondOptional:       sdkmath.NewInt(-1),
+		RegisteredEpoch:    13,
+	})
+	require.ErrorContains(t, err, "bond optional")
+
+	_, err = NewCollatorRecord(CollatorRecord{
+		CollatorID:         "collator-bad-reputation",
+		OperatorAddress:    "operator-1",
+		SupportedWorkloads: []WorkloadType{WorkloadTypeShardExecution},
+		Reputation:         BasisPoints + 1,
+		RegisteredEpoch:    13,
+	})
+	require.ErrorContains(t, err, "reputation")
+}
+
+func TestCollatorBuildsCandidateOutputButRequiresValidatorVerification(t *testing.T) {
+	params := DefaultParams()
+	collator, err := NewCollatorRecord(CollatorRecord{
+		CollatorID:         "collator-1",
+		OperatorAddress:    "operator-1",
+		SupportedWorkloads: []WorkloadType{WorkloadTypeShardExecution},
+		Status:             CollatorStatusActive,
+		RegisteredEpoch:    13,
+	})
+	require.NoError(t, err)
+	task := WorkloadTask{
+		TaskID:             "task-1",
+		WorkloadID:         "workload-1",
+		WorkloadType:       WorkloadTypeShardExecution,
+		ZoneID:             "zone-a",
+		ShardID:            "shard-1",
+		WorkloadClass:      DefaultWorkloadClass,
+		RequiredValidators: params.MinTaskGroupValidators,
+		Roles:              []ValidatorRole{ValidatorRoleCollator, ValidatorRoleVerifier},
+	}
+	output, err := BuildCollatorCandidateOutput(params, CollatorCandidateOutputInput{
+		EpochID:             13,
+		Collator:            collator,
+		Task:                task,
+		TaskGroupIDOptional: "task-group-1",
+		TransactionRoot:     PosEmptyRootHash,
+		StateTransitionRoot: PosEmptyRootHash,
+		ProofBundleRoot:     PosEmptyRootHash,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "collator-1", output.CollatorID)
+	require.True(t, output.RequiresValidatorVerification)
+	require.False(t, output.Finalized)
+	require.Empty(t, output.ValidatorSignatures)
+	require.Equal(t, ComputeCollatorCandidateOutputHash(output), output.CandidateOutputHash)
+	require.NoError(t, output.Validate())
+
+	tampered := output
+	tampered.ProofBundleRoot = strings.Repeat("0", PosHashHexLength)
+	require.ErrorContains(t, tampered.Validate(), "hash mismatch")
+
+	finalizedWithoutSignatures := output
+	finalizedWithoutSignatures.Finalized = true
+	finalizedWithoutSignatures.CandidateOutputHash = ComputeCollatorCandidateOutputHash(finalizedWithoutSignatures)
+	require.ErrorContains(t, finalizedWithoutSignatures.Validate(), "validator signatures")
+
+	unsupported := collator
+	unsupported.SupportedWorkloads = []WorkloadType{WorkloadTypeEvidenceVerification}
+	_, err = BuildCollatorCandidateOutput(params, CollatorCandidateOutputInput{
+		EpochID:             13,
+		Collator:            unsupported,
+		Task:                task,
+		TransactionRoot:     PosEmptyRootHash,
+		StateTransitionRoot: PosEmptyRootHash,
+		ProofBundleRoot:     PosEmptyRootHash,
+	})
+	require.ErrorContains(t, err, "does not support workload")
+
+	suspended := collator
+	suspended.Status = CollatorStatusSuspended
+	_, err = BuildCollatorCandidateOutput(params, CollatorCandidateOutputInput{
+		EpochID:             13,
+		Collator:            suspended,
+		Task:                task,
+		TransactionRoot:     PosEmptyRootHash,
+		StateTransitionRoot: PosEmptyRootHash,
+		ProofBundleRoot:     PosEmptyRootHash,
+	})
+	require.ErrorContains(t, err, "not eligible")
 }
 
 func scoredCandidates(t *testing.T, params Params, candidates []Candidate) []ScoredValidator {
