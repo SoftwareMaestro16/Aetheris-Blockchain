@@ -163,6 +163,123 @@ func TestProtocolEconomicFlowPreservesCharges(t *testing.T) {
 	require.Equal(t, flow.TotalChargesNaet, flow.BurnNaet.Add(flow.TreasuryNaet).Add(flow.ValidatorRewardsNaet))
 }
 
+func TestEvaluateEconomicInvariantsAcceptsBoundedAETEconomy(t *testing.T) {
+	control, err := BalanceController(BalanceControllerInput{
+		CurrentInflationBps: DefaultTargetInflationBps,
+		StakeRatioBps:       DefaultTargetStakeBps,
+		BlockLoadBps:        DefaultTargetLoadBps,
+	})
+	require.NoError(t, err)
+	flow, err := ComputeProtocolEconomicFlow(ProtocolEconomicFlowInput{
+		Activity:         ProtocolEconomicActivity{TxFeeNaet: sdkmath.NewInt(100)},
+		BurnRatioBps:     control.BurnRatioBps,
+		TreasuryRatioBps: TreasuryFeeRatioBps,
+	})
+	require.NoError(t, err)
+
+	report, err := EvaluateEconomicInvariants(EconomicInvariantInput{
+		StakingDenom:                  BaseDenom,
+		FeeDenom:                      BaseDenom,
+		RewardDenom:                   BaseDenom,
+		SlashingDenom:                 BaseDenom,
+		ExecutionChargeDenom:          BaseDenom,
+		CirculatingSupply:             sdkmath.NewInt(1_000_000),
+		AnnualMint:                    sdkmath.NewInt(30_000),
+		AnnualBurn:                    sdkmath.NewInt(10_000),
+		ControllerOutput:              control,
+		FeeFlow:                       flow,
+		MaxBlockFeeNaet:               sdkmath.NewInt(1_000),
+		BlockFeeNaet:                  sdkmath.NewInt(100),
+		ValidatorRewardsDeterministic: true,
+		FeeComputationDeterministic:   true,
+		SlashingDeterministic:         true,
+		SlashingAuditable:             true,
+		SlashingRewardSafe:            true,
+		ControllerParamsExposed:       true,
+		ControllerStateExposed:        true,
+		ControllerEventsExposed:       true,
+		StorageFeePerByteNaet:         sdkmath.NewInt(2),
+		LongLivedStorageBytes:         10,
+		StorageRetentionPeriods:       2,
+		TransientExecutionChargeNaet:  sdkmath.NewInt(10),
+	})
+	require.NoError(t, err)
+	require.True(t, report.Passed)
+	require.Empty(t, report.FailedInvariants)
+}
+
+func TestEvaluateEconomicInvariantsReportsSpecViolations(t *testing.T) {
+	control, err := BalanceController(BalanceControllerInput{
+		CurrentInflationBps: DefaultTargetInflationBps,
+		StakeRatioBps:       DefaultTargetStakeBps,
+		BlockLoadBps:        DefaultTargetLoadBps,
+	})
+	require.NoError(t, err)
+
+	report, err := EvaluateEconomicInvariants(EconomicInvariantInput{
+		StakingDenom:         "uatom",
+		FeeDenom:             "uusdc",
+		RewardDenom:          "ureward",
+		SlashingDenom:        "uslash",
+		ExecutionChargeDenom: "uexec",
+		CirculatingSupply:    sdkmath.NewInt(1_000),
+		AnnualMint:           sdkmath.NewInt(200),
+		AnnualBurn:           sdkmath.NewInt(500),
+		MaxNetIssuanceBps:    100,
+		MaxNetBurnBps:        1_000,
+		ControllerOutput:     control,
+		FeeFlow: ProtocolEconomicFlowOutput{
+			TotalChargesNaet:     sdkmath.NewInt(10),
+			BurnNaet:             sdkmath.NewInt(3),
+			TreasuryNaet:         sdkmath.NewInt(1),
+			ValidatorRewardsNaet: sdkmath.NewInt(5),
+		},
+		MaxBlockFeeNaet:              sdkmath.NewInt(10),
+		BlockFeeNaet:                 sdkmath.NewInt(11),
+		StorageFeePerByteNaet:        sdkmath.NewInt(1),
+		LongLivedStorageBytes:        1,
+		StorageRetentionPeriods:      1,
+		TransientExecutionChargeNaet: sdkmath.NewInt(1),
+	})
+	require.NoError(t, err)
+	require.False(t, report.Passed)
+	require.ElementsMatch(t, []string{
+		"staking_not_aet_primary_asset",
+		"fees_not_aet_primary_asset",
+		"rewards_not_aet_primary_asset",
+		"slashing_not_aet_primary_asset",
+		"execution_charges_not_aet_primary_asset",
+		"net_burn_outside_bounds",
+		"validator_rewards_not_deterministic",
+		"fee_computation_not_deterministic",
+		"block_fee_exceeds_bound",
+		"slashing_invariant_not_satisfied",
+		"adaptive_controller_not_observable",
+		"economic_flow_not_conservative",
+		"storage_pricing_not_above_transient_execution",
+	}, report.FailedInvariants)
+}
+
+func TestEvaluateEconomicInvariantsRejectsInvalidControllerBounds(t *testing.T) {
+	params := DefaultBalanceControllerParams()
+	params.MaxBurnRatioBps = BasisPoints
+	control := BalanceControllerOutput{
+		InflationBps:         DefaultTargetInflationBps,
+		BurnRatioBps:         NormalBurnRatioBps,
+		ValidatorFeeRatioBps: BasisPoints - NormalBurnRatioBps - TreasuryFeeRatioBps,
+	}
+	_, err := EvaluateEconomicInvariants(EconomicInvariantInput{
+		StakingDenom:         BaseDenom,
+		FeeDenom:             BaseDenom,
+		RewardDenom:          BaseDenom,
+		SlashingDenom:        BaseDenom,
+		ExecutionChargeDenom: BaseDenom,
+		ControllerParams:     params,
+		ControllerOutput:     control,
+	})
+	require.ErrorContains(t, err, "max burn and treasury ratios exceed")
+}
+
 func TestEvaluateOptimalEconomicStateAcceptsHealthyControlLoop(t *testing.T) {
 	state, err := EvaluateOptimalEconomicState(OptimalEconomicStateInput{
 		StakeRatioBps:                  DefaultTargetStakeBps,

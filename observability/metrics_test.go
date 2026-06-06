@@ -40,6 +40,8 @@ func TestMetricNamesSnapshot(t *testing.T) {
 		MetricEconomyValidatorRewardsNaet,
 		MetricEconomyOptimalState,
 		MetricEconomyFailedConditions,
+		MetricEconomyInvariantsSatisfied,
+		MetricEconomyInvariantFailures,
 		MetricLocalnetHealth,
 		MetricProcessUptimeSeconds,
 		MetricProcessMemoryBytes,
@@ -130,6 +132,8 @@ func (r *Registry) RecordTestSamples() {
 	r.SetGauge(MetricEconomyValidatorRewardsNaet, Labels{"denom": "naet"}, 60)
 	r.SetGauge(MetricEconomyOptimalState, nil, 1)
 	r.SetGauge(MetricEconomyFailedConditions, nil, 0)
+	r.SetGauge(MetricEconomyInvariantsSatisfied, nil, 1)
+	r.SetGauge(MetricEconomyInvariantFailures, nil, 0)
 }
 
 func renderRegistry(t *testing.T, reg *Registry) string {

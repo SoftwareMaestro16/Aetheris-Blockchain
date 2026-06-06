@@ -68,6 +68,14 @@ func RecordOptimalEconomicState(optimal bool, failedConditionCount int) {
 	SetGauge(MetricEconomyFailedConditions, nil, float64(failedConditionCount))
 }
 
+func RecordEconomicInvariants(satisfied bool, failedInvariantCount int) {
+	if failedInvariantCount < 0 {
+		failedInvariantCount = 0
+	}
+	SetGauge(MetricEconomyInvariantsSatisfied, nil, boolFloat(satisfied))
+	SetGauge(MetricEconomyInvariantFailures, nil, float64(failedInvariantCount))
+}
+
 func (r *Registry) collectRuntime() {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)

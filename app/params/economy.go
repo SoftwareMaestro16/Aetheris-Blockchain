@@ -144,6 +144,41 @@ type OptimalEconomicState struct {
 	FailedConditions []string
 }
 
+type EconomicInvariantInput struct {
+	StakingDenom                  string
+	FeeDenom                      string
+	RewardDenom                   string
+	SlashingDenom                 string
+	ExecutionChargeDenom          string
+	CirculatingSupply             sdkmath.Int
+	AnnualMint                    sdkmath.Int
+	AnnualBurn                    sdkmath.Int
+	MaxNetIssuanceBps             int64
+	MaxNetBurnBps                 int64
+	ControllerParams              BalanceControllerParams
+	ControllerOutput              BalanceControllerOutput
+	FeeFlow                       ProtocolEconomicFlowOutput
+	MaxBlockFeeNaet               sdkmath.Int
+	BlockFeeNaet                  sdkmath.Int
+	ValidatorRewardsDeterministic bool
+	FeeComputationDeterministic   bool
+	SlashingDeterministic         bool
+	SlashingAuditable             bool
+	SlashingRewardSafe            bool
+	ControllerParamsExposed       bool
+	ControllerStateExposed        bool
+	ControllerEventsExposed       bool
+	StorageFeePerByteNaet         sdkmath.Int
+	LongLivedStorageBytes         int64
+	StorageRetentionPeriods       int64
+	TransientExecutionChargeNaet  sdkmath.Int
+}
+
+type EconomicInvariantReport struct {
+	Passed           bool
+	FailedInvariants []string
+}
+
 func DefaultBalanceControllerParams() BalanceControllerParams {
 	return BalanceControllerParams{
 		MinInflationBps:              MinInflationBps,
@@ -162,6 +197,128 @@ func DefaultBalanceControllerParams() BalanceControllerParams {
 		DeflationGuardStepBps:        DeflationGuardStepBps,
 		RateLimitFailedTxBps:         RateLimitFailedTxBps,
 	}
+}
+
+func EvaluateEconomicInvariants(input EconomicInvariantInput) (EconomicInvariantReport, error) {
+	if input.ControllerParams == (BalanceControllerParams{}) {
+		input.ControllerParams = DefaultBalanceControllerParams()
+	}
+	if input.MaxNetIssuanceBps == 0 {
+		input.MaxNetIssuanceBps = MaxInflationBps
+	}
+	if input.MaxNetBurnBps == 0 {
+		input.MaxNetBurnBps = DeflationGuardBurnToMintBps
+	}
+	if input.LongLivedStorageBytes == 0 {
+		input.LongLivedStorageBytes = 1
+	}
+	if input.StorageRetentionPeriods == 0 {
+		input.StorageRetentionPeriods = 2
+	}
+	if err := input.ControllerParams.Validate(); err != nil {
+		return EconomicInvariantReport{}, err
+	}
+	if err := validateBps("controller_output_inflation_bps", input.ControllerOutput.InflationBps, input.ControllerParams.MinInflationBps, input.ControllerParams.MaxInflationBps); err != nil {
+		return EconomicInvariantReport{}, err
+	}
+	if err := validateBps("controller_output_burn_ratio_bps", input.ControllerOutput.BurnRatioBps, input.ControllerParams.MinBurnRatioBps, input.ControllerParams.MaxBurnRatioBps); err != nil {
+		return EconomicInvariantReport{}, err
+	}
+	if err := validateBps("controller_output_validator_fee_ratio_bps", input.ControllerOutput.ValidatorFeeRatioBps, 0, BasisPoints); err != nil {
+		return EconomicInvariantReport{}, err
+	}
+	if input.ControllerOutput.BurnRatioBps+input.ControllerParams.TreasuryFeeRatioBps+input.ControllerOutput.ValidatorFeeRatioBps != BasisPoints {
+		return EconomicInvariantReport{}, fmt.Errorf("controller fee ratios must sum to 10000 bps")
+	}
+	if err := validateBps("max_net_issuance_bps", input.MaxNetIssuanceBps, 0, DefaultMaxLoadMultiplierBps); err != nil {
+		return EconomicInvariantReport{}, err
+	}
+	if err := validateBps("max_net_burn_bps", input.MaxNetBurnBps, 0, DefaultMaxLoadMultiplierBps); err != nil {
+		return EconomicInvariantReport{}, err
+	}
+	if input.LongLivedStorageBytes < 0 {
+		return EconomicInvariantReport{}, fmt.Errorf("long_lived_storage_bytes must not be negative")
+	}
+	if input.StorageRetentionPeriods < 0 {
+		return EconomicInvariantReport{}, fmt.Errorf("storage_retention_periods must not be negative")
+	}
+	for _, item := range []struct {
+		name  string
+		value sdkmath.Int
+	}{
+		{name: "circulating_supply", value: input.CirculatingSupply},
+		{name: "annual_mint", value: input.AnnualMint},
+		{name: "annual_burn", value: input.AnnualBurn},
+		{name: "max_block_fee_naet", value: input.MaxBlockFeeNaet},
+		{name: "block_fee_naet", value: input.BlockFeeNaet},
+		{name: "storage_fee_per_byte_naet", value: input.StorageFeePerByteNaet},
+		{name: "transient_execution_charge_naet", value: input.TransientExecutionChargeNaet},
+	} {
+		value := normalizeInt(item.value)
+		if value.IsNegative() {
+			return EconomicInvariantReport{}, fmt.Errorf("%s must not be negative", item.name)
+		}
+	}
+
+	failed := make([]string, 0, 8)
+	for _, item := range []struct {
+		name  string
+		denom string
+	}{
+		{name: "staking", denom: input.StakingDenom},
+		{name: "fees", denom: input.FeeDenom},
+		{name: "rewards", denom: input.RewardDenom},
+		{name: "slashing", denom: input.SlashingDenom},
+		{name: "execution_charges", denom: input.ExecutionChargeDenom},
+	} {
+		if item.denom != BaseDenom {
+			failed = append(failed, item.name+"_not_aet_primary_asset")
+		}
+	}
+
+	supply := normalizeInt(input.CirculatingSupply)
+	annualMint := normalizeInt(input.AnnualMint)
+	annualBurn := normalizeInt(input.AnnualBurn)
+	if supply.IsPositive() {
+		netIssuance := annualMint.Sub(annualBurn)
+		if netIssuance.IsPositive() && netIssuance.MulRaw(BasisPoints).Quo(supply).GT(sdkmath.NewInt(input.MaxNetIssuanceBps)) {
+			failed = append(failed, "net_issuance_outside_bounds")
+		}
+		netBurn := annualBurn.Sub(annualMint)
+		if netBurn.IsPositive() && netBurn.MulRaw(BasisPoints).Quo(supply).GT(sdkmath.NewInt(input.MaxNetBurnBps)) {
+			failed = append(failed, "net_burn_outside_bounds")
+		}
+	} else if annualMint.IsPositive() || annualBurn.IsPositive() {
+		failed = append(failed, "supply_required_for_net_bounds")
+	}
+
+	if !input.ValidatorRewardsDeterministic {
+		failed = append(failed, "validator_rewards_not_deterministic")
+	}
+	if !input.FeeComputationDeterministic {
+		failed = append(failed, "fee_computation_not_deterministic")
+	}
+	if normalizeInt(input.BlockFeeNaet).GT(normalizeInt(input.MaxBlockFeeNaet)) {
+		failed = append(failed, "block_fee_exceeds_bound")
+	}
+	if !input.SlashingDeterministic || !input.SlashingAuditable || !input.SlashingRewardSafe {
+		failed = append(failed, "slashing_invariant_not_satisfied")
+	}
+	if !input.ControllerParamsExposed || !input.ControllerStateExposed || !input.ControllerEventsExposed {
+		failed = append(failed, "adaptive_controller_not_observable")
+	}
+	if err := input.FeeFlow.Validate(); err != nil {
+		failed = append(failed, "economic_flow_not_conservative")
+	}
+	longLivedStorageCost := normalizeInt(input.StorageFeePerByteNaet).MulRaw(input.LongLivedStorageBytes).MulRaw(input.StorageRetentionPeriods)
+	if !longLivedStorageCost.GT(normalizeInt(input.TransientExecutionChargeNaet)) {
+		failed = append(failed, "storage_pricing_not_above_transient_execution")
+	}
+
+	return EconomicInvariantReport{
+		Passed:           len(failed) == 0,
+		FailedInvariants: failed,
+	}, nil
 }
 
 func EvaluateOptimalEconomicState(input OptimalEconomicStateInput) (OptimalEconomicState, error) {
@@ -460,6 +617,31 @@ func ComputeProtocolEconomicFlow(input ProtocolEconomicFlowInput) (ProtocolEcono
 		TreasuryNaet:         treasury,
 		ValidatorRewardsNaet: validator,
 	}, nil
+}
+
+func (f ProtocolEconomicFlowOutput) Validate() error {
+	for _, item := range []struct {
+		name  string
+		value sdkmath.Int
+	}{
+		{name: "total_charges_naet", value: f.TotalChargesNaet},
+		{name: "burn_naet", value: f.BurnNaet},
+		{name: "treasury_naet", value: f.TreasuryNaet},
+		{name: "validator_rewards_naet", value: f.ValidatorRewardsNaet},
+	} {
+		value := normalizeInt(item.value)
+		if value.IsNegative() {
+			return fmt.Errorf("%s must not be negative", item.name)
+		}
+	}
+	total := normalizeInt(f.TotalChargesNaet)
+	targets := normalizeInt(f.BurnNaet).
+		Add(normalizeInt(f.TreasuryNaet)).
+		Add(normalizeInt(f.ValidatorRewardsNaet))
+	if !total.Equal(targets) {
+		return fmt.Errorf("economic flow must conserve charges")
+	}
+	return nil
 }
 
 func ValidateCommissionBounds(commissionBps, dailyChangeBps int64) error {

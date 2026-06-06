@@ -29,6 +29,8 @@ const (
 	MetricEconomyValidatorRewardsNaet = "aetheris_economy_validator_rewards_naet"
 	MetricEconomyOptimalState         = "aetheris_economy_optimal_state"
 	MetricEconomyFailedConditions     = "aetheris_economy_failed_conditions"
+	MetricEconomyInvariantsSatisfied  = "aetheris_economy_invariants_satisfied"
+	MetricEconomyInvariantFailures    = "aetheris_economy_invariant_failures"
 	MetricLocalnetHealth              = "aetheris_localnet_health"
 	MetricProcessUptimeSeconds        = "aetheris_process_uptime_seconds"
 	MetricProcessMemoryBytes          = "aetheris_process_memory_bytes"
@@ -71,6 +73,8 @@ var Definitions = []Definition{
 	{MetricEconomyValidatorRewardsNaet, "Last protocol economic flow validator reward amount in naet.", kindGauge},
 	{MetricEconomyOptimalState, "Whether the last evaluated economic state met all optimality conditions.", kindGauge},
 	{MetricEconomyFailedConditions, "Number of failed optimal economic state conditions in the last evaluation.", kindGauge},
+	{MetricEconomyInvariantsSatisfied, "Whether the last evaluated economic invariant set passed.", kindGauge},
+	{MetricEconomyInvariantFailures, "Number of failed economic invariants in the last evaluation.", kindGauge},
 	{MetricLocalnetHealth, "Localnet metrics endpoint health marker.", kindGauge},
 	{MetricProcessUptimeSeconds, "Aetheris process uptime in seconds.", kindGauge},
 	{MetricProcessMemoryBytes, "Go runtime memory allocation bytes.", kindGauge},
