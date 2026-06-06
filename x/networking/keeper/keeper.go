@@ -120,6 +120,18 @@ func (k *Keeper) RegisterNodeRecord(record networkingtypes.NodeRecord, networkSa
 	return nil
 }
 
+func (k *Keeper) ApplyIdentityTransition(transition networkingtypes.IdentityTransitionRecord, newRecord networkingtypes.NodeRecord, networkSalt []byte, currentHeight uint64) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := networkingtypes.ApplyIdentityTransition(k.genesis.State, transition, newRecord, networkSalt, currentHeight)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) OpenSession(session networkingtypes.SessionChannel, currentHeight uint64) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err

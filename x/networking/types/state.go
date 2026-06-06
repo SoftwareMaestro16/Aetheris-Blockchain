@@ -8,22 +8,24 @@ import (
 )
 
 type NetworkingState struct {
-	LayerStack      []LayerSpec
-	Adapter         AetherNetworkingAdapter
-	ChannelPolicies []ChannelPolicy
-	NodeRecords     []NodeRecord
-	RoleCommitments []RoleCommitment
-	Sessions        []SessionChannel
+	LayerStack          []LayerSpec
+	Adapter             AetherNetworkingAdapter
+	ChannelPolicies     []ChannelPolicy
+	NodeRecords         []NodeRecord
+	RoleCommitments     []RoleCommitment
+	Sessions            []SessionChannel
+	IdentityTransitions []IdentityTransitionRecord
 }
 
 func EmptyState() NetworkingState {
 	return NetworkingState{
-		LayerStack:      DefaultLayerStack(),
-		Adapter:         DefaultAetherNetworkingAdapter(),
-		ChannelPolicies: DefaultChannelPolicies(),
-		NodeRecords:     []NodeRecord{},
-		RoleCommitments: []RoleCommitment{},
-		Sessions:        []SessionChannel{},
+		LayerStack:          DefaultLayerStack(),
+		Adapter:             DefaultAetherNetworkingAdapter(),
+		ChannelPolicies:     DefaultChannelPolicies(),
+		NodeRecords:         []NodeRecord{},
+		RoleCommitments:     []RoleCommitment{},
+		Sessions:            []SessionChannel{},
+		IdentityTransitions: []IdentityTransitionRecord{},
 	}
 }
 
@@ -49,6 +51,57 @@ func RegisterNodeRecord(state NetworkingState, record NodeRecord, networkSalt []
 		next.NodeRecords = append(next.NodeRecords, record)
 	}
 	sortNodeRecords(next.NodeRecords)
+	return next, next.Validate()
+}
+
+func ApplyIdentityTransition(state NetworkingState, transition IdentityTransitionRecord, newRecord NodeRecord, networkSalt []byte, currentHeight uint64) (NetworkingState, error) {
+	state = state.Export()
+	if err := state.Validate(); err != nil {
+		return NetworkingState{}, err
+	}
+	if currentHeight == 0 {
+		return NetworkingState{}, errors.New("networking current height must be positive")
+	}
+	transition = NormalizeIdentityTransition(transition)
+	newRecord = NormalizeNodeRecord(newRecord)
+
+	var oldRecord NodeRecord
+	foundOld := false
+	for _, record := range state.NodeRecords {
+		record = NormalizeNodeRecord(record)
+		if record.NodeID == transition.FromNodeID {
+			oldRecord = record
+			foundOld = true
+			break
+		}
+	}
+	if !foundOld {
+		return NetworkingState{}, errors.New("networking identity transition old node is not registered")
+	}
+	if containsNode(state.NodeRecords, transition.ToNodeID) {
+		return NetworkingState{}, errors.New("networking identity transition target node already exists")
+	}
+	if err := ValidateIdentityTransition(oldRecord, newRecord, transition, networkSalt, currentHeight); err != nil {
+		return NetworkingState{}, err
+	}
+
+	next := state.Clone()
+	next.NodeRecords = next.NodeRecords[:0]
+	for _, record := range state.NodeRecords {
+		record = NormalizeNodeRecord(record)
+		if record.NodeID == transition.FromNodeID {
+			next.NodeRecords = append(next.NodeRecords, newRecord)
+			continue
+		}
+		next.NodeRecords = append(next.NodeRecords, record)
+	}
+	next.RoleCommitments = pruneRoleCommitmentsForNode(next.RoleCommitments, transition.FromNodeID)
+	next.Sessions = pruneSessionsForNode(next.Sessions, transition.FromNodeID)
+	next.IdentityTransitions = append(next.IdentityTransitions, transition)
+	sortNodeRecords(next.NodeRecords)
+	sortRoleCommitments(next.RoleCommitments)
+	sortSessions(next.Sessions)
+	sortIdentityTransitions(next.IdentityTransitions)
 	return next, next.Validate()
 }
 
@@ -86,9 +139,10 @@ func PruneExpired(state NetworkingState, currentHeight uint64) (NetworkingState,
 		return NetworkingState{}, err
 	}
 	next := NetworkingState{
-		LayerStack:      cloneLayerStack(state.LayerStack),
-		Adapter:         cloneAdapter(state.Adapter),
-		ChannelPolicies: cloneChannelPolicies(state.ChannelPolicies),
+		LayerStack:          cloneLayerStack(state.LayerStack),
+		Adapter:             cloneAdapter(state.Adapter),
+		ChannelPolicies:     cloneChannelPolicies(state.ChannelPolicies),
+		IdentityTransitions: []IdentityTransitionRecord{},
 	}
 	for _, record := range state.NodeRecords {
 		if currentHeight == 0 || currentHeight <= record.ExpiresHeight {
@@ -109,9 +163,15 @@ func PruneExpired(state NetworkingState, currentHeight uint64) (NetworkingState,
 			}
 		}
 	}
+	for _, transition := range state.IdentityTransitions {
+		if currentHeight == 0 || currentHeight <= transition.ExpiresHeight {
+			next.IdentityTransitions = append(next.IdentityTransitions, transition)
+		}
+	}
 	sortNodeRecords(next.NodeRecords)
 	sortRoleCommitments(next.RoleCommitments)
 	sortSessions(next.Sessions)
+	sortIdentityTransitions(next.IdentityTransitions)
 	return next, next.Validate()
 }
 
@@ -138,17 +198,19 @@ func (s NetworkingState) Export() NetworkingState {
 	sortNodeRecords(out.NodeRecords)
 	sortRoleCommitments(out.RoleCommitments)
 	sortSessions(out.Sessions)
+	sortIdentityTransitions(out.IdentityTransitions)
 	return out
 }
 
 func (s NetworkingState) Clone() NetworkingState {
 	out := NetworkingState{
-		LayerStack:      cloneLayerStack(s.LayerStack),
-		Adapter:         cloneAdapter(s.Adapter),
-		ChannelPolicies: cloneChannelPolicies(s.ChannelPolicies),
-		NodeRecords:     make([]NodeRecord, len(s.NodeRecords)),
-		RoleCommitments: cloneRoleCommitments(s.RoleCommitments),
-		Sessions:        make([]SessionChannel, len(s.Sessions)),
+		LayerStack:          cloneLayerStack(s.LayerStack),
+		Adapter:             cloneAdapter(s.Adapter),
+		ChannelPolicies:     cloneChannelPolicies(s.ChannelPolicies),
+		NodeRecords:         make([]NodeRecord, len(s.NodeRecords)),
+		RoleCommitments:     cloneRoleCommitments(s.RoleCommitments),
+		Sessions:            make([]SessionChannel, len(s.Sessions)),
+		IdentityTransitions: cloneIdentityTransitions(s.IdentityTransitions),
 	}
 	for i, record := range s.NodeRecords {
 		out.NodeRecords[i] = NormalizeNodeRecord(record)
@@ -175,7 +237,10 @@ func (s NetworkingState) Validate() error {
 	if err := validateRoleCommitments(s.NodeRecords, s.RoleCommitments); err != nil {
 		return err
 	}
-	return validateSessions(s.NodeRecords, s.Sessions)
+	if err := validateSessions(s.NodeRecords, s.Sessions); err != nil {
+		return err
+	}
+	return validateIdentityTransitions(s.IdentityTransitions)
 }
 
 func (s NetworkingState) hasNode(nodeID string) bool {
@@ -262,6 +327,14 @@ func cloneSession(session SessionChannel) SessionChannel {
 	return session
 }
 
+func cloneIdentityTransitions(transitions []IdentityTransitionRecord) []IdentityTransitionRecord {
+	out := make([]IdentityTransitionRecord, len(transitions))
+	for i, transition := range transitions {
+		out[i] = NormalizeIdentityTransition(transition)
+	}
+	return out
+}
+
 func sortChannelPolicies(policies []ChannelPolicy) {
 	sort.SliceStable(policies, func(i, j int) bool {
 		if policies[i].Priority != policies[j].Priority {
@@ -292,6 +365,54 @@ func sortSessions(sessions []SessionChannel) {
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return sessions[i].SessionID < sessions[j].SessionID
 	})
+}
+
+func sortIdentityTransitions(transitions []IdentityTransitionRecord) {
+	sort.SliceStable(transitions, func(i, j int) bool {
+		return NormalizeIdentityTransition(transitions[i]).TransitionID < NormalizeIdentityTransition(transitions[j]).TransitionID
+	})
+}
+
+func validateIdentityTransitions(transitions []IdentityTransitionRecord) error {
+	seen := make(map[string]struct{}, len(transitions))
+	var previous string
+	for i, transition := range transitions {
+		normalized := NormalizeIdentityTransition(transition)
+		if err := normalized.ValidateBasic(); err != nil {
+			return err
+		}
+		if _, found := seen[normalized.TransitionID]; found {
+			return errors.New("networking duplicate identity transition")
+		}
+		seen[normalized.TransitionID] = struct{}{}
+		if i > 0 && previous >= normalized.TransitionID {
+			return errors.New("networking identity transitions must be sorted canonically")
+		}
+		previous = normalized.TransitionID
+	}
+	return nil
+}
+
+func pruneRoleCommitmentsForNode(commitments []RoleCommitment, nodeID string) []RoleCommitment {
+	needle := normalizeHashText(nodeID)
+	out := make([]RoleCommitment, 0, len(commitments))
+	for _, commitment := range commitments {
+		if NormalizeRoleCommitment(commitment).NodeID != needle {
+			out = append(out, commitment)
+		}
+	}
+	return out
+}
+
+func pruneSessionsForNode(sessions []SessionChannel, nodeID string) []SessionChannel {
+	needle := normalizeHashText(nodeID)
+	out := make([]SessionChannel, 0, len(sessions))
+	for _, session := range sessions {
+		if normalizeHashText(session.LocalNodeID) != needle && normalizeHashText(session.RemoteNodeID) != needle {
+			out = append(out, session)
+		}
+	}
+	return out
 }
 
 func normalizeHashText(value string) string {

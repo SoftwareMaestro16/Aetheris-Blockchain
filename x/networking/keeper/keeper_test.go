@@ -75,6 +75,30 @@ func TestKeeperRegistersNodeAndSessionWhenEnabled(t *testing.T) {
 	}, 22))
 }
 
+func TestKeeperAppliesSignedIdentityTransition(t *testing.T) {
+	k := NewKeeper()
+	gs := DefaultGenesis()
+	gs.Params = prototype.TestnetParams()
+	require.NoError(t, k.InitGenesis(gs))
+
+	salt := []byte("keeper-network")
+	oldPrivateKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x51}, ed25519.SeedSize))
+	newPrivateKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x52}, ed25519.SeedSize))
+	oldRecord := signedKeeperNode(t, 0x51, salt, 100, networkingtypes.NodeRoleService)
+	newRecord := signedKeeperNode(t, 0x52, salt, 100, networkingtypes.NodeRoleService)
+	require.NoError(t, k.RegisterNodeRecord(oldRecord, salt, 10))
+
+	transition, err := networkingtypes.SignIdentityTransition(oldRecord, newRecord, oldPrivateKey, newPrivateKey, salt, 20, 80, []byte("keeper-identity-rotation"))
+	require.NoError(t, err)
+	require.NoError(t, k.ApplyIdentityTransition(transition, newRecord, salt, 20))
+
+	records, _, err := k.NodeRecords(nil)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.Equal(t, newRecord.NodeID, records[0].NodeID)
+	require.Len(t, k.ExportGenesis().State.IdentityTransitions, 1)
+}
+
 func signedKeeperNode(t *testing.T, seed byte, salt []byte, expiresHeight uint64, roles ...networkingtypes.NodeRole) networkingtypes.NodeRecord {
 	t.Helper()
 

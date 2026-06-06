@@ -25,6 +25,111 @@ func TestNodeRecordSignatureIdentityAndExpiry(t *testing.T) {
 	require.ErrorContains(t, record.Validate(wrongSalt, 99), "node id")
 }
 
+func TestNodeIdentityDerivesFromKeysAndBindsRoles(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	privateKey := deterministicPrivateKey(0x12)
+	leftAddressHash, err := HashNetworkAddresses([]string{"tcp://10.0.0.1:26656"})
+	require.NoError(t, err)
+	rightAddressHash, err := HashNetworkAddresses([]string{"tcp://10.0.0.2:26656"})
+	require.NoError(t, err)
+
+	left, err := SignNodeRecord(NodeRecord{
+		Roles:                []NodeRole{NodeRoleFull},
+		NetworkAddressesHash: leftAddressHash,
+		ProtocolVersions:     []string{DefaultProtocolVersion},
+		ExpiresHeight:        100,
+	}, privateKey, salt)
+	require.NoError(t, err)
+	right, err := SignNodeRecord(NodeRecord{
+		Roles:                []NodeRole{NodeRoleFull},
+		NetworkAddressesHash: rightAddressHash,
+		ProtocolVersions:     []string{DefaultProtocolVersion},
+		ExpiresHeight:        100,
+	}, privateKey, salt)
+	require.NoError(t, err)
+
+	require.Equal(t, ComputeNodeID(left.NodePubKey, salt), left.NodeID)
+	require.Equal(t, left.NodeID, right.NodeID)
+	require.NotEqual(t, left.NetworkAddressesHash, right.NetworkAddressesHash)
+
+	tampered := left
+	tampered.Roles = []NodeRole{NodeRoleFull, NodeRoleService}
+	require.ErrorContains(t, tampered.Validate(salt, 10), "signature")
+
+	validatorKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x13}, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	validator, err := SignNodeRecord(NodeRecord{
+		ValidatorPubKey:      validatorKey,
+		Roles:                []NodeRole{NodeRoleValidator, NodeRoleFull},
+		NetworkAddressesHash: leftAddressHash,
+		ProtocolVersions:     []string{DefaultProtocolVersion},
+		ExpiresHeight:        100,
+	}, privateKey, salt)
+	require.NoError(t, err)
+	require.Equal(t, ComputeNodeID(validatorKey, salt), validator.NodeID)
+	require.NotEqual(t, ComputeNodeID(validator.NodePubKey, salt), validator.NodeID)
+}
+
+func TestSignedIdentityTransitionRotatesNodeIdentity(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	oldPrivateKey := deterministicPrivateKey(0x91)
+	newPrivateKey := deterministicPrivateKey(0x92)
+	oldRecord := signedNodeRecord(t, 0x91, salt, 100, NodeRoleService)
+	newRecord := signedNodeRecord(t, 0x92, salt, 100, NodeRoleService)
+	remote := signedNodeRecord(t, 0x93, salt, 100, NodeRoleFull)
+
+	transition, err := SignIdentityTransition(oldRecord, newRecord, oldPrivateKey, newPrivateKey, salt, 20, 80, []byte("identity-rotation"))
+	require.NoError(t, err)
+	require.NoError(t, ValidateIdentityTransition(oldRecord, newRecord, transition, salt, 20))
+	require.NotEmpty(t, transition.TransitionID)
+
+	tampered := NormalizeIdentityTransition(transition)
+	tampered.NewSignature[0] ^= 0xff
+	require.ErrorContains(t, ValidateIdentityTransition(oldRecord, newRecord, tampered, salt, 20), "new signature")
+
+	tampered = NormalizeIdentityTransition(transition)
+	tampered.ToRoles = []NodeRole{NodeRoleService, NodeRoleRouting}
+	tampered.TransitionID = ComputeIdentityTransitionID(tampered)
+	payload, err := tampered.SigningPayload()
+	require.NoError(t, err)
+	tampered.OldSignature = ed25519.Sign(oldPrivateKey, payload)
+	tampered.NewSignature = ed25519.Sign(newPrivateKey, payload)
+	require.ErrorContains(t, ValidateIdentityTransition(oldRecord, newRecord, tampered, salt, 20), "roles")
+
+	state := EmptyState()
+	state, err = RegisterNodeRecord(state, oldRecord, salt, 10)
+	require.NoError(t, err)
+	state, err = RegisterNodeRecord(state, remote, salt, 10)
+	require.NoError(t, err)
+	session, err := NegotiateSession(oldRecord, remote, SessionRequest{
+		LocalNodeID:      oldRecord.NodeID,
+		RemoteNodeID:     remote.NodeID,
+		ProtocolVersions: []string{DefaultProtocolVersion},
+		OpenedHeight:     11,
+		ExpiresHeight:    50,
+		Nonce:            []byte("rotation-session"),
+	})
+	require.NoError(t, err)
+	state, err = OpenSession(state, session, 12)
+	require.NoError(t, err)
+	state, err = RegisterRoleCommitment(state, RoleCommitment{
+		NodeID:         oldRecord.NodeID,
+		Role:           NodeRoleService,
+		Bonded:         true,
+		CommitmentHash: HashParts("old-service-commitment"),
+		ExpiresHeight:  70,
+	}, 13)
+	require.NoError(t, err)
+
+	state, err = ApplyIdentityTransition(state, transition, newRecord, salt, 20)
+	require.NoError(t, err)
+	require.False(t, containsNode(state.NodeRecords, oldRecord.NodeID))
+	require.True(t, containsNode(state.NodeRecords, newRecord.NodeID))
+	require.Empty(t, state.Sessions)
+	require.Empty(t, state.RoleCommitments)
+	require.Equal(t, []IdentityTransitionRecord{transition}, state.IdentityTransitions)
+	require.NoError(t, state.Validate())
+}
+
 func TestNetworkAddressHashCanonicalizesOffchainAddresses(t *testing.T) {
 	left, err := HashNetworkAddresses([]string{
 		"tcp://10.0.0.2:26656",
