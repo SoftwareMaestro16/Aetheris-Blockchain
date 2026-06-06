@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
@@ -21,6 +22,23 @@ const (
 	AVMAsyncFailureProofVerificationFailure AVMAsyncFailureClass = "proof_verification_failure"
 	AVMAsyncFailureRetryExhausted           AVMAsyncFailureClass = "retry_exhausted"
 
+	AVMAsyncErrorInvalidPayload           AVMAsyncErrorCode = "ERR_INVALID_PAYLOAD"
+	AVMAsyncErrorInsufficientGas          AVMAsyncErrorCode = "ERR_INSUFFICIENT_GAS"
+	AVMAsyncErrorDestinationNotFound      AVMAsyncErrorCode = "ERR_DESTINATION_NOT_FOUND"
+	AVMAsyncErrorDestinationDisabled      AVMAsyncErrorCode = "ERR_DESTINATION_DISABLED"
+	AVMAsyncErrorExpiredMessage           AVMAsyncErrorCode = "ERR_EXPIRED_MESSAGE"
+	AVMAsyncErrorHandlerFailure           AVMAsyncErrorCode = "ERR_HANDLER_FAILURE"
+	AVMAsyncErrorStorageLimitExceeded     AVMAsyncErrorCode = "ERR_STORAGE_LIMIT_EXCEEDED"
+	AVMAsyncErrorProofVerificationFailure AVMAsyncErrorCode = "ERR_PROOF_VERIFICATION_FAILURE"
+	AVMAsyncErrorRetryExhausted           AVMAsyncErrorCode = "ERR_RETRY_EXHAUSTED"
+	AVMAsyncErrorBounceFailed             AVMAsyncErrorCode = "ERR_BOUNCE_FAILED"
+
+	AVMDeadLetterTriggerRetryExhausted                 AVMDeadLetterTrigger = "retry_exhausted"
+	AVMDeadLetterTriggerDestinationPermanentlyDisabled AVMDeadLetterTrigger = "destination_permanently_disabled"
+	AVMDeadLetterTriggerBounceFailed                   AVMDeadLetterTrigger = "bounce_failed"
+	AVMDeadLetterTriggerExpiredBeforeExecution         AVMDeadLetterTrigger = "expired_before_execution"
+	AVMDeadLetterTriggerInvalidMessageFormat           AVMDeadLetterTrigger = "invalid_message_format"
+
 	AVMAsyncBouncePayloadType = "async.bounce"
 
 	MaxAVMBouncePayloadBytes     = 1024
@@ -28,6 +46,8 @@ const (
 )
 
 type AVMAsyncFailureClass string
+type AVMAsyncErrorCode string
+type AVMDeadLetterTrigger string
 
 type AVMAsyncFailureRecord struct {
 	MessageID      string
@@ -59,8 +79,43 @@ type AVMAsyncBounceDeadLetterOutcome struct {
 	OutcomeHash       string
 }
 
+type AVMAsyncFailedReceiptModel struct {
+	Message   AVMAsyncMessage
+	Failure   AVMAsyncFailureRecord
+	Receipt   AVMExecutionReceipt
+	ModelHash string
+}
+
+type AVMZoneDeadLetterQueue struct {
+	ZoneID    zonestypes.ZoneID
+	Records   []AVMDeadLetterRecord
+	QueueRoot string
+}
+
+type AVMRetryExhaustionOutcome struct {
+	Queue       AVMZoneDeadLetterQueue
+	Message     AVMAsyncMessage
+	Failure     AVMAsyncFailureRecord
+	Receipt     AVMExecutionReceipt
+	DeadLetter  AVMDeadLetterRecord
+	OutcomeHash string
+}
+
+type AVMAsyncFailureValueConservationCheck struct {
+	OriginalMessageID     string
+	OriginalValueNAET     uint64
+	BounceValueNAET       uint64
+	DeadLetterRefundNAET  uint64
+	ConservationCheckHash string
+}
+
 func NewAVMAsyncFailureRecord(record AVMAsyncFailureRecord) (AVMAsyncFailureRecord, error) {
 	record = canonicalAVMAsyncFailureRecord(record)
+	if record.ErrorCode == "" {
+		if code, ok := AVMAsyncFailureErrorCode(record.FailureClass); ok {
+			record.ErrorCode = string(code)
+		}
+	}
 	record.FailureHash = ComputeAVMAsyncFailureHash(record)
 	return record, record.Validate()
 }
@@ -82,6 +137,9 @@ func (r AVMAsyncFailureRecord) Validate() error {
 	if r.ErrorCode == "" {
 		return errors.New("AVM async failure error code is required")
 	}
+	if !IsAVMAsyncErrorCode(AVMAsyncErrorCode(r.ErrorCode)) {
+		return fmt.Errorf("invalid AVM async error code %q", r.ErrorCode)
+	}
 	if r.FailedHeight == 0 {
 		return errors.New("AVM async failure height must be positive")
 	}
@@ -102,6 +160,98 @@ func (r AVMAsyncFailureRecord) Validate() error {
 	}
 	if r.FailureHash != ComputeAVMAsyncFailureHash(r) {
 		return errors.New("AVM async failure hash mismatch")
+	}
+	return nil
+}
+
+func NewAVMAsyncFailedReceiptModel(message AVMAsyncMessage, failure AVMAsyncFailureRecord, executor string, storageWritten uint32, outputMessagesRoot string, createdHeight uint64) (AVMAsyncFailedReceiptModel, error) {
+	message = canonicalAVMAsyncMessage(message)
+	if err := message.Validate(); err != nil {
+		return AVMAsyncFailedReceiptModel{}, err
+	}
+	failure = canonicalAVMAsyncFailureRecord(failure)
+	if err := failure.Validate(); err != nil {
+		return AVMAsyncFailedReceiptModel{}, err
+	}
+	if failure.MessageID != message.ID {
+		return AVMAsyncFailedReceiptModel{}, errors.New("AVM async failed receipt failure message id mismatch")
+	}
+	if failure.ZoneID != message.DestinationZone {
+		return AVMAsyncFailedReceiptModel{}, errors.New("AVM async failed receipt failure zone mismatch")
+	}
+	if outputMessagesRoot == "" {
+		outputMessagesRoot = ComputeAVMAsyncFailureOutputRoot(failure)
+	}
+	status := AVMReceiptStatusFailed
+	if failure.FailureClass == AVMAsyncFailureExpiredMessage {
+		status = AVMReceiptStatusExpired
+	}
+	gasUsed := failure.GasUsed
+	if gasUsed == 0 {
+		gasUsed = 1
+	}
+	receipt, err := NewAVMExecutionReceipt(AVMExecutionReceipt{
+		MessageID:          message.ID,
+		ZoneID:             message.DestinationZone,
+		Executor:           executor,
+		Status:             status,
+		GasUsed:            gasUsed,
+		StorageWritten:     storageWritten,
+		EventsHash:         failure.FailureHash,
+		OutputMessagesRoot: outputMessagesRoot,
+		ErrorCodeOptional:  failure.ErrorCode,
+		CreatedHeight:      createdHeight,
+	})
+	if err != nil {
+		return AVMAsyncFailedReceiptModel{}, err
+	}
+	model := AVMAsyncFailedReceiptModel{
+		Message: message,
+		Failure: failure,
+		Receipt: receipt,
+	}
+	model = canonicalAVMAsyncFailedReceiptModel(model)
+	model.ModelHash = ComputeAVMAsyncFailedReceiptModelHash(model)
+	return model, model.Validate()
+}
+
+func (m AVMAsyncFailedReceiptModel) Validate() error {
+	m = canonicalAVMAsyncFailedReceiptModel(m)
+	if err := m.Message.Validate(); err != nil {
+		return err
+	}
+	if err := m.Failure.Validate(); err != nil {
+		return err
+	}
+	if err := m.Receipt.Validate(); err != nil {
+		return err
+	}
+	if m.Failure.MessageID != m.Message.ID || m.Receipt.MessageID != m.Message.ID {
+		return errors.New("AVM async failed receipt message id mismatch")
+	}
+	if m.Failure.ZoneID != m.Message.DestinationZone || m.Receipt.ZoneID != m.Message.DestinationZone {
+		return errors.New("AVM async failed receipt zone mismatch")
+	}
+	if m.Receipt.Status != AVMReceiptStatusFailed && m.Receipt.Status != AVMReceiptStatusExpired {
+		return errors.New("AVM async failed receipt must use failed or expired status")
+	}
+	if m.Failure.FailureClass == AVMAsyncFailureExpiredMessage && m.Receipt.Status != AVMReceiptStatusExpired {
+		return errors.New("AVM async expired failure must emit expired receipt")
+	}
+	if m.Receipt.ErrorCodeOptional != m.Failure.ErrorCode {
+		return errors.New("AVM async failed receipt error code mismatch")
+	}
+	if m.Receipt.EventsHash != m.Failure.FailureHash {
+		return errors.New("AVM async failed receipt events hash must commit failure")
+	}
+	if m.ModelHash == "" {
+		return errors.New("AVM async failed receipt model hash is required")
+	}
+	if err := zonestypes.ValidateHash("AVM async failed receipt model hash", m.ModelHash); err != nil {
+		return err
+	}
+	if m.ModelHash != ComputeAVMAsyncFailedReceiptModelHash(m) {
+		return errors.New("AVM async failed receipt model hash mismatch")
 	}
 	return nil
 }
@@ -326,6 +476,218 @@ func NewAVMAsyncBounceDeadLetterOutcome(outcome AVMAsyncBounceOutcome, reason st
 	return next, next.Validate()
 }
 
+func NewAVMZoneDeadLetterQueue(queue AVMZoneDeadLetterQueue) (AVMZoneDeadLetterQueue, error) {
+	queue = canonicalAVMZoneDeadLetterQueue(queue)
+	queue.QueueRoot = ComputeAVMZoneDeadLetterQueueRoot(queue)
+	return queue, queue.Validate()
+}
+
+func (q AVMZoneDeadLetterQueue) Validate() error {
+	q = canonicalAVMZoneDeadLetterQueue(q)
+	if err := zonestypes.ValidateZoneID(q.ZoneID); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(q.Records))
+	var previous string
+	for i, record := range q.Records {
+		if err := record.Validate(); err != nil {
+			return fmt.Errorf("AVM zone dead letter record %d: %w", i, err)
+		}
+		if record.ZoneID != q.ZoneID {
+			return errors.New("AVM zone dead letter record zone mismatch")
+		}
+		sortKey := AVMZoneDeadLetterSortKey(record)
+		if i > 0 && previous >= sortKey {
+			return errors.New("AVM zone dead letter queue records must be canonically ordered")
+		}
+		previous = sortKey
+		if _, found := seen[record.MessageID]; found {
+			return fmt.Errorf("duplicate AVM zone dead letter message id %q", record.MessageID)
+		}
+		seen[record.MessageID] = struct{}{}
+	}
+	if q.QueueRoot == "" {
+		return errors.New("AVM zone dead letter queue root is required")
+	}
+	if err := zonestypes.ValidateHash("AVM zone dead letter queue root", q.QueueRoot); err != nil {
+		return err
+	}
+	if q.QueueRoot != ComputeAVMZoneDeadLetterQueueRoot(q) {
+		return errors.New("AVM zone dead letter queue root mismatch")
+	}
+	return nil
+}
+
+func DeadLetterAVMAsyncFailure(queue AVMZoneDeadLetterQueue, failure AVMAsyncFailureRecord, trigger AVMDeadLetterTrigger, reason string, refundAmountNAET uint64, gasUsed uint64, finalHeight uint64) (AVMZoneDeadLetterQueue, AVMDeadLetterRecord, AVMExecutionReceipt, error) {
+	queue = canonicalAVMZoneDeadLetterQueue(queue)
+	if err := queue.Validate(); err != nil {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, err
+	}
+	failure = canonicalAVMAsyncFailureRecord(failure)
+	if err := failure.Validate(); err != nil {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, err
+	}
+	if failure.ZoneID != queue.ZoneID {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, errors.New("AVM dead letter failure zone mismatch")
+	}
+	if !IsAVMDeadLetterTrigger(trigger) {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, fmt.Errorf("invalid AVM dead letter trigger %q", trigger)
+	}
+	if err := ValidateAVMDeadLetterTriggerForFailure(trigger, failure); err != nil {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, err
+	}
+	if gasUsed == 0 {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, errors.New("AVM dead letter receipt gas used must be positive")
+	}
+	if finalHeight == 0 {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, errors.New("AVM dead letter final height must be positive")
+	}
+	if reason == "" {
+		reason = string(trigger)
+	}
+	receipt, err := NewAVMExecutionReceipt(AVMExecutionReceipt{
+		MessageID:          failure.MessageID,
+		ZoneID:             failure.ZoneID,
+		Executor:           "async-dead-letter",
+		Status:             AVMReceiptStatusDeadLettered,
+		GasUsed:            gasUsed,
+		EventsHash:         failure.FailureHash,
+		OutputMessagesRoot: ComputeAVMAsyncFailureOutputRoot(failure),
+		ErrorCodeOptional:  failure.ErrorCode,
+		CreatedHeight:      finalHeight,
+	})
+	if err != nil {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, err
+	}
+	record, err := NewAVMDeadLetterRecord(AVMDeadLetterRecord{
+		MessageID:            failure.MessageID,
+		ZoneID:               failure.ZoneID,
+		Reason:               reason,
+		FailedAttempts:       failure.Attempt,
+		LastErrorCode:        failure.ErrorCode,
+		FinalHeight:          finalHeight,
+		RefundAmountOptional: refundAmountNAET,
+		ReceiptID:            receipt.ReceiptID,
+	})
+	if err != nil {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, err
+	}
+	if err := record.ValidateWithReceipt(receipt); err != nil {
+		return AVMZoneDeadLetterQueue{}, AVMDeadLetterRecord{}, AVMExecutionReceipt{}, err
+	}
+	queue.Records = append(queue.Records, record)
+	queue = canonicalAVMZoneDeadLetterQueue(queue)
+	queue.QueueRoot = ComputeAVMZoneDeadLetterQueueRoot(queue)
+	return queue, record, receipt, queue.Validate()
+}
+
+func NewAVMRetryExhaustionOutcome(queue AVMZoneDeadLetterQueue, message AVMAsyncMessage, attempt uint32, gasUsed uint64, finalHeight uint64, refundAmountNAET uint64) (AVMRetryExhaustionOutcome, error) {
+	message = canonicalAVMAsyncMessage(message)
+	if err := message.Validate(); err != nil {
+		return AVMRetryExhaustionOutcome{}, err
+	}
+	failure, err := NewAVMAsyncFailureRecord(AVMAsyncFailureRecord{
+		MessageID:      message.ID,
+		ZoneID:         message.DestinationZone,
+		FailureClass:   AVMAsyncFailureRetryExhausted,
+		FailedHeight:   finalHeight,
+		Attempt:        attempt,
+		GasUsed:        gasUsed,
+		RetryExhausted: true,
+	})
+	if err != nil {
+		return AVMRetryExhaustionOutcome{}, err
+	}
+	nextQueue, dead, receipt, err := DeadLetterAVMAsyncFailure(queue, failure, AVMDeadLetterTriggerRetryExhausted, "retry exhausted", refundAmountNAET, maxAVMFailureUint64(gasUsed, 1), finalHeight)
+	if err != nil {
+		return AVMRetryExhaustionOutcome{}, err
+	}
+	outcome := AVMRetryExhaustionOutcome{
+		Queue:      nextQueue,
+		Message:    message,
+		Failure:    failure,
+		Receipt:    receipt,
+		DeadLetter: dead,
+	}
+	outcome = canonicalAVMRetryExhaustionOutcome(outcome)
+	outcome.OutcomeHash = ComputeAVMRetryExhaustionOutcomeHash(outcome)
+	return outcome, outcome.Validate()
+}
+
+func (o AVMRetryExhaustionOutcome) Validate() error {
+	o = canonicalAVMRetryExhaustionOutcome(o)
+	if err := o.Queue.Validate(); err != nil {
+		return err
+	}
+	if err := o.Message.Validate(); err != nil {
+		return err
+	}
+	if err := o.Failure.Validate(); err != nil {
+		return err
+	}
+	if err := o.DeadLetter.ValidateWithReceipt(o.Receipt); err != nil {
+		return err
+	}
+	if o.Failure.FailureClass != AVMAsyncFailureRetryExhausted || !o.Failure.RetryExhausted {
+		return errors.New("AVM retry exhaustion outcome requires retry_exhausted failure")
+	}
+	if o.Message.ID != o.Failure.MessageID || o.Message.ID != o.DeadLetter.MessageID {
+		return errors.New("AVM retry exhaustion outcome message id mismatch")
+	}
+	if o.OutcomeHash == "" {
+		return errors.New("AVM retry exhaustion outcome hash is required")
+	}
+	if err := zonestypes.ValidateHash("AVM retry exhaustion outcome hash", o.OutcomeHash); err != nil {
+		return err
+	}
+	if o.OutcomeHash != ComputeAVMRetryExhaustionOutcomeHash(o) {
+		return errors.New("AVM retry exhaustion outcome hash mismatch")
+	}
+	return nil
+}
+
+func NewAVMAsyncFailureValueConservationCheck(original AVMAsyncMessage, bounceValueNAET uint64, deadLetterRefundNAET uint64) (AVMAsyncFailureValueConservationCheck, error) {
+	original = canonicalAVMAsyncMessage(original)
+	if err := original.Validate(); err != nil {
+		return AVMAsyncFailureValueConservationCheck{}, err
+	}
+	check := AVMAsyncFailureValueConservationCheck{
+		OriginalMessageID:    original.ID,
+		OriginalValueNAET:    original.ValueNAET,
+		BounceValueNAET:      bounceValueNAET,
+		DeadLetterRefundNAET: deadLetterRefundNAET,
+	}
+	check = canonicalAVMAsyncFailureValueConservationCheck(check)
+	check.ConservationCheckHash = ComputeAVMAsyncFailureValueConservationHash(check)
+	return check, check.Validate()
+}
+
+func (c AVMAsyncFailureValueConservationCheck) Validate() error {
+	c = canonicalAVMAsyncFailureValueConservationCheck(c)
+	if err := zonestypes.ValidateHash("AVM async value conservation message id", c.OriginalMessageID); err != nil {
+		return err
+	}
+	if c.BounceValueNAET > c.OriginalValueNAET {
+		return errors.New("AVM async failure bounce value exceeds original value")
+	}
+	if c.DeadLetterRefundNAET > c.OriginalValueNAET {
+		return errors.New("AVM async failure dead letter refund exceeds original value")
+	}
+	if c.BounceValueNAET > 0 && c.DeadLetterRefundNAET > 0 {
+		return errors.New("AVM async failure value cannot be both bounced and dead-letter refunded")
+	}
+	if c.ConservationCheckHash == "" {
+		return errors.New("AVM async failure value conservation hash is required")
+	}
+	if err := zonestypes.ValidateHash("AVM async failure value conservation hash", c.ConservationCheckHash); err != nil {
+		return err
+	}
+	if c.ConservationCheckHash != ComputeAVMAsyncFailureValueConservationHash(c) {
+		return errors.New("AVM async failure value conservation hash mismatch")
+	}
+	return nil
+}
+
 func (o AVMAsyncBounceDeadLetterOutcome) Validate() error {
 	o = canonicalAVMAsyncBounceDeadLetterOutcome(o)
 	if err := o.BounceOutcome.Validate(); err != nil {
@@ -362,6 +724,9 @@ func AVMAsyncBouncePayload(originalMessageID, errorCode string) ([]byte, error) 
 	if strings.TrimSpace(errorCode) == "" {
 		return nil, errors.New("AVM async bounce error code is required")
 	}
+	if !IsAVMAsyncErrorCode(AVMAsyncErrorCode(strings.TrimSpace(errorCode))) {
+		return nil, fmt.Errorf("invalid AVM async error code %q", errorCode)
+	}
 	payload := []byte(fmt.Sprintf("bounce:%s:%s", originalMessageID, errorCode))
 	if len(payload) > MaxAVMBouncePayloadBytes {
 		return nil, fmt.Errorf("AVM async bounce payload must be <= %d bytes", MaxAVMBouncePayloadBytes)
@@ -396,6 +761,24 @@ func ComputeAVMAsyncBounceMessageRoot(message AVMAsyncMessage) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+func ComputeAVMAsyncFailureOutputRoot(failure AVMAsyncFailureRecord) string {
+	failure = canonicalAVMAsyncFailureRecord(failure)
+	h := sha256.New()
+	writeEnginePart(h, "aetheris-avm-async-failure-output-root-v1")
+	writeAVMAsyncFailureParts(h, failure)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAVMAsyncFailedReceiptModelHash(model AVMAsyncFailedReceiptModel) string {
+	model = canonicalAVMAsyncFailedReceiptModel(model)
+	h := sha256.New()
+	writeEnginePart(h, "aetheris-avm-async-failed-receipt-model-v1")
+	writeAVMAsyncMessageParts(h, model.Message)
+	writeAVMAsyncFailureParts(h, model.Failure)
+	writeEnginePart(h, model.Receipt.ReceiptHash)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func ComputeAVMAsyncBounceOutcomeHash(outcome AVMAsyncBounceOutcome) string {
 	outcome = canonicalAVMAsyncBounceOutcome(outcome)
 	h := sha256.New()
@@ -408,6 +791,47 @@ func ComputeAVMAsyncBounceOutcomeHash(outcome AVMAsyncBounceOutcome) string {
 	writeEngineUint64(h, outcome.BounceGasUsed)
 	writeEngineUint64(h, outcome.BoundedBounceGas)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAVMZoneDeadLetterQueueRoot(queue AVMZoneDeadLetterQueue) string {
+	queue = canonicalAVMZoneDeadLetterQueue(queue)
+	h := sha256.New()
+	writeEnginePart(h, "aetheris-avm-zone-dead-letter-queue-v1")
+	writeEnginePart(h, string(queue.ZoneID))
+	writeEngineUint64(h, uint64(len(queue.Records)))
+	for _, record := range queue.Records {
+		writeEnginePart(h, record.RecordHash)
+		writeEnginePart(h, AVMZoneDeadLetterSortKey(record))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAVMRetryExhaustionOutcomeHash(outcome AVMRetryExhaustionOutcome) string {
+	outcome = canonicalAVMRetryExhaustionOutcome(outcome)
+	h := sha256.New()
+	writeEnginePart(h, "aetheris-avm-retry-exhaustion-outcome-v1")
+	writeEnginePart(h, outcome.Queue.QueueRoot)
+	writeAVMAsyncMessageParts(h, outcome.Message)
+	writeAVMAsyncFailureParts(h, outcome.Failure)
+	writeEnginePart(h, outcome.Receipt.ReceiptHash)
+	writeEnginePart(h, outcome.DeadLetter.RecordHash)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAVMAsyncFailureValueConservationHash(check AVMAsyncFailureValueConservationCheck) string {
+	check = canonicalAVMAsyncFailureValueConservationCheck(check)
+	h := sha256.New()
+	writeEnginePart(h, "aetheris-avm-async-failure-value-conservation-v1")
+	writeEnginePart(h, check.OriginalMessageID)
+	writeEngineUint64(h, check.OriginalValueNAET)
+	writeEngineUint64(h, check.BounceValueNAET)
+	writeEngineUint64(h, check.DeadLetterRefundNAET)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func AVMZoneDeadLetterSortKey(record AVMDeadLetterRecord) string {
+	record = canonicalAVMDeadLetterRecord(record)
+	return fmt.Sprintf("%020d/%s", record.FinalHeight, record.MessageID)
 }
 
 func ComputeAVMAsyncBounceDeadLetterOutcomeHash(outcome AVMAsyncBounceDeadLetterOutcome) string {
@@ -445,11 +869,110 @@ func IsAVMAsyncFailureClass(class AVMAsyncFailureClass) bool {
 	}
 }
 
+func IsAVMAsyncErrorCode(code AVMAsyncErrorCode) bool {
+	switch code {
+	case AVMAsyncErrorInvalidPayload,
+		AVMAsyncErrorInsufficientGas,
+		AVMAsyncErrorDestinationNotFound,
+		AVMAsyncErrorDestinationDisabled,
+		AVMAsyncErrorExpiredMessage,
+		AVMAsyncErrorHandlerFailure,
+		AVMAsyncErrorStorageLimitExceeded,
+		AVMAsyncErrorProofVerificationFailure,
+		AVMAsyncErrorRetryExhausted,
+		AVMAsyncErrorBounceFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsAVMDeadLetterTrigger(trigger AVMDeadLetterTrigger) bool {
+	switch trigger {
+	case AVMDeadLetterTriggerRetryExhausted,
+		AVMDeadLetterTriggerDestinationPermanentlyDisabled,
+		AVMDeadLetterTriggerBounceFailed,
+		AVMDeadLetterTriggerExpiredBeforeExecution,
+		AVMDeadLetterTriggerInvalidMessageFormat:
+		return true
+	default:
+		return false
+	}
+}
+
+func AVMAsyncFailureErrorCode(class AVMAsyncFailureClass) (AVMAsyncErrorCode, bool) {
+	switch class {
+	case AVMAsyncFailureInvalidPayload:
+		return AVMAsyncErrorInvalidPayload, true
+	case AVMAsyncFailureInsufficientGas:
+		return AVMAsyncErrorInsufficientGas, true
+	case AVMAsyncFailureDestinationNotFound:
+		return AVMAsyncErrorDestinationNotFound, true
+	case AVMAsyncFailureDestinationDisabled:
+		return AVMAsyncErrorDestinationDisabled, true
+	case AVMAsyncFailureExpiredMessage:
+		return AVMAsyncErrorExpiredMessage, true
+	case AVMAsyncFailureHandlerFailure:
+		return AVMAsyncErrorHandlerFailure, true
+	case AVMAsyncFailureStorageLimitExceeded:
+		return AVMAsyncErrorStorageLimitExceeded, true
+	case AVMAsyncFailureProofVerificationFailure:
+		return AVMAsyncErrorProofVerificationFailure, true
+	case AVMAsyncFailureRetryExhausted:
+		return AVMAsyncErrorRetryExhausted, true
+	default:
+		return "", false
+	}
+}
+
+func AVMDeadLetterTriggerForFailure(failure AVMAsyncFailureRecord) (AVMDeadLetterTrigger, bool) {
+	switch failure.FailureClass {
+	case AVMAsyncFailureRetryExhausted:
+		return AVMDeadLetterTriggerRetryExhausted, true
+	case AVMAsyncFailureDestinationDisabled:
+		return AVMDeadLetterTriggerDestinationPermanentlyDisabled, true
+	case AVMAsyncFailureExpiredMessage:
+		return AVMDeadLetterTriggerExpiredBeforeExecution, true
+	case AVMAsyncFailureInvalidPayload:
+		return AVMDeadLetterTriggerInvalidMessageFormat, true
+	default:
+		if failure.ErrorCode == string(AVMAsyncErrorBounceFailed) {
+			return AVMDeadLetterTriggerBounceFailed, true
+		}
+		return "", false
+	}
+}
+
+func ValidateAVMDeadLetterTriggerForFailure(trigger AVMDeadLetterTrigger, failure AVMAsyncFailureRecord) error {
+	if trigger == AVMDeadLetterTriggerBounceFailed {
+		if failure.ErrorCode == string(AVMAsyncErrorBounceFailed) {
+			return nil
+		}
+		return errors.New("AVM bounce failed trigger requires bounce failed error code")
+	}
+	expected, ok := AVMDeadLetterTriggerForFailure(failure)
+	if !ok {
+		return errors.New("AVM async failure is not a dead letter trigger")
+	}
+	if expected != trigger {
+		return errors.New("AVM dead letter trigger does not match failure class")
+	}
+	return nil
+}
+
 func canonicalAVMAsyncFailureRecord(record AVMAsyncFailureRecord) AVMAsyncFailureRecord {
 	record.MessageID = strings.TrimSpace(record.MessageID)
 	record.ErrorCode = strings.TrimSpace(record.ErrorCode)
 	record.FailureHash = strings.TrimSpace(record.FailureHash)
 	return record
+}
+
+func canonicalAVMAsyncFailedReceiptModel(model AVMAsyncFailedReceiptModel) AVMAsyncFailedReceiptModel {
+	model.Message = canonicalAVMAsyncMessage(model.Message)
+	model.Failure = canonicalAVMAsyncFailureRecord(model.Failure)
+	model.Receipt = canonicalAVMExecutionReceipt(model.Receipt)
+	model.ModelHash = strings.TrimSpace(model.ModelHash)
+	return model
 }
 
 func canonicalAVMAsyncBounceOutcome(outcome AVMAsyncBounceOutcome) AVMAsyncBounceOutcome {
@@ -459,6 +982,35 @@ func canonicalAVMAsyncBounceOutcome(outcome AVMAsyncBounceOutcome) AVMAsyncBounc
 	outcome.BounceReceipt = canonicalAVMExecutionReceipt(outcome.BounceReceipt)
 	outcome.OutcomeHash = strings.TrimSpace(outcome.OutcomeHash)
 	return outcome
+}
+
+func canonicalAVMZoneDeadLetterQueue(queue AVMZoneDeadLetterQueue) AVMZoneDeadLetterQueue {
+	records := append([]AVMDeadLetterRecord(nil), queue.Records...)
+	for i := range records {
+		records[i] = canonicalAVMDeadLetterRecord(records[i])
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return AVMZoneDeadLetterSortKey(records[i]) < AVMZoneDeadLetterSortKey(records[j])
+	})
+	queue.Records = records
+	queue.QueueRoot = strings.TrimSpace(queue.QueueRoot)
+	return queue
+}
+
+func canonicalAVMRetryExhaustionOutcome(outcome AVMRetryExhaustionOutcome) AVMRetryExhaustionOutcome {
+	outcome.Queue = canonicalAVMZoneDeadLetterQueue(outcome.Queue)
+	outcome.Message = canonicalAVMAsyncMessage(outcome.Message)
+	outcome.Failure = canonicalAVMAsyncFailureRecord(outcome.Failure)
+	outcome.Receipt = canonicalAVMExecutionReceipt(outcome.Receipt)
+	outcome.DeadLetter = canonicalAVMDeadLetterRecord(outcome.DeadLetter)
+	outcome.OutcomeHash = strings.TrimSpace(outcome.OutcomeHash)
+	return outcome
+}
+
+func canonicalAVMAsyncFailureValueConservationCheck(check AVMAsyncFailureValueConservationCheck) AVMAsyncFailureValueConservationCheck {
+	check.OriginalMessageID = strings.TrimSpace(check.OriginalMessageID)
+	check.ConservationCheckHash = strings.TrimSpace(check.ConservationCheckHash)
+	return check
 }
 
 func canonicalAVMAsyncBounceDeadLetterOutcome(outcome AVMAsyncBounceDeadLetterOutcome) AVMAsyncBounceDeadLetterOutcome {
@@ -513,4 +1065,11 @@ func writeAVMAsyncMessageParts(h engineByteWriter, msg AVMAsyncMessage) {
 	writeEnginePart(h, msg.RouteHintOptional)
 	writeEnginePart(h, msg.AuthProofOptional)
 	writeEnginePart(h, msg.StateProofOptional)
+}
+
+func maxAVMFailureUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
