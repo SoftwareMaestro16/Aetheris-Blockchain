@@ -1,0 +1,54 @@
+syntax = "proto3";
+package l1.configvoting.v1;
+
+import "l1/configvoting/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/config-voting/types";
+
+message MsgSubmitConfigProposal {
+  string authority = 1;
+  ConfigProposal proposal = 2;
+}
+
+message MsgSubmitConfigProposalResponse {
+  ConfigProposal proposal = 1;
+}
+
+message MsgVoteConfigProposal {
+  string voter = 1;
+  string proposal_id = 2;
+  string option = 3;
+  uint64 height = 4;
+}
+
+message MsgVoteConfigProposalResponse {
+  ConfigVote vote = 1;
+}
+
+message MsgExecuteConfigProposal {
+  string authority = 1;
+  string proposal_id = 2;
+  uint64 height = 3;
+}
+
+message MsgExecuteConfigProposalResponse {
+  ConfigProposal proposal = 1;
+}
+
+message MsgVetoConfigProposal {
+  string authority = 1;
+  string proposal_id = 2;
+  string reason = 3;
+  uint64 height = 4;
+}
+
+message MsgVetoConfigProposalResponse {
+  ConfigProposal proposal = 1;
+}
+
+service Msg {
+  rpc SubmitConfigProposal(MsgSubmitConfigProposal) returns (MsgSubmitConfigProposalResponse);
+  rpc VoteConfigProposal(MsgVoteConfigProposal) returns (MsgVoteConfigProposalResponse);
+  rpc ExecuteConfigProposal(MsgExecuteConfigProposal) returns (MsgExecuteConfigProposalResponse);
+  rpc VetoConfigProposal(MsgVetoConfigProposal) returns (MsgVetoConfigProposalResponse);
+}

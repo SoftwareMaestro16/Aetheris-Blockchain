@@ -37,9 +37,12 @@ func TestAetherCoreWiringGateRegistersPrototypeModulesDisabled(t *testing.T) {
 	require.NoError(t, app.ValidateAetherCoreWiringGate())
 	require.Equal(t, RoutingExecutionPointAnteAdmissionOnly, AetherCoreRoutingExecutionPoint())
 
-	for _, moduleName := range AetherCorePrototypeModuleNames() {
+	prototypeModuleNames := AetherCorePrototypeModuleNames()
+	prototypeStoreKeys := AetherCorePrototypeStoreKeys()
+	require.Len(t, prototypeStoreKeys, len(prototypeModuleNames))
+	for i, moduleName := range prototypeModuleNames {
 		require.Contains(t, app.ModuleManager.Modules, moduleName)
-		require.Contains(t, app.keys, moduleName)
+		require.Contains(t, app.keys, prototypeStoreKeys[i])
 		require.Contains(t, genesis, moduleName)
 		require.NotContains(t, GetMaccPerms(), moduleName)
 		_, hasBegin := app.ModuleManager.Modules[moduleName].(appmodule.HasBeginBlocker)

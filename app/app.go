@@ -60,6 +60,8 @@ import (
 	avmschedulertypes "github.com/sovereign-l1/l1/x/avm-scheduler/types"
 	bridgehubkeeper "github.com/sovereign-l1/l1/x/bridge-hub/keeper"
 	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
+	configvotingkeeper "github.com/sovereign-l1/l1/x/config-voting/keeper"
+	configvotingtypes "github.com/sovereign-l1/l1/x/config-voting/types"
 	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutionkeeper "github.com/sovereign-l1/l1/x/constitution/keeper"
@@ -172,6 +174,7 @@ type L1App struct {
 	EpochsKeeper              *epochskeeper.Keeper
 	ProtocolPoolKeeper        protocolpoolkeeper.Keeper
 	ConfigKeeper              configkeeper.Keeper
+	ConfigVotingKeeper        configvotingkeeper.Keeper
 	ConstitutionKeeper        constitutionkeeper.Keeper
 	TokenFactoryKeeper        tokenfactorykeeper.Keeper
 	DexKeeper                 dexkeeper.Keeper
@@ -301,6 +304,7 @@ func NewL1App(
 		validatorelectiontypes.StoreKey,
 		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,
+		configvotingtypes.StoreKey,
 		tokenfactorytypes.StoreKey,
 		dextypes.StoreKey,
 		feecollectortypes.StoreKey,

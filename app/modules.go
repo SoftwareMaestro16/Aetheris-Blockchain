@@ -37,6 +37,7 @@ import (
 	avmschedulermodule "github.com/sovereign-l1/l1/x/avm-scheduler"
 	bridgehubmodule "github.com/sovereign-l1/l1/x/bridge-hub"
 	configmodule "github.com/sovereign-l1/l1/x/config"
+	configvotingmodule "github.com/sovereign-l1/l1/x/config-voting"
 	constitutionmodule "github.com/sovereign-l1/l1/x/constitution"
 	crosschainregistrymodule "github.com/sovereign-l1/l1/x/cross-chain-registry"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
@@ -88,6 +89,7 @@ func (app *L1App) initModules(
 		validatorelectionmodule.NewAppModule(&app.ValidatorElectionKeeper),
 		validatorregistrymodule.NewAppModule(&app.ValidatorRegistryKeeper),
 		configmodule.NewAppModule(&app.ConfigKeeper),
+		configvotingmodule.NewAppModule(&app.ConfigVotingKeeper),
 		aethercoremodule.NewAppModule(app.AetherCoreKeeper),
 		loadmodule.NewAppModule(app.LoadKeeper),
 		routingmodule.NewAppModule(app.RoutingKeeper),

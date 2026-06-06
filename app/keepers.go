@@ -54,6 +54,8 @@ import (
 	avmschedulertypes "github.com/sovereign-l1/l1/x/avm-scheduler/types"
 	bridgehubkeeper "github.com/sovereign-l1/l1/x/bridge-hub/keeper"
 	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
+	configvotingkeeper "github.com/sovereign-l1/l1/x/config-voting/keeper"
+	configvotingtypes "github.com/sovereign-l1/l1/x/config-voting/types"
 	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutionkeeper "github.com/sovereign-l1/l1/x/constitution/keeper"
@@ -256,6 +258,7 @@ func (app *L1App) initKeepers(
 	app.ValidatorElectionKeeper = validatorelectionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorelectiontypes.StoreKey]))
 	app.ValidatorRegistryKeeper = validatorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorregistrytypes.StoreKey]))
 	app.ConfigKeeper = configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey]))
+	app.ConfigVotingKeeper = configvotingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configvotingtypes.StoreKey]))
 
 	app.TokenFactoryKeeper = tokenfactorykeeper.NewKeeper(
 		appCodec,

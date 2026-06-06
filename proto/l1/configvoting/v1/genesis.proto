@@ -1,0 +1,68 @@
+syntax = "proto3";
+package l1.configvoting.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/config-voting/types";
+
+message ConfigVotingParams {
+  uint32 max_proposals = 1;
+  uint32 max_votes = 2;
+  uint32 max_snapshot_entries = 3;
+  uint32 quorum_bps = 4;
+  uint32 threshold_bps = 5;
+  uint32 veto_threshold_bps = 6;
+  uint64 voting_period = 7;
+  uint64 execution_delay = 8;
+  uint64 emergency_delay = 9;
+  uint32 max_metadata_bytes = 10;
+  uint32 max_constitution_bytes = 11;
+  uint32 bps_scale = 12;
+  repeated string veto_authorities = 13;
+}
+
+message VotingPowerSnapshotEntry {
+  string voter = 1;
+  uint64 power = 2;
+}
+
+message ConfigProposal {
+  string proposal_id = 1;
+  string title = 2;
+  string config_key = 3;
+  string config_value = 4;
+  string operation = 5;
+  string submitted_by = 6;
+  string status = 7;
+  string metadata = 8;
+  string constitution_reference = 9;
+  bool emergency = 10;
+  bool requires_constitutional_exception = 11;
+  uint64 snapshot_height = 12;
+  uint64 submit_height = 13;
+  uint64 voting_end_height = 14;
+  uint64 earliest_execution_height = 15;
+  uint64 executed_height = 16;
+  uint64 total_voting_power = 17;
+  repeated VotingPowerSnapshotEntry voting_power_snapshot = 18;
+  uint64 expected_previous_version = 19;
+  bool allow_missing_expected_previous = 20;
+  uint64 execution_constitution_validated_at = 21;
+}
+
+message ConfigVote {
+  string proposal_id = 1;
+  string voter = 2;
+  string option = 3;
+  uint64 power = 4;
+  uint64 height = 5;
+}
+
+message ConfigVotingState {
+  repeated ConfigProposal proposals = 1;
+  repeated ConfigVote votes = 2;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  ConfigVotingParams voting_params = 2;
+  ConfigVotingState state = 3;
+}

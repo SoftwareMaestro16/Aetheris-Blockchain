@@ -1,0 +1,41 @@
+syntax = "proto3";
+package l1.configvoting.v1;
+
+import "l1/configvoting/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/config-voting/types";
+
+message QueryConfigProposalRequest {
+  string proposal_id = 1;
+}
+
+message QueryConfigProposalResponse {
+  ConfigProposal proposal = 1;
+}
+
+message QueryConfigProposalsRequest {}
+
+message QueryConfigProposalsResponse {
+  repeated ConfigProposal proposals = 1;
+}
+
+message QueryConfigVotesRequest {
+  string proposal_id = 1;
+}
+
+message QueryConfigVotesResponse {
+  repeated ConfigVote votes = 1;
+}
+
+message QueryConfigVotingParamsRequest {}
+
+message QueryConfigVotingParamsResponse {
+  ConfigVotingParams params = 1;
+}
+
+service Query {
+  rpc ConfigProposal(QueryConfigProposalRequest) returns (QueryConfigProposalResponse);
+  rpc ConfigProposals(QueryConfigProposalsRequest) returns (QueryConfigProposalsResponse);
+  rpc ConfigVotes(QueryConfigVotesRequest) returns (QueryConfigVotesResponse);
+  rpc ConfigVotingParams(QueryConfigVotingParamsRequest) returns (QueryConfigVotingParamsResponse);
+}

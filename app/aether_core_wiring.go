@@ -25,6 +25,7 @@ import (
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	avmschedulertypes "github.com/sovereign-l1/l1/x/avm-scheduler/types"
 	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
+	configvotingtypes "github.com/sovereign-l1/l1/x/config-voting/types"
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
@@ -64,6 +65,7 @@ var aetherCorePrototypeModules = []string{
 	meshtypes.ModuleName,
 	networkingtypes.ModuleName,
 	paymentstypes.ModuleName,
+	configvotingtypes.ModuleName,
 	schedulertypes.ModuleName,
 	avmschedulertypes.ModuleName,
 	actorregistrytypes.ModuleName,
@@ -100,6 +102,7 @@ func AetherCorePrototypeStoreKeys() []string {
 		meshtypes.StoreKey,
 		networkingtypes.StoreKey,
 		paymentstypes.StoreKey,
+		configvotingtypes.StoreKey,
 		schedulertypes.StoreKey,
 		avmschedulertypes.StoreKey,
 		actorregistrytypes.StoreKey,
@@ -154,6 +157,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		configvotingtypes.ModuleName,
 		schedulertypes.ModuleName,
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
@@ -186,6 +190,7 @@ func aetherCoreEndBlockerOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		configvotingtypes.ModuleName,
 		schedulertypes.ModuleName,
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
@@ -228,6 +233,7 @@ func aetherCoreInitGenesisOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		configvotingtypes.ModuleName,
 		schedulertypes.ModuleName,
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
@@ -274,6 +280,7 @@ func aetherCoreExportGenesisOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		configvotingtypes.ModuleName,
 		schedulertypes.ModuleName,
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
@@ -296,23 +303,35 @@ func (app *L1App) ValidateAetherCoreWiringGate() error {
 	if AetherCoreRoutingExecutionPoint() != RoutingExecutionPointAnteAdmissionOnly {
 		return fmt.Errorf("unsupported routing execution point %s", AetherCoreRoutingExecutionPoint())
 	}
-	for _, moduleName := range AetherCorePrototypeModuleNames() {
+	prototypeModuleNames := AetherCorePrototypeModuleNames()
+	prototypeStoreKeys := AetherCorePrototypeStoreKeys()
+	if len(prototypeModuleNames) != len(prototypeStoreKeys) {
+		return fmt.Errorf("prototype module/store key count mismatch")
+	}
+	for i, moduleName := range prototypeModuleNames {
 		if _, found := app.ModuleManager.Modules[moduleName]; !found {
 			return fmt.Errorf("prototype module %s is not registered", moduleName)
 		}
-		if _, found := app.keys[moduleName]; !found {
-			return fmt.Errorf("prototype module %s store key is not mounted", moduleName)
+		storeKey := prototypeStoreKeys[i]
+		if _, found := app.keys[storeKey]; !found {
+			return fmt.Errorf("prototype module %s store key %s is not mounted", moduleName, storeKey)
 		}
 		if _, found := maccPerms[moduleName]; found {
 			return fmt.Errorf("prototype module %s must not have module account permissions", moduleName)
 		}
 	}
-	for _, moduleName := range AetherCoreSystemModuleNames() {
+	systemModuleNames := AetherCoreSystemModuleNames()
+	systemStoreKeys := AetherCoreSystemStoreKeys()
+	if len(systemModuleNames) != len(systemStoreKeys) {
+		return fmt.Errorf("system module/store key count mismatch")
+	}
+	for i, moduleName := range systemModuleNames {
 		if _, found := app.ModuleManager.Modules[moduleName]; !found {
 			return fmt.Errorf("system module %s is not registered", moduleName)
 		}
-		if _, found := app.keys[moduleName]; !found {
-			return fmt.Errorf("system module %s store key is not mounted", moduleName)
+		storeKey := systemStoreKeys[i]
+		if _, found := app.keys[storeKey]; !found {
+			return fmt.Errorf("system module %s store key %s is not mounted", moduleName, storeKey)
 		}
 		if _, found := maccPerms[moduleName]; found {
 			return fmt.Errorf("system module %s must not have module account permissions", moduleName)
