@@ -178,6 +178,82 @@ func TestAetherMeshRouteSelectionRejectsUncommittedInputs(t *testing.T) {
 	require.ErrorContains(t, err, "max hops")
 }
 
+func TestAetherMeshRoutingEpochStateCommitsGraphsAndRouteProof(t *testing.T) {
+	zone, service, message := testMeshGraphEdges(t)
+	routes := []AetherMeshRouteEdge{
+		testMeshRouteEdge(t, "z-direct", "APPLICATION_ZONE", "FINANCIAL_ZONE", true, 200, 100, 0, 0, 0),
+		testMeshRouteEdge(t, "a-hop1", "APPLICATION_ZONE", "CONTRACT_ZONE", true, 200, 8, 1, 1, 1),
+		testMeshRouteEdge(t, "a-hop2", "CONTRACT_ZONE", "FINANCIAL_ZONE", true, 200, 9, 1, 1, 1),
+	}
+	state, err := BuildAetherMeshRoutingEpochState(11, 100, 200, []AetherMeshZoneEdge{zone}, []AetherMeshServiceEdge{service}, []AetherMeshMessageEdge{message}, routes, DefaultAetherMeshRoutingCostParams())
+	require.NoError(t, err)
+	require.NoError(t, state.Validate())
+	require.Equal(t, ComputeAetherMeshZoneGraphRoot(11, []AetherMeshZoneEdge{zone}), state.ZoneGraph.RootHash)
+	require.Equal(t, ComputeAetherMeshServiceGraphRoot(11, []AetherMeshServiceEdge{service}), state.ServiceGraph.RootHash)
+	require.Equal(t, ComputeAetherMeshMessageRouteGraphRoot(11, []AetherMeshMessageEdge{message}, routes), state.MessageRouteGraph.RootHash)
+	require.Equal(t, state.CongestionSnapshot.SnapshotRoot, state.CongestionSnapshotRoot)
+
+	proofReq := testMeshRouteProofRequest(120, 2)
+	proof, err := QueryAetherMeshRouteProof(state, proofReq)
+	require.NoError(t, err)
+	require.NoError(t, proof.Validate())
+	require.Equal(t, "a-hop1/a-hop2", proof.SelectedRoute.RouteID)
+	require.Equal(t, uint64(25), proof.SelectedRoute.Score)
+	require.Len(t, proof.HopEdgeHashes, 2)
+
+	simulation, err := SimulateAetherMeshRouting(state, proofReq)
+	require.NoError(t, err)
+	require.Len(t, simulation.Candidates, 2)
+	require.Equal(t, proof.ProofHash, simulation.Proof.ProofHash)
+	require.Equal(t, proof.SelectedRoute.MetadataHash, simulation.Selected.MetadataHash)
+}
+
+func TestAetherMeshRoutingSimulationIsDeterministicAcrossInputOrder(t *testing.T) {
+	zone, service, message := testMeshGraphEdges(t)
+	routes := []AetherMeshRouteEdge{
+		testMeshRouteEdge(t, "b-direct", "APPLICATION_ZONE", "FINANCIAL_ZONE", true, 200, 10, 2, 3, 4),
+		testMeshRouteEdge(t, "a-direct", "APPLICATION_ZONE", "FINANCIAL_ZONE", true, 200, 10, 2, 3, 4),
+		testMeshRouteEdge(t, "expired", "APPLICATION_ZONE", "FINANCIAL_ZONE", true, 110, 1, 0, 0, 0),
+	}
+	left, err := BuildAetherMeshRoutingEpochState(12, 100, 200, []AetherMeshZoneEdge{zone}, []AetherMeshServiceEdge{service}, []AetherMeshMessageEdge{message}, routes, DefaultAetherMeshRoutingCostParams())
+	require.NoError(t, err)
+	right, err := BuildAetherMeshRoutingEpochState(12, 100, 200, []AetherMeshZoneEdge{zone}, []AetherMeshServiceEdge{service}, []AetherMeshMessageEdge{message}, []AetherMeshRouteEdge{routes[2], routes[1], routes[0]}, DefaultAetherMeshRoutingCostParams())
+	require.NoError(t, err)
+	require.Equal(t, left.EpochRoot, right.EpochRoot)
+
+	req := testMeshRouteProofRequest(120, 1)
+	leftSim, err := SimulateAetherMeshRouting(left, req)
+	require.NoError(t, err)
+	rightSim, err := SimulateAetherMeshRouting(right, req)
+	require.NoError(t, err)
+	require.Equal(t, "a-direct", leftSim.Selected.RouteID)
+	require.Equal(t, leftSim.Selected.MetadataHash, rightSim.Selected.MetadataHash)
+	require.Equal(t, leftSim.Proof.ProofHash, rightSim.Proof.ProofHash)
+}
+
+func TestAetherMeshRoutingEpochStateRejectsTamperingAndOutOfEpochProofs(t *testing.T) {
+	zone, service, message := testMeshGraphEdges(t)
+	routes := []AetherMeshRouteEdge{
+		testMeshRouteEdge(t, "direct", "APPLICATION_ZONE", "FINANCIAL_ZONE", true, 200, 10, 0, 0, 0),
+	}
+	state, err := BuildAetherMeshRoutingEpochState(13, 100, 200, []AetherMeshZoneEdge{zone}, []AetherMeshServiceEdge{service}, []AetherMeshMessageEdge{message}, routes, DefaultAetherMeshRoutingCostParams())
+	require.NoError(t, err)
+
+	tampered := state
+	tampered.MessageRouteGraph.RootHash = HashParts("wrong-message-route-root")
+	tampered.EpochRoot = ComputeAetherMeshRoutingEpochRoot(tampered)
+	require.ErrorContains(t, tampered.Validate(), "message route graph state root mismatch")
+
+	tampered = state
+	tampered.CongestionSnapshot.SnapshotRoot = HashParts("wrong-congestion-root")
+	tampered.CongestionSnapshotRoot = tampered.CongestionSnapshot.SnapshotRoot
+	tampered.EpochRoot = ComputeAetherMeshRoutingEpochRoot(tampered)
+	require.ErrorContains(t, tampered.Validate(), "congestion snapshot root mismatch")
+
+	_, err = QueryAetherMeshRouteProof(state, testMeshRouteProofRequest(200, 1))
+	require.ErrorContains(t, err, "outside routing epoch")
+}
+
 func testMeshRouteEdge(t *testing.T, routeID, source, destination string, enabled bool, expiresHeight, gasCost, congestion, inverseReliability, latency uint64) AetherMeshRouteEdge {
 	t.Helper()
 	edge, err := NewAetherMeshRouteEdge(AetherMeshRouteEdge{
@@ -196,6 +272,34 @@ func testMeshRouteEdge(t *testing.T, routeID, source, destination string, enable
 	return edge
 }
 
+func testMeshGraphEdges(t *testing.T) (AetherMeshZoneEdge, AetherMeshServiceEdge, AetherMeshMessageEdge) {
+	t.Helper()
+	zone, err := NewAetherMeshZoneEdge(AetherMeshZoneEdge{
+		SourceZone:       "APPLICATION_ZONE",
+		DestinationZone:  "FINANCIAL_ZONE",
+		Enabled:          true,
+		CommittedGasCost: 10,
+	})
+	require.NoError(t, err)
+	service, err := NewAetherMeshServiceEdge(AetherMeshServiceEdge{
+		SourceService:          "svc.payments",
+		DependencyService:      "svc.storage",
+		InterfaceHash:          HashParts("iface", "epoch"),
+		InterfaceCompatible:    true,
+		AvailabilityCommitment: HashParts("availability", "epoch"),
+		AvailabilityWeightBps:  9500,
+	})
+	require.NoError(t, err)
+	message, err := NewAetherMeshMessageEdge(AetherMeshMessageEdge{
+		SourceQueue:      HashParts("queue", "epoch-outbox"),
+		DestinationQueue: HashParts("queue", "epoch-inbox"),
+		DeliveryLane:     "epoch.cross-zone",
+		ForwardingFee:    1,
+	})
+	require.NoError(t, err)
+	return zone, service, message
+}
+
 func testMeshRouteRequest(edges []AetherMeshRouteEdge, currentHeight uint64, maxHops uint32) AetherMeshRouteSelectionRequest {
 	return AetherMeshRouteSelectionRequest{
 		SourceZone:             "APPLICATION_ZONE",
@@ -208,5 +312,17 @@ func testMeshRouteRequest(edges []AetherMeshRouteEdge, currentHeight uint64, max
 		MaxHops:                maxHops,
 		CurrentHeight:          currentHeight,
 		CostParams:             DefaultAetherMeshRoutingCostParams(),
+	}
+}
+
+func testMeshRouteProofRequest(currentHeight uint64, maxHops uint32) AetherMeshRouteProofRequest {
+	return AetherMeshRouteProofRequest{
+		SourceZone:      "APPLICATION_ZONE",
+		DestinationZone: "FINANCIAL_ZONE",
+		Sender:          "aether1sender",
+		Recipient:       "aether1recipient",
+		Opcode:          "cross_zone.transfer",
+		MaxHops:         maxHops,
+		CurrentHeight:   currentHeight,
 	}
 }
