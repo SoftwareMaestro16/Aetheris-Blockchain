@@ -171,7 +171,7 @@ func AcceptAsyncCheckpoint(state PaymentsState, channelID string, checkpoint Cha
 		ChannelID:       channel.ChannelID,
 		CheckpointState: checkpoint,
 		Deltas:          deltas,
-		EvidenceHash:    HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot(deltas)),
+		EvidenceHash:    HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRootForChannel(channel, deltas)),
 	}
 	if err := proof.ValidateForChannel(channel, currentHeight); err != nil {
 		return PaymentsState{}, err
@@ -329,6 +329,7 @@ func CooperativeClose(state PaymentsState, channelID string, closingState Channe
 		return PaymentsState{}, SettlementRecord{}, err
 	}
 	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
 		ChannelID:          channel.ChannelID,
 		StateHash:          closingState.StateHash,
 		Nonce:              closingState.Nonce,
@@ -390,6 +391,7 @@ func ReceiverClose(state PaymentsState, channelID string, claim UnidirectionalCl
 		return PaymentsState{}, SettlementRecord{}, err
 	}
 	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
 		ChannelID:          channel.ChannelID,
 		StateHash:          claim.StateHash,
 		Nonce:              claim.Nonce,
@@ -462,6 +464,7 @@ func PayerReclaim(state PaymentsState, channelID string, payer string, currentHe
 		return PaymentsState{}, SettlementRecord{}, err
 	}
 	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
 		ChannelID:          channel.ChannelID,
 		StateHash:          stateHash,
 		Nonce:              nonce,
@@ -620,6 +623,7 @@ func FraudClose(state PaymentsState, channelID string, currentHeight uint64) (Pa
 		return PaymentsState{}, SettlementRecord{}, err
 	}
 	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
 		ChannelID:          channel.ChannelID,
 		StateHash:          channel.PendingClose.State.StateHash,
 		Nonce:              channel.PendingClose.State.Nonce,
@@ -680,6 +684,7 @@ func FinalizeSettlementWithRequest(state PaymentsState, req FinalSettlementReque
 		return PaymentsState{}, SettlementRecord{}, err
 	}
 	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
 		ChannelID:          channel.ChannelID,
 		StateHash:          channel.PendingClose.State.StateHash,
 		Nonce:              channel.PendingClose.State.Nonce,

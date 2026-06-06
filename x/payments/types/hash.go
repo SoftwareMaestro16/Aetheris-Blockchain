@@ -13,16 +13,21 @@ import (
 const HashHexLength = 64
 
 const (
-	domainHashParts              = "aetheris-payments-hash-parts-v1"
-	domainChannelState           = "aetheris-payment-channel-state"
-	domainAsyncDelta             = "aetheris-payment-async-delta"
-	domainConditionalPromise     = "aetheris-payment-conditional-promise"
-	domainConditionsRoot         = "aetheris-payment-conditions-root"
-	domainCooperativeClose       = "aetheris-payment-cooperative-close"
-	domainDisputeProof           = "aetheris-payment-dispute-proof"
-	domainVirtualChannelState    = "aetheris-virtual-payment-channel-state"
-	domainVirtualChannelAnchor   = "aetheris-virtual-payment-channel-anchor"
-	domainStateSignaturePreimage = "aetheris-payment-state-signature-preimage-hash"
+	domainHashParts               = "aetheris-payments-hash-parts-v1"
+	domainOpeningCommitment       = "aetheris-payment-opening-commitment"
+	domainBalanceCommitment       = "aetheris-payment-balance-state-commitment"
+	domainChannelState            = "aetheris-payment-channel-state"
+	domainAsyncDelta              = "aetheris-payment-async-delta"
+	domainAsyncDeltaRoot          = "aetheris-payment-async-delta-root"
+	domainConditionalPromise      = "aetheris-payment-conditional-promise"
+	domainConditionRootCommitment = "aetheris-payment-condition-root-commitment"
+	domainConditionsRoot          = "aetheris-payment-conditions-root"
+	domainCooperativeClose        = "aetheris-payment-cooperative-close"
+	domainDisputeProof            = "aetheris-payment-dispute-proof"
+	domainSettlementResult        = "aetheris-payment-settlement-result"
+	domainVirtualChannelState     = "aetheris-virtual-payment-channel-state"
+	domainVirtualChannelAnchor    = "aetheris-virtual-payment-channel-anchor"
+	domainStateSignaturePreimage  = "aetheris-payment-state-signature-preimage-hash"
 )
 
 func HashParts(parts ...string) string {
@@ -109,6 +114,53 @@ func ComputeStateHashForEncodingVersion(state ChannelState, version byte) (strin
 		writeUint64(h, condition.NonceEnd)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func ComputeOpeningCommitment(channel ChannelRecord) string {
+	channel = channel.Normalize()
+	h := sha256.New()
+	writeString(h, domainOpeningCommitment)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, channel.ChainID)
+	writeString(h, channel.ChannelID)
+	writeString(h, string(channel.ChannelType))
+	writeString(h, channel.Denom)
+	writeString(h, channel.Collateral)
+	writeUint64(h, channel.OpenHeight)
+	writeUint64(h, channel.CloseDelay)
+	writeUint64(h, channel.DisputePeriod)
+	for _, participant := range channel.Participants {
+		writeString(h, participant)
+	}
+	for _, signer := range channel.RequiredSigners {
+		writeString(h, signer)
+	}
+	writeString(h, channel.OpeningStateHash)
+	writeString(h, channel.LatestState.StateHash)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeBalanceStateCommitment(channel ChannelRecord, state ChannelState) string {
+	channel = channel.Normalize()
+	state = state.Normalize()
+	h := sha256.New()
+	writeString(h, domainBalanceCommitment)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, channel.ChainID)
+	writeString(h, channel.ChannelID)
+	writeString(h, string(channel.ChannelType))
+	writeString(h, state.StateHash)
+	writeUint64(h, state.Nonce)
+	writeUint64(h, state.Epoch)
+	writeString(h, state.BalanceA)
+	writeString(h, state.BalanceB)
+	writeString(h, state.ReserveA)
+	writeString(h, state.ReserveB)
+	for _, balance := range state.Balances {
+		writeString(h, balance.Participant)
+		writeString(h, balance.Amount)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func ComputeParticipantSetHash(participants []string) string {
@@ -272,6 +324,24 @@ func ComputeConditionsRoot(conditions []ConditionalPayment) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+func ComputeConditionRootCommitment(channel ChannelRecord, state ChannelState) string {
+	channel = channel.Normalize()
+	state = state.Normalize()
+	h := sha256.New()
+	writeString(h, domainConditionRootCommitment)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, channel.ChainID)
+	writeString(h, channel.ChannelID)
+	writeString(h, string(channel.ChannelType))
+	writeUint64(h, state.Nonce)
+	writeString(h, state.ConditionRoot)
+	writeUint64(h, uint64(state.ConditionCount))
+	for _, condition := range state.Conditions {
+		writeString(h, ComputeConditionalPromiseHash(condition))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func ComputeConditionalPromiseHash(condition ConditionalPayment) string {
 	condition = condition.Normalize()
 	h := sha256.New()
@@ -356,9 +426,29 @@ func ComputeAsyncDeltaHash(delta AsyncPaymentDelta) string {
 
 func ComputeAsyncDeltaRoot(deltas []AsyncPaymentDelta) string {
 	h := sha256.New()
-	writeString(h, "aetheris-payment-async-delta-root-v1")
+	writeString(h, domainAsyncDeltaRoot)
+	writeByte(h, CanonicalEncodingVersion)
 	for _, delta := range normalizeAsyncDeltas(deltas) {
 		writeString(h, delta.UpdateID)
+		writeString(h, delta.DeltaHash)
+		writeString(h, delta.Signature.Signer)
+		writeString(h, delta.Signature.SignatureHash)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAsyncDeltaRootForChannel(channel ChannelRecord, deltas []AsyncPaymentDelta) string {
+	channel = channel.Normalize()
+	h := sha256.New()
+	writeString(h, domainAsyncDeltaRoot)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, channel.ChainID)
+	writeString(h, channel.ChannelID)
+	writeString(h, string(channel.ChannelType))
+	for _, delta := range normalizeAsyncDeltas(deltas) {
+		writeString(h, delta.UpdateID)
+		writeString(h, delta.ChainID)
+		writeString(h, delta.ChannelID)
 		writeString(h, delta.DeltaHash)
 		writeString(h, delta.Signature.Signer)
 		writeString(h, delta.Signature.SignatureHash)
@@ -456,7 +546,9 @@ func ComputeDisputeProofHash(proof FraudProof) string {
 func ComputeSettlementHash(settlement SettlementRecord) string {
 	settlement = settlement.Normalize()
 	h := sha256.New()
-	writeString(h, "aetheris-payment-settlement-v1")
+	writeString(h, domainSettlementResult)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, settlement.ChainID)
 	writeString(h, settlement.ChannelID)
 	writeString(h, settlement.StateHash)
 	writeUint64(h, settlement.Nonce)
@@ -474,6 +566,15 @@ func ComputeSettlementHash(settlement SettlementRecord) string {
 		writeString(h, penalty.Amount)
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeSettlementResultCommitment(channel ChannelRecord, settlement SettlementRecord) string {
+	channel = channel.Normalize()
+	settlement = settlement.Normalize()
+	if settlement.ChainID == "" {
+		settlement.ChainID = channel.ChainID
+	}
+	return ComputeSettlementHash(settlement)
 }
 
 func ComputeBatchRoot(operations []SettlementOperation) string {

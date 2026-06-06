@@ -382,6 +382,7 @@ type ChannelRecord struct {
 }
 
 type SettlementRecord struct {
+	ChainID            string
 	ChannelID          string
 	StateHash          string
 	Nonce              uint64
@@ -835,8 +836,8 @@ func BuildAsyncCheckpointState(channel ChannelRecord, deltas []AsyncPaymentDelta
 		Balances:             nextBalances,
 		CheckpointNonce:      checkpointNonce,
 		CheckpointBalances:   nextBalances,
-		AsyncUpdateRoot:      ComputeAsyncDeltaRoot(normalizedDeltas),
-		AcceptedUpdateRoot:   ComputeAsyncDeltaRoot(normalizedDeltas),
+		AsyncUpdateRoot:      ComputeAsyncDeltaRootForChannel(channel, normalizedDeltas),
+		AcceptedUpdateRoot:   ComputeAsyncDeltaRootForChannel(channel, normalizedDeltas),
 		SendWindow:           base.SendWindow,
 		ReceiveWindow:        base.ReceiveWindow,
 		MaxUnackedAmount:     base.MaxUnackedAmount,
@@ -1156,7 +1157,7 @@ func (p AsyncDeltaDisputeProof) ValidateForChannel(channel ChannelRecord, curren
 	if reconstructed.StateHash != proof.CheckpointState.StateHash {
 		return errors.New("payments async dispute proof does not reconstruct checkpoint")
 	}
-	if proof.EvidenceHash != HashParts("async-dispute", proof.CheckpointState.StateHash, ComputeAsyncDeltaRoot(proof.Deltas)) {
+	if proof.EvidenceHash != HashParts("async-dispute", proof.CheckpointState.StateHash, ComputeAsyncDeltaRootForChannel(channel, proof.Deltas)) {
 		return errors.New("payments async dispute evidence hash mismatch")
 	}
 	return nil
@@ -1679,6 +1680,7 @@ func (p Penalty) ValidateForChannel(channel ChannelRecord) error {
 }
 
 func (s SettlementRecord) Normalize() SettlementRecord {
+	s.ChainID = strings.TrimSpace(s.ChainID)
 	s.ChannelID = normalizeHash(s.ChannelID)
 	s.StateHash = normalizeHash(s.StateHash)
 	s.SettlementFeeDenom = normalizeAssetDenom(s.SettlementFeeDenom)
@@ -1691,6 +1693,10 @@ func (s SettlementRecord) Normalize() SettlementRecord {
 
 func (s SettlementRecord) ValidateForChannel(channel ChannelRecord) error {
 	settlement := s.Normalize()
+	channel = channel.Normalize()
+	if settlement.ChainID != channel.ChainID {
+		return errors.New("payments settlement chain id mismatch")
+	}
 	if settlement.ChannelID != channel.ChannelID {
 		return errors.New("payments settlement channel mismatch")
 	}
@@ -2204,8 +2210,8 @@ func openingStateForRequest(req ChannelOpenRequest, channel ChannelRecord) Chann
 	if req.ChannelType == ChannelTypeAsync {
 		state.CheckpointNonce = 1
 		state.CheckpointBalances = req.InitialBalances
-		state.AsyncUpdateRoot = ComputeAsyncDeltaRoot(nil)
-		state.AcceptedUpdateRoot = ComputeAsyncDeltaRoot(nil)
+		state.AsyncUpdateRoot = ComputeAsyncDeltaRootForChannel(channel, nil)
+		state.AcceptedUpdateRoot = ComputeAsyncDeltaRootForChannel(channel, nil)
 		state.SendWindow = req.CloseDelay
 		state.ReceiveWindow = req.ChallengePeriod
 		state.MaxUnackedAmount = req.Collateral

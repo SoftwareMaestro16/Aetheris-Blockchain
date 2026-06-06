@@ -423,6 +423,79 @@ func TestStateRejectsUnknownRequiredFields(t *testing.T) {
 	require.ErrorContains(t, bad.ValidateForChannel(channel, true), "unknown required field")
 }
 
+func TestCommitmentModelBindsChannelDomainAndPayloads(t *testing.T) {
+	alice := testAddress(0x59)
+	bob := testAddress(0x5a)
+	first := signedChannel(t, "commitment-first", "1000", alice, bob)
+	second := signedChannel(t, "commitment-second", "1000", alice, bob)
+
+	firstState := signedConditionalState(t, first, 2, first.OpeningStateHash, "25", []Balance{
+		{Participant: alice, Amount: "975"},
+		{Participant: bob, Amount: "0"},
+	})
+	secondState := firstState
+	secondState.ChannelID = second.ChannelID
+	secondState.PreviousStateHash = second.OpeningStateHash
+	secondState.ParticipantSetHash = ComputeParticipantSetHash(second.Participants)
+	secondState.StateHash = ""
+	secondState.Signatures = nil
+	var err error
+	secondState, err = BuildState(secondState)
+	require.NoError(t, err)
+
+	require.NotEqual(t, ComputeOpeningCommitment(first), ComputeOpeningCommitment(second))
+	require.NotEqual(t, ComputeBalanceStateCommitment(first, firstState), ComputeBalanceStateCommitment(second, secondState))
+	require.NotEqual(t, ComputeConditionRootCommitment(first, firstState), ComputeConditionRootCommitment(second, secondState))
+	require.Equal(t, ComputeConditionsRoot(firstState.Conditions), firstState.ConditionRoot)
+
+	asyncFirst := signedAsyncChannel(t, "commitment-async-first", "1000", []Balance{
+		{Participant: alice, Amount: "1000"},
+		{Participant: bob, Amount: "0"},
+	}, 4, 4, "100", 80, alice, bob)
+	asyncSecond := signedAsyncChannel(t, "commitment-async-second", "1000", []Balance{
+		{Participant: alice, Amount: "1000"},
+		{Participant: bob, Amount: "0"},
+	}, 4, 4, "100", 80, alice, bob)
+	delta := signedAsyncDelta(t, asyncFirst, "commitment-delta", alice, bob, "10", 2, 2, 70)
+	require.NotEqual(t, ComputeAsyncDeltaRootForChannel(asyncFirst, []AsyncPaymentDelta{delta}), ComputeAsyncDeltaRootForChannel(asyncSecond, []AsyncPaymentDelta{delta}))
+
+	vc := VirtualChannel{
+		VirtualChannelID: HashParts("commitment-vc", alice, bob),
+		ChainID:          first.ChainID,
+		Nonce:            1,
+		ParentChannelIDs: []string{first.ChannelID},
+		Endpoints:        []string{alice, bob},
+		Capacity:         "100",
+		ExpiresHeight:    90,
+	}
+	vc.AnchorCommitment = ComputeVirtualChannelAnchor(vc)
+	changedVC := vc
+	changedVC.Capacity = "101"
+	require.NotEqual(t, vc.AnchorCommitment, ComputeVirtualChannelAnchor(changedVC))
+	changedVC = vc
+	changedVC.ExpiresHeight++
+	require.NotEqual(t, vc.AnchorCommitment, ComputeVirtualChannelAnchor(changedVC))
+
+	settlement := SettlementRecord{
+		ChainID:            first.ChainID,
+		ChannelID:          first.ChannelID,
+		StateHash:          firstState.StateHash,
+		Nonce:              firstState.Nonce,
+		FinalBalances:      firstState.Balances,
+		SettlementFeeDenom: NativeDenom,
+		SettlementFee:      "0",
+		Penalties:          []Penalty{{Offender: alice, Recipient: bob, Denom: NativeDenom, Amount: "1"}},
+		SettledHeight:      100,
+	}
+	penaltyRoute := settlement
+	penaltyRoute.Penalties = []Penalty{{Offender: bob, Recipient: alice, Denom: NativeDenom, Amount: "1"}}
+	otherDomain := settlement
+	otherDomain.ChannelID = second.ChannelID
+	otherDomain.ChainID = "aetheris-test-2"
+	require.NotEqual(t, ComputeSettlementResultCommitment(first, settlement), ComputeSettlementResultCommitment(first, penaltyRoute))
+	require.NotEqual(t, ComputeSettlementHash(settlement), ComputeSettlementHash(otherDomain))
+}
+
 func TestBidirectionalCloseAndUpdateRules(t *testing.T) {
 	alice := testAddress(0x39)
 	bob := testAddress(0x3a)
@@ -657,7 +730,7 @@ func TestAsyncCheckpointAggregationExposureExpiryAndProof(t *testing.T) {
 		ChannelID:       channel.ChannelID,
 		CheckpointState: checkpoint,
 		Deltas:          []AsyncPaymentDelta{delta},
-		EvidenceHash:    HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot([]AsyncPaymentDelta{delta})),
+		EvidenceHash:    HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRootForChannel(channel, []AsyncPaymentDelta{delta})),
 	}
 	require.NoError(t, proof.ValidateForChannel(channel, 30))
 
@@ -685,7 +758,7 @@ func TestAsyncCheckpointAggregationExposureExpiryAndProof(t *testing.T) {
 
 	badProof := proof
 	badProof.Deltas = nil
-	badProof.EvidenceHash = HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot(nil))
+	badProof.EvidenceHash = HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRootForChannel(channel, nil))
 	require.ErrorContains(t, badProof.ValidateForChannel(channel, 30), "signed deltas")
 }
 
@@ -753,6 +826,7 @@ func TestPaymentAssetScopeRejectsNonNaetFeesAndPenalties(t *testing.T) {
 	require.ErrorContains(t, penalty.ValidateForChannel(channel), "naet")
 
 	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
 		ChannelID:          channel.ChannelID,
 		StateHash:          closeState.StateHash,
 		Nonce:              closeState.Nonce,
@@ -1229,8 +1303,8 @@ func signedAsyncChannel(t *testing.T, salt, collateral string, balances []Balanc
 		Balances:           balances,
 		CheckpointNonce:    1,
 		CheckpointBalances: balances,
-		AsyncUpdateRoot:    ComputeAsyncDeltaRoot(nil),
-		AcceptedUpdateRoot: ComputeAsyncDeltaRoot(nil),
+		AsyncUpdateRoot:    ComputeAsyncDeltaRootForChannel(channel, nil),
+		AcceptedUpdateRoot: ComputeAsyncDeltaRootForChannel(channel, nil),
 		SendWindow:         sendWindow,
 		ReceiveWindow:      receiveWindow,
 		MaxUnackedAmount:   maxUnacked,
