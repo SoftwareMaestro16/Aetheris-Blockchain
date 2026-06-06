@@ -201,6 +201,120 @@ func TestDelayedMessagesWaitForReadyBlockAndSurviveExportImport(t *testing.T) {
 	require.Equal(t, []byte("seen:delayed"), updated.State)
 }
 
+func TestRetryPolicySchedulesBoundedRetriesBeforeBounceAndDeadLetter(t *testing.T) {
+	params := DefaultParams()
+	params.MaxMessagesPerBlock = 1
+	executor, err := NewExecutor(params)
+	require.NoError(t, err)
+	deployer := testAddr(1)
+	source := deployTestContract(t, executor, deployer, []byte("source"))
+	missingDest, err := DeriveContractAddress(deployer, testCodeHash(9), []byte("missing-retry"))
+	require.NoError(t, err)
+	require.NoError(t, executor.RegisterHandler(source, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		if msg.Bounced {
+			return ExecutionResult{NewState: []byte("source:bounced-after-retry"), ResultCode: ResultOK}
+		}
+		return ExecutionResult{NewState: contract.State, ResultCode: ResultOK}
+	}))
+
+	msg := testMessage(source, missingDest, 77)
+	msg.MaxRetries = 2
+	msg.RetryDelayBlocks = 1
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, ResultNoDestination, receipts[0].ResultCode)
+	require.True(t, receipts[0].RetryScheduled)
+	require.Len(t, executor.Queue(), 1)
+	require.Equal(t, uint32(1), executor.Queue()[0].Envelope.RetryCount)
+	require.Equal(t, uint64(2), executor.Queue()[0].Envelope.DeliverAtBlock)
+	require.Empty(t, executor.DeadLetters())
+
+	receipts, err = executor.ProcessBlock(2)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.True(t, receipts[0].RetryScheduled)
+	require.Equal(t, uint32(2), executor.Queue()[0].Envelope.RetryCount)
+	require.Equal(t, uint64(3), executor.Queue()[0].Envelope.DeliverAtBlock)
+
+	receipts, err = executor.ProcessBlock(3)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.False(t, receipts[0].RetryScheduled)
+	require.Len(t, executor.Queue(), 1)
+	require.Equal(t, BounceOpcode, executor.Queue()[0].Envelope.Opcode)
+	require.Len(t, executor.DeadLetters(), 1)
+	require.Equal(t, receipts[0].Sequence, executor.DeadLetters()[0].FailedSequence)
+	require.Equal(t, uint64(2), executor.Metrics().RetriedMessages)
+	require.Equal(t, uint64(1), executor.Metrics().DeadLetterMessages)
+
+	receipts, err = executor.ProcessBlock(4)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, BounceOpcode, receipts[0].Opcode)
+	contract, ok := executor.Contract(source)
+	require.True(t, ok)
+	require.Equal(t, []byte("source:bounced-after-retry"), contract.State)
+}
+
+func TestRetryDeadlinePreventsSchedulingAndRecordsDeadLetter(t *testing.T) {
+	executor := newTestExecutor(t)
+	deployer := testAddr(1)
+	source := deployTestContract(t, executor, deployer, []byte("deadline"))
+	missingDest, err := DeriveContractAddress(deployer, testCodeHash(8), []byte("deadline-missing"))
+	require.NoError(t, err)
+
+	msg := testMessage(source, missingDest, 88)
+	msg.MaxRetries = 1
+	msg.RetryDelayBlocks = 2
+	msg.DeadlineBlock = 1
+	msg.Bounce = false
+	msg.Value = naetCoin(0)
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.False(t, receipts[0].RetryScheduled)
+	require.Empty(t, executor.Queue())
+	require.Len(t, executor.DeadLetters(), 1)
+	require.Equal(t, "destination contract not found", executor.DeadLetters()[0].Reason)
+}
+
+func TestMailboxViewsAreCanonicalAndValidatedOnImport(t *testing.T) {
+	executor := newTestExecutor(t)
+	deployer := testAddr(1)
+	destA := deployTestContract(t, executor, deployer, []byte("mba"))
+	destB := deployTestContract(t, executor, deployer, []byte("mbb"))
+	source := testAddr(9)
+	delayed := testMessage(source, destA, 1)
+	delayed.DeliverAtBlock = 5
+	immediate := testMessage(source, destA, 2)
+	other := testMessage(source, destB, 3)
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{delayed, immediate, other}))
+
+	inbox := executor.Inbox(destA)
+	require.Len(t, inbox, 2)
+	require.Equal(t, uint64(2), inbox[0].Envelope.QueryID)
+	require.Equal(t, uint64(1), inbox[1].Envelope.QueryID)
+	outbox := executor.Outbox(source)
+	require.Len(t, outbox, 3)
+	require.Equal(t, uint64(2), outbox[0].Envelope.QueryID)
+
+	exported := executor.ExportState()
+	imported, err := ImportState(exported)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(exported, imported.ExportState()))
+
+	corrupted := exported
+	corrupted.Inbox = cloneQueuedMap(exported.Inbox)
+	corrupted.Inbox[string(destA)][0].Envelope.Destination = destB
+	_, err = ImportState(corrupted)
+	require.ErrorContains(t, err, "owner key drift")
+}
+
 func TestMessageEnvelopeRejectsDeliveryAfterDeadline(t *testing.T) {
 	msg := testMessage(testAddr(1), testAddr(2), 1)
 	msg.DeliverAtBlock = 10
@@ -401,6 +515,14 @@ func TestMessageEnvelopeRequiresGasLimitAndNaetForwardFee(t *testing.T) {
 	msg = testMessage(testAddr(1), testAddr(2), 1)
 	msg.ForwardFee = sdk.NewInt64Coin("uatom", 1)
 	require.ErrorContains(t, msg.Validate(params), "forward fee denom")
+
+	msg = testMessage(testAddr(1), testAddr(2), 1)
+	msg.MaxRetries = params.MaxRetriesPerMessage + 1
+	require.ErrorContains(t, msg.Validate(params), "max retries")
+
+	msg = testMessage(testAddr(1), testAddr(2), 1)
+	msg.RetryDelayBlocks = params.MaxRetryDelayBlocks + 1
+	require.ErrorContains(t, msg.Validate(params), "retry delay")
 }
 
 func TestRefundMessageFailureDoesNotCreateDoubleRefundCycle(t *testing.T) {

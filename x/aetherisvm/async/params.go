@@ -18,6 +18,10 @@ func DefaultParams() Params {
 		MaxContractDeploysPerBlock: 16,
 		MaxEmittedMessagesPerExec:  16,
 		MaxStorageWritesPerExec:    64,
+		MaxRetriesPerMessage:       3,
+		DefaultRetryDelayBlocks:    1,
+		MaxRetryDelayBlocks:        64,
+		MaxDeadLetters:             1024,
 		ExecutionGasPerMessage:     10_000,
 		StorageFeePerByte:          sdkmath.NewInt(1),
 		ForwardingFee:              sdkmath.NewInt(1),
@@ -52,6 +56,21 @@ func (p Params) Validate() error {
 	}
 	if p.MaxStorageWritesPerExec == 0 {
 		return errors.New("max storage writes per execution must be positive")
+	}
+	if p.MaxRetriesPerMessage == 0 {
+		return errors.New("max retries per message must be positive")
+	}
+	if p.DefaultRetryDelayBlocks == 0 {
+		return errors.New("default retry delay blocks must be positive")
+	}
+	if p.MaxRetryDelayBlocks == 0 {
+		return errors.New("max retry delay blocks must be positive")
+	}
+	if p.DefaultRetryDelayBlocks > p.MaxRetryDelayBlocks {
+		return errors.New("default retry delay blocks must not exceed max retry delay blocks")
+	}
+	if p.MaxDeadLetters == 0 {
+		return errors.New("max dead letters must be positive")
 	}
 	if p.ExecutionGasPerMessage == 0 {
 		return errors.New("execution gas per message must be positive")

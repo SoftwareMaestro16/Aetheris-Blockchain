@@ -46,15 +46,36 @@ func cloneQueuedMap(in map[string][]QueuedMessage) map[string][]QueuedMessage {
 	return out
 }
 
+func cloneDeadLetter(dead DeadLetter) DeadLetter {
+	dead.Envelope = cloneMessage(dead.Envelope)
+	dead.Receipt = cloneReceipt(dead.Receipt)
+	return dead
+}
+
+func cloneDeadLetters(deadLetters []DeadLetter) []DeadLetter {
+	if len(deadLetters) == 0 {
+		return nil
+	}
+	out := make([]DeadLetter, len(deadLetters))
+	for i, dead := range deadLetters {
+		out[i] = cloneDeadLetter(dead)
+	}
+	return out
+}
+
+func cloneReceipt(receipt ExecutionReceipt) ExecutionReceipt {
+	receipt.Source = append(sdk.AccAddress(nil), receipt.Source...)
+	receipt.Destination = append(sdk.AccAddress(nil), receipt.Destination...)
+	return receipt
+}
+
 func cloneReceipts(receipts []ExecutionReceipt) []ExecutionReceipt {
 	if len(receipts) == 0 {
 		return nil
 	}
 	out := make([]ExecutionReceipt, len(receipts))
 	for i, receipt := range receipts {
-		receipt.Source = append(sdk.AccAddress(nil), receipt.Source...)
-		receipt.Destination = append(sdk.AccAddress(nil), receipt.Destination...)
-		out[i] = receipt
+		out[i] = cloneReceipt(receipt)
 	}
 	return out
 }

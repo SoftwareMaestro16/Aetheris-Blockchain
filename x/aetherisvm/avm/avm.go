@@ -887,6 +887,9 @@ func writeMessageEnvelope(buf *bytes.Buffer, msg async.MessageEnvelope) {
 	}
 	writeU64(buf, msg.CreatedLogicalTime)
 	writeU64(buf, msg.DeliverAtBlock)
+	writeU32(buf, msg.RetryCount)
+	writeU32(buf, msg.MaxRetries)
+	writeU64(buf, msg.RetryDelayBlocks)
 	writeU64(buf, msg.DeadlineBlock)
 	writeU64(buf, msg.GasLimit)
 	writeString(buf, msg.ForwardFee.Denom)

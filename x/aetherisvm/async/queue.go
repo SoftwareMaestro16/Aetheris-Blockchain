@@ -48,8 +48,16 @@ func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txIndex uint64, 
 	sort.SliceStable(e.queue, func(i, j int) bool {
 		return queuedMessageLess(e.queue[i], e.queue[j])
 	})
-	e.inbox[string(msg.Destination)] = append(e.inbox[string(msg.Destination)], queued)
-	e.outbox[string(msg.Source)] = append(e.outbox[string(msg.Source)], queued)
+	destinationKey := string(msg.Destination)
+	sourceKey := string(msg.Source)
+	e.inbox[destinationKey] = append(e.inbox[destinationKey], queued)
+	e.outbox[sourceKey] = append(e.outbox[sourceKey], queued)
+	sort.SliceStable(e.inbox[destinationKey], func(i, j int) bool {
+		return queuedMessageLess(e.inbox[destinationKey][i], e.inbox[destinationKey][j])
+	})
+	sort.SliceStable(e.outbox[sourceKey], func(i, j int) bool {
+		return queuedMessageLess(e.outbox[sourceKey][i], e.outbox[sourceKey][j])
+	})
 	e.metrics.QueuedMessages++
 	return nil
 }

@@ -49,16 +49,18 @@ func BenchmarkContractStateExportImport(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		state := ExportedState{
-			Params:       exported.Params,
-			Contracts:    cloneContractSlice(exported.Contracts),
-			Queue:        cloneQueuedMessages(exported.Queue),
-			Inbox:        cloneQueuedMap(exported.Inbox),
-			Outbox:       cloneQueuedMap(exported.Outbox),
-			Receipts:     cloneReceipts(exported.Receipts),
-			NextSequence: exported.NextSequence,
-			NextTxIndex:  exported.NextTxIndex,
-			BlockHeight:  exported.BlockHeight,
-			Metrics:      exported.Metrics,
+			Params:                 exported.Params,
+			Contracts:              cloneContractSlice(exported.Contracts),
+			Queue:                  cloneQueuedMessages(exported.Queue),
+			Inbox:                  cloneQueuedMap(exported.Inbox),
+			Outbox:                 cloneQueuedMap(exported.Outbox),
+			DeadLetters:            cloneDeadLetters(exported.DeadLetters),
+			Receipts:               cloneReceipts(exported.Receipts),
+			NextSequence:           exported.NextSequence,
+			NextTxIndex:            exported.NextTxIndex,
+			NextDeadLetterSequence: exported.NextDeadLetterSequence,
+			BlockHeight:            exported.BlockHeight,
+			Metrics:                exported.Metrics,
 		}
 		if _, err := ImportState(state); err != nil {
 			b.Fatal(err)

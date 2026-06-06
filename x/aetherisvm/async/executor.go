@@ -87,6 +87,18 @@ func (e *Executor) Queue() []QueuedMessage {
 	return cloneQueuedMessages(e.queue)
 }
 
+func (e *Executor) Inbox(address sdk.AccAddress) []QueuedMessage {
+	return cloneQueuedMessages(e.inbox[string(address)])
+}
+
+func (e *Executor) Outbox(address sdk.AccAddress) []QueuedMessage {
+	return cloneQueuedMessages(e.outbox[string(address)])
+}
+
+func (e *Executor) DeadLetters() []DeadLetter {
+	return cloneDeadLetters(e.deadLetters)
+}
+
 func (e *Executor) Receipts() []ExecutionReceipt {
 	return cloneReceipts(e.receipts)
 }

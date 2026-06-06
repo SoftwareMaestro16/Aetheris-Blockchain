@@ -21,6 +21,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		GasUsed:        e.params.ExecutionGasPerMessage,
 		StorageFeeNaet: sdkmath.ZeroInt(),
 		ForwardFeeNaet: msg.ForwardFee.Amount,
+		RetryCount:     msg.RetryCount,
 	}
 	e.metrics.ProcessedMessages++
 	e.metrics.GasUsed += e.params.ExecutionGasPerMessage
@@ -29,7 +30,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.ResultCode = ResultExpired
 		receipt.Error = "message expired"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, receipt)
+		e.handleFailure(msg, &receipt)
 		e.receipts = append(e.receipts, receipt)
 		return receipt, nil
 	}
@@ -39,7 +40,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.ResultCode = ResultNoDestination
 		receipt.Error = "destination contract not found"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, receipt)
+		e.handleFailure(msg, &receipt)
 		e.receipts = append(e.receipts, receipt)
 		return receipt, nil
 	}
@@ -49,7 +50,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.ResultCode = ResultExecutionFailed
 		receipt.Error = "destination contract has no handler"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, receipt)
+		e.handleFailure(msg, &receipt)
 		e.receipts = append(e.receipts, receipt)
 		return receipt, nil
 	}
@@ -72,7 +73,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.ResultCode = ResultExecutionFailed
 		receipt.Error = "insufficient naet for storage fee"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, receipt)
+		e.handleFailure(msg, &receipt)
 		e.receipts = append(e.receipts, receipt)
 		return receipt, nil
 	}
@@ -87,7 +88,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 			receipt.ResultCode = ResultLimitExceeded
 			receipt.Error = err.Error()
 			e.metrics.FailedExecutions++
-			e.finalizeFailure(msg, receipt)
+			e.handleFailure(msg, &receipt)
 			e.receipts = append(e.receipts, receipt)
 			return receipt, nil
 		}
@@ -102,7 +103,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 			receipt.ResultCode = ResultLimitExceeded
 			receipt.Error = err.Error()
 			e.metrics.FailedExecutions++
-			e.finalizeFailure(msg, receipt)
+			e.handleFailure(msg, &receipt)
 			e.receipts = append(e.receipts, receipt)
 			return receipt, nil
 		}
@@ -116,7 +117,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "message gas limit exceeded"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, *receipt)
+		e.handleFailure(msg, receipt)
 		e.receipts = append(e.receipts, *receipt)
 		return false
 	}
@@ -128,7 +129,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 			receipt.Error = "contract execution failed"
 		}
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, *receipt)
+		e.handleFailure(msg, receipt)
 		e.receipts = append(e.receipts, *receipt)
 		return false
 	}
@@ -136,7 +137,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "contract state limit exceeded"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, *receipt)
+		e.handleFailure(msg, receipt)
 		e.receipts = append(e.receipts, *receipt)
 		return false
 	}
@@ -144,7 +145,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "emitted message limit exceeded"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, *receipt)
+		e.handleFailure(msg, receipt)
 		e.receipts = append(e.receipts, *receipt)
 		return false
 	}
@@ -152,11 +153,91 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "storage write limit exceeded"
 		e.metrics.FailedExecutions++
-		e.finalizeFailure(msg, *receipt)
+		e.handleFailure(msg, receipt)
 		e.receipts = append(e.receipts, *receipt)
 		return false
 	}
 	return true
+}
+
+func (e *Executor) handleFailure(msg MessageEnvelope, receipt *ExecutionReceipt) {
+	if e.scheduleRetry(msg, receipt) {
+		return
+	}
+	if msg.MaxRetries > 0 || msg.RetryCount > 0 {
+		e.recordDeadLetter(msg, *receipt)
+	}
+	e.finalizeFailure(msg, *receipt)
+}
+
+func (e *Executor) scheduleRetry(msg MessageEnvelope, receipt *ExecutionReceipt) bool {
+	if !isRetryableFailure(receipt.ResultCode) {
+		return false
+	}
+	if msg.Bounced || msg.Opcode == RefundOpcode {
+		return false
+	}
+	if msg.MaxRetries == 0 || msg.RetryCount >= msg.MaxRetries {
+		return false
+	}
+	delay := msg.RetryDelayBlocks
+	if delay == 0 {
+		delay = e.params.DefaultRetryDelayBlocks
+	}
+	if delay == 0 || delay > e.params.MaxRetryDelayBlocks {
+		return false
+	}
+	deliverAt, overflow := safeAddBlock(e.blockHeight, delay)
+	if overflow {
+		return false
+	}
+	if msg.DeadlineBlock != 0 && deliverAt > msg.DeadlineBlock {
+		return false
+	}
+	retry := cloneMessage(msg)
+	retry.ExecutionBlockHeight = 0
+	retry.DeliverAtBlock = deliverAt
+	retry.RetryCount++
+	if err := e.EnqueueMessage(retry); err != nil {
+		return false
+	}
+	receipt.RetryScheduled = true
+	e.metrics.RetriedMessages++
+	return true
+}
+
+func (e *Executor) recordDeadLetter(msg MessageEnvelope, receipt ExecutionReceipt) {
+	dead := DeadLetter{
+		Sequence:       e.nextDeadLetterSequence,
+		FailedSequence: receipt.Sequence,
+		RecordedBlock:  e.blockHeight,
+		Envelope:       cloneMessage(msg),
+		Receipt:        cloneReceipt(receipt),
+		Reason:         receipt.Error,
+	}
+	dead.Envelope.ExecutionBlockHeight = 0
+	if uint32(len(e.deadLetters)) >= e.params.MaxDeadLetters {
+		e.deadLetters = e.deadLetters[1:]
+	}
+	e.deadLetters = append(e.deadLetters, dead)
+	e.nextDeadLetterSequence++
+	e.metrics.DeadLetterMessages++
+}
+
+func isRetryableFailure(resultCode uint32) bool {
+	switch resultCode {
+	case ResultNoDestination, ResultExecutionFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func safeAddBlock(height, delay uint64) (uint64, bool) {
+	if delay > ^uint64(0)-height {
+		return 0, true
+	}
+	return height + delay, false
 }
 
 func (e *Executor) finalizeFailure(msg MessageEnvelope, receipt ExecutionReceipt) {

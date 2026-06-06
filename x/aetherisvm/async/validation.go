@@ -44,6 +44,18 @@ func (m MessageEnvelope) Validate(params Params) error {
 	if m.DeliverAtBlock != 0 && m.DeadlineBlock != 0 && m.DeliverAtBlock > m.DeadlineBlock {
 		return errors.New("message deliver block must not exceed deadline block")
 	}
+	if m.RetryCount > m.MaxRetries {
+		return errors.New("message retry count must not exceed max retries")
+	}
+	if m.MaxRetries > params.MaxRetriesPerMessage {
+		return fmt.Errorf("message max retries must be <= %d", params.MaxRetriesPerMessage)
+	}
+	if m.RetryCount > 0 && m.MaxRetries == 0 {
+		return errors.New("message retry count requires max retries")
+	}
+	if m.RetryDelayBlocks > params.MaxRetryDelayBlocks {
+		return fmt.Errorf("message retry delay blocks must be <= %d", params.MaxRetryDelayBlocks)
+	}
 	if m.GasLimit == 0 {
 		return errors.New("message gas limit must be positive")
 	}
