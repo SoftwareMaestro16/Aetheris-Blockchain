@@ -23,11 +23,18 @@ const (
 	IdentityLookupTargetResolver IdentityLookupTargetType = "resolver"
 	IdentityLookupTargetReverse  IdentityLookupTargetType = "reverse"
 	IdentityLookupTargetOwner    IdentityLookupTargetType = "owner"
+	IdentityLookupTargetAccount  IdentityLookupTargetType = "account"
+	IdentityLookupTargetContract IdentityLookupTargetType = "contract"
+	IdentityLookupTargetService  IdentityLookupTargetType = "service"
+	IdentityLookupTargetPayment  IdentityLookupTargetType = "payment_route"
+	IdentityLookupTargetMetadata IdentityLookupTargetType = "metadata"
 
-	IdentityResolutionStatusResolved IdentityResolutionStatus = "resolved"
-	IdentityResolutionStatusNotFound IdentityResolutionStatus = "not_found"
-	IdentityResolutionStatusExpired  IdentityResolutionStatus = "expired"
-	IdentityResolutionStatusRejected IdentityResolutionStatus = "rejected"
+	IdentityResolutionStatusResolved     IdentityResolutionStatus = "resolved"
+	IdentityResolutionStatusNotFound     IdentityResolutionStatus = "not_found"
+	IdentityResolutionStatusExpired      IdentityResolutionStatus = "expired"
+	IdentityResolutionStatusUnauthorized IdentityResolutionStatus = "unauthorized"
+	IdentityResolutionStatusFailed       IdentityResolutionStatus = "failed"
+	IdentityResolutionStatusRejected     IdentityResolutionStatus = "rejected"
 )
 
 type IdentityShardRoute struct {
@@ -429,7 +436,9 @@ func IsIdentityShardRoutingMode(mode IdentityShardRoutingMode) bool {
 
 func IsIdentityLookupTargetType(target IdentityLookupTargetType) bool {
 	switch target {
-	case IdentityLookupTargetResolver, IdentityLookupTargetReverse, IdentityLookupTargetOwner:
+	case IdentityLookupTargetResolver, IdentityLookupTargetReverse, IdentityLookupTargetOwner,
+		IdentityLookupTargetAccount, IdentityLookupTargetContract, IdentityLookupTargetService,
+		IdentityLookupTargetPayment, IdentityLookupTargetMetadata:
 		return true
 	default:
 		return false
@@ -438,7 +447,8 @@ func IsIdentityLookupTargetType(target IdentityLookupTargetType) bool {
 
 func IsIdentityResolutionStatus(status IdentityResolutionStatus) bool {
 	switch status {
-	case IdentityResolutionStatusResolved, IdentityResolutionStatusNotFound, IdentityResolutionStatusExpired, IdentityResolutionStatusRejected:
+	case IdentityResolutionStatusResolved, IdentityResolutionStatusNotFound, IdentityResolutionStatusExpired,
+		IdentityResolutionStatusUnauthorized, IdentityResolutionStatusFailed, IdentityResolutionStatusRejected:
 		return true
 	default:
 		return false
