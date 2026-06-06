@@ -571,6 +571,42 @@ type ReliabilityIndexInput struct {
 	RecoveryEpochs   uint64
 }
 
+type CorrectnessScoreInput struct {
+	ValidSignatures       uint64
+	InvalidSignatures     uint64
+	ValidTaskOutputs      uint64
+	InvalidTaskOutputs    uint64
+	AcceptedEvidence      uint64
+	EvidencePenaltyWeight uint64
+}
+
+type TaskCompletionRateInput struct {
+	CompletedAssignedTasks uint64
+	ExpectedAssignedTasks  uint64
+}
+
+type PerformanceRewardInput struct {
+	EpochID               uint64
+	ValidatorID           string
+	BaseEmissionNaet      sdkmath.Int
+	UptimeScoreBps        uint32
+	LatencyScoreBps       uint32
+	CorrectnessScoreBps   uint32
+	TaskCompletionRateBps uint32
+}
+
+type PerformanceRewardRecord struct {
+	EpochID               uint64
+	ValidatorID           string
+	BaseEmissionNaet      sdkmath.Int
+	UptimeScoreBps        uint32
+	LatencyScoreBps       uint32
+	CorrectnessScoreBps   uint32
+	TaskCompletionRateBps uint32
+	RewardNaet            sdkmath.Int
+	RewardHash            string
+}
+
 type PosLayer string
 
 const (
@@ -953,6 +989,118 @@ func ComputeReliabilityIndex(input ReliabilityIndexInput) (uint32, error) {
 		return BasisPoints, nil
 	}
 	return index + uint32(recovery), nil
+}
+
+func ComputeCorrectnessScore(input CorrectnessScoreInput) (uint32, error) {
+	penaltyWeight := input.EvidencePenaltyWeight
+	if penaltyWeight == 0 {
+		penaltyWeight = 2
+	}
+	validUnits, err := checkedAddUint64(input.ValidSignatures, input.ValidTaskOutputs, "correctness valid unit overflow")
+	if err != nil {
+		return 0, err
+	}
+	invalidUnits, err := checkedAddUint64(input.InvalidSignatures, input.InvalidTaskOutputs, "correctness invalid unit overflow")
+	if err != nil {
+		return 0, err
+	}
+	evidenceFaults, overflow := mulUint64Overflow(input.AcceptedEvidence, penaltyWeight)
+	if overflow {
+		return 0, errors.New("correctness evidence penalty overflow")
+	}
+	faultUnits, err := checkedAddUint64(invalidUnits, evidenceFaults, "correctness fault unit overflow")
+	if err != nil {
+		return 0, err
+	}
+	totalUnits, err := checkedAddUint64(validUnits, faultUnits, "correctness total unit overflow")
+	if err != nil {
+		return 0, err
+	}
+	return ratioBps(validUnits, totalUnits), nil
+}
+
+func ComputeTaskCompletionRate(input TaskCompletionRateInput) (uint32, error) {
+	if input.CompletedAssignedTasks > input.ExpectedAssignedTasks {
+		return 0, errors.New("completed assigned tasks cannot exceed expected tasks")
+	}
+	return ratioBps(input.CompletedAssignedTasks, input.ExpectedAssignedTasks), nil
+}
+
+func ComputePerformanceBasedReward(input PerformanceRewardInput) (PerformanceRewardRecord, error) {
+	input.ValidatorID = strings.TrimSpace(input.ValidatorID)
+	if input.EpochID == 0 {
+		return PerformanceRewardRecord{}, errors.New("performance reward epoch id is required")
+	}
+	if err := validatePosToken("performance reward validator id", input.ValidatorID); err != nil {
+		return PerformanceRewardRecord{}, err
+	}
+	if input.BaseEmissionNaet.IsNil() {
+		input.BaseEmissionNaet = sdkmath.ZeroInt()
+	}
+	if input.BaseEmissionNaet.IsNegative() {
+		return PerformanceRewardRecord{}, errors.New("performance reward base emission cannot be negative")
+	}
+	if err := validatePerformanceRewardBps(input.UptimeScoreBps, input.LatencyScoreBps, input.CorrectnessScoreBps, input.TaskCompletionRateBps); err != nil {
+		return PerformanceRewardRecord{}, err
+	}
+	reward := input.BaseEmissionNaet
+	reward = mulIntBps(reward, input.UptimeScoreBps)
+	reward = mulIntBps(reward, input.LatencyScoreBps)
+	reward = mulIntBps(reward, input.CorrectnessScoreBps)
+	reward = mulIntBps(reward, input.TaskCompletionRateBps)
+	record := PerformanceRewardRecord{
+		EpochID:               input.EpochID,
+		ValidatorID:           input.ValidatorID,
+		BaseEmissionNaet:      input.BaseEmissionNaet,
+		UptimeScoreBps:        input.UptimeScoreBps,
+		LatencyScoreBps:       input.LatencyScoreBps,
+		CorrectnessScoreBps:   input.CorrectnessScoreBps,
+		TaskCompletionRateBps: input.TaskCompletionRateBps,
+		RewardNaet:            reward,
+	}
+	record.RewardHash = ComputePerformanceRewardHash(record)
+	return record, record.Validate()
+}
+
+func (r PerformanceRewardRecord) Validate() error {
+	if r.EpochID == 0 {
+		return errors.New("performance reward epoch id is required")
+	}
+	if err := validatePosToken("performance reward validator id", r.ValidatorID); err != nil {
+		return err
+	}
+	if r.BaseEmissionNaet.IsNil() || r.BaseEmissionNaet.IsNegative() {
+		return errors.New("performance reward base emission cannot be nil or negative")
+	}
+	if r.RewardNaet.IsNil() || r.RewardNaet.IsNegative() {
+		return errors.New("performance reward amount cannot be nil or negative")
+	}
+	if r.RewardNaet.GT(r.BaseEmissionNaet) {
+		return errors.New("performance reward cannot exceed base emission")
+	}
+	if err := validatePerformanceRewardBps(r.UptimeScoreBps, r.LatencyScoreBps, r.CorrectnessScoreBps, r.TaskCompletionRateBps); err != nil {
+		return err
+	}
+	if err := validatePosHash("performance reward hash", r.RewardHash); err != nil {
+		return err
+	}
+	if expected := ComputePerformanceRewardHash(r); expected != r.RewardHash {
+		return errors.New("performance reward hash mismatch")
+	}
+	return nil
+}
+
+func ComputePerformanceRewardHash(record PerformanceRewardRecord) string {
+	return posHashRoot("aetheris-pos-performance-reward-v1", func(w posByteWriter) {
+		posWriteUint64(w, record.EpochID)
+		posWritePart(w, record.ValidatorID)
+		posWritePart(w, record.BaseEmissionNaet.String())
+		posWriteUint64(w, uint64(record.UptimeScoreBps))
+		posWriteUint64(w, uint64(record.LatencyScoreBps))
+		posWriteUint64(w, uint64(record.CorrectnessScoreBps))
+		posWriteUint64(w, uint64(record.TaskCompletionRateBps))
+		posWritePart(w, record.RewardNaet.String())
+	})
 }
 
 func reliabilityPenalty(input ReliabilityIndexInput) (uint64, error) {
@@ -4147,6 +4295,37 @@ func validateRoleRewardWeights(weights []RoleRewardWeight) error {
 		return fmt.Errorf("role reward weights must sum to %d bps", BasisPoints)
 	}
 	return nil
+}
+
+func validatePerformanceRewardBps(values ...uint32) error {
+	names := []string{"uptime score", "latency score", "correctness score", "task completion rate"}
+	for i, value := range values {
+		name := "performance reward component"
+		if i < len(names) {
+			name = names[i]
+		}
+		if value > BasisPoints {
+			return fmt.Errorf("%s must be <= %d bps", name, BasisPoints)
+		}
+	}
+	return nil
+}
+
+func checkedAddUint64(left uint64, right uint64, message string) (uint64, error) {
+	if ^uint64(0)-left < right {
+		return 0, errors.New(message)
+	}
+	return left + right, nil
+}
+
+func mulUint64Overflow(left uint64, right uint64) (uint64, bool) {
+	if left == 0 || right == 0 {
+		return 0, false
+	}
+	if left > ^uint64(0)/right {
+		return 0, true
+	}
+	return left * right, false
 }
 
 func isEvidenceStatus(status string) bool {

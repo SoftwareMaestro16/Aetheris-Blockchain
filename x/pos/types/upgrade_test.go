@@ -356,6 +356,75 @@ func TestValidatorElectionFactorCalculatorsRejectUnsafeInputs(t *testing.T) {
 	require.ErrorContains(t, err, "prior reliability")
 }
 
+func TestPerformanceBasedRewardFormulaUsesDeterministicFixedPointMath(t *testing.T) {
+	correctness, err := ComputeCorrectnessScore(CorrectnessScoreInput{
+		ValidSignatures:   8,
+		InvalidSignatures: 1,
+		ValidTaskOutputs:  2,
+		AcceptedEvidence:  1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(7_692), correctness)
+
+	completion, err := ComputeTaskCompletionRate(TaskCompletionRateInput{
+		CompletedAssignedTasks: 7,
+		ExpectedAssignedTasks:  10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(7_000), completion)
+
+	record, err := ComputePerformanceBasedReward(PerformanceRewardInput{
+		EpochID:               14,
+		ValidatorID:           "val-performance",
+		BaseEmissionNaet:      sdkmath.NewInt(1_000_000),
+		UptimeScoreBps:        9_000,
+		LatencyScoreBps:       8_000,
+		CorrectnessScoreBps:   7_500,
+		TaskCompletionRateBps: 5_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(270_000), record.RewardNaet)
+	require.Equal(t, ComputePerformanceRewardHash(record), record.RewardHash)
+	require.NoError(t, record.Validate())
+}
+
+func TestPerformanceBasedRewardRejectsUnsafeInputs(t *testing.T) {
+	completion, err := ComputeTaskCompletionRate(TaskCompletionRateInput{})
+	require.NoError(t, err)
+	require.Equal(t, uint32(BasisPoints), completion)
+
+	_, err = ComputeTaskCompletionRate(TaskCompletionRateInput{CompletedAssignedTasks: 2, ExpectedAssignedTasks: 1})
+	require.ErrorContains(t, err, "completed assigned tasks")
+
+	_, err = ComputeCorrectnessScore(CorrectnessScoreInput{ValidSignatures: ^uint64(0), ValidTaskOutputs: 1})
+	require.ErrorContains(t, err, "valid unit overflow")
+
+	_, err = ComputeCorrectnessScore(CorrectnessScoreInput{AcceptedEvidence: ^uint64(0), EvidencePenaltyWeight: 2})
+	require.ErrorContains(t, err, "evidence penalty overflow")
+
+	_, err = ComputePerformanceBasedReward(PerformanceRewardInput{
+		EpochID:               14,
+		ValidatorID:           "val-performance",
+		BaseEmissionNaet:      sdkmath.NewInt(-1),
+		UptimeScoreBps:        BasisPoints,
+		LatencyScoreBps:       BasisPoints,
+		CorrectnessScoreBps:   BasisPoints,
+		TaskCompletionRateBps: BasisPoints,
+	})
+	require.ErrorContains(t, err, "base emission")
+
+	_, err = ComputePerformanceBasedReward(PerformanceRewardInput{
+		EpochID:               14,
+		ValidatorID:           "val-performance",
+		BaseEmissionNaet:      sdkmath.NewInt(1),
+		UptimeScoreBps:        BasisPoints + 1,
+		LatencyScoreBps:       BasisPoints,
+		CorrectnessScoreBps:   BasisPoints,
+		TaskCompletionRateBps: BasisPoints,
+	})
+	require.ErrorContains(t, err, "uptime score")
+}
+
 func TestEpochLifecycleValidationRejectsReorderedOrDuplicatePhases(t *testing.T) {
 	lifecycle := DefaultEpochLifecycle()
 	slices.Reverse(lifecycle)
