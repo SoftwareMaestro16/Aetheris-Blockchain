@@ -7,9 +7,9 @@ import "l1/validatorelection/v1/genesis.proto";
 option go_package = "github.com/sovereign-l1/l1/api/l1/validatorelection/v1;validatorelectionv1";
 
 service Query {
-  rpc PreviousValidatorSet(QueryPreviousValidatorSetRequest) returns (QueryValidatorSetResponse);
-  rpc CurrentValidatorSet(QueryCurrentValidatorSetRequest) returns (QueryValidatorSetResponse);
-  rpc NextValidatorSet(QueryNextValidatorSetRequest) returns (QueryValidatorSetResponse);
+  rpc PreviousValidatorSet(QueryPreviousValidatorSetRequest) returns (QueryPreviousValidatorSetResponse);
+  rpc CurrentValidatorSet(QueryCurrentValidatorSetRequest) returns (QueryCurrentValidatorSetResponse);
+  rpc NextValidatorSet(QueryNextValidatorSetRequest) returns (QueryNextValidatorSetResponse);
   rpc Election(QueryElectionRequest) returns (QueryElectionResponse);
   rpc ElectionCandidates(QueryElectionCandidatesRequest) returns (QueryElectionCandidatesResponse);
   rpc FrozenStake(QueryFrozenStakeRequest) returns (QueryFrozenStakeResponse);
@@ -22,7 +22,15 @@ message QueryCurrentValidatorSetRequest {}
 
 message QueryNextValidatorSetRequest {}
 
-message QueryValidatorSetResponse {
+message QueryPreviousValidatorSetResponse {
+  repeated ValidatorPower validators = 1;
+}
+
+message QueryCurrentValidatorSetResponse {
+  repeated ValidatorPower validators = 1;
+}
+
+message QueryNextValidatorSetResponse {
   repeated ValidatorPower validators = 1;
 }
 

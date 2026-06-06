@@ -7,10 +7,10 @@ option go_package = "github.com/sovereign-l1/l1/x/services/types";
 
 service Query {
   rpc Service(QueryServiceRequest) returns (QueryServiceResponse);
-  rpc ServiceByName(QueryServiceByNameRequest) returns (QueryServiceResponse);
-  rpc ServicesByOwner(QueryServicesByOwnerRequest) returns (QueryServicesResponse);
-  rpc ServicesByIdentity(QueryServicesByIdentityRequest) returns (QueryServicesResponse);
-  rpc ProvidersByService(QueryProvidersByServiceRequest) returns (QueryProvidersResponse);
+  rpc ServiceByName(QueryServiceByNameRequest) returns (QueryServiceByNameResponse);
+  rpc ServicesByOwner(QueryServicesByOwnerRequest) returns (QueryServicesByOwnerResponse);
+  rpc ServicesByIdentity(QueryServicesByIdentityRequest) returns (QueryServicesByIdentityResponse);
+  rpc ProvidersByService(QueryProvidersByServiceRequest) returns (QueryProvidersByServiceResponse);
   rpc ServiceInterface(QueryServiceInterfaceRequest) returns (QueryServiceInterfaceResponse);
   rpc ServicePaymentModel(QueryServicePaymentModelRequest) returns (QueryServicePaymentModelResponse);
   rpc ServiceVerificationModel(QueryServiceVerificationModelRequest) returns (QueryServiceVerificationModelResponse);
@@ -80,12 +80,24 @@ message QueryServiceResponse {
   bool found = 4;
 }
 
-message QueryServicesResponse {
+message QueryServiceByNameResponse {
+  ServiceDescriptor descriptor = 1;
+  ServiceAnchor anchor = 2;
+  string proof_hash = 3;
+  bool found = 4;
+}
+
+message QueryServicesByOwnerResponse {
   repeated ServiceDescriptor services = 1;
   uint64 total = 2;
 }
 
-message QueryProvidersResponse {
+message QueryServicesByIdentityResponse {
+  repeated ServiceDescriptor services = 1;
+  uint64 total = 2;
+}
+
+message QueryProvidersByServiceResponse {
   repeated ProviderRecord providers = 1;
   uint64 total = 2;
 }
