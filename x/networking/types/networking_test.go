@@ -4361,6 +4361,68 @@ func TestNetworkingTestCoverageReportRequiresAllRequiredEvidence(t *testing.T) {
 	require.Contains(t, report.Failed, RequiredTestCrossZoneDelivery)
 }
 
+func TestNetworkingObservabilitySpecCoversRequiredMetricsAndEvents(t *testing.T) {
+	spec := DefaultNetworkingObservabilitySpec()
+	require.NoError(t, ValidateNetworkingObservabilitySpec(spec))
+	require.Len(t, spec.Metrics, 16)
+	require.Len(t, spec.Events, 13)
+	require.NotEmpty(t, spec.SpecRoot)
+	require.Contains(t, spec.Metrics, ObservableMetricActivePeers)
+	require.Contains(t, spec.Metrics, ObservableMetricRoutingFailureCount)
+	require.Contains(t, spec.Events, ObservableEventNetworkNodeRegistered)
+	require.Contains(t, spec.Events, ObservableEventNetworkRouteFailed)
+
+	missingMetric := spec
+	missingMetric.Metrics = append([]NetworkingObservableMetric(nil), spec.Metrics[:len(spec.Metrics)-1]...)
+	missingMetric.SpecRoot = ComputeNetworkingObservabilitySpecRoot(missingMetric)
+	require.ErrorContains(t, ValidateNetworkingObservabilitySpec(missingMetric), "must define 16 metrics")
+
+	unknownEvent := spec
+	unknownEvent.Events = append([]NetworkingObservableEvent(nil), spec.Events...)
+	unknownEvent.Events[0] = NetworkingObservableEvent("network_unknown")
+	unknownEvent.SpecRoot = ComputeNetworkingObservabilitySpecRoot(unknownEvent)
+	require.ErrorContains(t, ValidateNetworkingObservabilitySpec(unknownEvent), "unknown networking observability event")
+}
+
+func TestNetworkingObservabilityReportRequiresSamplesAndEvents(t *testing.T) {
+	spec := DefaultNetworkingObservabilitySpec()
+	metrics := testNetworkingObservabilityMetrics()
+	events := testNetworkingObservabilityEvents()
+	report, err := BuildNetworkingObservabilityReport(spec, metrics, events)
+	require.NoError(t, err)
+	require.True(t, report.Ready)
+	require.Empty(t, report.MissingMetrics)
+	require.Empty(t, report.MissingEvents)
+	require.NotEmpty(t, report.ReportHash)
+
+	missingMetric := make([]NetworkingMetricSample, 0, len(metrics)-1)
+	for _, sample := range metrics {
+		if sample.Metric != ObservableMetricBroadcastDedupHitRate {
+			missingMetric = append(missingMetric, sample)
+		}
+	}
+	report, err = BuildNetworkingObservabilityReport(spec, missingMetric, events)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.MissingMetrics, ObservableMetricBroadcastDedupHitRate)
+
+	missingEvent := make([]NetworkingEventRecord, 0, len(events)-1)
+	for _, event := range events {
+		if event.Event != ObservableEventNetworkRouteFailed {
+			missingEvent = append(missingEvent, event)
+		}
+	}
+	report, err = BuildNetworkingObservabilityReport(spec, metrics, missingEvent)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.MissingEvents, ObservableEventNetworkRouteFailed)
+
+	tampered := append([]NetworkingEventRecord(nil), events...)
+	tampered[0].EventID = HashParts("wrong-event-id")
+	_, err = BuildNetworkingObservabilityReport(spec, metrics, tampered)
+	require.ErrorContains(t, err, "event id mismatch")
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
@@ -5201,6 +5263,51 @@ func requiredCoverageTests(specs []NetworkingTestCoverageSpec) []NetworkingRequi
 	}
 	sortRequiredTests(out)
 	return out
+}
+
+func testNetworkingObservabilityMetrics() []NetworkingMetricSample {
+	return []NetworkingMetricSample{
+		{Metric: ObservableMetricActivePeers, Value: 8, Height: 50},
+		{Metric: ObservableMetricPeersByRole, Labels: []string{"role=SERVICE_NODE"}, Value: 2, Height: 50},
+		{Metric: ObservableMetricActiveSessions, Value: 3, Height: 50},
+		{Metric: ObservableMetricStreamsByChannelType, Labels: []string{"channel=EXECUTION_CHANNEL"}, Value: 2, Height: 50},
+		{Metric: ObservableMetricPerChannelBandwidth, Labels: []string{"channel=SERVICE_CHANNEL"}, Value: 4096, Height: 50},
+		{Metric: ObservableMetricPeerScore, Labels: []string{"node=fast"}, Value: 8500, Height: 50},
+		{Metric: ObservableMetricOverlaySize, Labels: []string{"overlay=zone"}, Value: 5, Height: 50},
+		{Metric: ObservableMetricOverlayChurn, Labels: []string{"overlay=zone"}, Value: 1, Height: 50},
+		{Metric: ObservableMetricDiscoveryQueryLatency, Value: 30, Height: 50},
+		{Metric: ObservableMetricBroadcastDedupHitRate, Value: 5000, Height: 50},
+		{Metric: ObservableMetricRL2TransferThroughput, Value: 1 << 20, Height: 50},
+		{Metric: ObservableMetricRL2ChunkRetryRate, Value: 2, Height: 50},
+		{Metric: ObservableMetricBlockPropagationLatency, Value: 15, Height: 50},
+		{Metric: ObservableMetricCrossZoneMessageDeliveryLatency, Value: 60, Height: 50},
+		{Metric: ObservableMetricServiceTrafficVolume, Value: 8192, Height: 50},
+		{Metric: ObservableMetricRoutingFailureCount, Value: 1, Height: 50},
+	}
+}
+
+func testNetworkingObservabilityEvents() []NetworkingEventRecord {
+	nodeID := HashParts("observability-node")
+	peerID := HashParts("observability-peer")
+	overlayID := HashParts("observability-overlay")
+	transferID := HashParts("observability-transfer")
+	messageID := HashParts("observability-message")
+	evidenceHash := HashParts("observability-evidence")
+	return []NetworkingEventRecord{
+		NewNetworkingEventRecord(ObservableEventNetworkNodeRegistered, nodeID, "", "", "", "", "", 50),
+		NewNetworkingEventRecord(ObservableEventNetworkSessionOpened, peerID, "", ChannelConsensus, "", "", "", 51),
+		NewNetworkingEventRecord(ObservableEventNetworkSessionClosed, peerID, "", ChannelConsensus, "", "", "", 52),
+		NewNetworkingEventRecord(ObservableEventNetworkPeerScoreUpdated, peerID, "", "", "", "", evidenceHash, 53),
+		NewNetworkingEventRecord(ObservableEventNetworkOverlayJoined, nodeID, overlayID, ChannelRouting, "", "", "", 54),
+		NewNetworkingEventRecord(ObservableEventNetworkOverlayLeft, nodeID, overlayID, ChannelRouting, "", "", "", 55),
+		NewNetworkingEventRecord(ObservableEventNetworkDiscoveryRecordStored, nodeID, overlayID, ChannelDiscovery, "", "", evidenceHash, 56),
+		NewNetworkingEventRecord(ObservableEventNetworkDiscoveryRecordExpired, nodeID, overlayID, ChannelDiscovery, "", "", evidenceHash, 57),
+		NewNetworkingEventRecord(ObservableEventNetworkRL2TransferStarted, nodeID, overlayID, ChannelData, transferID, "", "", 58),
+		NewNetworkingEventRecord(ObservableEventNetworkRL2TransferCompleted, nodeID, overlayID, ChannelData, transferID, "", "", 59),
+		NewNetworkingEventRecord(ObservableEventNetworkInvalidChunk, peerID, overlayID, ChannelData, transferID, "", evidenceHash, 60),
+		NewNetworkingEventRecord(ObservableEventNetworkBroadcastConflict, peerID, overlayID, ChannelBlock, "", messageID, evidenceHash, 61),
+		NewNetworkingEventRecord(ObservableEventNetworkRouteFailed, peerID, overlayID, ChannelRouting, "", messageID, evidenceHash, 62),
+	}
 }
 
 func testRequiredNetworkingCoverageEvidence() []NetworkingTestCoverageEvidence {
