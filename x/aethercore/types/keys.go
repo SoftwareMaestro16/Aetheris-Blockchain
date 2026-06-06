@@ -62,6 +62,46 @@ func CoreFinalityKey(height uint64) (string, error) {
 	return coreHeightKey("core/finality", height)
 }
 
+func ShardMetaKey(zoneID ZoneID, shardID ShardID) (string, error) {
+	if err := ValidateZoneID(zoneID); err != nil {
+		return "", err
+	}
+	if err := ValidateShardID(shardID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("zones/%s/shards/%s/meta", zoneID, shardID), nil
+}
+
+func ShardMetricsKey(zoneID ZoneID, shardID ShardID, height uint64) (string, error) {
+	if height == 0 {
+		return "", fmt.Errorf("aethercore shard metrics key height must be positive")
+	}
+	return shardHeightKey("metrics", zoneID, shardID, height)
+}
+
+func ShardInboxKey(zoneID ZoneID, shardID ShardID, msgID string) (string, error) {
+	return shardObjectKey("inbox", "message id", zoneID, shardID, msgID)
+}
+
+func ShardOutboxKey(zoneID ZoneID, shardID ShardID, msgID string) (string, error) {
+	return shardObjectKey("outbox", "message id", zoneID, shardID, msgID)
+}
+
+func ShardReceiptKey(zoneID ZoneID, shardID ShardID, msgID string) (string, error) {
+	return shardObjectKey("receipts", "message id", zoneID, shardID, msgID)
+}
+
+func ShardLockKey(zoneID ZoneID, shardID ShardID, objectID string) (string, error) {
+	return shardObjectKey("locks", "object id", zoneID, shardID, objectID)
+}
+
+func ShardRootKey(zoneID ZoneID, shardID ShardID, height uint64) (string, error) {
+	if height == 0 {
+		return "", fmt.Errorf("aethercore shard root key height must be positive")
+	}
+	return shardHeightKey("root", zoneID, shardID, height)
+}
+
 func AetherKernelZoneKey(zoneID ZoneID) (string, error) {
 	if err := ValidateZoneID(zoneID); err != nil {
 		return "", err
@@ -122,4 +162,33 @@ func coreHeightKey(prefix string, height uint64) (string, error) {
 		return "", fmt.Errorf("aethercore %s key height must be positive", prefix)
 	}
 	return fmt.Sprintf("%s/%020d", prefix, height), nil
+}
+
+func shardHeightKey(scope string, zoneID ZoneID, shardID ShardID, height uint64) (string, error) {
+	if err := ValidateZoneID(zoneID); err != nil {
+		return "", err
+	}
+	if err := ValidateShardID(shardID); err != nil {
+		return "", err
+	}
+	if err := validateToken("aethercore shard key scope", scope, MaxScopeLength); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("zones/%s/shards/%s/%s/%020d", zoneID, shardID, scope, height), nil
+}
+
+func shardObjectKey(scope string, objectField string, zoneID ZoneID, shardID ShardID, objectID string) (string, error) {
+	if err := ValidateZoneID(zoneID); err != nil {
+		return "", err
+	}
+	if err := ValidateShardID(shardID); err != nil {
+		return "", err
+	}
+	if err := validateToken("aethercore shard key scope", scope, MaxScopeLength); err != nil {
+		return "", err
+	}
+	if err := validateToken("aethercore shard "+objectField, objectID, MaxScopeLength); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("zones/%s/shards/%s/%s/%s", zoneID, shardID, scope, objectID), nil
 }
