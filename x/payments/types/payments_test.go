@@ -534,6 +534,44 @@ func TestPaymentRoadmapPhase0ThroughPhase6VectorsAndExitCriteria(t *testing.T) {
 	require.Equal(t, uint64(len(snapshot.WatcherReplayEvents)), opsVector.WatcherReplayCount)
 }
 
+func TestPaymentEngineeringBacklogTracksSection19Priorities(t *testing.T) {
+	report := BuildPaymentEngineeringBacklog()
+	require.NoError(t, ValidatePaymentEngineeringBacklog(report))
+	require.Equal(t, uint64(9), report.HighPriorityCount)
+	require.Equal(t, uint64(8), report.MediumPriorityCount)
+	require.Equal(t, uint64(6), report.LowerPriorityCount)
+	require.Equal(t, uint64(23), report.CompleteCount)
+	require.Equal(t, uint64(1), report.LocalOnlyCount)
+	require.Len(t, report.Items, 23)
+
+	seen := map[PaymentEngineeringBacklogItemID]PaymentEngineeringBacklogItem{}
+	for _, item := range report.Items {
+		require.Equal(t, PaymentBacklogStatusComplete, item.Status)
+		require.NotEmpty(t, item.Evidence)
+		require.NoError(t, ValidateHash("payments engineering backlog item hash", item.ItemHash))
+		seen[item.ItemID] = item
+	}
+	localDoc := seen["high_local_payments_doc"]
+	require.True(t, localDoc.LocalOnly)
+	require.Contains(t, localDoc.Evidence, ".git/info/exclude:/PAYMENTS.md")
+	require.Contains(t, localDoc.Evidence, "PAYMENTS.md")
+	require.Contains(t, seen["high_blockstm_settlement_analysis"].Evidence, "ProfileBlockSTMConflicts")
+	require.Contains(t, seen["medium_capacity_aware_path_search"].Evidence, "SelectPaymentRoute")
+	require.Contains(t, seen["lower_route_privacy_packetization"].Evidence, "ForwardingPacket")
+
+	duplicate := report
+	duplicate.Items = append(duplicate.Items, report.Items[0])
+	duplicate.ReportHash = ComputePaymentEngineeringBacklogReportHash(duplicate)
+	require.ErrorContains(t, ValidatePaymentEngineeringBacklog(duplicate), "duplicate payments engineering backlog item")
+
+	missing := report
+	missing.Items = missing.Items[:len(missing.Items)-1]
+	missing.LowerPriorityCount--
+	missing.CompleteCount--
+	missing.ReportHash = ComputePaymentEngineeringBacklogReportHash(missing)
+	require.ErrorContains(t, ValidatePaymentEngineeringBacklog(missing), "missing payments engineering backlog item")
+}
+
 func TestRequiredPaymentTestCoverageMatrixCoversUnitAndIntegrationSpecs(t *testing.T) {
 	report := BuildRequiredTestCoverageReport()
 	require.NoError(t, ValidateRequiredTestCoverageReport(report))
