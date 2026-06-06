@@ -22,21 +22,22 @@ const (
 )
 
 type CosmosModuleSurface struct {
-	ModuleName       CosmosSDKModuleName
-	ModulePath       string
-	MsgServer        bool
-	QueryServer      bool
-	Keeper           bool
-	Params           bool
-	GenesisExport    bool
-	GenesisImport    bool
-	Invariants       bool
-	KeeperIsolation  KeeperIsolationPolicy
-	IBCBoundary      IBCReadyBoundary
-	Events           []string
-	TypedErrors      []string
-	RootContribution RootContribution
-	SurfaceHash      string
+	ModuleName        CosmosSDKModuleName
+	ModulePath        string
+	MsgServer         bool
+	QueryServer       bool
+	Keeper            bool
+	Params            bool
+	GenesisExport     bool
+	GenesisImport     bool
+	Invariants        bool
+	KeeperIsolation   KeeperIsolationPolicy
+	IBCBoundary       IBCReadyBoundary
+	ABCICompatibility ABCICompatibilityPolicy
+	Events            []string
+	TypedErrors       []string
+	RootContribution  RootContribution
+	SurfaceHash       string
 }
 
 type KeeperIsolationPolicy struct {
@@ -60,6 +61,17 @@ type IBCReadyBoundary struct {
 	BoundaryMessageEncoding     string
 	TimeoutPolicyID             string
 	ReplayPolicyID              string
+}
+
+type ABCICompatibilityPolicy struct {
+	ProposalOptimizationValidityNeutral bool
+	PrecheckDeterministic               bool
+	FinalizeBlockAuthoritative          bool
+	EndBlockCleanupBounded              bool
+	RootAggregationAfterExecution       bool
+	CleanupLimitPolicyID                string
+	RootAggregationPhase                KernelABCIPhase
+	PrecheckInputPolicyID               string
 }
 
 type CosmosModuleRequirementManifest struct {
@@ -112,6 +124,9 @@ func (surface CosmosModuleSurface) ValidateFormat() error {
 		return err
 	}
 	if err := surface.IBCBoundary.Validate(surface.ModuleName); err != nil {
+		return err
+	}
+	if err := surface.ABCICompatibility.Validate(surface.ModuleName); err != nil {
 		return err
 	}
 	if err := validateSortedRequirementTokens("aethercore Cosmos module event", surface.Events); err != nil {
@@ -250,6 +265,14 @@ func ComputeCosmosModuleSurfaceHash(surface CosmosModuleSurface) string {
 		writePart(w, surface.IBCBoundary.BoundaryMessageEncoding)
 		writePart(w, surface.IBCBoundary.TimeoutPolicyID)
 		writePart(w, surface.IBCBoundary.ReplayPolicyID)
+		writePart(w, fmt.Sprint(surface.ABCICompatibility.ProposalOptimizationValidityNeutral))
+		writePart(w, fmt.Sprint(surface.ABCICompatibility.PrecheckDeterministic))
+		writePart(w, fmt.Sprint(surface.ABCICompatibility.FinalizeBlockAuthoritative))
+		writePart(w, fmt.Sprint(surface.ABCICompatibility.EndBlockCleanupBounded))
+		writePart(w, fmt.Sprint(surface.ABCICompatibility.RootAggregationAfterExecution))
+		writePart(w, surface.ABCICompatibility.CleanupLimitPolicyID)
+		writePart(w, string(surface.ABCICompatibility.RootAggregationPhase))
+		writePart(w, surface.ABCICompatibility.PrecheckInputPolicyID)
 		for _, event := range surface.Events {
 			writePart(w, event)
 		}
@@ -273,20 +296,21 @@ func ComputeCosmosModuleRequirementManifestHash(manifest CosmosModuleRequirement
 func cosmosModuleSurface(moduleName CosmosSDKModuleName, path string, rootType RootType, events []string, typedErrors []string) CosmosModuleSurface {
 	root, _ := NewRootContribution(rootType, string(moduleName), DeterministicEmptyRootCommitment(rootType, string(moduleName)))
 	return CosmosModuleSurface{
-		ModuleName:       moduleName,
-		ModulePath:       path,
-		MsgServer:        true,
-		QueryServer:      true,
-		Keeper:           true,
-		Params:           true,
-		GenesisExport:    true,
-		GenesisImport:    true,
-		Invariants:       true,
-		KeeperIsolation:  DefaultKeeperIsolationPolicy(moduleName, string(moduleName)),
-		IBCBoundary:      DefaultIBCReadyBoundary(),
-		Events:           events,
-		TypedErrors:      typedErrors,
-		RootContribution: root,
+		ModuleName:        moduleName,
+		ModulePath:        path,
+		MsgServer:         true,
+		QueryServer:       true,
+		Keeper:            true,
+		Params:            true,
+		GenesisExport:     true,
+		GenesisImport:     true,
+		Invariants:        true,
+		KeeperIsolation:   DefaultKeeperIsolationPolicy(moduleName, string(moduleName)),
+		IBCBoundary:       DefaultIBCReadyBoundary(),
+		ABCICompatibility: DefaultABCICompatibilityPolicy(),
+		Events:            events,
+		TypedErrors:       typedErrors,
+		RootContribution:  root,
 	}
 }
 
@@ -297,6 +321,7 @@ func normalizeCosmosModuleSurface(surface CosmosModuleSurface) CosmosModuleSurfa
 	surface.TypedErrors = append([]string(nil), surface.TypedErrors...)
 	surface.KeeperIsolation = normalizeKeeperIsolationPolicy(surface.KeeperIsolation)
 	surface.IBCBoundary = normalizeIBCReadyBoundary(surface.IBCBoundary)
+	surface.ABCICompatibility = normalizeABCICompatibilityPolicy(surface.ABCICompatibility)
 	sort.Strings(surface.Events)
 	sort.Strings(surface.TypedErrors)
 	surface.RootContribution = normalizeRootContribution(surface.RootContribution)
@@ -426,6 +451,48 @@ func (boundary IBCReadyBoundary) Validate(moduleName CosmosSDKModuleName) error 
 	return validatePolicyID("aethercore IBC replay policy id", boundary.ReplayPolicyID)
 }
 
+func DefaultABCICompatibilityPolicy() ABCICompatibilityPolicy {
+	return ABCICompatibilityPolicy{
+		ProposalOptimizationValidityNeutral: true,
+		PrecheckDeterministic:               true,
+		FinalizeBlockAuthoritative:          true,
+		EndBlockCleanupBounded:              true,
+		RootAggregationAfterExecution:       true,
+		CleanupLimitPolicyID:                "bounded-endblock-cleanup-v1",
+		RootAggregationPhase:                KernelPhaseFinalizeBlock,
+		PrecheckInputPolicyID:               "consensus-context-only-v1",
+	}
+}
+
+func (policy ABCICompatibilityPolicy) Validate(moduleName CosmosSDKModuleName) error {
+	policy = normalizeABCICompatibilityPolicy(policy)
+	if !IsRequiredCosmosSDKModule(moduleName) {
+		return fmt.Errorf("unknown ABCI compatibility module %q", moduleName)
+	}
+	if !policy.ProposalOptimizationValidityNeutral {
+		return fmt.Errorf("aethercore ABCI compatibility for %s must keep proposal optimization validity-neutral", moduleName)
+	}
+	if !policy.PrecheckDeterministic {
+		return fmt.Errorf("aethercore ABCI compatibility for %s must keep precheck deterministic", moduleName)
+	}
+	if !policy.FinalizeBlockAuthoritative {
+		return fmt.Errorf("aethercore ABCI compatibility for %s must keep FinalizeBlock authoritative", moduleName)
+	}
+	if !policy.EndBlockCleanupBounded {
+		return fmt.Errorf("aethercore ABCI compatibility for %s must bound end-block cleanup", moduleName)
+	}
+	if !policy.RootAggregationAfterExecution {
+		return fmt.Errorf("aethercore ABCI compatibility for %s must aggregate roots after deterministic execution", moduleName)
+	}
+	if policy.RootAggregationPhase != KernelPhaseFinalizeBlock {
+		return fmt.Errorf("aethercore ABCI compatibility for %s must aggregate roots in FinalizeBlock", moduleName)
+	}
+	if err := validatePolicyID("aethercore ABCI cleanup limit policy id", policy.CleanupLimitPolicyID); err != nil {
+		return err
+	}
+	return validatePolicyID("aethercore ABCI precheck input policy id", policy.PrecheckInputPolicyID)
+}
+
 func normalizeKeeperIsolationPolicy(policy KeeperIsolationPolicy) KeeperIsolationPolicy {
 	policy.StoreKey = strings.TrimSpace(policy.StoreKey)
 	policy.ReadableStoreKeys = append([]string(nil), policy.ReadableStoreKeys...)
@@ -443,6 +510,13 @@ func normalizeIBCReadyBoundary(boundary IBCReadyBoundary) IBCReadyBoundary {
 	boundary.TimeoutPolicyID = strings.TrimSpace(boundary.TimeoutPolicyID)
 	boundary.ReplayPolicyID = strings.TrimSpace(boundary.ReplayPolicyID)
 	return boundary
+}
+
+func normalizeABCICompatibilityPolicy(policy ABCICompatibilityPolicy) ABCICompatibilityPolicy {
+	policy.CleanupLimitPolicyID = strings.TrimSpace(policy.CleanupLimitPolicyID)
+	policy.RootAggregationPhase = KernelABCIPhase(strings.TrimSpace(string(policy.RootAggregationPhase)))
+	policy.PrecheckInputPolicyID = strings.TrimSpace(policy.PrecheckInputPolicyID)
+	return policy
 }
 
 func validateSortedRequirementTokens(field string, values []string) error {

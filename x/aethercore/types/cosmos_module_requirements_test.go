@@ -35,6 +35,13 @@ func TestCosmosSDKModuleRequirementManifestCoversRequiredModules(t *testing.T) {
 		require.True(t, surface.IBCBoundary.TimeoutRulesExplicit, surface.ModuleName)
 		require.True(t, surface.IBCBoundary.ReplayRulesExplicit, surface.ModuleName)
 		require.True(t, surface.IBCBoundary.DeterministicChannelRouting, surface.ModuleName)
+		require.NoError(t, surface.ABCICompatibility.Validate(surface.ModuleName))
+		require.True(t, surface.ABCICompatibility.ProposalOptimizationValidityNeutral, surface.ModuleName)
+		require.True(t, surface.ABCICompatibility.PrecheckDeterministic, surface.ModuleName)
+		require.True(t, surface.ABCICompatibility.FinalizeBlockAuthoritative, surface.ModuleName)
+		require.True(t, surface.ABCICompatibility.EndBlockCleanupBounded, surface.ModuleName)
+		require.True(t, surface.ABCICompatibility.RootAggregationAfterExecution, surface.ModuleName)
+		require.Equal(t, KernelPhaseFinalizeBlock, surface.ABCICompatibility.RootAggregationPhase)
 		require.NotEmpty(t, surface.Events, surface.ModuleName)
 		require.NotEmpty(t, surface.TypedErrors, surface.ModuleName)
 		require.NoError(t, surface.RootContribution.Validate())
@@ -120,6 +127,46 @@ func TestCosmosSDKModuleRequirementManifestRejectsIBCReadyBoundaryViolations(t *
 	noReplayPolicy.Modules[0].SurfaceHash = ComputeCosmosModuleSurfaceHash(noReplayPolicy.Modules[0])
 	noReplayPolicy.ManifestHash = ComputeCosmosModuleRequirementManifestHash(noReplayPolicy)
 	require.ErrorContains(t, noReplayPolicy.Validate(), "explicit replay rules")
+}
+
+func TestCosmosSDKModuleRequirementManifestRejectsABCICompatibilityViolations(t *testing.T) {
+	manifest, err := DefaultCosmosModuleRequirementManifest()
+	require.NoError(t, err)
+
+	optimizationChangesValidity := manifest
+	optimizationChangesValidity.Modules = append([]CosmosModuleSurface(nil), manifest.Modules...)
+	optimizationChangesValidity.Modules[0].ABCICompatibility.ProposalOptimizationValidityNeutral = false
+	optimizationChangesValidity.Modules[0].SurfaceHash = ComputeCosmosModuleSurfaceHash(optimizationChangesValidity.Modules[0])
+	optimizationChangesValidity.ManifestHash = ComputeCosmosModuleRequirementManifestHash(optimizationChangesValidity)
+	require.ErrorContains(t, optimizationChangesValidity.Validate(), "proposal optimization validity-neutral")
+
+	nondeterministicPrecheck := manifest
+	nondeterministicPrecheck.Modules = append([]CosmosModuleSurface(nil), manifest.Modules...)
+	nondeterministicPrecheck.Modules[0].ABCICompatibility.PrecheckDeterministic = false
+	nondeterministicPrecheck.Modules[0].SurfaceHash = ComputeCosmosModuleSurfaceHash(nondeterministicPrecheck.Modules[0])
+	nondeterministicPrecheck.ManifestHash = ComputeCosmosModuleRequirementManifestHash(nondeterministicPrecheck)
+	require.ErrorContains(t, nondeterministicPrecheck.Validate(), "precheck deterministic")
+
+	nonAuthoritativeFinalize := manifest
+	nonAuthoritativeFinalize.Modules = append([]CosmosModuleSurface(nil), manifest.Modules...)
+	nonAuthoritativeFinalize.Modules[0].ABCICompatibility.FinalizeBlockAuthoritative = false
+	nonAuthoritativeFinalize.Modules[0].SurfaceHash = ComputeCosmosModuleSurfaceHash(nonAuthoritativeFinalize.Modules[0])
+	nonAuthoritativeFinalize.ManifestHash = ComputeCosmosModuleRequirementManifestHash(nonAuthoritativeFinalize)
+	require.ErrorContains(t, nonAuthoritativeFinalize.Validate(), "FinalizeBlock authoritative")
+
+	unboundedCleanup := manifest
+	unboundedCleanup.Modules = append([]CosmosModuleSurface(nil), manifest.Modules...)
+	unboundedCleanup.Modules[0].ABCICompatibility.EndBlockCleanupBounded = false
+	unboundedCleanup.Modules[0].SurfaceHash = ComputeCosmosModuleSurfaceHash(unboundedCleanup.Modules[0])
+	unboundedCleanup.ManifestHash = ComputeCosmosModuleRequirementManifestHash(unboundedCleanup)
+	require.ErrorContains(t, unboundedCleanup.Validate(), "bound end-block cleanup")
+
+	wrongRootPhase := manifest
+	wrongRootPhase.Modules = append([]CosmosModuleSurface(nil), manifest.Modules...)
+	wrongRootPhase.Modules[0].ABCICompatibility.RootAggregationPhase = KernelPhaseCommit
+	wrongRootPhase.Modules[0].SurfaceHash = ComputeCosmosModuleSurfaceHash(wrongRootPhase.Modules[0])
+	wrongRootPhase.ManifestHash = ComputeCosmosModuleRequirementManifestHash(wrongRootPhase)
+	require.ErrorContains(t, wrongRootPhase.Validate(), "aggregate roots in FinalizeBlock")
 }
 
 func TestCosmosSDKModuleRequirementClassifiers(t *testing.T) {
