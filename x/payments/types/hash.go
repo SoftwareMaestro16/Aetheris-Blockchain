@@ -29,6 +29,7 @@ const (
 	domainVirtualChannelAnchor    = "aetheris-virtual-payment-channel-anchor"
 	domainStateSignaturePreimage  = "aetheris-payment-state-signature-preimage-hash"
 	domainSignatureEnvelope       = "aetheris-payment-signature-envelope"
+	domainSignedNonceWAL          = "aetheris-payment-signed-nonce-wal"
 )
 
 func HashParts(parts ...string) string {
@@ -381,6 +382,21 @@ func ComputeSignatureEnvelopeHash(signer, chainID, channelID, objectType string,
 	writeString(h, strings.TrimSpace(objectID))
 	writeUint64(h, expirationHeight)
 	writeString(h, normalizeHash(commitmentHash))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeSignedNonceWALHash(record SignedNonceRecord) string {
+	record = record.Normalize()
+	h := sha256.New()
+	writeString(h, domainSignedNonceWAL)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, record.Signer)
+	writeString(h, record.ChainID)
+	writeString(h, record.ChannelID)
+	writeUint64(h, record.Epoch)
+	writeUint64(h, record.Nonce)
+	writeString(h, record.StateHash)
+	writeString(h, record.IsolationMode)
 	return hex.EncodeToString(h.Sum(nil))
 }
 

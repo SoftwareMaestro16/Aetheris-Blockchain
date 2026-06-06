@@ -15,6 +15,8 @@ type PaymentsState struct {
 	Settlements     []SettlementRecord
 	Batches         []SettlementBatch
 	CustodyLocks    []CustodyLock
+	ClosedChannels  []ClosedChannelTombstone
+	ConditionClaims []ConditionClaimRecord
 	Events          []PaymentEvent
 }
 
@@ -26,6 +28,8 @@ func EmptyState() PaymentsState {
 		Settlements:     []SettlementRecord{},
 		Batches:         []SettlementBatch{},
 		CustodyLocks:    []CustodyLock{},
+		ClosedChannels:  []ClosedChannelTombstone{},
+		ConditionClaims: []ConditionClaimRecord{},
 		Events:          []PaymentEvent{},
 	}
 }
@@ -352,8 +356,10 @@ func CooperativeClose(state PaymentsState, channelID string, closingState Channe
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
 	next.CustodyLocks = filterCustodyLocksForSettledChannel(next.CustodyLocks, channel.ChannelID)
 	next.Settlements = append(next.Settlements, settlement)
+	appendSettlementReplayRecords(&next, nextChannel, settlement, nil, currentHeight)
 	sortChannels(next.Channels)
 	sortSettlements(next.Settlements)
+	sortClosedChannelTombstones(next.ClosedChannels)
 	return next, settlement, next.Validate()
 }
 
@@ -414,8 +420,10 @@ func ReceiverClose(state PaymentsState, channelID string, claim UnidirectionalCl
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
 	next.CustodyLocks = filterCustodyLocksForSettledChannel(next.CustodyLocks, channel.ChannelID)
 	next.Settlements = append(next.Settlements, settlement)
+	appendSettlementReplayRecords(&next, nextChannel, settlement, nil, currentHeight)
 	sortChannels(next.Channels)
 	sortSettlements(next.Settlements)
+	sortClosedChannelTombstones(next.ClosedChannels)
 	return next, settlement, next.Validate()
 }
 
@@ -486,8 +494,10 @@ func PayerReclaim(state PaymentsState, channelID string, payer string, currentHe
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
 	next.CustodyLocks = filterCustodyLocksForSettledChannel(next.CustodyLocks, channel.ChannelID)
 	next.Settlements = append(next.Settlements, settlement)
+	appendSettlementReplayRecords(&next, nextChannel, settlement, nil, currentHeight)
 	sortChannels(next.Channels)
 	sortSettlements(next.Settlements)
+	sortClosedChannelTombstones(next.ClosedChannels)
 	return next, settlement, next.Validate()
 }
 
@@ -532,6 +542,9 @@ func DisputeChannel(state PaymentsState, req ChannelDisputeRequest) (PaymentsSta
 	}
 	if !containsString(channel.Participants, req.Submitter) {
 		return PaymentsState{}, errors.New("payments dispute submitter must be participant")
+	}
+	if err := rejectReusedConditionClaims(state, channel, req.ConditionProofs); err != nil {
+		return PaymentsState{}, err
 	}
 	if err := validateConditionResolutionsForState(req.NewerState, channel, req.ConditionProofs, false); err != nil {
 		return PaymentsState{}, err
@@ -618,6 +631,9 @@ func FraudClose(state PaymentsState, channelID string, currentHeight uint64) (Pa
 	if len(channel.PendingClose.FraudProofs) == 0 || len(channel.PendingClose.Penalties) == 0 {
 		return PaymentsState{}, SettlementRecord{}, errors.New("payments fraud close requires accepted proof")
 	}
+	if err := rejectReusedConditionClaims(state, channel, channel.PendingClose.ConditionProofs); err != nil {
+		return PaymentsState{}, SettlementRecord{}, err
+	}
 	finalBalances, err := applySettlementAdjustments(channel.PendingClose.State.Balances, channel.PendingClose.Penalties, channel.PendingClose.SettlementFee, channel.PendingClose.Submitter)
 	if err != nil {
 		return PaymentsState{}, SettlementRecord{}, err
@@ -646,8 +662,11 @@ func FraudClose(state PaymentsState, channelID string, currentHeight uint64) (Pa
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
 	next.CustodyLocks = filterCustodyLocksForSettledChannel(next.CustodyLocks, channel.ChannelID)
 	next.Settlements = append(next.Settlements, settlement)
+	appendSettlementReplayRecords(&next, nextChannel, settlement, channel.PendingClose.ConditionProofs, currentHeight)
 	sortChannels(next.Channels)
 	sortSettlements(next.Settlements)
+	sortClosedChannelTombstones(next.ClosedChannels)
+	sortConditionClaimRecords(next.ConditionClaims)
 	return next, settlement, next.Validate()
 }
 
@@ -672,6 +691,9 @@ func FinalizeSettlementWithRequest(state PaymentsState, req FinalSettlementReque
 		return PaymentsState{}, SettlementRecord{}, errors.New("payments settlement is still in dispute window")
 	}
 	resolutions := mergeConditionResolutions(channel.PendingClose.ConditionProofs, req.ResolvedConditions)
+	if err := rejectReusedConditionClaims(state, channel, resolutions); err != nil {
+		return PaymentsState{}, SettlementRecord{}, err
+	}
 	if err := validateConditionResolutionsForState(channel.PendingClose.State, channel, resolutions, true); err != nil {
 		return PaymentsState{}, SettlementRecord{}, err
 	}
@@ -707,8 +729,11 @@ func FinalizeSettlementWithRequest(state PaymentsState, req FinalSettlementReque
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
 	next.CustodyLocks = filterCustodyLocksForSettledChannel(next.CustodyLocks, channel.ChannelID)
 	next.Settlements = append(next.Settlements, settlement)
+	appendSettlementReplayRecords(&next, nextChannel, settlement, resolutions, req.CurrentHeight)
 	sortChannels(next.Channels)
 	sortSettlements(next.Settlements)
+	sortClosedChannelTombstones(next.ClosedChannels)
+	sortConditionClaimRecords(next.ConditionClaims)
 	return next, settlement, next.Validate()
 }
 
@@ -858,6 +883,8 @@ func (s PaymentsState) Export() PaymentsState {
 	sortSettlements(out.Settlements)
 	sortBatches(out.Batches)
 	sortCustodyLocks(out.CustodyLocks)
+	sortClosedChannelTombstones(out.ClosedChannels)
+	sortConditionClaimRecords(out.ConditionClaims)
 	return out
 }
 
@@ -869,6 +896,8 @@ func (s PaymentsState) Clone() PaymentsState {
 		Settlements:     make([]SettlementRecord, len(s.Settlements)),
 		Batches:         make([]SettlementBatch, len(s.Batches)),
 		CustodyLocks:    make([]CustodyLock, len(s.CustodyLocks)),
+		ClosedChannels:  make([]ClosedChannelTombstone, len(s.ClosedChannels)),
+		ConditionClaims: make([]ConditionClaimRecord, len(s.ConditionClaims)),
 		Events:          make([]PaymentEvent, len(s.Events)),
 	}
 	for i, channel := range s.Channels {
@@ -888,6 +917,12 @@ func (s PaymentsState) Clone() PaymentsState {
 	}
 	for i, lock := range s.CustodyLocks {
 		out.CustodyLocks[i] = lock.Normalize()
+	}
+	for i, tombstone := range s.ClosedChannels {
+		out.ClosedChannels[i] = tombstone.Normalize()
+	}
+	for i, claim := range s.ConditionClaims {
+		out.ConditionClaims[i] = claim.Normalize()
 	}
 	for i, event := range s.Events {
 		out.Events[i] = event.Normalize()
@@ -912,6 +947,12 @@ func (s PaymentsState) Validate() error {
 		return err
 	}
 	if err := validateCustodyLocks(s.Channels, s.CustodyLocks); err != nil {
+		return err
+	}
+	if err := validateClosedChannelTombstones(s.Channels, s.ClosedChannels); err != nil {
+		return err
+	}
+	if err := validateConditionClaimRecords(s.Channels, s.ConditionClaims); err != nil {
 		return err
 	}
 	return validatePaymentEvents(s.Channels, s.Events)
@@ -1153,6 +1194,81 @@ func validateCustodyLocks(channels []ChannelRecord, locks []CustodyLock) error {
 	return nil
 }
 
+func validateClosedChannelTombstones(channels []ChannelRecord, tombstones []ClosedChannelTombstone) error {
+	channelByID := channelMap(channels)
+	seen := make(map[string]struct{}, len(tombstones))
+	var previous string
+	for i, tombstone := range tombstones {
+		tombstone = tombstone.Normalize()
+		if err := tombstone.Validate(); err != nil {
+			return err
+		}
+		channel, found := channelByID[tombstone.ChannelID]
+		if !found {
+			return errors.New("payments tombstone references unknown channel")
+		}
+		if channel.Status != ChannelStatusSettled {
+			return errors.New("payments tombstone requires settled channel")
+		}
+		if tombstone.ChainID != channel.ChainID || tombstone.FinalizedNonce != channel.FinalizedNonce {
+			return errors.New("payments tombstone channel domain mismatch")
+		}
+		if _, found := seen[tombstone.ChannelID]; found {
+			return errors.New("payments duplicate closed channel tombstone")
+		}
+		seen[tombstone.ChannelID] = struct{}{}
+		if i > 0 && previous >= tombstone.ChannelID {
+			return errors.New("payments closed channel tombstones must be sorted canonically")
+		}
+		previous = tombstone.ChannelID
+	}
+	for _, channel := range channelByID {
+		if channel.Status != ChannelStatusSettled {
+			continue
+		}
+		if _, found := seen[channel.ChannelID]; !found {
+			return errors.New("payments settled channel tombstone is required")
+		}
+	}
+	return nil
+}
+
+func validateConditionClaimRecords(channels []ChannelRecord, claims []ConditionClaimRecord) error {
+	channelByID := channelMap(channels)
+	seenCondition := make(map[string]struct{}, len(claims))
+	seenEvidence := make(map[string]struct{}, len(claims))
+	var previous string
+	for i, claim := range claims {
+		claim = claim.Normalize()
+		if err := claim.Validate(); err != nil {
+			return err
+		}
+		channel, found := channelByID[claim.ChannelID]
+		if !found {
+			return errors.New("payments condition claim references unknown channel")
+		}
+		if claim.ChainID != channel.ChainID {
+			return errors.New("payments condition claim channel domain mismatch")
+		}
+		conditionKey := conditionClaimKey(claim.ChannelID, claim.ConditionID)
+		evidenceKey := conditionEvidenceKey(claim.ChannelID, claim.EvidenceHash)
+		if _, found := seenCondition[conditionKey]; found {
+			return errors.New("payments duplicate condition claim")
+		}
+		if _, found := seenEvidence[evidenceKey]; found {
+			return errors.New("payments duplicate condition evidence claim")
+		}
+		seenCondition[conditionKey] = struct{}{}
+		seenEvidence[evidenceKey] = struct{}{}
+		sortKey := conditionKey + "/" + claim.EvidenceHash
+		if i > 0 && previous >= sortKey {
+			return errors.New("payments condition claims must be sorted canonically")
+		}
+		previous = sortKey
+	}
+	return nil
+}
+
 func validatePaymentEvents(channels []ChannelRecord, events []PaymentEvent) error {
 	channelByID := channelMap(channels)
 	seen := make(map[string]struct{}, len(events))
@@ -1279,6 +1395,70 @@ func settlementBalancesWithConditions(state ChannelState, channel ChannelRecord,
 		out = append(out, Balance{Participant: participant, Amount: amount.String()})
 	}
 	return normalizeBalances(out), nil
+}
+
+func rejectReusedConditionClaims(state PaymentsState, channel ChannelRecord, resolutions []ConditionResolution) error {
+	channel = channel.Normalize()
+	for _, resolution := range normalizeConditionResolutions(resolutions) {
+		conditionKey := conditionClaimKey(channel.ChannelID, resolution.ConditionID)
+		evidenceKey := conditionEvidenceKey(channel.ChannelID, resolution.EvidenceHash)
+		for _, existing := range state.ConditionClaims {
+			existing = existing.Normalize()
+			if existing.ChainID != channel.ChainID || existing.ChannelID != channel.ChannelID {
+				continue
+			}
+			if conditionClaimKey(existing.ChannelID, existing.ConditionID) == conditionKey {
+				return errors.New("payments condition claim has already been used")
+			}
+			if conditionEvidenceKey(existing.ChannelID, existing.EvidenceHash) == evidenceKey {
+				return errors.New("payments condition evidence claim has already been used")
+			}
+		}
+	}
+	return nil
+}
+
+func appendSettlementReplayRecords(state *PaymentsState, channel ChannelRecord, settlement SettlementRecord, resolutions []ConditionResolution, height uint64) {
+	channel = channel.Normalize()
+	settlement = settlement.Normalize()
+	tombstone := ClosedChannelTombstone{
+		ChainID:        channel.ChainID,
+		ChannelID:      channel.ChannelID,
+		FinalizedNonce: settlement.Nonce,
+		StateHash:      settlement.StateHash,
+		ClosedHeight:   height,
+		ExpiresHeight:  height + DefaultReplayHorizon,
+	}.Normalize()
+	state.ClosedChannels = upsertClosedChannelTombstone(state.ClosedChannels, tombstone)
+	for _, resolution := range normalizeConditionResolutions(resolutions) {
+		state.ConditionClaims = append(state.ConditionClaims, ConditionClaimRecord{
+			ChainID:        channel.ChainID,
+			ChannelID:      channel.ChannelID,
+			ConditionID:    resolution.ConditionID,
+			EvidenceHash:   resolution.EvidenceHash,
+			ResolvedHeight: height,
+			ExpiresHeight:  height + DefaultReplayHorizon,
+		}.Normalize())
+	}
+}
+
+func upsertClosedChannelTombstone(tombstones []ClosedChannelTombstone, next ClosedChannelTombstone) []ClosedChannelTombstone {
+	out := make([]ClosedChannelTombstone, 0, len(tombstones)+1)
+	replaced := false
+	for _, tombstone := range tombstones {
+		tombstone = tombstone.Normalize()
+		if tombstone.ChannelID == next.ChannelID {
+			out = append(out, next)
+			replaced = true
+			continue
+		}
+		out = append(out, tombstone)
+	}
+	if !replaced {
+		out = append(out, next)
+	}
+	sortClosedChannelTombstones(out)
+	return out
 }
 
 func finalBalancesForUnidirectionalClaim(channel ChannelRecord, claim UnidirectionalClaim, settlementFee, feePayer string) ([]Balance, error) {
@@ -1409,6 +1589,28 @@ func sortCustodyLocks(locks []CustodyLock) {
 	sort.SliceStable(locks, func(i, j int) bool {
 		return locks[i].Normalize().ChannelID < locks[j].Normalize().ChannelID
 	})
+}
+
+func sortClosedChannelTombstones(tombstones []ClosedChannelTombstone) {
+	sort.SliceStable(tombstones, func(i, j int) bool {
+		return tombstones[i].Normalize().ChannelID < tombstones[j].Normalize().ChannelID
+	})
+}
+
+func sortConditionClaimRecords(claims []ConditionClaimRecord) {
+	sort.SliceStable(claims, func(i, j int) bool {
+		left := claims[i].Normalize()
+		right := claims[j].Normalize()
+		return conditionClaimKey(left.ChannelID, left.ConditionID)+"/"+left.EvidenceHash < conditionClaimKey(right.ChannelID, right.ConditionID)+"/"+right.EvidenceHash
+	})
+}
+
+func conditionClaimKey(channelID, conditionID string) string {
+	return normalizeHash(channelID) + "/" + normalizeHash(conditionID)
+}
+
+func conditionEvidenceKey(channelID, evidenceHash string) string {
+	return normalizeHash(channelID) + "/" + normalizeHash(evidenceHash)
 }
 
 func edgeKey(edge ChannelEdge) string {

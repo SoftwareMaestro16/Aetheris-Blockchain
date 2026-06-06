@@ -590,6 +590,81 @@ func TestClaimAndDeltaSignatureEnvelopeValidation(t *testing.T) {
 	require.ErrorContains(t, delta.ValidateForChannel(async, 71), "expired")
 }
 
+func TestLocalSignerWriteAheadPreventsDoubleSign(t *testing.T) {
+	alice := testAddress(0x61)
+	bob := testAddress(0x62)
+	channel := signedChannel(t, "signer-wal", "1000", alice, bob)
+	state := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "490"},
+		{Participant: bob, Amount: "510"},
+	})
+
+	records, sig, err := SignStateWithWriteAhead(nil, state, alice, SignerIsolationHardware)
+	require.NoError(t, err)
+	require.Equal(t, alice, sig.Signer)
+	require.Len(t, records, 1)
+	require.True(t, records[0].Released)
+	require.Equal(t, SignerIsolationHardware, records[0].IsolationMode)
+	require.Equal(t, ComputeSignedNonceWALHash(records[0]), records[0].WALHash)
+
+	records, _, err = SignStateWithWriteAhead(records, state, alice, SignerIsolationHardware)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+
+	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "510"},
+		{Participant: bob, Amount: "490"},
+	})
+	_, _, err = SignStateWithWriteAhead(records, conflicting, alice, SignerIsolationHardware)
+	require.ErrorContains(t, err, "same nonce replacement")
+}
+
+func TestDoubleSignFraudAppliesIndependentPenalties(t *testing.T) {
+	alice := testAddress(0x63)
+	bob := testAddress(0x64)
+	channel := signedChannel(t, "both-double-sign", "1000", alice, bob)
+	state := EmptyState()
+
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "400"},
+		{Participant: bob, Amount: "600"},
+	})
+	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "600"},
+		{Participant: bob, Amount: "400"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+
+	aliceProof := FraudProof{
+		ProofID:         HashParts("double-sign-alice", channel.ChannelID),
+		ProofType:       FraudProofTypeDoubleSign,
+		SubmittedBy:     bob,
+		OffendingSigner: alice,
+		StateA:          closeState,
+		StateB:          conflicting,
+		PenaltyAmount:   "25",
+		EvidenceHash:    HashParts("evidence", "alice", closeState.StateHash, conflicting.StateHash),
+	}
+	bobProof := aliceProof
+	bobProof.ProofID = HashParts("double-sign-bob", channel.ChannelID)
+	bobProof.SubmittedBy = alice
+	bobProof.OffendingSigner = bob
+	bobProof.EvidenceHash = HashParts("evidence", "bob", closeState.StateHash, conflicting.StateHash)
+
+	state, err = SubmitFraudProof(state, channel.ChannelID, aliceProof, 21)
+	require.NoError(t, err)
+	state, err = SubmitFraudProof(state, channel.ChannelID, bobProof, 22)
+	require.NoError(t, err)
+	require.Len(t, state.Channels[0].PendingClose.Penalties, 2)
+	require.Equal(t, alice, state.Channels[0].PendingClose.Penalties[0].Offender)
+	require.Equal(t, bob, state.Channels[0].PendingClose.Penalties[1].Offender)
+}
+
 func TestBidirectionalCloseAndUpdateRules(t *testing.T) {
 	alice := testAddress(0x39)
 	bob := testAddress(0x3a)
@@ -1075,6 +1150,66 @@ func TestFinalSettlementRequiresResolvedConditionsAndUnlocksCustody(t *testing.T
 	require.Empty(t, state.CustodyLocks)
 	require.Equal(t, "475", amountFor(settlement.FinalBalances, channel.Participants[0]))
 	require.Equal(t, "525", amountFor(settlement.FinalBalances, channel.Participants[1]))
+	require.Len(t, state.ClosedChannels, 1)
+	require.Equal(t, channel.ChannelID, state.ClosedChannels[0].ChannelID)
+	require.Len(t, state.ConditionClaims, 1)
+	require.Equal(t, resolution.ConditionID, state.ConditionClaims[0].ConditionID)
+}
+
+func TestSettlementRejectsReusedConditionAndPreimageClaims(t *testing.T) {
+	alice := testAddress(0x65)
+	bob := testAddress(0x66)
+	channel := signedChannel(t, "condition-replay", "1000", alice, bob)
+	closeState := signedConditionalState(t, channel, 2, channel.OpeningStateHash, "25", []Balance{
+		{Participant: alice, Amount: "975"},
+		{Participant: bob, Amount: "0"},
+	})
+	state := EmptyState()
+
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+
+	resolution := ConditionResolution{
+		ConditionID:  closeState.Conditions[0].ConditionID,
+		Resolver:     alice,
+		Recipient:    bob,
+		Amount:       "25",
+		EvidenceHash: HashParts("condition-preimage", "shared"),
+	}
+	reusedCondition := state
+	reusedCondition.ConditionClaims = append(reusedCondition.ConditionClaims, ConditionClaimRecord{
+		ChainID:        channel.ChainID,
+		ChannelID:      channel.ChannelID,
+		ConditionID:    resolution.ConditionID,
+		EvidenceHash:   HashParts("condition-preimage", "old"),
+		ResolvedHeight: 19,
+		ExpiresHeight:  19 + DefaultReplayHorizon,
+	})
+	_, _, err = FinalizeSettlementWithRequest(reusedCondition, FinalSettlementRequest{
+		ChannelID:          channel.ChannelID,
+		ResolvedConditions: []ConditionResolution{resolution},
+		CurrentHeight:      40,
+	})
+	require.ErrorContains(t, err, "condition claim")
+
+	reusedEvidence := state
+	reusedEvidence.ConditionClaims = append(reusedEvidence.ConditionClaims, ConditionClaimRecord{
+		ChainID:        channel.ChainID,
+		ChannelID:      channel.ChannelID,
+		ConditionID:    HashParts("other-condition"),
+		EvidenceHash:   resolution.EvidenceHash,
+		ResolvedHeight: 19,
+		ExpiresHeight:  19 + DefaultReplayHorizon,
+	})
+	_, _, err = FinalizeSettlementWithRequest(reusedEvidence, FinalSettlementRequest{
+		ChannelID:          channel.ChannelID,
+		ResolvedConditions: []ConditionResolution{resolution},
+		CurrentHeight:      40,
+	})
+	require.ErrorContains(t, err, "evidence claim")
 }
 
 func TestForcedClosePreservesDisputeWindowAfterTimeout(t *testing.T) {

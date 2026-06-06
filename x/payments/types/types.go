@@ -34,6 +34,9 @@ const (
 	MaxRoutingHops           = 16
 	MaxTokenLength           = 128
 	MaxSettlementFeeFraction = int64(10_000)
+	DefaultReplayHorizon     = uint64(100_000)
+	SignerIsolationProcess   = "process"
+	SignerIsolationHardware  = "hardware"
 )
 
 type ChannelType string
@@ -142,6 +145,31 @@ type StateSignature struct {
 	SignatureHash    string
 }
 
+type SignedNonceRecord struct {
+	Signer        string
+	ChainID       string
+	ChannelID     string
+	Epoch         uint64
+	Nonce         uint64
+	StateHash     string
+	WALHash       string
+	Released      bool
+	IsolationMode string
+}
+
+func (r SignedNonceRecord) Normalize() SignedNonceRecord {
+	r.Signer = strings.TrimSpace(r.Signer)
+	r.ChainID = strings.TrimSpace(r.ChainID)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.StateHash = normalizeHash(r.StateHash)
+	r.WALHash = normalizeOptionalHash(r.WALHash)
+	r.IsolationMode = strings.TrimSpace(r.IsolationMode)
+	if r.IsolationMode == "" {
+		r.IsolationMode = SignerIsolationProcess
+	}
+	return r
+}
+
 type ClaimSignature struct {
 	Signer           string
 	ChainID          string
@@ -215,6 +243,24 @@ type ConditionResolution struct {
 	Amount       string
 	Expired      bool
 	EvidenceHash string
+}
+
+type ClosedChannelTombstone struct {
+	ChainID        string
+	ChannelID      string
+	FinalizedNonce uint64
+	StateHash      string
+	ClosedHeight   uint64
+	ExpiresHeight  uint64
+}
+
+type ConditionClaimRecord struct {
+	ChainID        string
+	ChannelID      string
+	ConditionID    string
+	EvidenceHash   string
+	ResolvedHeight uint64
+	ExpiresHeight  uint64
 }
 
 type ChannelDisputeRequest struct {
@@ -523,6 +569,67 @@ func SignatureForState(state ChannelState, signer string) (StateSignature, error
 			state.StateHash,
 		),
 	}, nil
+}
+
+func SignStateWithWriteAhead(records []SignedNonceRecord, state ChannelState, signer, isolationMode string) ([]SignedNonceRecord, StateSignature, error) {
+	state = state.Normalize()
+	if state.StateHash == "" {
+		var err error
+		state, err = BuildState(state)
+		if err != nil {
+			return nil, StateSignature{}, err
+		}
+	}
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments signer wal signer", signer); err != nil {
+		return nil, StateSignature{}, err
+	}
+	isolationMode = strings.TrimSpace(isolationMode)
+	if isolationMode == "" {
+		isolationMode = SignerIsolationProcess
+	}
+	if isolationMode != SignerIsolationProcess && isolationMode != SignerIsolationHardware {
+		return nil, StateSignature{}, errors.New("payments signer isolation mode is unsupported")
+	}
+	normalized := normalizeSignedNonceRecords(records)
+	for i, record := range normalized {
+		if record.Signer != signer || record.ChainID != state.ChainID || record.ChannelID != state.ChannelID || record.Epoch != state.Epoch || record.Nonce != state.Nonce {
+			continue
+		}
+		if record.StateHash != state.StateHash {
+			return nil, StateSignature{}, errors.New("payments signer refuses same nonce replacement")
+		}
+		if record.Released {
+			sig, err := SignatureForState(state, signer)
+			return normalized, sig, err
+		}
+		normalized[i].Released = true
+		sig, err := SignatureForState(state, signer)
+		return normalized, sig, err
+	}
+	record := SignedNonceRecord{
+		Signer:        signer,
+		ChainID:       state.ChainID,
+		ChannelID:     state.ChannelID,
+		Epoch:         state.Epoch,
+		Nonce:         state.Nonce,
+		StateHash:     state.StateHash,
+		IsolationMode: isolationMode,
+	}
+	record.WALHash = ComputeSignedNonceWALHash(record)
+	normalized = append(normalized, record)
+	normalized = normalizeSignedNonceRecords(normalized)
+	for i := range normalized {
+		if normalized[i].WALHash == record.WALHash {
+			normalized[i].Released = true
+			break
+		}
+	}
+	sig, err := SignatureForState(state, signer)
+	if err != nil {
+		return nil, StateSignature{}, err
+	}
+	return normalized, sig, nil
 }
 
 func BuildChannelFromOpenRequest(req ChannelOpenRequest) (ChannelRecord, error) {
@@ -1136,6 +1243,67 @@ func (s ClaimSignature) Validate(expectedClaimHash string) error {
 	}
 	if expected := ComputeSignatureEnvelopeHash(s.Signer, s.ChainID, s.ChannelID, s.ObjectType, s.Version, s.Nonce, s.ObjectID, s.ExpirationHeight, s.CommitmentHash); s.SignatureHash != expected {
 		return errors.New("payments claim signature value mismatch")
+	}
+	return nil
+}
+
+func (t ClosedChannelTombstone) Normalize() ClosedChannelTombstone {
+	t.ChainID = strings.TrimSpace(t.ChainID)
+	t.ChannelID = normalizeHash(t.ChannelID)
+	t.StateHash = normalizeHash(t.StateHash)
+	return t
+}
+
+func (t ClosedChannelTombstone) Validate() error {
+	t = t.Normalize()
+	if strings.TrimSpace(t.ChainID) == "" {
+		return errors.New("payments tombstone chain id is required")
+	}
+	if err := ValidateHash("payments tombstone channel id", t.ChannelID); err != nil {
+		return err
+	}
+	if t.FinalizedNonce == 0 {
+		return errors.New("payments tombstone finalized nonce must be positive")
+	}
+	if err := ValidateHash("payments tombstone state hash", t.StateHash); err != nil {
+		return err
+	}
+	if t.ClosedHeight == 0 {
+		return errors.New("payments tombstone closed height must be positive")
+	}
+	if t.ExpiresHeight <= t.ClosedHeight {
+		return errors.New("payments tombstone replay horizon must exceed close height")
+	}
+	return nil
+}
+
+func (r ConditionClaimRecord) Normalize() ConditionClaimRecord {
+	r.ChainID = strings.TrimSpace(r.ChainID)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.ConditionID = normalizeHash(r.ConditionID)
+	r.EvidenceHash = normalizeHash(r.EvidenceHash)
+	return r
+}
+
+func (r ConditionClaimRecord) Validate() error {
+	r = r.Normalize()
+	if strings.TrimSpace(r.ChainID) == "" {
+		return errors.New("payments condition claim chain id is required")
+	}
+	if err := ValidateHash("payments condition claim channel id", r.ChannelID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments condition claim condition id", r.ConditionID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments condition claim evidence hash", r.EvidenceHash); err != nil {
+		return err
+	}
+	if r.ResolvedHeight == 0 {
+		return errors.New("payments condition claim resolved height must be positive")
+	}
+	if r.ExpiresHeight <= r.ResolvedHeight {
+		return errors.New("payments condition claim replay horizon must exceed resolution height")
 	}
 	return nil
 }
@@ -3089,6 +3257,29 @@ func normalizeSignatures(signatures []StateSignature) []StateSignature {
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].Signer < out[j].Signer
+	})
+	return out
+}
+
+func normalizeSignedNonceRecords(records []SignedNonceRecord) []SignedNonceRecord {
+	out := make([]SignedNonceRecord, len(records))
+	for i, record := range records {
+		out[i] = record.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Signer != out[j].Signer {
+			return out[i].Signer < out[j].Signer
+		}
+		if out[i].ChainID != out[j].ChainID {
+			return out[i].ChainID < out[j].ChainID
+		}
+		if out[i].ChannelID != out[j].ChannelID {
+			return out[i].ChannelID < out[j].ChannelID
+		}
+		if out[i].Epoch != out[j].Epoch {
+			return out[i].Epoch < out[j].Epoch
+		}
+		return out[i].Nonce < out[j].Nonce
 	})
 	return out
 }
