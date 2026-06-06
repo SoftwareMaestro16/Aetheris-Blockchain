@@ -3433,6 +3433,104 @@ func TestPerformanceModelBoundsFanoutLatencyStreamingAndQoS(t *testing.T) {
 	require.ErrorContains(t, err, "branching")
 }
 
+func TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	storage := signedNodeRecord(t, 0x7e, salt, 100, NodeRoleStorageProvider)
+	service := signedNodeRecord(t, 0x7f, salt, 100, NodeRoleService)
+	full := signedNodeRecord(t, 0x80, salt, 100, NodeRoleFull)
+	overlayID := HashParts("performance-metrics-overlay")
+	streamPlan := testPerformanceStreamPlan()
+	streamMetric := StreamMetrics{
+		StreamID:           streamPlan.StreamID,
+		PayloadType:        StreamingPayloadStorageObject,
+		State:              StreamStateActive,
+		BytesSent:          1024,
+		BytesAcknowledged:  768,
+		InFlightBytes:      256,
+		AvailableWindow:    1024,
+		ThroughputBytesBps: 4096,
+		StallCount:         2,
+		CompletionBps:      7_500,
+	}
+	snapshot, err := BuildPerformanceMetricsSnapshot(PerformanceMetricsInput{
+		NodeRecords: []NodeRecord{storage, service, full},
+		OverlayMemberships: []OverlayMembershipRecord{
+			{OverlayID: overlayID, NodeID: storage.NodeID},
+			{OverlayID: overlayID, NodeID: service.NodeID},
+		},
+		MessageLatencies: []PropagationLatencySample{
+			{OverlayID: overlayID, MessageID: HashParts("msg", "1"), LatencyMillis: 20},
+			{OverlayID: overlayID, MessageID: HashParts("msg", "2"), LatencyMillis: 40},
+		},
+		RouteFailures: []RouteFailureSample{
+			{OverlayID: overlayID, Attempts: 10, Failures: 1},
+		},
+		BlockSession:              testPerformanceBlockSession(t),
+		BlockHeaderLatencyMillis:  15,
+		BlockReconstructionMillis: 25,
+		BlockBytes:                2048,
+		ChunkAttempts:             10,
+		ChunkRetries:              1,
+		StreamMetrics:             []StreamMetrics{streamMetric},
+		StreamPlans:               []StreamParallelFetchPlan{streamPlan},
+		DiscoveryLatencies:        []uint64{10, 20, 30},
+		CrossZoneDeliveries: []CrossZoneDeliverySample{
+			{SourceZone: "zone-a", DestinationZone: "zone-b", Sequence: 1, LatencyMillis: 50},
+			{SourceZone: "zone-a", DestinationZone: "zone-b", Sequence: 2, LatencyMillis: 70},
+		},
+		ChannelMetrics: []L0ChannelMetrics{
+			{Channel: ChannelConsensus, EnqueuedCount: 1, SentCount: 1, BytesEnqueued: 1000, BytesSent: 1000},
+			{Channel: ChannelService, EnqueuedCount: 2, SentCount: 2, BytesEnqueued: 2000, BytesSent: 1500},
+		},
+		PeerScores: []PeerScore{{ScoreBps: 9_000}, {ScoreBps: 6_000}, {ScoreBps: 3_000}},
+	})
+	require.NoError(t, err)
+	require.Len(t, snapshot.PeerCountByRole, 3)
+	require.Equal(t, uint64(2), snapshot.OverlayMetrics[0].MembershipSize)
+	require.Equal(t, uint64(30), snapshot.OverlayMetrics[0].MessagePropagationLatency.AverageMillis)
+	require.Equal(t, uint32(1_000), snapshot.OverlayMetrics[0].RouteFailureRateBps)
+	require.Equal(t, uint64(15), snapshot.BlockBenchmark.HeaderLatencyMillis)
+	require.Equal(t, uint64(2), snapshot.ChunkBenchmarks[0].StallCount)
+	require.Equal(t, uint32(1_000), snapshot.ChunkBenchmarks[0].RetryRateBps)
+	require.Equal(t, uint64(20), snapshot.DiscoveryQueryLatency.AverageMillis)
+	require.Equal(t, uint64(60), snapshot.CrossZoneDeliveryLatency.AverageMillis)
+	require.True(t, snapshot.ServiceTrafficIsolated)
+	require.Equal(t, uint32(1_000), snapshot.RouteFailureRateBps)
+	require.Equal(t, uint32(6_000), snapshot.PeerScoreDistribution.AverageBps)
+	require.Equal(t, uint64(1), snapshot.PeerScoreDistribution.LowCount)
+	require.Equal(t, uint64(1), snapshot.PeerScoreDistribution.MidCount)
+	require.Equal(t, uint64(1), snapshot.PeerScoreDistribution.HighCount)
+}
+
+func TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures(t *testing.T) {
+	_, err := BenchmarkBlockPropagation(testPerformanceBlockSession(t), 0, 10, 1024)
+	require.ErrorContains(t, err, "header latency")
+
+	_, err = BenchmarkChunkStreaming(nil, []StreamParallelFetchPlan{testPerformanceStreamPlan()}, 1, 2)
+	require.ErrorContains(t, err, "retries exceed")
+
+	_, err = ComputeOverlayPerformanceMetrics(nil, []PropagationLatencySample{{OverlayID: HashParts("overlay"), LatencyMillis: 0}}, nil)
+	require.ErrorContains(t, err, "latency")
+
+	_, err = ComputeRouteFailureRate([]RouteFailureSample{{OverlayID: HashParts("overlay"), Attempts: 1, Failures: 2}})
+	require.ErrorContains(t, err, "failures exceed")
+
+	_, err = ComputePeerScoreDistribution([]PeerScore{{ScoreBps: BasisPoints + 1}})
+	require.ErrorContains(t, err, "peer score")
+
+	require.ErrorContains(t, ValidateServiceTrafficIsolationFromMetrics([]L0ChannelMetrics{
+		{Channel: ChannelConsensus, EnqueuedCount: 1, DroppedCount: 1, BytesEnqueued: 100},
+		{Channel: ChannelService, EnqueuedCount: 1, SentCount: 1, BytesEnqueued: 100, BytesSent: 100},
+	}), "consensus traffic")
+
+	bandwidth, err := ComputeChannelBandwidthMetrics([]L0ChannelMetrics{
+		{Channel: ChannelService, EnqueuedCount: 2, SentCount: 1, DroppedCount: 1, BytesEnqueued: 2000, BytesSent: 1000},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1000), bandwidth[0].BytesDropped)
+	require.Equal(t, uint32(5_000), bandwidth[0].UsageBps)
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)

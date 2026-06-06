@@ -2,6 +2,8 @@ package types
 
 import (
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -68,6 +70,111 @@ type PerformanceModelPlan struct {
 	SatisfiedTargetProperties   []PerformanceTargetProperty
 }
 
+type PeerRoleCountMetric struct {
+	Role  NodeRole
+	Count uint64
+}
+
+type OverlayPerformanceMetric struct {
+	OverlayID                 string
+	MembershipSize            uint64
+	MessagePropagationLatency PerformanceLatencySummary
+	RouteFailureRateBps       uint32
+}
+
+type PerformanceLatencySummary struct {
+	Count         uint64
+	MinMillis     uint64
+	MaxMillis     uint64
+	AverageMillis uint64
+}
+
+type PropagationLatencySample struct {
+	OverlayID     string
+	MessageID     string
+	LatencyMillis uint64
+}
+
+type RouteFailureSample struct {
+	OverlayID string
+	Attempts  uint64
+	Failures  uint64
+}
+
+type CrossZoneDeliverySample struct {
+	SourceZone      string
+	DestinationZone string
+	Sequence        uint64
+	LatencyMillis   uint64
+}
+
+type ChannelBandwidthMetric struct {
+	Channel       ChannelClass
+	BytesEnqueued uint64
+	BytesSent     uint64
+	BytesDropped  uint64
+	UsageBps      uint32
+}
+
+type PeerScoreDistributionMetric struct {
+	Count      uint64
+	MinBps     uint32
+	MaxBps     uint32
+	AverageBps uint32
+	LowCount   uint64
+	MidCount   uint64
+	HighCount  uint64
+}
+
+type BlockPropagationBenchmark struct {
+	HeaderLatencyMillis      uint64
+	ReconstructionMillis     uint64
+	ChunkCount               uint32
+	HeaderFirst              bool
+	ReconstructionThroughput uint64
+}
+
+type ChunkStreamingBenchmark struct {
+	StreamID           string
+	ThroughputBytesBps uint64
+	RetryRateBps       uint32
+	StallCount         uint64
+	ParallelRequests   uint32
+}
+
+type PerformanceMetricsInput struct {
+	NodeRecords               []NodeRecord
+	OverlayMemberships        []OverlayMembershipRecord
+	MessageLatencies          []PropagationLatencySample
+	RouteFailures             []RouteFailureSample
+	BlockSession              BlockPropagationSession
+	BlockHeaderLatencyMillis  uint64
+	BlockReconstructionMillis uint64
+	BlockBytes                uint64
+	ChunkAttempts             uint64
+	ChunkRetries              uint64
+	StreamMetrics             []StreamMetrics
+	StreamPlans               []StreamParallelFetchPlan
+	DiscoveryLatencies        []uint64
+	CrossZoneDeliveries       []CrossZoneDeliverySample
+	ChannelMetrics            []L0ChannelMetrics
+	PeerScores                []PeerScore
+}
+
+type PerformanceMetricsSnapshot struct {
+	PeerCountByRole           []PeerRoleCountMetric
+	OverlayMetrics            []OverlayPerformanceMetric
+	BlockBenchmark            BlockPropagationBenchmark
+	ChunkBenchmarks           []ChunkStreamingBenchmark
+	DiscoveryQueryLatency     PerformanceLatencySummary
+	CrossZoneDeliveryLatency  PerformanceLatencySummary
+	ChannelBandwidth          []ChannelBandwidthMetric
+	PeerScoreDistribution     PeerScoreDistributionMetric
+	ServiceTrafficIsolated    bool
+	RouteFailureRateBps       uint32
+	MessagePropagationLatency PerformanceLatencySummary
+}
+
 func BuildPerformanceModelPlan(input PerformanceModelInput) (PerformanceModelPlan, error) {
 	normalized, err := normalizePerformanceInput(input)
 	if err != nil {
@@ -106,6 +213,51 @@ func BuildPerformanceModelPlan(input PerformanceModelInput) (PerformanceModelPla
 	plan.SatisfiedOptimizationGoals = performanceGoals(plan)
 	plan.SatisfiedTargetProperties = performanceTargets(plan)
 	return plan, nil
+}
+
+func BuildPerformanceMetricsSnapshot(input PerformanceMetricsInput) (PerformanceMetricsSnapshot, error) {
+	peerCounts, err := ComputePeerCountByRole(input.NodeRecords)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	overlayMetrics, err := ComputeOverlayPerformanceMetrics(input.OverlayMemberships, input.MessageLatencies, input.RouteFailures)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	blockBenchmark, err := BenchmarkBlockPropagation(input.BlockSession, input.BlockHeaderLatencyMillis, input.BlockReconstructionMillis, input.BlockBytes)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	chunkBenchmarks, err := BenchmarkChunkStreaming(input.StreamMetrics, input.StreamPlans, input.ChunkAttempts, input.ChunkRetries)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	channelBandwidth, err := ComputeChannelBandwidthMetrics(input.ChannelMetrics)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	scoreDistribution, err := ComputePeerScoreDistribution(input.PeerScores)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	routeFailureRate, err := ComputeRouteFailureRate(input.RouteFailures)
+	if err != nil {
+		return PerformanceMetricsSnapshot{}, err
+	}
+	serviceIsolated := ValidateServiceTrafficIsolationFromMetrics(input.ChannelMetrics) == nil
+	return PerformanceMetricsSnapshot{
+		PeerCountByRole:           peerCounts,
+		OverlayMetrics:            overlayMetrics,
+		BlockBenchmark:            blockBenchmark,
+		ChunkBenchmarks:           chunkBenchmarks,
+		DiscoveryQueryLatency:     SummarizeLatency(input.DiscoveryLatencies),
+		CrossZoneDeliveryLatency:  SummarizeCrossZoneLatency(input.CrossZoneDeliveries),
+		ChannelBandwidth:          channelBandwidth,
+		PeerScoreDistribution:     scoreDistribution,
+		ServiceTrafficIsolated:    serviceIsolated,
+		RouteFailureRateBps:       routeFailureRate,
+		MessagePropagationLatency: SummarizePropagationLatency(input.MessageLatencies),
+	}, nil
 }
 
 func ValidatePerformanceModelPlan(plan PerformanceModelPlan) error {
@@ -283,6 +435,273 @@ func ValidatePerformanceQoSIsolation(policies []QoSClassPolicy) error {
 		return errors.New("networking performance service traffic must not outrank consensus or execution")
 	}
 	return nil
+}
+
+func ComputePeerCountByRole(records []NodeRecord) ([]PeerRoleCountMetric, error) {
+	counts := make(map[NodeRole]uint64)
+	for _, record := range records {
+		record = NormalizeNodeRecord(record)
+		if err := record.ValidateBasic(); err != nil {
+			return nil, err
+		}
+		for _, role := range record.Roles {
+			counts[role]++
+		}
+	}
+	out := make([]PeerRoleCountMetric, 0, len(counts))
+	for role, count := range counts {
+		out = append(out, PeerRoleCountMetric{Role: role, Count: count})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Role < out[j].Role
+	})
+	return out, nil
+}
+
+func ComputeOverlayPerformanceMetrics(memberships []OverlayMembershipRecord, latencies []PropagationLatencySample, failures []RouteFailureSample) ([]OverlayPerformanceMetric, error) {
+	byOverlay := make(map[string]OverlayPerformanceMetric)
+	for _, membership := range memberships {
+		overlayID := normalizeHashText(membership.OverlayID)
+		if err := ValidateHash("networking performance overlay membership id", overlayID); err != nil {
+			return nil, err
+		}
+		metric := byOverlay[overlayID]
+		metric.OverlayID = overlayID
+		metric.MembershipSize++
+		byOverlay[overlayID] = metric
+	}
+	latencyByOverlay := make(map[string][]uint64)
+	for _, sample := range latencies {
+		overlayID := normalizeHashText(sample.OverlayID)
+		if err := ValidateHash("networking performance latency overlay id", overlayID); err != nil {
+			return nil, err
+		}
+		if sample.LatencyMillis == 0 {
+			return nil, errors.New("networking performance propagation latency must be positive")
+		}
+		latencyByOverlay[overlayID] = append(latencyByOverlay[overlayID], sample.LatencyMillis)
+		metric := byOverlay[overlayID]
+		metric.OverlayID = overlayID
+		byOverlay[overlayID] = metric
+	}
+	failuresByOverlay := make(map[string]RouteFailureSample)
+	for _, failure := range failures {
+		overlayID := normalizeHashText(failure.OverlayID)
+		if err := ValidateHash("networking performance route failure overlay id", overlayID); err != nil {
+			return nil, err
+		}
+		if failure.Failures > failure.Attempts {
+			return nil, errors.New("networking performance route failures exceed attempts")
+		}
+		merged := failuresByOverlay[overlayID]
+		merged.OverlayID = overlayID
+		merged.Attempts += failure.Attempts
+		merged.Failures += failure.Failures
+		failuresByOverlay[overlayID] = merged
+		metric := byOverlay[overlayID]
+		metric.OverlayID = overlayID
+		byOverlay[overlayID] = metric
+	}
+	out := make([]OverlayPerformanceMetric, 0, len(byOverlay))
+	for overlayID, metric := range byOverlay {
+		metric.MessagePropagationLatency = SummarizeLatency(latencyByOverlay[overlayID])
+		if failure := failuresByOverlay[overlayID]; failure.Attempts > 0 {
+			metric.RouteFailureRateBps = uint32(failure.Failures * uint64(BasisPoints) / failure.Attempts)
+		}
+		out = append(out, metric)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].OverlayID < out[j].OverlayID
+	})
+	return out, nil
+}
+
+func BenchmarkBlockPropagation(session BlockPropagationSession, headerLatencyMillis, reconstructionMillis, blockBytes uint64) (BlockPropagationBenchmark, error) {
+	if err := ValidateHeaderFirstPerformance(session); err != nil {
+		return BlockPropagationBenchmark{}, err
+	}
+	if headerLatencyMillis == 0 {
+		return BlockPropagationBenchmark{}, errors.New("networking performance block header latency is required")
+	}
+	if reconstructionMillis == 0 {
+		return BlockPropagationBenchmark{}, errors.New("networking performance block reconstruction time is required")
+	}
+	throughput := uint64(0)
+	if blockBytes > 0 {
+		throughput = blockBytes * 1_000 / reconstructionMillis
+	}
+	return BlockPropagationBenchmark{
+		HeaderLatencyMillis:      headerLatencyMillis,
+		ReconstructionMillis:     reconstructionMillis,
+		ChunkCount:               session.Header.ChunkCount,
+		HeaderFirst:              true,
+		ReconstructionThroughput: throughput,
+	}, nil
+}
+
+func BenchmarkChunkStreaming(metrics []StreamMetrics, plans []StreamParallelFetchPlan, attempts, retries uint64) ([]ChunkStreamingBenchmark, error) {
+	if retries > attempts {
+		return nil, errors.New("networking performance chunk retries exceed attempts")
+	}
+	retryRate := uint32(0)
+	if attempts > 0 {
+		retryRate = uint32(retries * uint64(BasisPoints) / attempts)
+	}
+	planParallelism := make(map[string]uint32, len(plans))
+	for _, plan := range plans {
+		if err := ValidateParallelChunkPerformance(plan); err != nil {
+			return nil, err
+		}
+		planParallelism[normalizeHashText(plan.StreamID)] = uint32(len(plan.Requests))
+	}
+	out := make([]ChunkStreamingBenchmark, 0, len(metrics))
+	for _, metric := range metrics {
+		if err := ValidateHash("networking performance stream metric id", normalizeHashText(metric.StreamID)); err != nil {
+			return nil, err
+		}
+		out = append(out, ChunkStreamingBenchmark{
+			StreamID:           normalizeHashText(metric.StreamID),
+			ThroughputBytesBps: metric.ThroughputBytesBps,
+			RetryRateBps:       retryRate,
+			StallCount:         metric.StallCount,
+			ParallelRequests:   planParallelism[normalizeHashText(metric.StreamID)],
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].StreamID < out[j].StreamID
+	})
+	return out, nil
+}
+
+func ComputeChannelBandwidthMetrics(metrics []L0ChannelMetrics) ([]ChannelBandwidthMetric, error) {
+	out := make([]ChannelBandwidthMetric, 0, len(metrics))
+	for _, metric := range sortL0Metrics(metrics) {
+		if !IsChannelClass(metric.Channel) {
+			return nil, fmt.Errorf("unknown networking performance channel %q", metric.Channel)
+		}
+		droppedBytes := uint64(0)
+		if metric.EnqueuedCount > 0 && metric.DroppedCount > 0 {
+			average := metric.BytesEnqueued / metric.EnqueuedCount
+			droppedBytes = average * metric.DroppedCount
+		}
+		usage := uint32(0)
+		if metric.BytesEnqueued > 0 {
+			usage = uint32(metric.BytesSent * uint64(BasisPoints) / metric.BytesEnqueued)
+		}
+		out = append(out, ChannelBandwidthMetric{
+			Channel:       metric.Channel,
+			BytesEnqueued: metric.BytesEnqueued,
+			BytesSent:     metric.BytesSent,
+			BytesDropped:  droppedBytes,
+			UsageBps:      usage,
+		})
+	}
+	return out, nil
+}
+
+func ComputePeerScoreDistribution(scores []PeerScore) (PeerScoreDistributionMetric, error) {
+	if len(scores) == 0 {
+		return PeerScoreDistributionMetric{}, errors.New("networking performance peer scores are required")
+	}
+	dist := PeerScoreDistributionMetric{Count: uint64(len(scores)), MinBps: BasisPoints}
+	var total uint64
+	for _, score := range scores {
+		if score.ScoreBps > BasisPoints {
+			return PeerScoreDistributionMetric{}, fmt.Errorf("networking performance peer score must be <= %d bps", BasisPoints)
+		}
+		if score.ScoreBps < dist.MinBps {
+			dist.MinBps = score.ScoreBps
+		}
+		if score.ScoreBps > dist.MaxBps {
+			dist.MaxBps = score.ScoreBps
+		}
+		total += uint64(score.ScoreBps)
+		switch {
+		case score.ScoreBps < 4_000:
+			dist.LowCount++
+		case score.ScoreBps < 8_000:
+			dist.MidCount++
+		default:
+			dist.HighCount++
+		}
+	}
+	dist.AverageBps = uint32(total / uint64(len(scores)))
+	return dist, nil
+}
+
+func ComputeRouteFailureRate(samples []RouteFailureSample) (uint32, error) {
+	var attempts uint64
+	var failures uint64
+	for _, sample := range samples {
+		if sample.Failures > sample.Attempts {
+			return 0, errors.New("networking performance route failures exceed attempts")
+		}
+		attempts += sample.Attempts
+		failures += sample.Failures
+	}
+	if attempts == 0 {
+		return 0, nil
+	}
+	return uint32(failures * uint64(BasisPoints) / attempts), nil
+}
+
+func ValidateServiceTrafficIsolationFromMetrics(metrics []L0ChannelMetrics) error {
+	var consensus L0ChannelMetrics
+	var service L0ChannelMetrics
+	for _, metric := range metrics {
+		switch metric.Channel {
+		case ChannelConsensus:
+			consensus = metric
+		case ChannelService:
+			service = metric
+		}
+	}
+	if consensus.DroppedCount > 0 || consensus.ConsensusDelayBlocks > 0 {
+		return errors.New("networking performance consensus traffic was delayed or dropped")
+	}
+	if consensus.SentCount == 0 && service.SentCount > 0 {
+		return errors.New("networking performance service traffic cannot progress while consensus is unsent")
+	}
+	return nil
+}
+
+func SummarizePropagationLatency(samples []PropagationLatencySample) PerformanceLatencySummary {
+	latencies := make([]uint64, 0, len(samples))
+	for _, sample := range samples {
+		if sample.LatencyMillis > 0 {
+			latencies = append(latencies, sample.LatencyMillis)
+		}
+	}
+	return SummarizeLatency(latencies)
+}
+
+func SummarizeCrossZoneLatency(samples []CrossZoneDeliverySample) PerformanceLatencySummary {
+	latencies := make([]uint64, 0, len(samples))
+	for _, sample := range samples {
+		if sample.LatencyMillis > 0 {
+			latencies = append(latencies, sample.LatencyMillis)
+		}
+	}
+	return SummarizeLatency(latencies)
+}
+
+func SummarizeLatency(latencies []uint64) PerformanceLatencySummary {
+	if len(latencies) == 0 {
+		return PerformanceLatencySummary{}
+	}
+	summary := PerformanceLatencySummary{Count: uint64(len(latencies)), MinMillis: ^uint64(0)}
+	var total uint64
+	for _, latency := range latencies {
+		if latency < summary.MinMillis {
+			summary.MinMillis = latency
+		}
+		if latency > summary.MaxMillis {
+			summary.MaxMillis = latency
+		}
+		total += latency
+	}
+	summary.AverageMillis = total / uint64(len(latencies))
+	return summary
 }
 
 func normalizePerformanceInput(input PerformanceModelInput) (PerformanceModelInput, error) {
