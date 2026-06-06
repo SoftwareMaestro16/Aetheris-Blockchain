@@ -12,6 +12,8 @@ type NetworkingTestCoverageCategory string
 const (
 	NetworkingTestCoverageUnit        NetworkingTestCoverageCategory = "unit"
 	NetworkingTestCoverageIntegration NetworkingTestCoverageCategory = "integration"
+	NetworkingTestCoverageSecurity    NetworkingTestCoverageCategory = "security"
+	NetworkingTestCoveragePerformance NetworkingTestCoverageCategory = "performance"
 )
 
 type NetworkingRequiredTest string
@@ -36,6 +38,24 @@ const (
 	RequiredTestResumableStateSnapshot    NetworkingRequiredTest = "resumable_state_snapshot_transfer"
 	RequiredTestDiscoveryProofLookup      NetworkingRequiredTest = "discovery_lookup_with_proof_attached_response"
 	RequiredTestHeaderFirstPropagation    NetworkingRequiredTest = "header_first_block_propagation"
+	RequiredTestReplayedHandshake         NetworkingRequiredTest = "replayed_handshake"
+	RequiredTestForgedNodeAdvertisement   NetworkingRequiredTest = "forged_node_advertisement"
+	RequiredTestExpiredDiscoverySecurity  NetworkingRequiredTest = "expired_discovery_record"
+	RequiredTestConflictingBroadcast      NetworkingRequiredTest = "conflicting_broadcast_payload"
+	RequiredTestInvalidChunkSecurity      NetworkingRequiredTest = "invalid_chunk"
+	RequiredTestEclipsePeerSetSimulation  NetworkingRequiredTest = "eclipse_peer_set_simulation"
+	RequiredTestServiceSpamFlood          NetworkingRequiredTest = "spam_flood_on_service_channel"
+	RequiredTestConsensusUnderBulkLoad    NetworkingRequiredTest = "consensus_traffic_under_bulk_data_load"
+	RequiredTestCrossZoneReplaySecurity   NetworkingRequiredTest = "cross_zone_message_replay"
+	RequiredTestBlockHeaderLatency        NetworkingRequiredTest = "block_header_propagation_latency"
+	RequiredTestBlockReconstructionTime   NetworkingRequiredTest = "block_reconstruction_time"
+	RequiredTestChunkStreamingThroughput  NetworkingRequiredTest = "chunk_streaming_throughput"
+	RequiredTestDiscoveryQueryLatency     NetworkingRequiredTest = "discovery_query_latency"
+	RequiredTestOverlayJoinLatency        NetworkingRequiredTest = "overlay_join_latency"
+	RequiredTestCrossZonePropagation      NetworkingRequiredTest = "cross_zone_message_propagation_latency"
+	RequiredTestServiceTrafficThroughput  NetworkingRequiredTest = "service_traffic_throughput"
+	RequiredTestConsensusMixedLoadLatency NetworkingRequiredTest = "consensus_traffic_latency_under_mixed_load"
+	RequiredTestPeerRotationStability     NetworkingRequiredTest = "peer_rotation_stability"
 )
 
 type NetworkingTestCoverageSpec struct {
@@ -81,6 +101,24 @@ func DefaultRequiredNetworkingTestCoverage() []NetworkingTestCoverageSpec {
 		{Test: RequiredTestResumableStateSnapshot, Category: NetworkingTestCoverageIntegration, Title: "Resumable state snapshot transfer"},
 		{Test: RequiredTestDiscoveryProofLookup, Category: NetworkingTestCoverageIntegration, Title: "Discovery lookup with proof-attached response"},
 		{Test: RequiredTestHeaderFirstPropagation, Category: NetworkingTestCoverageIntegration, Title: "Header-first block propagation"},
+		{Test: RequiredTestReplayedHandshake, Category: NetworkingTestCoverageSecurity, Title: "Replayed handshake"},
+		{Test: RequiredTestForgedNodeAdvertisement, Category: NetworkingTestCoverageSecurity, Title: "Forged node advertisement"},
+		{Test: RequiredTestExpiredDiscoverySecurity, Category: NetworkingTestCoverageSecurity, Title: "Expired discovery record"},
+		{Test: RequiredTestConflictingBroadcast, Category: NetworkingTestCoverageSecurity, Title: "Conflicting broadcast payload"},
+		{Test: RequiredTestInvalidChunkSecurity, Category: NetworkingTestCoverageSecurity, Title: "Invalid chunk"},
+		{Test: RequiredTestEclipsePeerSetSimulation, Category: NetworkingTestCoverageSecurity, Title: "Eclipse peer set simulation"},
+		{Test: RequiredTestServiceSpamFlood, Category: NetworkingTestCoverageSecurity, Title: "Spam flood on service channel"},
+		{Test: RequiredTestConsensusUnderBulkLoad, Category: NetworkingTestCoverageSecurity, Title: "Consensus traffic under bulk data load"},
+		{Test: RequiredTestCrossZoneReplaySecurity, Category: NetworkingTestCoverageSecurity, Title: "Cross-zone message replay"},
+		{Test: RequiredTestBlockHeaderLatency, Category: NetworkingTestCoveragePerformance, Title: "Block header propagation latency"},
+		{Test: RequiredTestBlockReconstructionTime, Category: NetworkingTestCoveragePerformance, Title: "Block reconstruction time"},
+		{Test: RequiredTestChunkStreamingThroughput, Category: NetworkingTestCoveragePerformance, Title: "Chunk streaming throughput"},
+		{Test: RequiredTestDiscoveryQueryLatency, Category: NetworkingTestCoveragePerformance, Title: "Discovery query latency"},
+		{Test: RequiredTestOverlayJoinLatency, Category: NetworkingTestCoveragePerformance, Title: "Overlay join latency"},
+		{Test: RequiredTestCrossZonePropagation, Category: NetworkingTestCoveragePerformance, Title: "Cross-zone message propagation latency"},
+		{Test: RequiredTestServiceTrafficThroughput, Category: NetworkingTestCoveragePerformance, Title: "Service traffic throughput"},
+		{Test: RequiredTestConsensusMixedLoadLatency, Category: NetworkingTestCoveragePerformance, Title: "Consensus traffic latency under mixed load"},
+		{Test: RequiredTestPeerRotationStability, Category: NetworkingTestCoveragePerformance, Title: "Peer rotation stability"},
 	}
 }
 
@@ -204,7 +242,25 @@ func IsNetworkingRequiredTest(test NetworkingRequiredTest) bool {
 		RequiredTestRL2BlockChunkTransfer,
 		RequiredTestResumableStateSnapshot,
 		RequiredTestDiscoveryProofLookup,
-		RequiredTestHeaderFirstPropagation:
+		RequiredTestHeaderFirstPropagation,
+		RequiredTestReplayedHandshake,
+		RequiredTestForgedNodeAdvertisement,
+		RequiredTestExpiredDiscoverySecurity,
+		RequiredTestConflictingBroadcast,
+		RequiredTestInvalidChunkSecurity,
+		RequiredTestEclipsePeerSetSimulation,
+		RequiredTestServiceSpamFlood,
+		RequiredTestConsensusUnderBulkLoad,
+		RequiredTestCrossZoneReplaySecurity,
+		RequiredTestBlockHeaderLatency,
+		RequiredTestBlockReconstructionTime,
+		RequiredTestChunkStreamingThroughput,
+		RequiredTestDiscoveryQueryLatency,
+		RequiredTestOverlayJoinLatency,
+		RequiredTestCrossZonePropagation,
+		RequiredTestServiceTrafficThroughput,
+		RequiredTestConsensusMixedLoadLatency,
+		RequiredTestPeerRotationStability:
 		return true
 	default:
 		return false
@@ -213,7 +269,7 @@ func IsNetworkingRequiredTest(test NetworkingRequiredTest) bool {
 
 func IsNetworkingTestCoverageCategory(category NetworkingTestCoverageCategory) bool {
 	switch category {
-	case NetworkingTestCoverageUnit, NetworkingTestCoverageIntegration:
+	case NetworkingTestCoverageUnit, NetworkingTestCoverageIntegration, NetworkingTestCoverageSecurity, NetworkingTestCoveragePerformance:
 		return true
 	default:
 		return false

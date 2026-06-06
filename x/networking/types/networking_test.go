@@ -4292,23 +4292,31 @@ func TestRequiredNetworkingTestCoverageValidatesUnitAndIntegrationMatrix(t *test
 	require.NoError(t, ValidateRequiredNetworkingTestCoverage(coverage))
 	require.NotEmpty(t, ComputeNetworkingTestCoverageRoot(coverage))
 
-	var unitCount, integrationCount int
+	var unitCount, integrationCount, securityCount, performanceCount int
 	for _, spec := range coverage {
 		switch spec.Category {
 		case NetworkingTestCoverageUnit:
 			unitCount++
 		case NetworkingTestCoverageIntegration:
 			integrationCount++
+		case NetworkingTestCoverageSecurity:
+			securityCount++
+		case NetworkingTestCoveragePerformance:
+			performanceCount++
 		}
 	}
 	require.Equal(t, 10, unitCount)
 	require.Equal(t, 9, integrationCount)
+	require.Equal(t, 9, securityCount)
+	require.Equal(t, 9, performanceCount)
 	require.Contains(t, requiredCoverageTests(coverage), RequiredTestNodeIDDerivation)
 	require.Contains(t, requiredCoverageTests(coverage), RequiredTestBroadcastDeduplication)
 	require.Contains(t, requiredCoverageTests(coverage), RequiredTestHeaderFirstPropagation)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestCrossZoneReplaySecurity)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestPeerRotationStability)
 
 	missing := append([]NetworkingTestCoverageSpec(nil), coverage[:len(coverage)-1]...)
-	require.ErrorContains(t, ValidateRequiredNetworkingTestCoverage(missing), "must define 19 areas")
+	require.ErrorContains(t, ValidateRequiredNetworkingTestCoverage(missing), "must define 37 areas")
 
 	wrongCategory := append([]NetworkingTestCoverageSpec(nil), coverage...)
 	for i := range wrongCategory {
@@ -5309,6 +5317,114 @@ func testRequiredNetworkingCoverageEvidence() []NetworkingTestCoverageEvidence {
 			Test:      RequiredTestHeaderFirstPropagation,
 			Category:  NetworkingTestCoverageIntegration,
 			TestNames: []string{"TestBlockHeaderFirstPropagationVerifiesChunksProofsAndReconstructs", "TestBroadcastForwardingUsesTreeThenGossipFallbackAndOverlayFanout"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestReplayedHandshake,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestSessionHandshakeRejectsReplayExpiredRecordsAndMismatches", "TestNetworkSecurityReplayChannelBindingAndQoSIsolation"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestForgedNodeAdvertisement,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestANAValidatesSignedPeerRoleAdvertisements", "TestNetworkSecurityAuthenticatesDiscoveryOverlayAndChunks"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestExpiredDiscoverySecurity,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestDiscoveryResponseRejectsExpiredForgedAndReplayedRecords", "TestNetworkSecurityAuthenticatesDiscoveryOverlayAndChunks"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestConflictingBroadcast,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestBroadcastDedupCacheDropsDuplicatesDetectsConflictsAndPrunes", "TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestInvalidChunkSecurity,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestRL2StateMachineClassifiesInvalidChunksAndRootMismatch", "TestNetworkSecurityAuthenticatesDiscoveryOverlayAndChunks"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestEclipsePeerSetSimulation,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestEclipseResistancePlanMaintainsDiversityAndProofBackedRouting", "TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestServiceSpamFlood,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestSpamResistanceSignedEnvelopeRateLimitsAndResourceBackedAds", "TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestConsensusUnderBulkLoad,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic", "TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestCrossZoneReplaySecurity,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestCrossZoneMessageRequiresSequenceExpiryAndReplayProtection", "TestCrossZoneSequenceTrackerAssignsAndRejectsReplayAndGaps"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestBlockHeaderLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestPerformanceModelBoundsFanoutLatencyStreamingAndQoS"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestBlockReconstructionTime,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestBlockHeaderFirstPropagationVerifiesChunksProofsAndReconstructs"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestChunkStreamingThroughput,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestPerformanceModelBoundsFanoutLatencyStreamingAndQoS"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestDiscoveryQueryLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestDiscoveryResponseSignsResultsAndProofAttachment"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestOverlayJoinLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestOverlayManagerFormsZoneAndServiceOverlays"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestCrossZonePropagation,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestReceiptDeliveryProtocolAcknowledgesAndFeedsMetrics"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestServiceTrafficThroughput,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestConsensusMixedLoadLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic", "TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestPeerRotationStability,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestAdaptiveOverlayGraphRejectsEclipseAndZoneReplacement", "TestAdaptivePeerRotationBoundsChurnAndKeepsStablePeers"},
 			Passed:    true,
 		},
 	}
