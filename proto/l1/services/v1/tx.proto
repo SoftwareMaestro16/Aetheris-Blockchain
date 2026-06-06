@@ -1,0 +1,144 @@
+syntax = "proto3";
+package l1.services.v1;
+
+import "cosmos/msg/v1/msg.proto";
+import "l1/services/v1/registry.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/services/types";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc RegisterService(MsgRegisterService) returns (MsgRegisterServiceResponse);
+  rpc UpdateService(MsgUpdateService) returns (MsgUpdateServiceResponse);
+  rpc RenewService(MsgRenewService) returns (MsgRenewServiceResponse);
+  rpc DisableService(MsgDisableService) returns (MsgDisableServiceResponse);
+  rpc TransferService(MsgTransferService) returns (MsgTransferServiceResponse);
+  rpc BindServiceIdentity(MsgBindServiceIdentity) returns (MsgBindServiceIdentityResponse);
+  rpc UnbindServiceIdentity(MsgUnbindServiceIdentity) returns (MsgUnbindServiceIdentityResponse);
+  rpc RegisterProvider(MsgRegisterProvider) returns (MsgRegisterProviderResponse);
+  rpc UpdateProvider(MsgUpdateProvider) returns (MsgUpdateProviderResponse);
+  rpc StakeProviderCollateral(MsgStakeProviderCollateral) returns (MsgStakeProviderCollateralResponse);
+  rpc UnstakeProviderCollateral(MsgUnstakeProviderCollateral) returns (MsgUnstakeProviderCollateralResponse);
+  rpc AnchorServiceReceipt(MsgAnchorServiceReceipt) returns (MsgAnchorServiceReceiptResponse);
+  rpc SubmitServiceDispute(MsgSubmitServiceDispute) returns (MsgSubmitServiceDisputeResponse);
+}
+
+message MsgRegisterService {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  ServiceDescriptor descriptor = 2;
+  string owner_authorization_hash = 3;
+}
+message MsgRegisterServiceResponse {}
+
+message MsgUpdateService {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  ServiceDescriptor descriptor = 2;
+  uint64 expected_version = 3;
+}
+message MsgUpdateServiceResponse {}
+
+message MsgRenewService {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  uint64 expiry_height = 3;
+  uint64 expected_version = 4;
+}
+message MsgRenewServiceResponse {}
+
+message MsgDisableService {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string reason = 3;
+  uint64 expected_version = 4;
+}
+message MsgDisableServiceResponse {}
+
+message MsgTransferService {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string new_owner = 3;
+  uint64 expected_version = 4;
+}
+message MsgTransferServiceResponse {}
+
+message MsgBindServiceIdentity {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string identity_name = 3;
+  uint64 expected_version = 4;
+}
+message MsgBindServiceIdentityResponse {}
+
+message MsgUnbindServiceIdentity {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string identity_name = 3;
+  uint64 expected_version = 4;
+}
+message MsgUnbindServiceIdentityResponse {}
+
+message MsgRegisterProvider {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  ProviderRecord provider = 3;
+}
+message MsgRegisterProviderResponse {}
+
+message MsgUpdateProvider {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  ProviderRecord provider = 3;
+}
+message MsgUpdateProviderResponse {}
+
+message MsgStakeProviderCollateral {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string provider_id = 3;
+  string denom = 4;
+  string amount = 5;
+  uint64 height = 6;
+}
+message MsgStakeProviderCollateralResponse {}
+
+message MsgUnstakeProviderCollateral {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string provider_id = 3;
+  string denom = 4;
+  string amount = 5;
+  uint64 height = 6;
+}
+message MsgUnstakeProviderCollateralResponse {}
+
+message MsgAnchorServiceReceipt {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  ServiceReceipt receipt = 2;
+  string anchor_hash = 3;
+}
+message MsgAnchorServiceReceiptResponse {}
+
+message MsgSubmitServiceDispute {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string service_id = 2;
+  string call_id = 3;
+  string provider_id = 4;
+  string evidence_hash = 5;
+  string reason = 6;
+  uint64 opened_height = 7;
+}
+message MsgSubmitServiceDisputeResponse {}

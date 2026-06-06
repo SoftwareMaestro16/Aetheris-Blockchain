@@ -1,0 +1,125 @@
+syntax = "proto3";
+package l1.services.v1;
+
+import "l1/services/v1/registry.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/services/types";
+
+service Query {
+  rpc Service(QueryServiceRequest) returns (QueryServiceResponse);
+  rpc ServiceByName(QueryServiceByNameRequest) returns (QueryServiceResponse);
+  rpc ServicesByOwner(QueryServicesByOwnerRequest) returns (QueryServicesResponse);
+  rpc ServicesByIdentity(QueryServicesByIdentityRequest) returns (QueryServicesResponse);
+  rpc ProvidersByService(QueryProvidersByServiceRequest) returns (QueryProvidersResponse);
+  rpc ServiceInterface(QueryServiceInterfaceRequest) returns (QueryServiceInterfaceResponse);
+  rpc ServicePaymentModel(QueryServicePaymentModelRequest) returns (QueryServicePaymentModelResponse);
+  rpc ServiceVerificationModel(QueryServiceVerificationModelRequest) returns (QueryServiceVerificationModelResponse);
+  rpc ServiceReceipt(QueryServiceReceiptRequest) returns (QueryServiceReceiptResponse);
+  rpc ServiceProof(QueryServiceProofRequest) returns (QueryServiceProofResponse);
+  rpc ServiceParams(QueryServiceParamsRequest) returns (QueryServiceParamsResponse);
+}
+
+message PageRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+}
+
+message QueryServiceRequest {
+  string service_id = 1;
+  bool include_anchor = 2;
+  bool include_proof = 3;
+}
+
+message QueryServiceByNameRequest {
+  string service_name = 1;
+  bool include_proof = 2;
+}
+
+message QueryServicesByOwnerRequest {
+  string owner = 1;
+  PageRequest pagination = 2;
+}
+
+message QueryServicesByIdentityRequest {
+  string identity_name = 1;
+  PageRequest pagination = 2;
+}
+
+message QueryProvidersByServiceRequest {
+  string service_id = 1;
+  PageRequest pagination = 2;
+}
+
+message QueryServiceInterfaceRequest {
+  string interface_hash = 1;
+}
+
+message QueryServicePaymentModelRequest {
+  string service_id = 1;
+}
+
+message QueryServiceVerificationModelRequest {
+  string service_id = 1;
+}
+
+message QueryServiceReceiptRequest {
+  string service_id = 1;
+  string call_id = 2;
+}
+
+message QueryServiceProofRequest {
+  string service_id = 1;
+}
+
+message QueryServiceParamsRequest {}
+
+message QueryServiceResponse {
+  ServiceDescriptor descriptor = 1;
+  ServiceAnchor anchor = 2;
+  string proof_hash = 3;
+  bool found = 4;
+}
+
+message QueryServicesResponse {
+  repeated ServiceDescriptor services = 1;
+  uint64 total = 2;
+}
+
+message QueryProvidersResponse {
+  repeated ProviderRecord providers = 1;
+  uint64 total = 2;
+}
+
+message QueryServiceInterfaceResponse {
+  string interface_hash = 1;
+  bool found = 2;
+}
+
+message QueryServicePaymentModelResponse {
+  string service_id = 1;
+  string payment_model = 2;
+  bool found = 3;
+}
+
+message QueryServiceVerificationModelResponse {
+  string service_id = 1;
+  string trust_model = 2;
+  string verification_model = 3;
+  bool found = 4;
+}
+
+message QueryServiceReceiptResponse {
+  ServiceReceipt receipt = 1;
+  bool found = 2;
+}
+
+message QueryServiceProofResponse {
+  string proof_hash = 1;
+  bool found = 2;
+}
+
+message QueryServiceParamsResponse {
+  string authority = 1;
+  uint64 default_query_limit = 2;
+  uint64 max_query_limit = 3;
+}

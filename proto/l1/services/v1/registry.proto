@@ -1,0 +1,76 @@
+syntax = "proto3";
+package l1.services.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/services/types";
+
+message ServiceDescriptor {
+  string service_id = 1;
+  string owner = 2;
+  string service_type = 3;
+  string execution_target = 4;
+  string interface_hash = 5;
+  string location = 6;
+  string trust_model = 7;
+  string payment_model = 8;
+  string verification_model = 9;
+  string status = 10;
+  uint64 version = 11;
+  uint64 expiry_height = 12;
+  uint64 created_height = 13;
+  uint64 updated_height = 14;
+  string descriptor_hash = 15;
+}
+
+message ServiceAnchor {
+  string service_id = 1;
+  string descriptor_hash = 2;
+  string interface_hash = 3;
+  string provider_root = 4;
+  string verification_model = 5;
+  uint64 expiry_height = 6;
+  string anchor_hash = 7;
+}
+
+message ProviderRecord {
+  string service_id = 1;
+  string provider_id = 2;
+  string identity_key = 3;
+  string category = 4;
+  string pricing_model_hash = 5;
+  uint64 reputation_score = 6;
+  string collateral_denom = 7;
+  string collateral_amount = 8;
+  string stake_amount = 9;
+  repeated string supported_interfaces = 10;
+  string status = 11;
+  uint64 registered_height = 12;
+  uint64 updated_height = 13;
+  uint64 expiry_height = 14;
+  string provider_hash = 15;
+}
+
+message ReputationRecord {
+  string provider_id = 1;
+  uint64 score = 2;
+  uint64 successes = 3;
+  uint64 failures = 4;
+  uint64 updated_height = 5;
+  string record_hash = 6;
+}
+
+message ServiceReceipt {
+  string service_id = 1;
+  string call_id = 2;
+  string method_id = 3;
+  string caller = 4;
+  string status = 5;
+  string request_hash = 6;
+  string response_hash = 7;
+  string proof_hash = 8;
+  string payment_status = 9;
+  uint64 gas_used = 10;
+  string provider_id = 11;
+  uint64 executed_height = 12;
+  uint64 anchored_height = 13;
+  string receipt_hash = 14;
+}
