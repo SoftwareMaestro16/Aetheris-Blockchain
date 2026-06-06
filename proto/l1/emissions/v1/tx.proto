@@ -1,0 +1,36 @@
+syntax = "proto3";
+package l1.emissions.v1;
+
+import "cosmos/msg/v1/msg.proto";
+import "gogoproto/gogo.proto";
+import "l1/emissions/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/emissions/types";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc UpdateEmissionsParams(MsgUpdateEmissionsParams) returns (MsgUpdateEmissionsParamsResponse);
+  rpc FinalizeEmissionEpoch(MsgFinalizeEmissionEpoch) returns (MsgFinalizeEmissionEpochResponse);
+}
+
+message MsgUpdateEmissionsParams {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateEmissionsParamsResponse {}
+
+message MsgFinalizeEmissionEpoch {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1;
+  uint64 epoch = 2;
+  uint32 staking_ratio_bps = 3;
+}
+
+message MsgFinalizeEmissionEpochResponse {
+  EmissionEpoch emission_epoch = 1 [(gogoproto.nullable) = false];
+}

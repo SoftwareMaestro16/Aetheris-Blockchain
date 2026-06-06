@@ -68,6 +68,8 @@ import (
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	dynamiccommissionkeeper "github.com/sovereign-l1/l1/x/dynamic-commission/keeper"
 	dynamiccommissiontypes "github.com/sovereign-l1/l1/x/dynamic-commission/types"
+	emissionskeeper "github.com/sovereign-l1/l1/x/emissions/keeper"
+	emissionstypes "github.com/sovereign-l1/l1/x/emissions/types"
 	nativeevidencekeeper "github.com/sovereign-l1/l1/x/evidence/keeper"
 	nativeevidencetypes "github.com/sovereign-l1/l1/x/evidence/types"
 	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
@@ -301,6 +303,11 @@ func (app *L1App) initKeepers(
 		runtime.NewKVStoreService(keys[treasurytypes.StoreKey]),
 		app.AccountKeeper,
 		app.BankKeeper,
+		govAuthority,
+	)
+	app.EmissionsKeeper = emissionskeeper.NewKeeper(
+		appCodec,
+		runtime.NewKVStoreService(keys[emissionstypes.StoreKey]),
 		govAuthority,
 	)
 	app.DynamicCommissionKeeper = dynamiccommissionkeeper.NewKeeper(

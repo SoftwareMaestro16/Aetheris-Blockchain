@@ -43,6 +43,7 @@ import (
 	crosschainregistrymodule "github.com/sovereign-l1/l1/x/cross-chain-registry"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
 	dynamiccommissionmodule "github.com/sovereign-l1/l1/x/dynamic-commission"
+	emissionsmodule "github.com/sovereign-l1/l1/x/emissions"
 	nativeevidencemodule "github.com/sovereign-l1/l1/x/evidence"
 	feecollectormodule "github.com/sovereign-l1/l1/x/fee-collector"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
@@ -120,6 +121,7 @@ func (app *L1App) initModules(
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		burnmodule.NewAppModule(appCodec, app.BurnKeeper),
 		treasurymodule.NewAppModule(appCodec, app.TreasuryKeeper),
+		emissionsmodule.NewAppModule(appCodec, app.EmissionsKeeper),
 		dynamiccommissionmodule.NewAppModule(appCodec, app.DynamicCommissionKeeper),
 		feecollectormodule.NewAppModule(appCodec, app.FeeCollectorKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),

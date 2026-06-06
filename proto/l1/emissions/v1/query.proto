@@ -1,0 +1,52 @@
+syntax = "proto3";
+package l1.emissions.v1;
+
+import "google/api/annotations.proto";
+import "gogoproto/gogo.proto";
+import "l1/emissions/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/emissions/types";
+
+service Query {
+  rpc EmissionsParams(QueryEmissionsParamsRequest) returns (QueryEmissionsParamsResponse) {
+    option (google.api.http).get = "/l1/emissions/v1/params";
+  }
+
+  rpc CurrentInflation(QueryCurrentInflationRequest) returns (QueryCurrentInflationResponse) {
+    option (google.api.http).get = "/l1/emissions/v1/current_inflation";
+  }
+
+  rpc EmissionEpoch(QueryEmissionEpochRequest) returns (QueryEmissionEpochResponse) {
+    option (google.api.http).get = "/l1/emissions/v1/epochs/{epoch}";
+  }
+
+  rpc DistributionWeights(QueryDistributionWeightsRequest) returns (QueryDistributionWeightsResponse) {
+    option (google.api.http).get = "/l1/emissions/v1/distribution_weights";
+  }
+}
+
+message QueryEmissionsParamsRequest {}
+
+message QueryEmissionsParamsResponse {
+  Params params = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryCurrentInflationRequest {}
+
+message QueryCurrentInflationResponse {
+  uint32 current_inflation_bps = 1;
+}
+
+message QueryEmissionEpochRequest {
+  uint64 epoch = 1;
+}
+
+message QueryEmissionEpochResponse {
+  EmissionEpoch emission_epoch = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryDistributionWeightsRequest {}
+
+message QueryDistributionWeightsResponse {
+  DistributionWeights weights = 1 [(gogoproto.nullable) = false];
+}

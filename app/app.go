@@ -74,6 +74,8 @@ import (
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	dynamiccommissionkeeper "github.com/sovereign-l1/l1/x/dynamic-commission/keeper"
 	dynamiccommissiontypes "github.com/sovereign-l1/l1/x/dynamic-commission/types"
+	emissionskeeper "github.com/sovereign-l1/l1/x/emissions/keeper"
+	emissionstypes "github.com/sovereign-l1/l1/x/emissions/types"
 	nativeevidencekeeper "github.com/sovereign-l1/l1/x/evidence/keeper"
 	nativeevidencetypes "github.com/sovereign-l1/l1/x/evidence/types"
 	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
@@ -200,6 +202,7 @@ type L1App struct {
 	DexKeeper                 dexkeeper.Keeper
 	BurnKeeper                burnkeeper.Keeper
 	TreasuryKeeper            treasurykeeper.Keeper
+	EmissionsKeeper           emissionskeeper.Keeper
 	DynamicCommissionKeeper   dynamiccommissionkeeper.Keeper
 	FeeCollectorKeeper        feecollectorkeeper.Keeper
 	FeesKeeper                feeskeeper.Keeper
@@ -340,6 +343,7 @@ func NewL1App(
 		dextypes.StoreKey,
 		burntypes.StoreKey,
 		treasurytypes.StoreKey,
+		emissionstypes.StoreKey,
 		dynamiccommissiontypes.StoreKey,
 		feecollectortypes.StoreKey,
 		feestypes.StoreKey,

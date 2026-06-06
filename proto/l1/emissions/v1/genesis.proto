@@ -1,0 +1,48 @@
+syntax = "proto3";
+package l1.emissions.v1;
+
+import "cosmos/base/v1beta1/coin.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/emissions/types";
+
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+  repeated EmissionEpoch epoch_history = 2 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin total_minted_accounting = 3 [(gogoproto.nullable) = false];
+}
+
+message Params {
+  string base_denom = 1;
+  uint32 current_inflation_bps = 2;
+  uint32 target_staking_ratio_bps = 3;
+  uint32 min_annual_inflation_bps = 4;
+  uint32 max_annual_inflation_bps = 5;
+  uint32 constitutional_max_inflation_bps = 6;
+  uint32 responsiveness_bps = 7;
+  cosmos.base.v1beta1.Coin annual_reference_supply = 8 [(gogoproto.nullable) = false];
+  uint64 epochs_per_year = 9;
+  DistributionWeights distribution_weights = 10 [(gogoproto.nullable) = false];
+}
+
+message DistributionWeights {
+  uint32 validator_reward_bps = 1;
+  uint32 treasury_bps = 2;
+  uint32 protection_bps = 3;
+  uint32 burn_bps = 4;
+  uint32 ecosystem_bps = 5;
+}
+
+message EmissionEpoch {
+  uint64 epoch = 1;
+  uint32 staking_ratio_bps = 2;
+  uint32 inflation_bps = 3;
+  cosmos.base.v1beta1.Coin emission_amount = 4 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin validator_reward = 5 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin treasury = 6 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin protection_fund = 7 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin burn = 8 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin ecosystem = 9 [(gogoproto.nullable) = false];
+  cosmos.base.v1beta1.Coin rounding_remainder = 10 [(gogoproto.nullable) = false];
+  int64 finalized_height = 11;
+}
