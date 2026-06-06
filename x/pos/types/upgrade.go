@@ -1949,13 +1949,56 @@ func DefaultPosMigrationStrategyManifest() PosMigrationStrategyManifest {
 			ReadOnlyUntilExit:        false,
 			DependsOn:                []uint32{1},
 		},
+		{
+			PhaseID: 3,
+			Name:    "performance_based_rewards",
+			Scope:   "performance based rewards",
+			Modules: []string{"distribution", "staking", "validator_economy", "taskgroups", "performance", "delegation_market"},
+			Tasks: []string{
+				"activate reward multipliers",
+				"integrate x/performance with distribution",
+				"add task completion rewards",
+				"add missed task penalties to future score",
+				"add delegation risk queries",
+			},
+			ExitCriteria: []string{
+				"rewards reflect deterministic performance metrics",
+				"reward changes are bounded",
+				"performance impact is visible before delegation",
+			},
+			PreservesExistingStaking: true,
+			ReadOnlyUntilExit:        false,
+			DependsOn:                []uint32{2},
+		},
+		{
+			PhaseID: 4,
+			Name:    "full_economic_consensus_activation",
+			Scope:   "full economic consensus activation",
+			Modules: []string{"staking", "validator_economy", "taskgroups", "evidence", "slashing", "distribution", "collators", "fishermen"},
+			Tasks: []string{
+				"activate stake saturation in validator election",
+				"activate performance-weighted selection",
+				"activate structured evidence verification",
+				"activate severity-based slashing",
+				"activate reporter rewards and penalty routing",
+				"activate collator and fisherman roles where configured",
+			},
+			ExitCriteria: []string{
+				"validator selection uses stake and performance",
+				"evidence and slashing are structured and test-covered",
+				"task-based validator economy is live",
+			},
+			PreservesExistingStaking: true,
+			ReadOnlyUntilExit:        false,
+			DependsOn:                []uint32{3},
+		},
 	}}
 	manifest.Root = ComputePosMigrationStrategyRoot(manifest)
 	return manifest
 }
 
 func RequiredPosMigrationPhaseNames() []string {
-	return []string{"scoring_epoch_simulation", "task_groups_and_roles"}
+	return []string{"scoring_epoch_simulation", "task_groups_and_roles", "performance_based_rewards", "full_economic_consensus_activation"}
 }
 
 func (m PosMigrationStrategyManifest) Validate(compatibility CosmosSDKCompatibilityManifest) error {
