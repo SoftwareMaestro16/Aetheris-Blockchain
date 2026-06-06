@@ -1079,6 +1079,7 @@ type FraudPenaltyPolicy struct {
 	BurnShareBps            uint32
 	SecurityReserveShareBps uint32
 	CommunityPoolShareBps   uint32
+	SecurityReserveHook     bool
 }
 
 type PaymentFeeSchedule struct {
@@ -1136,6 +1137,58 @@ type PaymentFeeRefund struct {
 	Amount    string
 	Reason    string
 	Height    uint64
+}
+
+type SecurityReserveAllocationHook struct {
+	HookID     string
+	ChannelID  string
+	ProofID    string
+	Offender   string
+	Denom      string
+	Amount     string
+	Height     uint64
+	Route      PenaltyRoute
+	Allocation string
+}
+
+type SettlementInclusionLatency struct {
+	RecordID        string
+	OperationID     string
+	ChannelID       string
+	Operation       SettlementArbitrationOperation
+	SubmittedHeight uint64
+	IncludedHeight  uint64
+	LatencyBlocks   uint64
+	SLOThreshold    uint64
+	Breached        bool
+}
+
+type SettlementGasCostSchedule struct {
+	OpenGas                 uint64
+	CooperativeCloseGas     uint64
+	UnilateralCloseGas      uint64
+	DisputeGas              uint64
+	FraudProofGas           uint64
+	ConditionResolutionGas  uint64
+	PenaltyRoutingGas       uint64
+	FinalSettlementGas      uint64
+	ReplayProtectionGas     uint64
+	PerSignatureGas         uint64
+	PerConditionGas         uint64
+	PerFraudProofGas        uint64
+	PerPenaltyAllocationGas uint64
+	PerStateByteGas         uint64
+}
+
+type SettlementGasEstimate struct {
+	Operation            SettlementArbitrationOperation
+	BaseGas              uint64
+	SignatureGas         uint64
+	ConditionGas         uint64
+	FraudProofGas        uint64
+	PenaltyAllocationGas uint64
+	StateByteGas         uint64
+	TotalGas             uint64
 }
 
 type ChannelOpenFeeFormula struct {
@@ -5474,6 +5527,190 @@ func (r PaymentFeeRefund) Validate() error {
 	}
 	if r.Height == 0 {
 		return errors.New("payments fee refund height must be positive")
+	}
+	return nil
+}
+
+func DefaultSettlementGasCostSchedule() SettlementGasCostSchedule {
+	return SettlementGasCostSchedule{
+		OpenGas:                 30_000,
+		CooperativeCloseGas:     22_000,
+		UnilateralCloseGas:      35_000,
+		DisputeGas:              45_000,
+		FraudProofGas:           60_000,
+		ConditionResolutionGas:  40_000,
+		PenaltyRoutingGas:       20_000,
+		FinalSettlementGas:      50_000,
+		ReplayProtectionGas:     10_000,
+		PerSignatureGas:         2_000,
+		PerConditionGas:         3_000,
+		PerFraudProofGas:        8_000,
+		PerPenaltyAllocationGas: 1_500,
+		PerStateByteGas:         8,
+	}
+}
+
+func (s SettlementGasCostSchedule) Normalize() SettlementGasCostSchedule {
+	defaults := DefaultSettlementGasCostSchedule()
+	if s.OpenGas == 0 {
+		s.OpenGas = defaults.OpenGas
+	}
+	if s.CooperativeCloseGas == 0 {
+		s.CooperativeCloseGas = defaults.CooperativeCloseGas
+	}
+	if s.UnilateralCloseGas == 0 {
+		s.UnilateralCloseGas = defaults.UnilateralCloseGas
+	}
+	if s.DisputeGas == 0 {
+		s.DisputeGas = defaults.DisputeGas
+	}
+	if s.FraudProofGas == 0 {
+		s.FraudProofGas = defaults.FraudProofGas
+	}
+	if s.ConditionResolutionGas == 0 {
+		s.ConditionResolutionGas = defaults.ConditionResolutionGas
+	}
+	if s.PenaltyRoutingGas == 0 {
+		s.PenaltyRoutingGas = defaults.PenaltyRoutingGas
+	}
+	if s.FinalSettlementGas == 0 {
+		s.FinalSettlementGas = defaults.FinalSettlementGas
+	}
+	if s.ReplayProtectionGas == 0 {
+		s.ReplayProtectionGas = defaults.ReplayProtectionGas
+	}
+	if s.PerSignatureGas == 0 {
+		s.PerSignatureGas = defaults.PerSignatureGas
+	}
+	if s.PerConditionGas == 0 {
+		s.PerConditionGas = defaults.PerConditionGas
+	}
+	if s.PerFraudProofGas == 0 {
+		s.PerFraudProofGas = defaults.PerFraudProofGas
+	}
+	if s.PerPenaltyAllocationGas == 0 {
+		s.PerPenaltyAllocationGas = defaults.PerPenaltyAllocationGas
+	}
+	if s.PerStateByteGas == 0 {
+		s.PerStateByteGas = defaults.PerStateByteGas
+	}
+	return s
+}
+
+func (s SettlementGasCostSchedule) Validate() error {
+	schedule := s.Normalize()
+	values := []uint64{
+		schedule.OpenGas,
+		schedule.CooperativeCloseGas,
+		schedule.UnilateralCloseGas,
+		schedule.DisputeGas,
+		schedule.FraudProofGas,
+		schedule.ConditionResolutionGas,
+		schedule.PenaltyRoutingGas,
+		schedule.FinalSettlementGas,
+		schedule.ReplayProtectionGas,
+		schedule.PerSignatureGas,
+		schedule.PerConditionGas,
+		schedule.PerFraudProofGas,
+		schedule.PerPenaltyAllocationGas,
+		schedule.PerStateByteGas,
+	}
+	for _, value := range values {
+		if value == 0 {
+			return errors.New("payments settlement gas cost schedule must be positive")
+		}
+	}
+	return nil
+}
+
+func (h SecurityReserveAllocationHook) Normalize() SecurityReserveAllocationHook {
+	h.HookID = normalizeOptionalHash(h.HookID)
+	h.ChannelID = normalizeHash(h.ChannelID)
+	h.ProofID = normalizeHash(h.ProofID)
+	h.Offender = strings.TrimSpace(h.Offender)
+	h.Denom = normalizeAssetDenom(h.Denom)
+	h.Amount = strings.TrimSpace(h.Amount)
+	h.Allocation = normalizeOptionalHash(h.Allocation)
+	if h.Route == "" {
+		h.Route = PenaltyRouteSecurityReserve
+	}
+	return h
+}
+
+func (h SecurityReserveAllocationHook) ValidateForChannel(channel ChannelRecord) error {
+	hook := h.Normalize()
+	channel = channel.Normalize()
+	if err := ValidateHash("payments security reserve hook id", hook.HookID); err != nil {
+		return err
+	}
+	if hook.ChannelID != channel.ChannelID {
+		return errors.New("payments security reserve hook channel mismatch")
+	}
+	if err := ValidateHash("payments security reserve proof id", hook.ProofID); err != nil {
+		return err
+	}
+	if !containsString(channel.Participants, hook.Offender) {
+		return errors.New("payments security reserve hook offender must be channel participant")
+	}
+	if hook.Denom != NativeDenom {
+		return fmt.Errorf("payments security reserve hook denom must be %s", NativeDenom)
+	}
+	if hook.Route != PenaltyRouteSecurityReserve {
+		return errors.New("payments security reserve hook route mismatch")
+	}
+	if err := validatePositiveInt("payments security reserve hook amount", hook.Amount); err != nil {
+		return err
+	}
+	if hook.Height == 0 {
+		return errors.New("payments security reserve hook height must be positive")
+	}
+	if err := ValidateHash("payments security reserve allocation commitment", hook.Allocation); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l SettlementInclusionLatency) Normalize() SettlementInclusionLatency {
+	l.RecordID = normalizeOptionalHash(l.RecordID)
+	l.OperationID = normalizeOptionalHash(l.OperationID)
+	l.ChannelID = normalizeHash(l.ChannelID)
+	if l.IncludedHeight >= l.SubmittedHeight && l.SubmittedHeight != 0 {
+		l.LatencyBlocks = l.IncludedHeight - l.SubmittedHeight
+	}
+	if l.SLOThreshold > 0 {
+		l.Breached = l.LatencyBlocks > l.SLOThreshold
+	}
+	return l
+}
+
+func (l SettlementInclusionLatency) Validate(channels []ChannelRecord) error {
+	record := l.Normalize()
+	if err := ValidateHash("payments settlement inclusion latency id", record.RecordID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments settlement inclusion operation id", record.OperationID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments settlement inclusion channel id", record.ChannelID); err != nil {
+		return err
+	}
+	if !IsSettlementArbitrationOperation(record.Operation) {
+		return fmt.Errorf("unknown payments settlement inclusion operation %q", record.Operation)
+	}
+	if record.SubmittedHeight == 0 || record.IncludedHeight == 0 || record.IncludedHeight < record.SubmittedHeight {
+		return errors.New("payments settlement inclusion heights are invalid")
+	}
+	if record.LatencyBlocks != record.IncludedHeight-record.SubmittedHeight {
+		return errors.New("payments settlement inclusion latency mismatch")
+	}
+	if record.SLOThreshold == 0 {
+		return errors.New("payments settlement inclusion SLO threshold must be positive")
+	}
+	if record.Breached != (record.LatencyBlocks > record.SLOThreshold) {
+		return errors.New("payments settlement inclusion breach marker mismatch")
+	}
+	if _, found := channelMap(channels)[record.ChannelID]; !found {
+		return errors.New("payments settlement inclusion channel not found")
 	}
 	return nil
 }

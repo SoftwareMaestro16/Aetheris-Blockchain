@@ -1152,6 +1152,89 @@ func TestFraudProofVerificationFeeRefundsWhenAccepted(t *testing.T) {
 	require.Equal(t, state.FeeRefunds[0].FeeID, fraudFee.FeeID)
 }
 
+func TestSettlementGasCostsAndInclusionLatencyMonitoring(t *testing.T) {
+	alice := testAddress(0xa4)
+	bob := testAddress(0xa5)
+	channel := signedChannel(t, "settlement-gas-monitoring", "100", alice, bob)
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "45"},
+		{Participant: bob, Amount: "55"},
+	})
+
+	schedule := DefaultSettlementGasCostSchedule()
+	estimate, err := EstimateSettlementMessageGas(SettlementArbitrationInput{
+		Operation:       SettlementArbitrationDispute,
+		ChannelID:       channel.ChannelID,
+		SignedState:     closeState,
+		ConditionProofs: []ConditionResolution{{ConditionID: HashParts("settlement-gas-condition"), Resolver: bob, Recipient: bob, Amount: "1", EvidenceHash: HashParts("settlement-gas-evidence")}},
+	}, schedule)
+	require.NoError(t, err)
+	require.Equal(t, SettlementArbitrationDispute, estimate.Operation)
+	require.Equal(t, schedule.DisputeGas, estimate.BaseGas)
+	require.Equal(t, uint64(len(closeState.Signatures))*schedule.PerSignatureGas, estimate.SignatureGas)
+	require.Equal(t, schedule.PerConditionGas, estimate.ConditionGas)
+	require.NotZero(t, estimate.StateByteGas)
+	require.Equal(t, estimate.BaseGas+estimate.SignatureGas+estimate.ConditionGas+estimate.FraudProofGas+estimate.PenaltyAllocationGas+estimate.StateByteGas, estimate.TotalGas)
+
+	state, err := OpenChannel(EmptyState(), channel)
+	require.NoError(t, err)
+	state, latency, err := RecordSettlementInclusionLatency(state, HashParts("settlement-gas-op"), channel.ChannelID, SettlementArbitrationDispute, 21, 29, 4)
+	require.NoError(t, err)
+	require.Equal(t, uint64(8), latency.LatencyBlocks)
+	require.True(t, latency.Breached)
+	require.Len(t, state.InclusionLatencies, 1)
+	require.Equal(t, latency.RecordID, state.Export().InclusionLatencies[0].RecordID)
+}
+
+func TestFraudProofRefundAccountingAndSecurityReserveHook(t *testing.T) {
+	alice := testAddress(0xa8)
+	bob := testAddress(0xa9)
+	channel := signedChannel(t, "fraud-reserve-hook", "100", alice, bob)
+	schedule := DefaultPaymentFeeSchedule()
+	schedule.FraudProofVerificationFee = "7"
+	state, err := ConfigurePaymentFeeSchedule(EmptyState(), schedule)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "50"},
+		{Participant: bob, Amount: "50"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "40"},
+		{Participant: bob, Amount: "60"},
+	})
+	proofID := HashParts("fraud-reserve-hook-proof", channel.ChannelID)
+	proof := FraudProof{
+		ProofID:             proofID,
+		ProofType:           FraudProofTypeDoubleSign,
+		SubmittedBy:         bob,
+		OffendingSigner:     alice,
+		StateA:              closeState,
+		StateB:              conflicting,
+		EvidenceHash:        ComputeDisputeProofHash(FraudProof{ProofID: proofID, ProofType: FraudProofTypeDoubleSign, StateA: closeState, StateB: conflicting}),
+		PenaltyDenom:        NativeDenom,
+		PenaltyAmount:       "10",
+		VerificationFeePaid: "7",
+	}
+	state, err = SubmitFraudProofWithPolicy(state, channel.ChannelID, proof, 21, FraudPenaltyPolicy{
+		ReporterRewardCap:       "4",
+		SecurityReserveShareBps: MaxPenaltyRouteBps,
+		SecurityReserveHook:     true,
+	})
+	require.NoError(t, err)
+	require.Len(t, state.FeeRefunds, 1)
+	require.Equal(t, "7", state.FeeRefunds[0].Amount)
+	require.Equal(t, bob, state.FeeRefunds[0].Recipient)
+	require.Len(t, state.SecurityReserveHooks, 1)
+	require.Equal(t, PenaltyRouteSecurityReserve, state.SecurityReserveHooks[0].Route)
+	require.Equal(t, "6", state.SecurityReserveHooks[0].Amount)
+	require.Equal(t, alice, state.SecurityReserveHooks[0].Offender)
+	require.Equal(t, "6", allocationAmountFor(state.Channels[0].PendingClose.PenaltyAllocations, PenaltyRouteSecurityReserve))
+}
+
 func TestAsyncExecutionFinalizationQueueIsBoundedAndIdempotent(t *testing.T) {
 	alice := testAddress(0xa6)
 	bob := testAddress(0xa7)

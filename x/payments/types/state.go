@@ -26,6 +26,8 @@ type PaymentsState struct {
 	FeeMultipliers           []PaymentFeeMultiplier
 	FeeCharges               []PaymentFeeCharge
 	FeeRefunds               []PaymentFeeRefund
+	SecurityReserveHooks     []SecurityReserveAllocationHook
+	InclusionLatencies       []SettlementInclusionLatency
 	AsyncFinalizationQueue   []AsyncFinalizationJob
 	AsyncPromiseExpiryQueue  []AsyncPromiseExpiryJob
 	AsyncCompletions         []AsyncSettlementCompletion
@@ -48,6 +50,8 @@ func EmptyState() PaymentsState {
 		FeeMultipliers:           []PaymentFeeMultiplier{},
 		FeeCharges:               []PaymentFeeCharge{},
 		FeeRefunds:               []PaymentFeeRefund{},
+		SecurityReserveHooks:     []SecurityReserveAllocationHook{},
+		InclusionLatencies:       []SettlementInclusionLatency{},
 		AsyncFinalizationQueue:   []AsyncFinalizationJob{},
 		AsyncPromiseExpiryQueue:  []AsyncPromiseExpiryJob{},
 		AsyncCompletions:         []AsyncSettlementCompletion{},
@@ -355,6 +359,173 @@ func RefundPaymentFee(state PaymentsState, feeID, recipient, reason string, heig
 	sortPaymentFeeCharges(next.FeeCharges)
 	sortPaymentFeeRefunds(next.FeeRefunds)
 	return next, refund, next.Validate()
+}
+
+func EstimateSettlementMessageGas(input SettlementArbitrationInput, schedule SettlementGasCostSchedule) (SettlementGasEstimate, error) {
+	input = input.Normalize()
+	schedule = schedule.Normalize()
+	if err := schedule.Validate(); err != nil {
+		return SettlementGasEstimate{}, err
+	}
+	if !IsSettlementArbitrationOperation(input.Operation) {
+		return SettlementGasEstimate{}, fmt.Errorf("unknown payments settlement gas operation %q", input.Operation)
+	}
+	base, err := settlementBaseGasForOperation(input.Operation, schedule)
+	if err != nil {
+		return SettlementGasEstimate{}, err
+	}
+	signatureCount := uint64(len(input.SignedState.Normalize().Signatures))
+	if !input.Claim.IsZero() {
+		signatureCount++
+		if input.Claim.ReceiverAckOptional.SignatureHash != "" {
+			signatureCount++
+		}
+	}
+	conditionCount := uint64(len(input.ConditionProofs))
+	fraudProofCount := uint64(0)
+	if input.FraudProof.Normalize().ProofID != "" {
+		fraudProofCount = 1
+	}
+	penaltyAllocationCount := uint64(0)
+	if input.Operation == SettlementArbitrationPenaltyRouting && input.FraudProof.Normalize().ProofID != "" {
+		penaltyAllocationCount = 1
+	}
+	stateBytes := estimateSettlementStateBytes(input)
+	estimate := SettlementGasEstimate{
+		Operation:            input.Operation,
+		BaseGas:              base,
+		SignatureGas:         signatureCount * schedule.PerSignatureGas,
+		ConditionGas:         conditionCount * schedule.PerConditionGas,
+		FraudProofGas:        fraudProofCount * schedule.PerFraudProofGas,
+		PenaltyAllocationGas: penaltyAllocationCount * schedule.PerPenaltyAllocationGas,
+		StateByteGas:         stateBytes * schedule.PerStateByteGas,
+	}
+	estimate.TotalGas = estimate.BaseGas + estimate.SignatureGas + estimate.ConditionGas + estimate.FraudProofGas + estimate.PenaltyAllocationGas + estimate.StateByteGas
+	return estimate, nil
+}
+
+func RecordSecurityReserveAllocationHooks(state PaymentsState, channelID string, proof FraudProof, allocations []PenaltyAllocation, height uint64, enabled bool) (PaymentsState, []SecurityReserveAllocationHook, error) {
+	state = state.Export()
+	if !enabled {
+		return state, nil, nil
+	}
+	channel, found := state.ChannelByID(channelID)
+	if !found {
+		return PaymentsState{}, nil, errors.New("payments security reserve hook channel not found")
+	}
+	hooks, err := BuildSecurityReserveAllocationHooks(channel, proof, allocations, height)
+	if err != nil {
+		return PaymentsState{}, nil, err
+	}
+	if len(hooks) == 0 {
+		return state, nil, nil
+	}
+	next := state.Clone()
+	next.SecurityReserveHooks = append(next.SecurityReserveHooks, hooks...)
+	sortSecurityReserveAllocationHooks(next.SecurityReserveHooks)
+	return next, hooks, next.Validate()
+}
+
+func BuildSecurityReserveAllocationHooks(channel ChannelRecord, proof FraudProof, allocations []PenaltyAllocation, height uint64) ([]SecurityReserveAllocationHook, error) {
+	channel = channel.Normalize()
+	proof = proof.Normalize()
+	if height == 0 {
+		return nil, errors.New("payments security reserve hook height must be positive")
+	}
+	out := []SecurityReserveAllocationHook{}
+	for _, allocation := range normalizePenaltyAllocations(allocations) {
+		if allocation.Route != PenaltyRouteSecurityReserve {
+			continue
+		}
+		commitment := HashParts("security-reserve-allocation", channel.ChannelID, proof.ProofID, allocation.Offender, allocation.Amount, fmt.Sprintf("%020d", height))
+		hook := SecurityReserveAllocationHook{
+			HookID:     HashParts("security-reserve-hook", commitment),
+			ChannelID:  channel.ChannelID,
+			ProofID:    proof.ProofID,
+			Offender:   allocation.Offender,
+			Denom:      NativeDenom,
+			Amount:     allocation.Amount,
+			Height:     height,
+			Route:      PenaltyRouteSecurityReserve,
+			Allocation: commitment,
+		}.Normalize()
+		if err := hook.ValidateForChannel(channel); err != nil {
+			return nil, err
+		}
+		out = append(out, hook)
+	}
+	sortSecurityReserveAllocationHooks(out)
+	return out, nil
+}
+
+func RecordSettlementInclusionLatency(state PaymentsState, operationID, channelID string, operation SettlementArbitrationOperation, submittedHeight, includedHeight, sloThreshold uint64) (PaymentsState, SettlementInclusionLatency, error) {
+	state = state.Export()
+	channelID = normalizeHash(channelID)
+	if _, found := state.ChannelByID(channelID); !found {
+		return PaymentsState{}, SettlementInclusionLatency{}, errors.New("payments inclusion latency channel not found")
+	}
+	record := SettlementInclusionLatency{
+		RecordID:        HashParts("settlement-inclusion-latency", operationID, channelID, string(operation), fmt.Sprintf("%020d", submittedHeight), fmt.Sprintf("%020d", includedHeight)),
+		OperationID:     operationID,
+		ChannelID:       channelID,
+		Operation:       operation,
+		SubmittedHeight: submittedHeight,
+		IncludedHeight:  includedHeight,
+		SLOThreshold:    sloThreshold,
+	}.Normalize()
+	if err := record.Validate(state.Channels); err != nil {
+		return PaymentsState{}, SettlementInclusionLatency{}, err
+	}
+	next := state.Clone()
+	next.InclusionLatencies = append(next.InclusionLatencies, record)
+	sortSettlementInclusionLatencies(next.InclusionLatencies)
+	return next, record, next.Validate()
+}
+
+func settlementBaseGasForOperation(operation SettlementArbitrationOperation, schedule SettlementGasCostSchedule) (uint64, error) {
+	switch operation {
+	case SettlementArbitrationOpen, SettlementArbitrationCollateralCustody:
+		return schedule.OpenGas, nil
+	case SettlementArbitrationCooperativeClose:
+		return schedule.CooperativeCloseGas, nil
+	case SettlementArbitrationUnilateralClose:
+		return schedule.UnilateralCloseGas, nil
+	case SettlementArbitrationDispute:
+		return schedule.DisputeGas, nil
+	case SettlementArbitrationFraudProof:
+		return schedule.FraudProofGas, nil
+	case SettlementArbitrationConditionResolution:
+		return schedule.ConditionResolutionGas, nil
+	case SettlementArbitrationPenaltyRouting:
+		return schedule.PenaltyRoutingGas, nil
+	case SettlementArbitrationFinalSettlement:
+		return schedule.FinalSettlementGas, nil
+	case SettlementArbitrationReplayProtection:
+		return schedule.ReplayProtectionGas, nil
+	default:
+		return 0, fmt.Errorf("unknown payments settlement gas operation %q", operation)
+	}
+}
+
+func estimateSettlementStateBytes(input SettlementArbitrationInput) uint64 {
+	input = input.Normalize()
+	state := input.SignedState.Normalize()
+	size := uint64(len(input.ChannelID) + len(state.StateHash) + len(state.PreviousStateHash) + len(state.ConditionRoot) + len(state.ParticipantSetHash))
+	size += uint64(len(state.Balances) * 80)
+	size += uint64(len(state.Signatures) * 128)
+	size += uint64(len(input.ConditionProofs) * 96)
+	proof := input.FraudProof.Normalize()
+	if proof.ProofID != "" {
+		size += uint64(len(proof.ProofID) + len(proof.EvidenceHash) + len(proof.PenaltyAmount) + 256)
+	}
+	if !input.Claim.IsZero() {
+		claim := input.Claim.Normalize()
+		size += uint64(len(claim.StateHash) + len(claim.ClaimedAmount) + 128)
+	}
+	if size == 0 {
+		return 1
+	}
+	return size
 }
 
 func RefreshAsyncExecutionQueues(state PaymentsState, currentHeight uint64) (PaymentsState, error) {
@@ -1583,11 +1754,15 @@ func SubmitFraudProofWithPolicy(state PaymentsState, channelID string, proof Fra
 			return PaymentsState{}, err
 		}
 	}
+	hookedState, _, err := RecordSecurityReserveAllocationHooks(refundedState, channel.ChannelID, proof, allocations, currentHeight, policy.Normalize().SecurityReserveHook)
+	if err != nil {
+		return PaymentsState{}, err
+	}
 	nextChannel := channel
 	nextChannel.PendingClose.FraudProofs = append(nextChannel.PendingClose.FraudProofs, proof)
 	nextChannel.PendingClose.Penalties = append(nextChannel.PendingClose.Penalties, penalties...)
 	nextChannel.PendingClose.PenaltyAllocations = append(nextChannel.PendingClose.PenaltyAllocations, allocations...)
-	next := refundedState.Clone()
+	next := hookedState.Clone()
 	nextChannel, err = setChannelFinality(nextChannel, ChannelFinalityPenalized, currentHeight, &next.Events)
 	if err != nil {
 		return PaymentsState{}, err
@@ -2897,6 +3072,8 @@ func (s PaymentsState) Export() PaymentsState {
 	sortPaymentFeeMultipliers(out.FeeMultipliers)
 	sortPaymentFeeCharges(out.FeeCharges)
 	sortPaymentFeeRefunds(out.FeeRefunds)
+	sortSecurityReserveAllocationHooks(out.SecurityReserveHooks)
+	sortSettlementInclusionLatencies(out.InclusionLatencies)
 	sortAsyncFinalizationJobs(out.AsyncFinalizationQueue)
 	sortAsyncPromiseExpiryJobs(out.AsyncPromiseExpiryQueue)
 	sortAsyncSettlementCompletions(out.AsyncCompletions)
@@ -2919,6 +3096,8 @@ func (s PaymentsState) Clone() PaymentsState {
 		FeeMultipliers:           make([]PaymentFeeMultiplier, len(s.FeeMultipliers)),
 		FeeCharges:               make([]PaymentFeeCharge, len(s.FeeCharges)),
 		FeeRefunds:               make([]PaymentFeeRefund, len(s.FeeRefunds)),
+		SecurityReserveHooks:     make([]SecurityReserveAllocationHook, len(s.SecurityReserveHooks)),
+		InclusionLatencies:       make([]SettlementInclusionLatency, len(s.InclusionLatencies)),
 		AsyncFinalizationQueue:   make([]AsyncFinalizationJob, len(s.AsyncFinalizationQueue)),
 		AsyncPromiseExpiryQueue:  make([]AsyncPromiseExpiryJob, len(s.AsyncPromiseExpiryQueue)),
 		AsyncCompletions:         make([]AsyncSettlementCompletion, len(s.AsyncCompletions)),
@@ -2962,6 +3141,12 @@ func (s PaymentsState) Clone() PaymentsState {
 	}
 	for i, refund := range s.FeeRefunds {
 		out.FeeRefunds[i] = refund.Normalize()
+	}
+	for i, hook := range s.SecurityReserveHooks {
+		out.SecurityReserveHooks[i] = hook.Normalize()
+	}
+	for i, latency := range s.InclusionLatencies {
+		out.InclusionLatencies[i] = latency.Normalize()
 	}
 	for i, job := range s.AsyncFinalizationQueue {
 		out.AsyncFinalizationQueue[i] = job.Normalize()
@@ -3022,6 +3207,12 @@ func (s PaymentsState) Validate() error {
 		return err
 	}
 	if err := validatePaymentFeeRefunds(s.FeeCharges, s.FeeRefunds); err != nil {
+		return err
+	}
+	if err := validateSecurityReserveAllocationHooks(s.Channels, s.SecurityReserveHooks); err != nil {
+		return err
+	}
+	if err := validateSettlementInclusionLatencies(s.Channels, s.InclusionLatencies); err != nil {
 		return err
 	}
 	if err := validateAsyncFinalizationJobs(s.Channels, s.AsyncFinalizationQueue); err != nil {
@@ -3565,6 +3756,51 @@ func validatePaymentFeeRefunds(charges []PaymentFeeCharge, refunds []PaymentFeeR
 			return errors.New("payments fee refunds must be sorted canonically")
 		}
 		previous = refund.RefundID
+	}
+	return nil
+}
+
+func validateSecurityReserveAllocationHooks(channels []ChannelRecord, hooks []SecurityReserveAllocationHook) error {
+	channelByID := channelMap(channels)
+	seen := make(map[string]struct{}, len(hooks))
+	var previous string
+	for i, hook := range hooks {
+		hook = hook.Normalize()
+		channel, found := channelByID[hook.ChannelID]
+		if !found {
+			return errors.New("payments security reserve hook channel not found")
+		}
+		if err := hook.ValidateForChannel(channel); err != nil {
+			return err
+		}
+		if _, found := seen[hook.HookID]; found {
+			return errors.New("payments duplicate security reserve hook")
+		}
+		seen[hook.HookID] = struct{}{}
+		if i > 0 && previous >= hook.HookID {
+			return errors.New("payments security reserve hooks must be sorted canonically")
+		}
+		previous = hook.HookID
+	}
+	return nil
+}
+
+func validateSettlementInclusionLatencies(channels []ChannelRecord, records []SettlementInclusionLatency) error {
+	seen := make(map[string]struct{}, len(records))
+	var previous string
+	for i, record := range records {
+		record = record.Normalize()
+		if err := record.Validate(channels); err != nil {
+			return err
+		}
+		if _, found := seen[record.RecordID]; found {
+			return errors.New("payments duplicate settlement inclusion latency")
+		}
+		seen[record.RecordID] = struct{}{}
+		if i > 0 && previous >= record.RecordID {
+			return errors.New("payments settlement inclusion latencies must be sorted canonically")
+		}
+		previous = record.RecordID
 	}
 	return nil
 }
@@ -4862,6 +5098,18 @@ func sortPaymentFeeCharges(charges []PaymentFeeCharge) {
 func sortPaymentFeeRefunds(refunds []PaymentFeeRefund) {
 	sort.SliceStable(refunds, func(i, j int) bool {
 		return refunds[i].Normalize().RefundID < refunds[j].Normalize().RefundID
+	})
+}
+
+func sortSecurityReserveAllocationHooks(hooks []SecurityReserveAllocationHook) {
+	sort.SliceStable(hooks, func(i, j int) bool {
+		return hooks[i].Normalize().HookID < hooks[j].Normalize().HookID
+	})
+}
+
+func sortSettlementInclusionLatencies(records []SettlementInclusionLatency) {
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].Normalize().RecordID < records[j].Normalize().RecordID
 	})
 }
 
