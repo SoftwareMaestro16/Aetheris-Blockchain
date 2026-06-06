@@ -62,6 +62,8 @@ import (
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
+	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
+	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	identityrootkeeper "github.com/sovereign-l1/l1/x/identity-root/keeper"
@@ -261,6 +263,13 @@ func (app *L1App) initKeepers(
 	app.DexKeeper = dexkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[dextypes.StoreKey]),
+		app.BankKeeper,
+		govAuthority,
+	)
+	app.FeeCollectorKeeper = feecollectorkeeper.NewKeeper(
+		appCodec,
+		runtime.NewKVStoreService(keys[feecollectortypes.StoreKey]),
+		app.AccountKeeper,
 		app.BankKeeper,
 		govAuthority,
 	)

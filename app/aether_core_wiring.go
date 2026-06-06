@@ -29,6 +29,7 @@ import (
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
+	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
@@ -229,6 +230,7 @@ func aetherCoreInitGenesisOrder() []string {
 		bridgehubtypes.ModuleName,
 		crosschainregistrytypes.ModuleName,
 		shardingcoordinatortypes.ModuleName,
+		feecollectortypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,
@@ -273,6 +275,7 @@ func aetherCoreExportGenesisOrder() []string {
 		bridgehubtypes.ModuleName,
 		crosschainregistrytypes.ModuleName,
 		shardingcoordinatortypes.ModuleName,
+		feecollectortypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,

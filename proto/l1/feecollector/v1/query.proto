@@ -1,0 +1,56 @@
+syntax = "proto3";
+package l1.feecollector.v1;
+
+import "google/api/annotations.proto";
+import "gogoproto/gogo.proto";
+import "l1/feecollector/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/fee-collector/types";
+
+service Query {
+  rpc FeeCollector(QueryFeeCollectorRequest) returns (QueryFeeCollectorResponse) {
+    option (google.api.http).get = "/l1/feecollector/v1/collector";
+  }
+
+  rpc FeeBalances(QueryFeeBalancesRequest) returns (QueryFeeBalancesResponse) {
+    option (google.api.http).get = "/l1/feecollector/v1/balances";
+  }
+
+  rpc FeeDistribution(QueryFeeDistributionRequest) returns (QueryFeeDistributionResponse) {
+    option (google.api.http).get = "/l1/feecollector/v1/distribution";
+  }
+
+  rpc FeeHistory(QueryFeeHistoryRequest) returns (QueryFeeHistoryResponse) {
+    option (google.api.http).get = "/l1/feecollector/v1/history";
+  }
+}
+
+message QueryFeeCollectorRequest {}
+
+message QueryFeeCollectorResponse {
+  string module_name = 1;
+  string module_account = 2;
+  FeeBalances balances = 3 [(gogoproto.nullable) = false];
+  PendingDistribution pending_distribution = 4 [(gogoproto.nullable) = false];
+}
+
+message QueryFeeBalancesRequest {}
+
+message QueryFeeBalancesResponse {
+  FeeBalances balances = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryFeeDistributionRequest {}
+
+message QueryFeeDistributionResponse {
+  Params params = 1 [(gogoproto.nullable) = false];
+  PendingDistribution pending_distribution = 2 [(gogoproto.nullable) = false];
+}
+
+message QueryFeeHistoryRequest {
+  uint64 epoch = 1;
+}
+
+message QueryFeeHistoryResponse {
+  repeated FeeHistoryEntry history = 1 [(gogoproto.nullable) = false];
+}

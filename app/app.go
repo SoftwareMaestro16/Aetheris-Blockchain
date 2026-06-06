@@ -68,6 +68,8 @@ import (
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
+	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
+	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	identityrootkeeper "github.com/sovereign-l1/l1/x/identity-root/keeper"
@@ -125,6 +127,9 @@ var (
 		protocolpooltypes.ProtocolPoolEscrowAccount: nil,
 		tokenfactorytypes.ModuleName:                {authtypes.Minter, authtypes.Burner},
 		dextypes.ModuleName:                         {authtypes.Minter, authtypes.Burner},
+		feecollectortypes.CollectorModuleName:       {authtypes.Burner},
+		feecollectortypes.TreasuryModuleName:        nil,
+		feecollectortypes.ProtectionModuleName:      nil,
 		feestypes.ModuleName:                        nil,
 	}
 )
@@ -168,6 +173,7 @@ type L1App struct {
 	ConstitutionKeeper        constitutionkeeper.Keeper
 	TokenFactoryKeeper        tokenfactorykeeper.Keeper
 	DexKeeper                 dexkeeper.Keeper
+	FeeCollectorKeeper        feecollectorkeeper.Keeper
 	FeesKeeper                feeskeeper.Keeper
 	AetherCoreKeeper          aethercorekeeper.Keeper
 	LoadKeeper                loadkeeper.Keeper
@@ -293,6 +299,7 @@ func NewL1App(
 		configtypes.StoreKey,
 		tokenfactorytypes.StoreKey,
 		dextypes.StoreKey,
+		feecollectortypes.StoreKey,
 		feestypes.StoreKey,
 		aethercoretypes.StoreKey,
 		loadtypes.StoreKey,
