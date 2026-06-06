@@ -898,6 +898,96 @@ func TestPaymentObservabilityMetricsCoverOperationalSignals(t *testing.T) {
 	require.Equal(t, uint64(10000), reportTypes[PaymentReportWeeklyPerformance].BlockSTMConflictRateBps)
 }
 
+func TestPaymentGovernanceParametersValidateChannelAndConditionalBounds(t *testing.T) {
+	alice := testAddress(0xe0)
+	bob := testAddress(0xe1)
+
+	params := DefaultPaymentGovernanceParams()
+	require.NoError(t, params.Validate())
+	require.NoError(t, ValidateHash("payments governance params hash", params.ParamsHash))
+
+	params.Channel.MinimumChannelCollateral = "100"
+	params.Channel.MaximumChannelCollateral = "1000"
+	params.Channel.MinimumChallengePeriod = 4
+	params.Channel.MaximumChallengePeriod = 64
+	params.Channel.DefaultChallengePeriod = 16
+	params.Channel.MinimumCloseDelay = 2
+	params.Channel.MaximumCloseDelay = 32
+	params.Channel.ChannelOpenBaseFee = "9"
+	params.Channel.ChannelStorageFeePerByte = "2"
+	params.Channel.ChannelTombstoneRetention = 500
+	params.Conditional.MaximumActivePromisesPerChannel = 1
+	params.Conditional.MaximumPromiseAmountRatioBps = 2_500
+	params.Conditional.MinimumTimeoutMargin = 10
+	params.Conditional.MaximumPromiseLifetime = 70
+	params.Conditional.BatchResolutionMaximumSize = 1
+	params.Conditional.PromiseStorageFee = "3"
+	params.Conditional.ExpiredPromiseCleanupLimitPerBlock = 7
+	params = params.WithHash()
+	require.NoError(t, params.Validate())
+
+	schedule, err := BuildGovernedPaymentFeeSchedule(params)
+	require.NoError(t, err)
+	require.Equal(t, "9", schedule.ChannelOpenFee)
+	require.Equal(t, "2", schedule.StorageByteFee)
+	require.Equal(t, "3", schedule.ConditionalPromiseSettlementFee)
+
+	openReq := ChannelOpenRequest{
+		ChainID:         "aetheris-test-1",
+		ChannelID:       HashParts("governance-open", alice, bob),
+		Participants:    []string{alice, bob},
+		InitialBalances: []Balance{{Participant: alice, Amount: "250"}, {Participant: bob, Amount: "0"}},
+		ChannelType:     ChannelTypeBidirectional,
+		Collateral:      "250",
+		CloseDelay:      8,
+		ChallengePeriod: 16,
+		FeePolicyID:     NativeDenom,
+		OpeningFeeDenom: NativeDenom,
+		OpeningFeePaid:  "9",
+		OpenHeight:      10,
+	}
+	require.NoError(t, ValidateChannelOpenRequestWithGovernance(openReq, params))
+
+	tooSmall := openReq
+	tooSmall.Collateral = "99"
+	tooSmall.InitialBalances = []Balance{{Participant: alice, Amount: "99"}, {Participant: bob, Amount: "0"}}
+	require.ErrorContains(t, ValidateChannelOpenRequestWithGovernance(tooSmall, params), "below governance minimum")
+
+	lowFee := openReq
+	lowFee.OpeningFeePaid = "8"
+	require.ErrorContains(t, ValidateChannelOpenRequestWithGovernance(lowFee, params), "below governance base fee")
+
+	badChallenge := openReq
+	badChallenge.ChallengePeriod = 3
+	require.ErrorContains(t, ValidateChannelOpenRequestWithGovernance(badChallenge, params), "challenge period")
+
+	expiry, err := SettlementTombstoneExpiryHeight(100, params)
+	require.NoError(t, err)
+	require.Equal(t, uint64(600), expiry)
+
+	cleanupLimit, err := ExpiredPromiseCleanupLimit(params)
+	require.NoError(t, err)
+	require.Equal(t, uint64(7), cleanupLimit)
+
+	channel := signedChannel(t, "governance-conditional", "1000", alice, bob)
+	channel.LatestState = signedReserveState(t, channel, 2, channel.OpeningStateHash, "300", "0", []Balance{{Participant: alice, Amount: "700"}, {Participant: bob, Amount: "0"}})
+	require.NoError(t, channel.Validate())
+
+	promise := signedPromiseWithHashLock(t, channel, "governance-ok", alice, bob, "200", "10", 2, 30, HashParts("governance-preimage"))
+	require.NoError(t, ValidateConditionalPromisesForChannelWithGovernance(channel, []ConditionalPromise{promise}, nil, params))
+
+	second := signedPromiseWithHashLock(t, channel, "governance-too-many", alice, bob, "1", "0", 3, 31, promise.HashLock)
+	require.ErrorContains(t, ValidateConditionalPromisesForChannelWithGovernance(channel, []ConditionalPromise{promise, second}, nil, params), "active promises exceed")
+
+	tooLarge := signedPromiseWithHashLock(t, channel, "governance-too-large", alice, bob, "260", "0", 4, 32, promise.HashLock)
+	require.ErrorContains(t, ValidateConditionalPromisesForChannelWithGovernance(channel, []ConditionalPromise{tooLarge}, nil, params), "exceeds governance channel ratio")
+
+	tooLong := signedPromiseWithHashLock(t, channel, "governance-too-long", alice, bob, "10", "0", 5, 81, promise.HashLock)
+	windowChannel := channel
+	windowChannel.LatestState.TimeoutHeight = 120
+	require.ErrorContains(t, params.Conditional.ValidatePromiseWindow(windowChannel, tooLong), "lifetime exceeds")
+}
+
 func TestSettlementArbitrationBoundaryRejectsNonDeterministicInputs(t *testing.T) {
 	alice := testAddress(0x12)
 	bob := testAddress(0x13)
