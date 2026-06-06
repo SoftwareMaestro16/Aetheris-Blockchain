@@ -12,38 +12,39 @@ import (
 )
 
 const (
-	NativeDenom              = "naet"
-	CanonicalEncodingVersion = byte(1)
-	CurrentAppVersion        = uint32(1)
-	CurrentStateVersion      = uint32(1)
-	SignatureSchemeEd25519   = "ed25519-aetheris-v1"
-	SignatureObjectState     = "channel_state"
-	SignatureObjectClaim     = "unidirectional_claim"
-	SignatureObjectDelta     = "async_delta"
-	SignatureObjectPromise   = "conditional_promise"
-	SignatureObjectGossip    = "payment_gossip"
-	SignatureObjectVirtual   = "virtual_channel"
-	DefaultDisputePeriod     = uint64(16)
-	DefaultOpeningFee        = "1"
-	MaxDisputeExtensions     = uint32(2)
-	MinCloseDelay            = uint64(1)
-	MaxCloseDelay            = uint64(10_000)
-	MinChallengePeriod       = uint64(1)
-	MaxChallengePeriod       = uint64(20_000)
-	MaxParticipants          = 8
-	MaxConditionsPerState    = 128
-	MaxParentChannels        = 16
-	MaxSettlementBatchOps    = 256
-	MaxRoutingHops           = 16
-	MaxTokenLength           = 128
-	MaxSettlementFeeFraction = int64(10_000)
-	MaxPenaltyRouteBps       = uint32(10_000)
-	DefaultGossipTTL         = uint64(512)
-	InvalidGossipPenalty     = int64(25)
-	DefaultTimeoutMargin     = uint64(16)
-	DefaultReplayHorizon     = uint64(100_000)
-	SignerIsolationProcess   = "process"
-	SignerIsolationHardware  = "hardware"
+	NativeDenom                   = "naet"
+	CanonicalEncodingVersion      = byte(1)
+	CurrentAppVersion             = uint32(1)
+	CurrentStateVersion           = uint32(1)
+	SignatureSchemeEd25519        = "ed25519-aetheris-v1"
+	SignatureObjectState          = "channel_state"
+	SignatureObjectClaim          = "unidirectional_claim"
+	SignatureObjectDelta          = "async_delta"
+	SignatureObjectPromise        = "conditional_promise"
+	SignatureObjectGossip         = "payment_gossip"
+	SignatureObjectVirtual        = "virtual_channel"
+	SignatureObjectVirtualReserve = "virtual_reservation"
+	DefaultDisputePeriod          = uint64(16)
+	DefaultOpeningFee             = "1"
+	MaxDisputeExtensions          = uint32(2)
+	MinCloseDelay                 = uint64(1)
+	MaxCloseDelay                 = uint64(10_000)
+	MinChallengePeriod            = uint64(1)
+	MaxChallengePeriod            = uint64(20_000)
+	MaxParticipants               = 8
+	MaxConditionsPerState         = 128
+	MaxParentChannels             = 16
+	MaxSettlementBatchOps         = 256
+	MaxRoutingHops                = 16
+	MaxTokenLength                = 128
+	MaxSettlementFeeFraction      = int64(10_000)
+	MaxPenaltyRouteBps            = uint32(10_000)
+	DefaultGossipTTL              = uint64(512)
+	InvalidGossipPenalty          = int64(25)
+	DefaultTimeoutMargin          = uint64(16)
+	DefaultReplayHorizon          = uint64(100_000)
+	SignerIsolationProcess        = "process"
+	SignerIsolationHardware       = "hardware"
 )
 
 type ChannelType string
@@ -980,26 +981,67 @@ type ChannelEdge struct {
 }
 
 type VirtualChannel struct {
-	VirtualChannelID    string
-	ChainID             string
-	Nonce               uint64
-	ParentRouteID       string
-	ParentChannelIDs    []string
-	Endpoints           []string
-	EndpointA           string
-	EndpointB           string
-	Intermediaries      []string
-	IntermediarySetHash string
-	Capacity            string
-	BalanceA            string
-	BalanceB            string
-	RoutingFeeAmount    string
-	ExpiresHeight       uint64
-	Status              VirtualChannelStatus
-	AnchorCommitment    string
-	ConditionRoot       string
-	StateHash           string
-	Signatures          []StateSignature
+	VirtualChannelID         string
+	ChainID                  string
+	Nonce                    uint64
+	ParentRouteID            string
+	ParentChannelIDs         []string
+	ParentReserveCommitments []string
+	Endpoints                []string
+	EndpointA                string
+	EndpointB                string
+	Intermediaries           []string
+	IntermediarySetHash      string
+	Capacity                 string
+	BalanceA                 string
+	BalanceB                 string
+	RoutingFeeAmount         string
+	ExpiresHeight            uint64
+	Status                   VirtualChannelStatus
+	AnchorCommitment         string
+	ConditionRoot            string
+	StateHash                string
+	Signatures               []StateSignature
+}
+
+type VirtualReservationSignature struct {
+	Signer           string
+	ChainID          string
+	VirtualChannelID string
+	ParentRouteID    string
+	ParentChannelID  string
+	ObjectType       string
+	Version          uint32
+	Capacity         string
+	FeeAmount        string
+	ExpirationHeight uint64
+	CommitmentHash   string
+	SignatureHash    string
+}
+
+type VirtualParentReserve struct {
+	ParentChannelID   string
+	ReservedBy        string
+	Capacity          string
+	FeeAmount         string
+	ReserveCommitment string
+	Signature         VirtualReservationSignature
+}
+
+type VirtualActivationProof struct {
+	VirtualChannel     VirtualChannel
+	ParentReserves     []VirtualParentReserve
+	RouteTimeoutHeight uint64
+	ProofHash          string
+}
+
+type VirtualChannelDisputeProof struct {
+	VirtualChannelID         string
+	ParentRouteID            string
+	LatestState              VirtualChannel
+	ParentReserveCommitments []string
+	SubmittedBy              string
+	EvidenceHash             string
 }
 
 type SettlementOperation struct {
@@ -4631,6 +4673,285 @@ func ValidateVirtualChannelSignature(sig StateSignature, vc VirtualChannel) erro
 	return nil
 }
 
+func BuildVirtualParentReserve(vc VirtualChannel, reserve VirtualParentReserve, signer string) (VirtualParentReserve, error) {
+	vc = vc.Normalize()
+	reserve = reserve.Normalize()
+	signer = strings.TrimSpace(signer)
+	if reserve.ParentChannelID == "" {
+		return VirtualParentReserve{}, errors.New("payments virtual reserve parent channel id is required")
+	}
+	if reserve.Capacity == "" {
+		reserve.Capacity = vc.Capacity
+	}
+	if reserve.FeeAmount == "" {
+		reserve.FeeAmount = "0"
+	}
+	if signer != "" {
+		reserve.ReservedBy = signer
+	}
+	if reserve.ReservedBy == "" {
+		return VirtualParentReserve{}, errors.New("payments virtual reserve signer is required")
+	}
+	reserve.ReserveCommitment = ComputeVirtualReserveCommitment(vc, reserve)
+	sig, err := SignatureForVirtualReservation(vc, reserve, reserve.ReservedBy)
+	if err != nil {
+		return VirtualParentReserve{}, err
+	}
+	reserve.Signature = sig
+	return reserve.Normalize(), nil
+}
+
+func ComputeVirtualReserveCommitment(vc VirtualChannel, reserve VirtualParentReserve) string {
+	vc = vc.Normalize()
+	reserve = reserve.Normalize()
+	return HashParts(
+		"virtual-reserve-commitment",
+		vc.ChainID,
+		vc.VirtualChannelID,
+		vc.ParentRouteID,
+		reserve.ParentChannelID,
+		reserve.ReservedBy,
+		reserve.Capacity,
+		reserve.FeeAmount,
+		fmt.Sprintf("%020d", vc.ExpiresHeight),
+	)
+}
+
+func SignatureForVirtualReservation(vc VirtualChannel, reserve VirtualParentReserve, signer string) (VirtualReservationSignature, error) {
+	vc = vc.Normalize()
+	reserve = reserve.Normalize()
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments virtual reservation signer", signer); err != nil {
+		return VirtualReservationSignature{}, err
+	}
+	if reserve.ReserveCommitment == "" {
+		reserve.ReservedBy = signer
+		reserve.ReserveCommitment = ComputeVirtualReserveCommitment(vc, reserve)
+	}
+	return VirtualReservationSignature{
+		Signer:           signer,
+		ChainID:          vc.ChainID,
+		VirtualChannelID: vc.VirtualChannelID,
+		ParentRouteID:    vc.ParentRouteID,
+		ParentChannelID:  reserve.ParentChannelID,
+		ObjectType:       SignatureObjectVirtualReserve,
+		Version:          CurrentStateVersion,
+		Capacity:         reserve.Capacity,
+		FeeAmount:        reserve.FeeAmount,
+		ExpirationHeight: vc.ExpiresHeight,
+		CommitmentHash:   reserve.ReserveCommitment,
+		SignatureHash: ComputeSignatureEnvelopeHash(
+			signer,
+			vc.ChainID,
+			vc.VirtualChannelID,
+			SignatureObjectVirtualReserve,
+			CurrentStateVersion,
+			vc.Nonce,
+			reserve.ReserveCommitment,
+			vc.ExpiresHeight,
+			reserve.ReserveCommitment,
+		),
+	}, nil
+}
+
+func ValidateVirtualReservationSignature(sig VirtualReservationSignature, vc VirtualChannel, reserve VirtualParentReserve) error {
+	sig = sig.Normalize()
+	vc = vc.Normalize()
+	reserve = reserve.Normalize()
+	if err := addressing.ValidateUserAddress("payments virtual reservation signature signer", sig.Signer); err != nil {
+		return err
+	}
+	if sig.ChainID != vc.ChainID {
+		return errors.New("payments virtual reservation signature chain id mismatch")
+	}
+	if sig.VirtualChannelID != vc.VirtualChannelID {
+		return errors.New("payments virtual reservation signature channel id mismatch")
+	}
+	if sig.ParentRouteID != vc.ParentRouteID {
+		return errors.New("payments virtual reservation signature route id mismatch")
+	}
+	if sig.ParentChannelID != reserve.ParentChannelID {
+		return errors.New("payments virtual reservation signature parent channel mismatch")
+	}
+	if sig.ObjectType != SignatureObjectVirtualReserve {
+		return errors.New("payments virtual reservation signature object type mismatch")
+	}
+	if sig.Version != CurrentStateVersion {
+		return errors.New("payments virtual reservation signature version mismatch")
+	}
+	if sig.Capacity != reserve.Capacity || sig.FeeAmount != reserve.FeeAmount {
+		return errors.New("payments virtual reservation signature amount mismatch")
+	}
+	if sig.ExpirationHeight != vc.ExpiresHeight {
+		return errors.New("payments virtual reservation signature expiration mismatch")
+	}
+	if sig.CommitmentHash != reserve.ReserveCommitment {
+		return errors.New("payments virtual reservation signature commitment mismatch")
+	}
+	expectedCommitment := ComputeVirtualReserveCommitment(vc, reserve)
+	if reserve.ReserveCommitment != expectedCommitment {
+		return errors.New("payments virtual reserve commitment mismatch")
+	}
+	expected := ComputeSignatureEnvelopeHash(sig.Signer, sig.ChainID, sig.VirtualChannelID, sig.ObjectType, sig.Version, vc.Nonce, sig.CommitmentHash, sig.ExpirationHeight, sig.CommitmentHash)
+	if sig.SignatureHash != expected {
+		return errors.New("payments virtual reservation signature hash mismatch")
+	}
+	return ValidateHash("payments virtual reservation signature hash", sig.SignatureHash)
+}
+
+func BuildVirtualActivationProof(vc VirtualChannel, reserves []VirtualParentReserve, routeTimeoutHeight uint64) (VirtualActivationProof, error) {
+	vc = vc.Normalize()
+	if vc.StateHash == "" || vc.AnchorCommitment == "" || vc.ParentRouteID == "" || vc.IntermediarySetHash == "" {
+		built, err := BuildVirtualChannel(vc)
+		if err != nil {
+			return VirtualActivationProof{}, err
+		}
+		built.Signatures = vc.Signatures
+		vc = built.Normalize()
+	}
+	proof := VirtualActivationProof{
+		VirtualChannel:     vc,
+		ParentReserves:     normalizeVirtualParentReserves(reserves),
+		RouteTimeoutHeight: routeTimeoutHeight,
+	}
+	proof.ProofHash = ComputeVirtualActivationProofHash(proof)
+	return proof.Normalize(), nil
+}
+
+func ComputeVirtualActivationProofHash(proof VirtualActivationProof) string {
+	proof = proof.Normalize()
+	parts := []string{
+		"virtual-activation-proof",
+		proof.VirtualChannel.ChainID,
+		proof.VirtualChannel.VirtualChannelID,
+		proof.VirtualChannel.StateHash,
+		proof.VirtualChannel.ParentRouteID,
+		fmt.Sprintf("%020d", proof.RouteTimeoutHeight),
+	}
+	for _, reserve := range proof.ParentReserves {
+		parts = append(parts, reserve.ParentChannelID, reserve.ReservedBy, reserve.ReserveCommitment)
+	}
+	return HashParts(parts...)
+}
+
+func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
+	proof = proof.Normalize()
+	vc := proof.VirtualChannel
+	if err := ValidateVirtualChannelActivation(vc); err != nil {
+		return err
+	}
+	if proof.RouteTimeoutHeight == 0 {
+		return errors.New("payments virtual activation proof route timeout is required")
+	}
+	if proof.RouteTimeoutHeight <= vc.ExpiresHeight {
+		return errors.New("payments virtual activation proof route timeout must exceed virtual expiry")
+	}
+	if len(proof.ParentReserves) != len(vc.ParentChannelIDs) {
+		return errors.New("payments virtual activation proof requires one reserve per parent")
+	}
+	parentSet := make(map[string]struct{}, len(vc.ParentChannelIDs))
+	for _, parentID := range vc.ParentChannelIDs {
+		parentSet[parentID] = struct{}{}
+	}
+	seenParents := make(map[string]struct{}, len(proof.ParentReserves))
+	for _, reserve := range proof.ParentReserves {
+		if _, found := parentSet[reserve.ParentChannelID]; !found {
+			return errors.New("payments virtual activation proof reserve references unknown parent")
+		}
+		if _, found := seenParents[reserve.ParentChannelID]; found {
+			return errors.New("payments virtual activation proof duplicate parent reserve")
+		}
+		seenParents[reserve.ParentChannelID] = struct{}{}
+		if !containsString(vc.Intermediaries, reserve.ReservedBy) && !containsString(vc.Endpoints, reserve.ReservedBy) {
+			return errors.New("payments virtual reserve signer must be route participant")
+		}
+		reserved, err := parsePositiveInt("payments virtual reserve capacity", reserve.Capacity)
+		if err != nil {
+			return err
+		}
+		capacity, err := parsePositiveInt("payments virtual capacity", vc.Capacity)
+		if err != nil {
+			return err
+		}
+		if reserved.LT(capacity) {
+			return errors.New("payments virtual reserve capacity below virtual capacity")
+		}
+		if err := ValidateVirtualReservationSignature(reserve.Signature, vc, reserve); err != nil {
+			return err
+		}
+	}
+	expected := ComputeVirtualActivationProofHash(proof)
+	if proof.ProofHash != expected {
+		return errors.New("payments virtual activation proof hash mismatch")
+	}
+	return nil
+}
+
+func BuildVirtualChannelDisputeProof(latest VirtualChannel, commitments []string, submittedBy string) (VirtualChannelDisputeProof, error) {
+	latest = latest.Normalize()
+	if latest.StateHash == "" || latest.AnchorCommitment == "" {
+		built, err := BuildVirtualChannel(latest)
+		if err != nil {
+			return VirtualChannelDisputeProof{}, err
+		}
+		built.Signatures = latest.Signatures
+		latest = built.Normalize()
+	}
+	proof := VirtualChannelDisputeProof{
+		VirtualChannelID:         latest.VirtualChannelID,
+		ParentRouteID:            latest.ParentRouteID,
+		LatestState:              latest,
+		ParentReserveCommitments: normalizeHashSlice(commitments),
+		SubmittedBy:              strings.TrimSpace(submittedBy),
+	}
+	proof.EvidenceHash = ComputeVirtualDisputeEvidenceHash(proof)
+	return proof.Normalize(), nil
+}
+
+func ComputeVirtualDisputeEvidenceHash(proof VirtualChannelDisputeProof) string {
+	proof = proof.Normalize()
+	parts := []string{
+		"virtual-dispute-proof",
+		proof.VirtualChannelID,
+		proof.ParentRouteID,
+		proof.LatestState.StateHash,
+		proof.SubmittedBy,
+	}
+	parts = append(parts, proof.ParentReserveCommitments...)
+	return HashParts(parts...)
+}
+
+func ValidateVirtualChannelDisputeProof(proof VirtualChannelDisputeProof, current VirtualChannel) error {
+	proof = proof.Normalize()
+	current = current.Normalize()
+	if proof.VirtualChannelID != current.VirtualChannelID || proof.LatestState.VirtualChannelID != current.VirtualChannelID {
+		return errors.New("payments virtual dispute proof channel mismatch")
+	}
+	if proof.ParentRouteID != current.ParentRouteID || proof.LatestState.ParentRouteID != current.ParentRouteID {
+		return errors.New("payments virtual dispute proof route mismatch")
+	}
+	if !containsString(current.Endpoints, proof.SubmittedBy) && !containsString(current.Intermediaries, proof.SubmittedBy) {
+		return errors.New("payments virtual dispute submitter must be route participant")
+	}
+	if proof.LatestState.Nonce <= current.Nonce {
+		return errors.New("payments virtual dispute state nonce must be newer")
+	}
+	if len(proof.ParentReserveCommitments) != len(current.ParentChannelIDs) {
+		return errors.New("payments virtual dispute proof requires parent reserve commitments")
+	}
+	if len(current.ParentReserveCommitments) > 0 && strings.Join(proof.ParentReserveCommitments, "/") != strings.Join(current.ParentReserveCommitments, "/") {
+		return errors.New("payments virtual dispute proof reserve commitment mismatch")
+	}
+	if err := validateVirtualEndpointUpdate(current, proof.LatestState); err != nil {
+		return err
+	}
+	expected := ComputeVirtualDisputeEvidenceHash(proof)
+	if proof.EvidenceHash != expected {
+		return errors.New("payments virtual dispute proof evidence hash mismatch")
+	}
+	return nil
+}
+
 func IsGossipMessageType(messageType GossipMessageType) bool {
 	switch messageType {
 	case GossipChannelAnnouncement,
@@ -4714,6 +5035,7 @@ func (v VirtualChannel) Normalize() VirtualChannel {
 	for i := range v.ParentChannelIDs {
 		v.ParentChannelIDs[i] = normalizeHash(v.ParentChannelIDs[i])
 	}
+	v.ParentReserveCommitments = normalizeHashSlice(v.ParentReserveCommitments)
 	v.Endpoints = normalizeAddressSet(v.Endpoints)
 	v.EndpointA = strings.TrimSpace(v.EndpointA)
 	v.EndpointB = strings.TrimSpace(v.EndpointB)
@@ -4790,6 +5112,21 @@ func (v VirtualChannel) ValidateCore() error {
 			return errors.New("payments virtual parent channels must be unique")
 		}
 		seen[id] = struct{}{}
+	}
+	if len(vc.ParentReserveCommitments) > 0 {
+		if len(vc.ParentReserveCommitments) != len(vc.ParentChannelIDs) {
+			return errors.New("payments virtual parent reserve commitments must match parent channels")
+		}
+		seenCommitments := make(map[string]struct{}, len(vc.ParentReserveCommitments))
+		for _, commitment := range vc.ParentReserveCommitments {
+			if err := ValidateHash("payments virtual parent reserve commitment", commitment); err != nil {
+				return err
+			}
+			if _, found := seenCommitments[commitment]; found {
+				return errors.New("payments virtual parent reserve commitments must be unique")
+			}
+			seenCommitments[commitment] = struct{}{}
+		}
 	}
 	if err := validateAddressSet("payments virtual endpoint", vc.Endpoints, 2, 2); err != nil {
 		return err
@@ -4903,6 +5240,49 @@ func ValidateVirtualChannelActivation(vc VirtualChannel) error {
 		}
 	}
 	return nil
+}
+
+func (s VirtualReservationSignature) Normalize() VirtualReservationSignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.VirtualChannelID = normalizeHash(s.VirtualChannelID)
+	s.ParentRouteID = normalizeHash(s.ParentRouteID)
+	s.ParentChannelID = normalizeHash(s.ParentChannelID)
+	s.Capacity = strings.TrimSpace(s.Capacity)
+	s.FeeAmount = strings.TrimSpace(s.FeeAmount)
+	s.CommitmentHash = normalizeHash(s.CommitmentHash)
+	s.SignatureHash = normalizeHash(s.SignatureHash)
+	return s
+}
+
+func (r VirtualParentReserve) Normalize() VirtualParentReserve {
+	r.ParentChannelID = normalizeHash(r.ParentChannelID)
+	r.ReservedBy = strings.TrimSpace(r.ReservedBy)
+	r.Capacity = strings.TrimSpace(r.Capacity)
+	if r.FeeAmount == "" {
+		r.FeeAmount = "0"
+	}
+	r.FeeAmount = strings.TrimSpace(r.FeeAmount)
+	r.ReserveCommitment = normalizeOptionalHash(r.ReserveCommitment)
+	r.Signature = r.Signature.Normalize()
+	return r
+}
+
+func (p VirtualActivationProof) Normalize() VirtualActivationProof {
+	p.VirtualChannel = p.VirtualChannel.Normalize()
+	p.ParentReserves = normalizeVirtualParentReserves(p.ParentReserves)
+	p.ProofHash = normalizeOptionalHash(p.ProofHash)
+	return p
+}
+
+func (p VirtualChannelDisputeProof) Normalize() VirtualChannelDisputeProof {
+	p.VirtualChannelID = normalizeHash(p.VirtualChannelID)
+	p.ParentRouteID = normalizeHash(p.ParentRouteID)
+	p.LatestState = p.LatestState.Normalize()
+	p.ParentReserveCommitments = normalizeHashSlice(p.ParentReserveCommitments)
+	p.SubmittedBy = strings.TrimSpace(p.SubmittedBy)
+	p.EvidenceHash = normalizeOptionalHash(p.EvidenceHash)
+	return p
 }
 
 func (op SettlementOperation) Normalize() SettlementOperation {
@@ -6693,6 +7073,33 @@ func normalizeStateSignatures(signatures []StateSignature) []StateSignature {
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].Signer < out[j].Signer
 	})
+	return out
+}
+
+func normalizeVirtualParentReserves(reserves []VirtualParentReserve) []VirtualParentReserve {
+	out := make([]VirtualParentReserve, len(reserves))
+	for i, reserve := range reserves {
+		out[i] = reserve.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].ParentChannelID != out[j].ParentChannelID {
+			return out[i].ParentChannelID < out[j].ParentChannelID
+		}
+		return out[i].ReservedBy < out[j].ReservedBy
+	})
+	return out
+}
+
+func normalizeHashSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := normalizeHash(value)
+		if normalized == "" {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	sortStrings(out)
 	return out
 }
 

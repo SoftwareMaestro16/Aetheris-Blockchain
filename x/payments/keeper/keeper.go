@@ -384,6 +384,42 @@ func (k *Keeper) OpenVirtualChannel(vc paymentstypes.VirtualChannel) error {
 	return nil
 }
 
+func (k *Keeper) OpenVirtualChannelWithProof(proof paymentstypes.VirtualActivationProof) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.OpenVirtualChannelWithProof(k.genesis.State, proof)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) AcceptVirtualChannelUpdate(vc paymentstypes.VirtualChannel, currentHeight uint64) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.AcceptVirtualChannelUpdate(k.genesis.State, vc, currentHeight)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) SubmitVirtualChannelDispute(proof paymentstypes.VirtualChannelDisputeProof, currentHeight uint64) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.SubmitVirtualChannelDispute(k.genesis.State, proof, currentHeight)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) CloseVirtualChannel(virtualChannelID string, currentHeight uint64) (paymentstypes.VirtualChannel, error) {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return paymentstypes.VirtualChannel{}, err

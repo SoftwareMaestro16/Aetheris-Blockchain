@@ -1896,6 +1896,131 @@ func TestVirtualChannelActivationRequiresReservesExpiryAndSignatures(t *testing.
 	require.ErrorContains(t, err, "balances")
 }
 
+func TestVirtualChannelOpeningRequiresReservationProofAndRouteTimeout(t *testing.T) {
+	alice := testAddress(0x70)
+	router := testAddress(0x71)
+	bob := testAddress(0x72)
+	first := signedChannel(t, "vc-proof-first", "900", alice, router)
+	second := signedChannel(t, "vc-proof-second", "900", router, bob)
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, first)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, second)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, first.ChannelID, signedReserveState(t, first, 2, first.OpeningStateHash, "150", "0", []Balance{
+		{Participant: first.Participants[0], Amount: "750"},
+		{Participant: first.Participants[1], Amount: "0"},
+	}), 20)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, second.ChannelID, signedReserveState(t, second, 2, second.OpeningStateHash, "150", "0", []Balance{
+		{Participant: second.Participants[0], Amount: "750"},
+		{Participant: second.Participants[1], Amount: "0"},
+	}), 20)
+	require.NoError(t, err)
+
+	vc := signedVirtualChannel(t, VirtualChannel{
+		VirtualChannelID: HashParts("vc-proof", alice, bob),
+		ParentChannelIDs: []string{first.ChannelID, second.ChannelID},
+		Endpoints:        []string{alice, bob},
+		Intermediaries:   []string{router},
+		Capacity:         "100",
+		BalanceA:         "100",
+		BalanceB:         "0",
+		RoutingFeeAmount: "2",
+		ExpiresHeight:    40,
+	}, first.ChainID)
+	proof := signedVirtualActivationProof(t, vc, router, 80)
+	state, err = OpenVirtualChannelWithProof(state, proof)
+	require.NoError(t, err)
+	require.Len(t, state.VirtualChannels, 1)
+
+	badSignature := proof
+	badSignature.VirtualChannel.VirtualChannelID = HashParts("vc-proof-bad-signature", alice, bob)
+	badSignature.ProofHash = ""
+	badSignature.VirtualChannel = signedVirtualChannel(t, badSignature.VirtualChannel, first.ChainID)
+	_, err = OpenVirtualChannelWithProof(state.Clone(), badSignature)
+	require.ErrorContains(t, err, "signature channel id mismatch")
+
+	tooLate := signedVirtualChannel(t, VirtualChannel{
+		VirtualChannelID: HashParts("vc-proof-too-late", alice, bob),
+		ParentChannelIDs: []string{first.ChannelID, second.ChannelID},
+		Endpoints:        []string{alice, bob},
+		Intermediaries:   []string{router},
+		Capacity:         "100",
+		BalanceA:         "100",
+		BalanceB:         "0",
+		ExpiresHeight:    70,
+	}, first.ChainID)
+	_, err = OpenVirtualChannelWithProof(state.Clone(), signedVirtualActivationProof(t, tooLate, router, 80))
+	require.ErrorContains(t, err, "route timeout")
+}
+
+func TestVirtualChannelEndpointUpdatesAndDisputeProof(t *testing.T) {
+	alice := testAddress(0x73)
+	router := testAddress(0x74)
+	bob := testAddress(0x75)
+	first := signedChannel(t, "vc-update-first", "900", alice, router)
+	second := signedChannel(t, "vc-update-second", "900", router, bob)
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, first)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, second)
+	require.NoError(t, err)
+	firstReserve := signedReserveState(t, first, 2, first.OpeningStateHash, "120", "0", []Balance{
+		{Participant: first.Participants[0], Amount: "780"},
+		{Participant: first.Participants[1], Amount: "0"},
+	})
+	secondReserve := signedReserveState(t, second, 2, second.OpeningStateHash, "120", "0", []Balance{
+		{Participant: second.Participants[0], Amount: "780"},
+		{Participant: second.Participants[1], Amount: "0"},
+	})
+	state, err = AcceptSignedState(state, first.ChannelID, firstReserve, 20)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, second.ChannelID, secondReserve, 20)
+	require.NoError(t, err)
+
+	vc := signedVirtualChannel(t, VirtualChannel{
+		VirtualChannelID: HashParts("vc-update", alice, bob),
+		ParentChannelIDs: []string{first.ChannelID, second.ChannelID},
+		Endpoints:        []string{alice, bob},
+		Intermediaries:   []string{router},
+		Capacity:         "100",
+		BalanceA:         "100",
+		BalanceB:         "0",
+		ExpiresHeight:    40,
+	}, first.ChainID)
+	proof := signedVirtualActivationProof(t, vc, router, 80)
+	state, err = OpenVirtualChannelWithProof(state, proof)
+	require.NoError(t, err)
+	parentHashes := []string{state.Channels[0].LatestState.StateHash, state.Channels[1].LatestState.StateHash}
+
+	update := signedVirtualEndpointUpdate(t, vc, 2, "70", "30")
+	state, err = AcceptVirtualChannelUpdate(state, update, 25)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), state.VirtualChannels[0].Nonce)
+	require.Equal(t, "30", state.VirtualChannels[0].BalanceB)
+	require.Equal(t, parentHashes, []string{state.Channels[0].LatestState.StateHash, state.Channels[1].LatestState.StateHash})
+
+	_, err = AcceptVirtualChannelUpdate(state, update, 26)
+	require.ErrorContains(t, err, "nonce must strictly increase")
+
+	disputeState := signedVirtualEndpointUpdate(t, vc, 3, "60", "40")
+	commitments := virtualReserveCommitments(proof)
+	dispute, err := BuildVirtualChannelDisputeProof(disputeState, commitments, router)
+	require.NoError(t, err)
+	state, err = SubmitVirtualChannelDispute(state, dispute, 30)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), state.VirtualChannels[0].Nonce)
+	require.Equal(t, "40", state.VirtualChannels[0].BalanceB)
+
+	badDispute, err := BuildVirtualChannelDisputeProof(signedVirtualEndpointUpdate(t, vc, 4, "50", "50"), []string{HashParts("wrong-reserve"), commitments[1]}, router)
+	require.NoError(t, err)
+	_, err = SubmitVirtualChannelDispute(state, badDispute, 31)
+	require.ErrorContains(t, err, "reserve commitment mismatch")
+}
+
 func TestScoredRouteSelectionPenalizesFeeStaleLiquidityAndFailures(t *testing.T) {
 	alice := testAddress(0x37)
 	router := testAddress(0x38)
@@ -2844,6 +2969,56 @@ func signedVirtualChannel(t *testing.T, vc VirtualChannel, chainID string) Virtu
 	built = built.Normalize()
 	require.NoError(t, ValidateVirtualChannelActivation(built))
 	return built
+}
+
+func signedVirtualActivationProof(t *testing.T, vc VirtualChannel, signer string, routeTimeoutHeight uint64) VirtualActivationProof {
+	t.Helper()
+
+	reserves := make([]VirtualParentReserve, 0, len(vc.ParentChannelIDs))
+	for _, parentID := range vc.ParentChannelIDs {
+		reserve, err := BuildVirtualParentReserve(vc, VirtualParentReserve{
+			ParentChannelID: parentID,
+			Capacity:        vc.Capacity,
+			FeeAmount:       "1",
+		}, signer)
+		require.NoError(t, err)
+		reserves = append(reserves, reserve)
+	}
+	proof, err := BuildVirtualActivationProof(vc, reserves, routeTimeoutHeight)
+	require.NoError(t, err)
+	require.NoError(t, ValidateVirtualActivationProof(proof))
+	return proof
+}
+
+func signedVirtualEndpointUpdate(t *testing.T, vc VirtualChannel, nonce uint64, balanceA, balanceB string) VirtualChannel {
+	t.Helper()
+
+	update := vc.Normalize()
+	update.Nonce = nonce
+	update.BalanceA = balanceA
+	update.BalanceB = balanceB
+	update.Signatures = nil
+	update.AnchorCommitment = ""
+	update.StateHash = ""
+	built, err := BuildVirtualChannel(update)
+	require.NoError(t, err)
+	for _, signer := range built.Endpoints {
+		sig, err := SignatureForVirtualChannel(built, signer)
+		require.NoError(t, err)
+		built.Signatures = append(built.Signatures, sig)
+	}
+	built = built.Normalize()
+	require.NoError(t, built.ValidateCore())
+	return built
+}
+
+func virtualReserveCommitments(proof VirtualActivationProof) []string {
+	proof = proof.Normalize()
+	out := make([]string, 0, len(proof.ParentReserves))
+	for _, reserve := range proof.ParentReserves {
+		out = append(out, reserve.ReserveCommitment)
+	}
+	return out
 }
 
 func mutateCanonicalState(state ChannelState, mutate func(*ChannelState)) ChannelState {
