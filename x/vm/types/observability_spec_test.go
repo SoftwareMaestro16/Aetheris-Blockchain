@@ -13,10 +13,13 @@ func TestAVMObservabilitySpecMatchesSection21(t *testing.T) {
 	require.Equal(t, ComputeAVMObservabilitySpecHash(spec), spec.SpecHash)
 	require.Len(t, spec.Metrics, 18)
 	require.Len(t, spec.Events, 16)
+	require.Len(t, spec.Alerts, 9)
 	require.Contains(t, spec.Metrics, AVMMetricAsyncMessagesSubmitted)
 	require.Contains(t, spec.Metrics, AVMMetricReceiptRootGenerationTime)
 	require.Contains(t, spec.Events, AVMEventMessageSubmitted)
 	require.Contains(t, spec.Events, AVMEventRuntimeUpgradeScheduled)
+	require.Contains(t, spec.Alerts, AVMAlertDeadLetterSpike)
+	require.Contains(t, spec.Alerts, AVMAlertQueueRootGenerationLatencyThreshold)
 }
 
 func TestAVMObservabilityMetricsMatchSection211(t *testing.T) {
@@ -67,6 +70,22 @@ func TestAVMObservabilityEventsMatchSection212(t *testing.T) {
 	}, spec.Events)
 }
 
+func TestAVMObservabilityAlertsMatchSection213(t *testing.T) {
+	spec, err := DefaultAVMObservabilitySpec()
+	require.NoError(t, err)
+	require.ElementsMatch(t, []AVMObservabilityAlert{
+		AVMAlertDeadLetterSpike,
+		AVMAlertRetryQueueBacklog,
+		AVMAlertDelayedQueueBacklog,
+		AVMAlertZoneAsyncBudgetSaturation,
+		AVMAlertActorMailboxBacklog,
+		AVMAlertContinuationExpirySpike,
+		AVMAlertContractFailureSpike,
+		AVMAlertReceiptGenerationLatencyThreshold,
+		AVMAlertQueueRootGenerationLatencyThreshold,
+	}, spec.Alerts)
+}
+
 func TestAVMObservabilityRejectsMissingDuplicateUnknownAndHashMismatch(t *testing.T) {
 	spec, err := DefaultAVMObservabilitySpec()
 	require.NoError(t, err)
@@ -89,6 +108,13 @@ func TestAVMObservabilityRejectsMissingDuplicateUnknownAndHashMismatch(t *testin
 	unknownEvent.Events[0] = AVMObservabilityEvent("avm_unknown")
 	unknownEvent.SpecHash = ComputeAVMObservabilitySpecHash(unknownEvent)
 	require.ErrorContains(t, unknownEvent.Validate(), "invalid")
+
+	spec, err = DefaultAVMObservabilitySpec()
+	require.NoError(t, err)
+	unknownAlert := spec
+	unknownAlert.Alerts[0] = AVMObservabilityAlert("unknown_alert")
+	unknownAlert.SpecHash = ComputeAVMObservabilitySpecHash(unknownAlert)
+	require.ErrorContains(t, unknownAlert.Validate(), "invalid")
 
 	spec, err = DefaultAVMObservabilitySpec()
 	require.NoError(t, err)

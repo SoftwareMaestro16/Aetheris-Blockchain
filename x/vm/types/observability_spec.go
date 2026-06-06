@@ -46,16 +46,28 @@ const (
 	AVMEventInterfaceRegistered     AVMObservabilityEvent = "avm_interface_registered"
 	AVMEventRuntimeUpgradeScheduled AVMObservabilityEvent = "avm_runtime_upgrade_scheduled"
 
+	AVMAlertDeadLetterSpike                     AVMObservabilityAlert = "dead_letter_spike"
+	AVMAlertRetryQueueBacklog                   AVMObservabilityAlert = "retry_queue_backlog"
+	AVMAlertDelayedQueueBacklog                 AVMObservabilityAlert = "delayed_queue_backlog"
+	AVMAlertZoneAsyncBudgetSaturation           AVMObservabilityAlert = "zone_async_budget_saturation"
+	AVMAlertActorMailboxBacklog                 AVMObservabilityAlert = "actor_mailbox_backlog"
+	AVMAlertContinuationExpirySpike             AVMObservabilityAlert = "continuation_expiry_spike"
+	AVMAlertContractFailureSpike                AVMObservabilityAlert = "contract_failure_spike"
+	AVMAlertReceiptGenerationLatencyThreshold   AVMObservabilityAlert = "receipt_generation_latency_above_threshold"
+	AVMAlertQueueRootGenerationLatencyThreshold AVMObservabilityAlert = "queue_root_generation_latency_above_threshold"
+
 	MaxAVMObservabilityItems     = 64
 	MaxAVMObservabilityNameBytes = 128
 )
 
 type AVMObservabilityMetric string
 type AVMObservabilityEvent string
+type AVMObservabilityAlert string
 
 type AVMObservabilitySpec struct {
 	Metrics  []AVMObservabilityMetric
 	Events   []AVMObservabilityEvent
+	Alerts   []AVMObservabilityAlert
 	SpecHash string
 }
 
@@ -63,6 +75,7 @@ func DefaultAVMObservabilitySpec() (AVMObservabilitySpec, error) {
 	spec := AVMObservabilitySpec{
 		Metrics: AllAVMObservabilityMetrics(),
 		Events:  AllAVMObservabilityEvents(),
+		Alerts:  AllAVMObservabilityAlerts(),
 	}
 	spec.SpecHash = ComputeAVMObservabilitySpecHash(spec)
 	return spec, spec.Validate()
@@ -74,6 +87,9 @@ func (s AVMObservabilitySpec) Validate() error {
 		return err
 	}
 	if err := validateAVMObservabilityEvents(s.Events); err != nil {
+		return err
+	}
+	if err := validateAVMObservabilityAlerts(s.Alerts); err != nil {
 		return err
 	}
 	if s.SpecHash == "" {
@@ -136,6 +152,22 @@ func AllAVMObservabilityEvents() []AVMObservabilityEvent {
 	return events
 }
 
+func AllAVMObservabilityAlerts() []AVMObservabilityAlert {
+	alerts := []AVMObservabilityAlert{
+		AVMAlertDeadLetterSpike,
+		AVMAlertRetryQueueBacklog,
+		AVMAlertDelayedQueueBacklog,
+		AVMAlertZoneAsyncBudgetSaturation,
+		AVMAlertActorMailboxBacklog,
+		AVMAlertContinuationExpirySpike,
+		AVMAlertContractFailureSpike,
+		AVMAlertReceiptGenerationLatencyThreshold,
+		AVMAlertQueueRootGenerationLatencyThreshold,
+	}
+	sort.Slice(alerts, func(i, j int) bool { return alerts[i] < alerts[j] })
+	return alerts
+}
+
 func IsAVMObservabilityMetric(metric AVMObservabilityMetric) bool {
 	for _, required := range AllAVMObservabilityMetrics() {
 		if metric == required {
@@ -154,6 +186,15 @@ func IsAVMObservabilityEvent(event AVMObservabilityEvent) bool {
 	return false
 }
 
+func IsAVMObservabilityAlert(alert AVMObservabilityAlert) bool {
+	for _, required := range AllAVMObservabilityAlerts() {
+		if alert == required {
+			return true
+		}
+	}
+	return false
+}
+
 func ComputeAVMObservabilitySpecHash(spec AVMObservabilitySpec) string {
 	spec = canonicalAVMObservabilitySpec(spec)
 	h := sha256.New()
@@ -165,6 +206,10 @@ func ComputeAVMObservabilitySpecHash(spec AVMObservabilitySpec) string {
 	writeEngineUint64(h, uint64(len(spec.Events)))
 	for _, event := range spec.Events {
 		writeEnginePart(h, string(event))
+	}
+	writeEngineUint64(h, uint64(len(spec.Alerts)))
+	for _, alert := range spec.Alerts {
+		writeEnginePart(h, string(alert))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -180,6 +225,11 @@ func canonicalAVMObservabilitySpec(spec AVMObservabilitySpec) AVMObservabilitySp
 		spec.Events[i] = AVMObservabilityEvent(strings.TrimSpace(string(spec.Events[i])))
 	}
 	sort.SliceStable(spec.Events, func(i, j int) bool { return spec.Events[i] < spec.Events[j] })
+	spec.Alerts = append([]AVMObservabilityAlert(nil), spec.Alerts...)
+	for i := range spec.Alerts {
+		spec.Alerts[i] = AVMObservabilityAlert(strings.TrimSpace(string(spec.Alerts[i])))
+	}
+	sort.SliceStable(spec.Alerts, func(i, j int) bool { return spec.Alerts[i] < spec.Alerts[j] })
 	spec.SpecHash = strings.TrimSpace(spec.SpecHash)
 	return spec
 }
@@ -243,6 +293,38 @@ func validateAVMObservabilityEvents(events []AVMObservabilityEvent) error {
 	for _, event := range required {
 		if _, found := seen[event]; !found {
 			return fmt.Errorf("AVM observability spec missing event %s", event)
+		}
+	}
+	return nil
+}
+
+func validateAVMObservabilityAlerts(alerts []AVMObservabilityAlert) error {
+	required := AllAVMObservabilityAlerts()
+	if len(alerts) != len(required) || len(alerts) > MaxAVMObservabilityItems {
+		return fmt.Errorf("AVM observability spec must contain every section 21 alert")
+	}
+	seen := make(map[AVMObservabilityAlert]struct{}, len(alerts))
+	previous := ""
+	for _, alert := range alerts {
+		if err := validateAVMObservabilityName("AVM observability alert", string(alert)); err != nil {
+			return err
+		}
+		if !IsAVMObservabilityAlert(alert) {
+			return fmt.Errorf("invalid AVM observability alert %q", alert)
+		}
+		if _, found := seen[alert]; found {
+			return fmt.Errorf("duplicate AVM observability alert %q", alert)
+		}
+		current := string(alert)
+		if previous != "" && previous >= current {
+			return errors.New("AVM observability alerts must be sorted canonically")
+		}
+		previous = current
+		seen[alert] = struct{}{}
+	}
+	for _, alert := range required {
+		if _, found := seen[alert]; !found {
+			return fmt.Errorf("AVM observability spec missing alert %s", alert)
 		}
 	}
 	return nil
