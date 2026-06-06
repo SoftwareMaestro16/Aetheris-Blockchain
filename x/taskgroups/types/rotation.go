@@ -1,6 +1,8 @@
 package types
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -51,6 +53,44 @@ type ProposerSelection struct {
 	Priorities         []ProposerPriority
 	CanonicalPriority  ProposerPriority
 	FallbackUsed       bool
+}
+
+type SlotAssignmentInput struct {
+	SelectionInput              ProposerSelectionInput
+	Slot                        uint64
+	CurrentHeight               uint64
+	MissedProposalTimeoutHeight uint64
+}
+
+type SlotAssignmentRecord struct {
+	EpochID                     uint64
+	Slot                        uint64
+	TaskGroupID                 string
+	CanonicalProposer           string
+	VerifierValidators          []string
+	FallbackOrder               []string
+	MissedProposalTimeoutHeight uint64
+	FallbackActivated           bool
+	EligibilityProof            ProposerEligibilityProof
+}
+
+type ProposerEligibilityProof struct {
+	EpochID          uint64
+	Slot             uint64
+	TaskGroupID      string
+	ValidatorAddress string
+	FallbackOrder    uint32
+	PriorityScore    sdkmath.Int
+	AssignmentSeed   string
+	ProofHash        string
+}
+
+type MissedProposalRecord struct {
+	EpochID             uint64
+	TaskGroupID         string
+	ValidatorAddress    string
+	MissedProposalCount uint64
+	LastMissedSlot      uint64
 }
 
 func BuildProposerPriorities(input ProposerSelectionInput, slot uint64) ([]ProposerPriority, error) {
@@ -151,6 +191,122 @@ func SelectCanonicalProposer(input ProposerSelectionInput, slot uint64) (Propose
 	}, nil
 }
 
+func BuildSlotAssignment(input SlotAssignmentInput) (SlotAssignmentRecord, error) {
+	if input.MissedProposalTimeoutHeight == 0 {
+		return SlotAssignmentRecord{}, errors.New("missed proposal timeout height is required")
+	}
+	priorities, err := BuildProposerPriorities(input.SelectionInput, input.Slot)
+	if err != nil {
+		return SlotAssignmentRecord{}, err
+	}
+	if len(priorities) == 0 {
+		return SlotAssignmentRecord{}, errors.New("slot assignment requires proposer priorities")
+	}
+	top := priorities[0]
+	fallbackOrder := fallbackOrderFromPriorities(priorities)
+	selectionInput := input.SelectionInput
+	if top.ProposerStatus == ProposerStatusUnavailable {
+		if input.CurrentHeight < input.MissedProposalTimeoutHeight {
+			return SlotAssignmentRecord{}, errors.New("fallback cannot activate before missed proposal timeout")
+		}
+	} else {
+		selectionInput.Unavailable = map[string]bool{}
+	}
+	selection, err := SelectCanonicalProposer(selectionInput, input.Slot)
+	if err != nil {
+		return SlotAssignmentRecord{}, err
+	}
+	proof := BuildProposerEligibilityProof(selection.CanonicalPriority, selectionInput.Group)
+	record := SlotAssignmentRecord{
+		EpochID:                     selection.EpochID,
+		Slot:                        selection.Slot,
+		TaskGroupID:                 selection.TaskGroupID,
+		CanonicalProposer:           selection.CanonicalProposer,
+		VerifierValidators:          cloneStrings(selection.VerifierValidators),
+		FallbackOrder:               fallbackOrder,
+		MissedProposalTimeoutHeight: input.MissedProposalTimeoutHeight,
+		FallbackActivated:           selection.FallbackUsed,
+		EligibilityProof:            proof,
+	}
+	return record, record.Validate(selectionInput.Group)
+}
+
+func QueryFallbackOrder(input ProposerSelectionInput, slot uint64) ([]string, error) {
+	priorities, err := BuildProposerPriorities(input, slot)
+	if err != nil {
+		return nil, err
+	}
+	return fallbackOrderFromPriorities(priorities), nil
+}
+
+func BuildProposerEligibilityProof(priority ProposerPriority, group postypes.TaskGroup) ProposerEligibilityProof {
+	proof := ProposerEligibilityProof{
+		EpochID:          priority.EpochID,
+		Slot:             priority.Slot,
+		TaskGroupID:      priority.TaskGroupID,
+		ValidatorAddress: priority.ValidatorAddress,
+		FallbackOrder:    priority.FallbackOrder,
+		PriorityScore:    priority.PriorityScore,
+		AssignmentSeed:   group.AssignmentSeed,
+	}
+	proof.ProofHash = computeEligibilityProofHash(proof)
+	return proof
+}
+
+func VerifyProposerEligibilityProof(proof ProposerEligibilityProof, priority ProposerPriority, group postypes.TaskGroup) error {
+	expected := BuildProposerEligibilityProof(priority, group)
+	if proof != expected {
+		return errors.New("proposer eligibility proof mismatch")
+	}
+	return nil
+}
+
+func RecordMissedProposal(records []MissedProposalRecord, epochID uint64, slot uint64, taskGroupID string, validatorAddress string) ([]MissedProposalRecord, error) {
+	if epochID == 0 || slot == 0 {
+		return nil, errors.New("missed proposal epoch and slot are required")
+	}
+	taskGroupID = strings.TrimSpace(taskGroupID)
+	validatorAddress = strings.TrimSpace(validatorAddress)
+	if taskGroupID == "" || validatorAddress == "" {
+		return nil, errors.New("missed proposal task group and validator are required")
+	}
+	out := make([]MissedProposalRecord, len(records))
+	copy(out, records)
+	for i, record := range out {
+		if record.EpochID == epochID && record.TaskGroupID == taskGroupID && record.ValidatorAddress == validatorAddress {
+			out[i].MissedProposalCount++
+			out[i].LastMissedSlot = slot
+			sortMissedProposalRecords(out)
+			return out, nil
+		}
+	}
+	out = append(out, MissedProposalRecord{
+		EpochID:             epochID,
+		TaskGroupID:         taskGroupID,
+		ValidatorAddress:    validatorAddress,
+		MissedProposalCount: 1,
+		LastMissedSlot:      slot,
+	})
+	sortMissedProposalRecords(out)
+	return out, nil
+}
+
+func ApplyMissedProposalTracking(inputs map[string]ProposerPriorityInput, records []MissedProposalRecord, epochID uint64, taskGroupID string) map[string]ProposerPriorityInput {
+	out := make(map[string]ProposerPriorityInput, len(inputs))
+	for validatorID, input := range inputs {
+		out[validatorID] = input
+	}
+	for _, record := range records {
+		if record.EpochID != epochID || record.TaskGroupID != taskGroupID {
+			continue
+		}
+		input := out[record.ValidatorAddress]
+		input.MissedProposalCount += record.MissedProposalCount
+		out[record.ValidatorAddress] = input
+	}
+	return out
+}
+
 func ComputeProposerPriorityScore(input ProposerPriorityInput) (sdkmath.Int, error) {
 	if input.ValidatorScore.IsNil() || input.ValidatorScore.IsNegative() {
 		return sdkmath.Int{}, errors.New("validator score must be non-negative")
@@ -201,6 +357,43 @@ func (p ProposerPriority) Validate() error {
 	}
 }
 
+func (r SlotAssignmentRecord) Validate(group postypes.TaskGroup) error {
+	if r.EpochID != group.EpochID {
+		return errors.New("slot assignment epoch does not match task group")
+	}
+	if r.Slot == 0 {
+		return errors.New("slot assignment slot is required")
+	}
+	if r.TaskGroupID != group.TaskGroupID {
+		return errors.New("slot assignment task group mismatch")
+	}
+	if strings.TrimSpace(r.CanonicalProposer) == "" {
+		return errors.New("slot assignment canonical proposer is required")
+	}
+	if !containsString(group.ValidatorMembers, r.CanonicalProposer) {
+		return errors.New("slot assignment proposer is not a group member")
+	}
+	if len(r.FallbackOrder) != len(group.ValidatorMembers) {
+		return errors.New("slot assignment fallback order must include every group member")
+	}
+	if err := validateStringSet("fallback order", r.FallbackOrder, group.ValidatorMembers); err != nil {
+		return err
+	}
+	if err := validateStringSubset("verifier", r.VerifierValidators, group.ValidatorMembers); err != nil {
+		return err
+	}
+	if containsString(r.VerifierValidators, r.CanonicalProposer) {
+		return errors.New("slot assignment proposer cannot also be verifier")
+	}
+	if r.MissedProposalTimeoutHeight == 0 {
+		return errors.New("slot assignment missed proposal timeout height is required")
+	}
+	if r.EligibilityProof.ProofHash == "" {
+		return errors.New("slot assignment eligibility proof is required")
+	}
+	return nil
+}
+
 func sortProposerPriorities(priorities []ProposerPriority) {
 	sort.SliceStable(priorities, func(i, j int) bool {
 		left := priorities[i]
@@ -213,6 +406,81 @@ func sortProposerPriorities(priorities []ProposerPriority) {
 		}
 		return left.ValidatorAddress < right.ValidatorAddress
 	})
+}
+
+func fallbackOrderFromPriorities(priorities []ProposerPriority) []string {
+	out := make([]string, len(priorities))
+	for i, priority := range priorities {
+		out[i] = priority.ValidatorAddress
+	}
+	return out
+}
+
+func computeEligibilityProofHash(proof ProposerEligibilityProof) string {
+	h := sha256.New()
+	writeHashPart(h, fmt.Sprintf("%d", proof.EpochID))
+	writeHashPart(h, fmt.Sprintf("%d", proof.Slot))
+	writeHashPart(h, proof.TaskGroupID)
+	writeHashPart(h, proof.ValidatorAddress)
+	writeHashPart(h, fmt.Sprintf("%d", proof.FallbackOrder))
+	writeHashPart(h, proof.PriorityScore.String())
+	writeHashPart(h, proof.AssignmentSeed)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeHashPart(h interface{ Write([]byte) (int, error) }, value string) {
+	_, _ = h.Write([]byte(value))
+	_, _ = h.Write([]byte{0})
+}
+
+func sortMissedProposalRecords(records []MissedProposalRecord) {
+	sort.SliceStable(records, func(i, j int) bool {
+		if records[i].EpochID != records[j].EpochID {
+			return records[i].EpochID < records[j].EpochID
+		}
+		if records[i].TaskGroupID != records[j].TaskGroupID {
+			return records[i].TaskGroupID < records[j].TaskGroupID
+		}
+		return records[i].ValidatorAddress < records[j].ValidatorAddress
+	})
+}
+
+func validateStringSet(fieldName string, values []string, expected []string) error {
+	if len(values) != len(expected) {
+		return fmt.Errorf("%s must include every group member", fieldName)
+	}
+	if err := validateStringSubset(fieldName, values, expected); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, found := seen[value]; found {
+			return fmt.Errorf("duplicate %s value %q", fieldName, value)
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
+}
+
+func validateStringSubset(fieldName string, values []string, expected []string) error {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s contains empty value", fieldName)
+		}
+		if !containsString(expected, value) {
+			return fmt.Errorf("%s value %q is not a group member", fieldName, value)
+		}
+	}
+	return nil
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func mulIntBps(value sdkmath.Int, bps uint32) sdkmath.Int {
