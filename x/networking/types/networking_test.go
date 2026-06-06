@@ -3736,6 +3736,211 @@ func TestABCICompatibilityRejectsPeerLocalOrderingUncommittedAndLiveState(t *tes
 	require.ErrorContains(t, err, "committed messages only")
 }
 
+func TestBlockSTMNetworkAssistGroupsZoneShardAndQueuesCrossZone(t *testing.T) {
+	overlayID := HashParts("blockstm-api-overlay")
+	origin := HashParts("blockstm-api-origin")
+	destination := HashParts("blockstm-api-destination")
+	txID := HashParts("blockstm-api-tx")
+	crossMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:            MeshMessageCrossZone,
+		Payload:         []byte("blockstm-cross-zone-message"),
+		Origin:          origin,
+		Destination:     destination,
+		Priority:        PriorityForChannel(ChannelExecution),
+		TTL:             50,
+		OverlayID:       overlayID,
+		SourceZone:      "zone-a",
+		DestinationZone: "zone-b",
+		Sequence:        12,
+	})
+	require.NoError(t, err)
+	schedule, err := NewExecutionMessageSchedule(ExecutionMessageSchedule{
+		ZoneID:            "zone-b",
+		ShardID:           "shard-7",
+		RoutingClass:      ExecutionRoutingExecutionOverlay,
+		Committed:         true,
+		Ordered:           true,
+		TransactionIDs:    []string{txID},
+		MessageIDs:        []string{crossMesh.MessageID},
+		FirstZoneSequence: 12,
+		LastZoneSequence:  12,
+	})
+	require.NoError(t, err)
+	hint := ANAProposalHint{
+		HintID:                 HashParts("blockstm-api-hint"),
+		ScheduleID:             schedule.ScheduleID,
+		ScheduleHash:           schedule.ScheduleHash,
+		ZoneID:                 schedule.ZoneID,
+		ShardID:                schedule.ShardID,
+		DeterminismSource:      DeterminismDeterministicProof,
+		CommittedStateDerived:  true,
+		UsedForOrdering:        true,
+		Priority:               PriorityForChannel(ChannelExecution),
+		BlockSTMGroupID:        HashParts("blockstm-api-group"),
+		DeterministicHintProof: HashParts("blockstm-api-route-proof"),
+	}
+	cross := ExecutionZoneMessage{
+		Message:            crossMesh,
+		RoutingClass:       ExecutionRoutingExecutionOverlay,
+		ZoneID:             "zone-b",
+		ShardID:            "shard-7",
+		ExecutionOverlayID: overlayID,
+		ZoneSequence:       12,
+		CrossZone: CrossZoneMessage{
+			SourceZone:      "zone-a",
+			DestinationZone: "zone-b",
+			SourceSequence:  12,
+			MessageHash:     crossMesh.PayloadHash,
+			ExpiryHeight:    90,
+			ReceiptPolicy:   ReceiptPolicyOnExecution,
+		},
+	}
+
+	plan, err := BuildBlockSTMNetworkAssistPlan(BlockSTMNetworkAssistInput{
+		Height:            60,
+		Schedules:         []ExecutionMessageSchedule{schedule},
+		Hints:             []ANAProposalHint{hint},
+		CrossZoneMessages: []ExecutionZoneMessage{cross},
+	})
+	require.NoError(t, err)
+	require.True(t, plan.PrioritizesExecutionOverlayTraffic)
+	require.True(t, plan.PropagatesZoneShardRouteHints)
+	require.True(t, plan.DeliversCrossZoneExecutionQueues)
+	require.False(t, plan.DecidesCommittedConflicts)
+	require.Len(t, plan.Groups, 1)
+	require.Equal(t, "zone-b", plan.Groups[0].RouteHint.ZoneID)
+	require.Equal(t, "shard-7", plan.Groups[0].RouteHint.ShardID)
+	require.Equal(t, hint.DeterministicHintProof, plan.Groups[0].RouteHint.DeterministicHintHash)
+	require.Equal(t, PriorityForChannel(ChannelExecution), plan.Groups[0].Priority)
+	require.Len(t, plan.CrossZoneDeliveries, 1)
+	require.Equal(t, crossMesh.MessageID, plan.CrossZoneDeliveries[0].MessageID)
+	require.Equal(t, "zone-b", plan.CrossZoneDeliveries[0].DestinationZone)
+
+	_, err = BuildBlockSTMNetworkAssistPlan(BlockSTMNetworkAssistInput{
+		Height:                    60,
+		Schedules:                 []ExecutionMessageSchedule{schedule},
+		DecidesCommittedConflicts: true,
+	})
+	require.ErrorContains(t, err, "conflicts")
+}
+
+func TestNetworkingAPIIntegrationBuildsDiagnosticsProofsAndRouteHints(t *testing.T) {
+	require.NoError(t, DefaultNetworkingQueryServiceDescriptor().Validate())
+	broken := DefaultNetworkingQueryServiceDescriptor()
+	broken.RouteHintEndpoint = false
+	require.ErrorContains(t, broken.Validate(), "route hints")
+
+	salt := []byte("aetheris-api-network")
+	service := signedNodeRecordWithCapabilities(t, 0x83, salt, 100, []NodeRole{NodeRoleService, NodeRoleFull}, []string{"zone-api"}, []string{"svc.api"})
+	stateSync := signedNodeRecordWithCapabilities(t, 0x84, salt, 100, []NodeRole{NodeRoleStateSync}, []string{"zone-api"}, []string{"state-sync"})
+	nodeResponse, err := BuildNodeNetworkingQueryResponse(NodeNetworkingQueryRequest{
+		CurrentHeight: 80,
+		NetworkSalt:   salt,
+		Role:          NodeRoleService,
+		ZoneID:        "zone-api",
+		ServiceID:     "svc.api",
+	}, []NodeRecord{service, stateSync})
+	require.NoError(t, err)
+	require.Len(t, nodeResponse.Nodes, 1)
+	require.Equal(t, service.NodeID, nodeResponse.Nodes[0].NodeID)
+	require.NotEmpty(t, nodeResponse.ResultHash)
+
+	desc := testDefaultOverlayDescriptor(t, OverlayTypeExecution)
+	graph := NormalizeRoutingGraph(RoutingGraph{
+		OverlayID: desc.OverlayID,
+		Version:   1,
+		Committed: true,
+		Edges: []RoutingEdge{{
+			FromNodeID: service.NodeID,
+			ToNodeID:   stateSync.NodeID,
+			Weight:     1,
+			Priority:   PriorityForChannel(ChannelExecution),
+			ZoneID:     "zone-api",
+		}},
+	})
+	overlayResponse, err := BuildOverlayDiagnosticsResponse(OverlayDiagnosticsRequest{
+		OverlayID:     desc.OverlayID,
+		CurrentHeight: 80,
+	}, []OverlayDescriptor{desc}, []OverlayMembershipRecord{{
+		OverlayID:     desc.OverlayID,
+		NodeID:        service.NodeID,
+		ProofID:       HashParts("api-membership-proof"),
+		Membership:    desc.Membership,
+		Mode:          OverlayMembershipModeZoneAssignment,
+		JoinedHeight:  70,
+		ExpiresHeight: 100,
+	}}, graph, []L3OverlayMetrics{{OverlayID: desc.OverlayID, QueuedCount: 3}}, []RouteFailureSample{{OverlayID: desc.OverlayID, Attempts: 10, Failures: 1}})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), overlayResponse.MembershipSize)
+	require.Equal(t, uint64(3), overlayResponse.QueuedMessages)
+	require.Equal(t, uint32(1_000), overlayResponse.RouteFailureRateBps)
+
+	stream, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("api-session"),
+		PayloadType:       StreamingPayloadStateSync,
+		Priority:          PriorityForChannel(ChannelStateSync),
+		FlowControlWindow: 4096,
+		ChunkSize:         1024,
+		Parallelism:       2,
+		BytesSent:         2048,
+		BytesAcknowledged: 1024,
+		State:             StreamStateActive,
+	})
+	require.NoError(t, err)
+	streamMetrics, err := ComputeStreamMetrics(stream, 1000, 2, 1)
+	require.NoError(t, err)
+	streamResponse, err := BuildStreamDiagnosticsResponse(StreamDiagnosticsRequest{
+		StreamID:    stream.StreamID,
+		PayloadType: StreamingPayloadStateSync,
+	}, []StreamSession{stream}, []StreamMetrics{streamMetrics})
+	require.NoError(t, err)
+	require.Equal(t, stream.StreamID, streamResponse.StreamID)
+	require.Equal(t, uint64(2), streamResponse.StallCount)
+	require.NotEmpty(t, streamResponse.ResultHash)
+
+	table := EmptyDistributedRoutingTable()
+	record := testSignedDiscoveryObjectRecord(t, service, 0x83, salt, DRTObjectServiceEndpoint, HashParts("api-target"), HashParts("api-ad"), "", "svc.api", "", 100)
+	table, err = table.Store(record, salt, 80)
+	require.NoError(t, err)
+	discoveryResultHash, err := ComputeDiscoveryResponseResultHash([]DiscoveryRecord{record})
+	require.NoError(t, err)
+	stateRoot := HashParts("api-state-root")
+	proofResponse, err := BuildDiscoveryProofAPIResponse(DiscoveryProofAPIRequest{
+		Query:         DRTQuery{ObjectType: DRTObjectServiceEndpoint, ServiceID: "svc.api", Limit: 4},
+		CurrentHeight: 80,
+		OnChainProof: DiscoveryOnChainProof{
+			ProofHash:   ComputeDiscoveryOnChainProofHash(discoveryResultHash, stateRoot, 80),
+			ProofHeight: 80,
+			StateRoot:   stateRoot,
+		},
+	}, table, service, deterministicPrivateKey(0x83), salt)
+	require.NoError(t, err)
+	require.False(t, proofResponse.Response.AdvisoryOnly)
+	require.Equal(t, proofResponse.Response.ResultHash, proofResponse.ResultHash)
+
+	networkMsg, err := NewNetworkMessage(NetworkMessage{
+		Layer:             LayerL3Application,
+		Channel:           ChannelExecution,
+		ConsensusEffect:   false,
+		DeterminismSource: DeterminismNone,
+		PayloadHash:       HashParts("api-route-payload"),
+		PayloadSizeBytes:  512,
+	})
+	require.NoError(t, err)
+	routeResponse, err := BuildRouteHintAPIResponse(RouteHintAPIRequest{
+		Message:       networkMsg,
+		Descriptor:    desc,
+		Graph:         graph,
+		ClientZoneID:  "zone-api",
+		ClientShardID: "shard-api",
+	})
+	require.NoError(t, err)
+	require.True(t, routeResponse.AdvisoryOnly)
+	require.Equal(t, "zone-api", routeResponse.Hint.ZoneID)
+	require.Equal(t, "shard-api", routeResponse.Hint.ShardID)
+	require.NotEmpty(t, routeResponse.ResultHash)
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
