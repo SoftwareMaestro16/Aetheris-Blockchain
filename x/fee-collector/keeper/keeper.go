@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 
 	corestore "cosmossdk.io/core/store"
@@ -121,6 +122,76 @@ func (k Keeper) GetPendingDistribution(ctx context.Context) (types.PendingDistri
 		return types.PendingDistribution{}, err
 	}
 	return pending, nil
+}
+
+func (k Keeper) SetProtocolIncomePolicy(ctx context.Context, policy types.ProtocolIncomePolicy) error {
+	policy = types.NormalizeProtocolIncomePolicy(policy)
+	if err := policy.Validate(); err != nil {
+		return types.ErrInvalidParams.Wrap(err.Error())
+	}
+	bz, err := json.Marshal(policy)
+	if err != nil {
+		return err
+	}
+	return k.storeService.OpenKVStore(ctx).Set(types.ProtocolIncomePolicyKey, bz)
+}
+
+func (k Keeper) GetProtocolIncomePolicy(ctx context.Context) (types.ProtocolIncomePolicy, error) {
+	bz, err := k.storeService.OpenKVStore(ctx).Get(types.ProtocolIncomePolicyKey)
+	if err != nil || bz == nil {
+		return types.DefaultProtocolIncomePolicy(), err
+	}
+	var policy types.ProtocolIncomePolicy
+	if err := json.Unmarshal(bz, &policy); err != nil {
+		return types.ProtocolIncomePolicy{}, err
+	}
+	policy = types.NormalizeProtocolIncomePolicy(policy)
+	if err := policy.Validate(); err != nil {
+		return types.ProtocolIncomePolicy{}, types.ErrInvalidParams.Wrap(err.Error())
+	}
+	return policy, nil
+}
+
+func (k Keeper) CollectAndDistributeProtocolIncomeFromAccount(ctx context.Context, sender sdk.AccAddress, fees sdk.Coins) ([]types.ProtocolIncomeAllocation, sdk.Coins, error) {
+	if len(sender) == 0 || aetherisaddress.IsZeroAccAddress(sender) {
+		return nil, nil, types.ErrInvalidFee.Wrap("fee sender must not be empty or zero")
+	}
+	policy, err := k.GetProtocolIncomePolicy(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	allocations, roundingRemainder, err := types.SplitProtocolIncome(policy, fees)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := k.assertProtocolIncomeModuleAccounts(policy); err != nil {
+		return nil, nil, err
+	}
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	cacheCtx, write := sdkCtx.CacheContext()
+	if err := k.bankKeeper.SendCoinsFromAccountToModule(cacheCtx, sender, types.CollectorModuleName, fees); err != nil {
+		return nil, nil, err
+	}
+	for _, allocation := range allocations {
+		if allocation.Amount.Empty() {
+			continue
+		}
+		if allocation.Burn {
+			if err := k.bankKeeper.BurnCoins(cacheCtx, types.CollectorModuleName, allocation.Amount); err != nil {
+				return nil, nil, err
+			}
+			continue
+		}
+		if err := k.bankKeeper.SendCoinsFromModuleToModule(cacheCtx, types.CollectorModuleName, allocation.ModuleAccount, allocation.Amount); err != nil {
+			return nil, nil, err
+		}
+	}
+	collectorBalance := k.bankKeeper.GetAllBalances(cacheCtx, k.accountKeeper.GetModuleAddress(types.CollectorModuleName))
+	if !collectorBalance.Empty() {
+		return nil, nil, types.ErrAccounting.Wrapf("collector balance must be empty after protocol income distribution: %s", collectorBalance)
+	}
+	write()
+	return allocations, roundingRemainder, nil
 }
 
 func (k Keeper) CollectFeesFromAccount(ctx context.Context, sender sdk.AccAddress, fees sdk.Coins, feeType string) error {
@@ -332,6 +403,18 @@ func (k Keeper) AssertModuleAccountingInvariant(ctx context.Context) error {
 	bankBalance := k.bankKeeper.GetAllBalances(ctx, moduleAddr)
 	if !bankBalance.Equal(accountingBalance) {
 		return types.ErrAccounting.Wrapf("module bank balance %s != accounting state %s", bankBalance, accountingBalance)
+	}
+	return nil
+}
+
+func (k Keeper) assertProtocolIncomeModuleAccounts(policy types.ProtocolIncomePolicy) error {
+	if k.accountKeeper.GetModuleAddress(types.CollectorModuleName) == nil {
+		return types.ErrAccounting.Wrapf("module account %s is not configured", types.CollectorModuleName)
+	}
+	for _, bucket := range types.NormalizeProtocolIncomePolicy(policy).Buckets {
+		if k.accountKeeper.GetModuleAddress(bucket.ModuleAccount) == nil {
+			return types.ErrAccounting.Wrapf("module account %s for bucket %s is not configured", bucket.ModuleAccount, bucket.Bucket)
+		}
 	}
 	return nil
 }

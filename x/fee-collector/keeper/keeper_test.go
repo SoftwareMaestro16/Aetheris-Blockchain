@@ -159,6 +159,55 @@ func TestInvariantDetectsBankAndAccountingMismatch(t *testing.T) {
 	require.Contains(t, err.Error(), "module bank balance")
 }
 
+func TestProtocolIncomeDistributionRoutesAllBucketsAndBurn(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	collector := app.FeeCollectorKeeper
+	user := l1app.AddTestAddrsWithCoins(t, app, ctx, 1, sdk.NewCoins(coin(2_000)))[0]
+	supplyBefore := app.BankKeeper.GetSupply(ctx, types.BaseDenom)
+	balancesBefore := map[string]sdk.Coins{}
+	for _, bucket := range types.DefaultProtocolIncomePolicy().Buckets {
+		balancesBefore[bucket.ModuleAccount] = app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(bucket.ModuleAccount))
+	}
+
+	allocations, remainder, err := collector.CollectAndDistributeProtocolIncomeFromAccount(ctx, user, sdk.NewCoins(coin(1_000)))
+	require.NoError(t, err)
+	require.True(t, remainder.Empty())
+	require.Equal(t, sdk.NewCoins(), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.CollectorModuleName)))
+
+	byBucket := map[string]sdk.Coins{}
+	for _, allocation := range allocations {
+		byBucket[allocation.Bucket] = allocation.Amount
+		if allocation.Burn {
+			continue
+		}
+		after := app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(allocation.ModuleAccount))
+		require.Equal(t, balancesBefore[allocation.ModuleAccount].Add(allocation.Amount...), after, allocation.Bucket)
+	}
+	require.Equal(t, sdk.NewCoins(coin(380)), byBucket[types.BucketValidatorRewards])
+	require.Equal(t, sdk.NewCoins(coin(250)), byBucket[types.BucketTreasury])
+	require.Equal(t, sdk.NewCoins(coin(100)), byBucket[types.BucketDelegatorProtection])
+	require.Equal(t, sdk.NewCoins(coin(80)), byBucket[types.BucketValidatorInsuranceReserve])
+	require.Equal(t, sdk.NewCoins(coin(120)), byBucket[types.BucketEcosystemGrants])
+	require.Equal(t, sdk.NewCoins(coin(50)), byBucket[types.BucketStorageRentReserve])
+	require.Equal(t, sdk.NewCoins(coin(20)), byBucket[types.BucketBurn])
+	require.True(t, byBucket[types.BucketReporterRewards].Empty())
+	require.Equal(t, supplyBefore.Amount.Sub(sdkmath.NewInt(20)), app.BankKeeper.GetSupply(ctx, types.BaseDenom).Amount)
+}
+
+func TestProtocolIncomeDistributionRejectsMissingModuleAccount(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	collector := app.FeeCollectorKeeper
+	user := l1app.AddTestAddrsWithCoins(t, app, ctx, 1, sdk.NewCoins(coin(100)))[0]
+	policy := types.DefaultProtocolIncomePolicy()
+	policy.Buckets[0].ModuleAccount = "missing-module-account"
+	require.NoError(t, collector.SetProtocolIncomePolicy(ctx, policy))
+
+	_, _, err := collector.CollectAndDistributeProtocolIncomeFromAccount(ctx, user, sdk.NewCoins(coin(10)))
+	require.ErrorIs(t, err, types.ErrAccounting)
+}
+
 func coin(amount int64) sdk.Coin {
 	return sdk.NewInt64Coin(types.BaseDenom, amount)
 }
