@@ -15,6 +15,8 @@ const (
 	AVMRoadmapPhase2 AVMImplementationRoadmapPhaseID = "phase_2_async_engine"
 	AVMRoadmapPhase3 AVMImplementationRoadmapPhaseID = "phase_3_cross_zone_routing"
 	AVMRoadmapPhase4 AVMImplementationRoadmapPhaseID = "phase_4_actor_runtime"
+	AVMRoadmapPhase5 AVMImplementationRoadmapPhaseID = "phase_5_continuations"
+	AVMRoadmapPhase6 AVMImplementationRoadmapPhaseID = "phase_6_contract_backends"
 
 	AVMRoadmapTaskCanonicalAsyncMessageEncoding AVMImplementationRoadmapTask = "define_canonical_async_message_encoding"
 	AVMRoadmapTaskMessageIDDerivation           AVMImplementationRoadmapTask = "define_message_id_derivation"
@@ -52,6 +54,19 @@ const (
 	AVMRoadmapTaskActorReceiptEmission AVMImplementationRoadmapTask = "add_actor_receipt_emission"
 	AVMRoadmapTaskActorStateProofQuery AVMImplementationRoadmapTask = "add_actor_state_proof_query"
 
+	AVMRoadmapTaskContinuationState         AVMImplementationRoadmapTask = "implement_continuation_state"
+	AVMRoadmapTaskResumeQueue               AVMImplementationRoadmapTask = "implement_resume_queue"
+	AVMRoadmapTaskContinuationExpiry        AVMImplementationRoadmapTask = "implement_expiry_handling"
+	AVMRoadmapTaskContinuationGasAccounting AVMImplementationRoadmapTask = "implement_continuation_gas_accounting"
+	AVMRoadmapTaskContinuationProofQuery    AVMImplementationRoadmapTask = "add_continuation_proof_query"
+
+	AVMRoadmapTaskAVMNativeContractBackend AVMImplementationRoadmapTask = "implement_avm_native_contract_backend"
+	AVMRoadmapTaskWASMAdapterBoundary      AVMImplementationRoadmapTask = "define_optional_wasm_adapter_boundary"
+	AVMRoadmapTaskCodeRegistry             AVMImplementationRoadmapTask = "add_code_registry"
+	AVMRoadmapTaskContractInstanceRegistry AVMImplementationRoadmapTask = "add_contract_instance_registry"
+	AVMRoadmapTaskStoreV2StorageAdapter    AVMImplementationRoadmapTask = "add_store_v2_storage_adapter"
+	AVMRoadmapTaskContractGasMetering      AVMImplementationRoadmapTask = "add_gas_metering_for_contract_execution"
+
 	AVMRoadmapExitSignableHashableObjectsHaveTestVectors AVMImplementationExitCriterion = "signable_hashable_objects_have_test_vectors"
 	AVMRoadmapExitQueueOrderingTestCovered               AVMImplementationExitCriterion = "queue_ordering_test_covered"
 	AVMRoadmapExitRootEncodingFixed                      AVMImplementationExitCriterion = "root_encoding_fixed"
@@ -70,6 +85,13 @@ const (
 	AVMRoadmapExitActorMailboxSerialExecution AVMImplementationExitCriterion = "actors_execute_mailbox_messages_one_at_a_time"
 	AVMRoadmapExitActorStateIsolation         AVMImplementationExitCriterion = "actors_cannot_mutate_other_actor_state"
 	AVMRoadmapExitActorDeterministicReceipts  AVMImplementationExitCriterion = "actor_messages_are_deterministic_and_receipt_backed"
+
+	AVMRoadmapExitWorkflowsPauseResume       AVMImplementationExitCriterion = "long_running_workflows_can_pause_and_resume"
+	AVMRoadmapExitContinuationExpiryReceipts AVMImplementationExitCriterion = "expired_continuations_produce_deterministic_receipts"
+
+	AVMRoadmapExitContractsSyncAsyncHandlers AVMImplementationExitCriterion = "contracts_can_execute_sync_and_async_handlers"
+	AVMRoadmapExitContractsEmitAsyncMessages AVMImplementationExitCriterion = "contracts_can_emit_async_messages"
+	AVMRoadmapExitContractStateProofable     AVMImplementationExitCriterion = "contract_state_is_proof_queryable"
 
 	AVMRoadmapVectorAsyncMessageEncoding      AVMTestVectorTarget = "async_message_encoding"
 	AVMRoadmapVectorMessageIDDerivation       AVMTestVectorTarget = "message_id_derivation"
@@ -208,6 +230,40 @@ func DefaultAVMImplementationRoadmap() (AVMImplementationRoadmap, error) {
 			},
 			ConsensusCritical: true,
 		},
+		{
+			PhaseID: AVMRoadmapPhase5,
+			Name:    "Continuations",
+			Tasks: []AVMImplementationRoadmapTask{
+				AVMRoadmapTaskContinuationState,
+				AVMRoadmapTaskResumeQueue,
+				AVMRoadmapTaskContinuationExpiry,
+				AVMRoadmapTaskContinuationGasAccounting,
+				AVMRoadmapTaskContinuationProofQuery,
+			},
+			ExitCriteria: []AVMImplementationExitCriterion{
+				AVMRoadmapExitWorkflowsPauseResume,
+				AVMRoadmapExitContinuationExpiryReceipts,
+			},
+			ConsensusCritical: true,
+		},
+		{
+			PhaseID: AVMRoadmapPhase6,
+			Name:    "Contract Backends",
+			Tasks: []AVMImplementationRoadmapTask{
+				AVMRoadmapTaskAVMNativeContractBackend,
+				AVMRoadmapTaskWASMAdapterBoundary,
+				AVMRoadmapTaskCodeRegistry,
+				AVMRoadmapTaskContractInstanceRegistry,
+				AVMRoadmapTaskStoreV2StorageAdapter,
+				AVMRoadmapTaskContractGasMetering,
+			},
+			ExitCriteria: []AVMImplementationExitCriterion{
+				AVMRoadmapExitContractsSyncAsyncHandlers,
+				AVMRoadmapExitContractsEmitAsyncMessages,
+				AVMRoadmapExitContractStateProofable,
+			},
+			ConsensusCritical: true,
+		},
 	}
 	for i := range phases {
 		phase, err := NewAVMImplementationRoadmapPhase(phases[i])
@@ -306,14 +362,14 @@ func (r AVMImplementationRoadmap) Validate() error {
 }
 
 func AllAVMImplementationRoadmapPhaseIDs() []AVMImplementationRoadmapPhaseID {
-	phases := []AVMImplementationRoadmapPhaseID{AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4}
+	phases := []AVMImplementationRoadmapPhaseID{AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4, AVMRoadmapPhase5, AVMRoadmapPhase6}
 	sort.Slice(phases, func(i, j int) bool { return phases[i] < phases[j] })
 	return phases
 }
 
 func IsAVMImplementationRoadmapPhaseID(phaseID AVMImplementationRoadmapPhaseID) bool {
 	switch phaseID {
-	case AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4:
+	case AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4, AVMRoadmapPhase5, AVMRoadmapPhase6:
 		return true
 	default:
 		return false
@@ -437,6 +493,23 @@ func requiredAVMRoadmapTasks(phaseID AVMImplementationRoadmapPhaseID) []AVMImple
 			AVMRoadmapTaskActorReceiptEmission,
 			AVMRoadmapTaskActorStateProofQuery,
 		}
+	case AVMRoadmapPhase5:
+		return []AVMImplementationRoadmapTask{
+			AVMRoadmapTaskContinuationState,
+			AVMRoadmapTaskResumeQueue,
+			AVMRoadmapTaskContinuationExpiry,
+			AVMRoadmapTaskContinuationGasAccounting,
+			AVMRoadmapTaskContinuationProofQuery,
+		}
+	case AVMRoadmapPhase6:
+		return []AVMImplementationRoadmapTask{
+			AVMRoadmapTaskAVMNativeContractBackend,
+			AVMRoadmapTaskWASMAdapterBoundary,
+			AVMRoadmapTaskCodeRegistry,
+			AVMRoadmapTaskContractInstanceRegistry,
+			AVMRoadmapTaskStoreV2StorageAdapter,
+			AVMRoadmapTaskContractGasMetering,
+		}
 	default:
 		return nil
 	}
@@ -472,6 +545,17 @@ func requiredAVMRoadmapExitCriteria(phaseID AVMImplementationRoadmapPhaseID) []A
 			AVMRoadmapExitActorMailboxSerialExecution,
 			AVMRoadmapExitActorStateIsolation,
 			AVMRoadmapExitActorDeterministicReceipts,
+		}
+	case AVMRoadmapPhase5:
+		return []AVMImplementationExitCriterion{
+			AVMRoadmapExitWorkflowsPauseResume,
+			AVMRoadmapExitContinuationExpiryReceipts,
+		}
+	case AVMRoadmapPhase6:
+		return []AVMImplementationExitCriterion{
+			AVMRoadmapExitContractsSyncAsyncHandlers,
+			AVMRoadmapExitContractsEmitAsyncMessages,
+			AVMRoadmapExitContractStateProofable,
 		}
 	default:
 		return nil
