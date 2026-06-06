@@ -1082,6 +1082,132 @@ func TestRoleRecordRejectsCapacityOverflowAndInvalidScores(t *testing.T) {
 	require.ErrorContains(t, err, "assigned task count")
 }
 
+func TestRoleRegistryEligibilityChecksRoleSpecificRules(t *testing.T) {
+	params := DefaultParams()
+	registry := DefaultRoleRegistry()
+	require.NoError(t, registry.Validate())
+	proposerRule, found, err := registry.Rule(ValidatorRoleProposer)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, proposerRule.RequiresValidator)
+	require.True(t, proposerRule.RequiresMinimumStake)
+
+	proposer := candidate("val-proposer", 1_000_000_000, 0)
+	proposer.Roles = []ValidatorRole{ValidatorRoleProposer}
+	proposer.PerformanceScoreBps = BasisPoints
+	proposer.UptimeFactorBps = BasisPoints
+	record, err := CheckRoleEligibility(registry, RoleEligibilityInput{
+		Params:    params,
+		Role:      ValidatorRoleProposer,
+		Candidate: proposer,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "val-proposer", record.ValidatorAddress)
+	require.Equal(t, ValidatorRoleProposer, record.Role)
+	require.Equal(t, uint32(BasisPoints), record.EligibilityScore)
+
+	lowStake := proposer
+	lowStake.SelfStakeNaet = sdkmath.NewInt(1)
+	_, err = CheckRoleEligibility(registry, RoleEligibilityInput{Params: params, Role: ValidatorRoleProposer, Candidate: lowStake})
+	require.ErrorContains(t, err, "minimum validator stake")
+
+	fisherman, err := CheckRoleEligibility(registry, RoleEligibilityInput{
+		Params:       params,
+		Role:         ValidatorRoleFisherman,
+		ActorAddress: "fish-1",
+		DepositNaet:  sdkmath.NewInt(1),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "fish-1", fisherman.ValidatorAddress)
+	require.Equal(t, ValidatorRoleFisherman, fisherman.Role)
+
+	_, err = CheckRoleEligibility(registry, RoleEligibilityInput{Params: params, Role: ValidatorRoleFisherman, ActorAddress: "fish-1"})
+	require.ErrorContains(t, err, "deposit")
+
+	operator := candidate("val-operator", 1_000_000_000, 0)
+	operator.Roles = []ValidatorRole{ValidatorRoleDelegationOperator}
+	operator.PerformanceScoreBps = BasisPoints
+	operator.UptimeFactorBps = BasisPoints
+	_, err = CheckRoleEligibility(registry, RoleEligibilityInput{
+		Params:    params,
+		Role:      ValidatorRoleDelegationOperator,
+		Candidate: operator,
+	})
+	require.ErrorContains(t, err, "authorization")
+	_, err = CheckRoleEligibility(registry, RoleEligibilityInput{
+		Params:                       params,
+		Role:                         ValidatorRoleDelegationOperator,
+		Candidate:                    operator,
+		DelegationOperatorAuthorized: true,
+		FeesDisclosed:                true,
+		RiskPolicyDisclosed:          true,
+	})
+	require.NoError(t, err)
+}
+
+func TestRolePerformanceMetricsRewardsAndSuspensionRespectOverlap(t *testing.T) {
+	capacity := ValidatorCapacity{MaxTaskGroups: 3, SupportedWorkloads: []WorkloadType{WorkloadTypeProofVerification}, AvailabilityCommitment: 9_000}
+	verifier, err := NewRoleRecord(RoleRecord{
+		ValidatorAddress:  "val-a",
+		Role:              ValidatorRoleVerifier,
+		EpochID:           12,
+		Status:            RoleStatusAssigned,
+		EligibilityScore:  9_500,
+		Capacity:          capacity,
+		AssignedTaskCount: 3,
+		PerformanceScore:  9_500,
+	})
+	require.NoError(t, err)
+	collator, err := NewRoleRecord(RoleRecord{
+		ValidatorAddress:  "val-a",
+		Role:              ValidatorRoleCollator,
+		EpochID:           12,
+		Status:            RoleStatusAssigned,
+		EligibilityScore:  9_000,
+		Capacity:          capacity,
+		AssignedTaskCount: 1,
+		PerformanceScore:  8_000,
+	})
+	require.NoError(t, err)
+	metrics, err := ComputeRolePerformanceMetrics(verifier, 2, 1, 0)
+	require.NoError(t, err)
+	require.Equal(t, uint32(4_166), metrics.PerformanceScore)
+
+	rewards, err := SettleRoleRewards(RoleRewardInput{
+		EpochID:          12,
+		TotalRewardsNaet: sdkmath.NewInt(1_000),
+		Records:          []RoleRecord{verifier, collator},
+		Weights: []RoleRewardWeight{
+			{Role: ValidatorRoleVerifier, WeightBps: 5_000},
+			{Role: ValidatorRoleCollator, WeightBps: 5_000},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rewards.Rewards, 1)
+	require.Equal(t, "val-a", rewards.Rewards[0].ValidatorID)
+	require.Equal(t, sdkmath.NewInt(1_000), rewards.Rewards[0].RewardNaet)
+
+	suspended, err := SuspendRoleOnFault([]RoleRecord{verifier, collator}, "val-a", ValidatorRoleVerifier, 12)
+	require.NoError(t, err)
+	require.Equal(t, RoleStatusSuspended, suspended[0].Status)
+	require.Equal(t, RoleStatusAssigned, suspended[1].Status)
+
+	penalty, err := ComputeSlashingPenalty(SlashingPenaltyInput{
+		PenaltyID:         "penalty-role-specific",
+		ValidatorID:       "val-a",
+		SeverityLevel:     SlashSeverityInvalidTaskExecution,
+		StakeExposureNaet: sdkmath.NewInt(1_000),
+		SelfStakeNaet:     sdkmath.NewInt(1_000),
+		RoleSuspensions:   []ValidatorRole{ValidatorRoleVerifier},
+	})
+	require.NoError(t, err)
+	candidate := candidate("val-a", 1_000_000_000, 0)
+	candidate.Roles = []ValidatorRole{ValidatorRoleVerifier, ValidatorRoleCollator}
+	applied, err := ApplySlashingPenaltyToCandidate(candidate, penalty)
+	require.NoError(t, err)
+	require.Equal(t, []ValidatorRole{ValidatorRoleCollator}, applied.Roles)
+}
+
 func scoredCandidates(t *testing.T, params Params, candidates []Candidate) []ScoredValidator {
 	t.Helper()
 	validators := make([]ScoredValidator, len(candidates))
