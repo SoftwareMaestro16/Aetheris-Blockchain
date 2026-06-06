@@ -344,33 +344,31 @@ func BuildRecursiveResolutionProofV2(state IdentityState, chainID string, rootNa
 	if ttl == 0 {
 		return RecursiveResolutionProofV2{}, errors.New("identity v2 recursive proof ttl is required")
 	}
-	root, err := NormalizeAETDomain(rootName)
+	rootResult, err := NormalizeAETDomainVersioned(rootName, NameNormalizationVersionV2)
 	if err != nil {
 		return RecursiveResolutionProofV2{}, err
 	}
-	target, err := NormalizeAETDomain(targetName)
+	targetResult, err := NormalizeAETDomainVersioned(targetName, NameNormalizationVersionV2)
 	if err != nil {
 		return RecursiveResolutionProofV2{}, err
 	}
-	candidates, err := resolverDomainCandidates(target)
+	path, err := CanonicalResolutionPathV2(targetResult.NormalizedName)
 	if err != nil {
 		return RecursiveResolutionProofV2{}, err
 	}
-	pathLabels := strings.Split(strings.TrimSuffix(target, DomainTLD), ".")
+	if len(path.Path) == 0 || path.Path[0] != rootResult.NormalizedName {
+		return RecursiveResolutionProofV2{}, errors.New("identity v2 recursive proof target is not under root_name")
+	}
 	out := RecursiveResolutionProofV2{
 		ProofVersion: IdentityProofSchemaVersionV2,
 		ChainID:      chainID,
 		Height:       height,
-		RootName:     root,
-		TargetName:   target,
-		PathLabels:   append([]string(nil), pathLabels...),
+		RootName:     rootResult.NormalizedName,
+		TargetName:   targetResult.NormalizedName,
+		PathLabels:   append([]string(nil), path.Labels...),
 	}
-	for _, candidate := range candidates {
-		pathHash, err := DomainRecordV2NameHash(candidate)
-		if err != nil {
-			return RecursiveResolutionProofV2{}, err
-		}
-		out.PathHashes = append(out.PathHashes, pathHash)
+	for i, candidate := range path.Path {
+		out.PathHashes = append(out.PathHashes, path.PathHashes[i])
 		if domain, found := findDomain(state, candidate); found {
 			record, err := domainRecordV2ForProof(state, domain, height)
 			if err != nil {
@@ -397,7 +395,7 @@ func BuildRecursiveResolutionProofV2(state IdentityState, chainID string, rootNa
 			out.PathProofs = append(out.PathProofs, proof)
 		}
 	}
-	finalProof, err := BuildIdentityResolutionProof(state, target, height)
+	finalProof, err := BuildIdentityResolutionProof(state, targetResult.NormalizedName, height)
 	if err != nil {
 		return RecursiveResolutionProofV2{}, err
 	}
