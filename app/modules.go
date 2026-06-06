@@ -38,6 +38,7 @@ import (
 	bridgehubmodule "github.com/sovereign-l1/l1/x/bridge-hub"
 	configmodule "github.com/sovereign-l1/l1/x/config"
 	constitutionmodule "github.com/sovereign-l1/l1/x/constitution"
+	crosschainregistrymodule "github.com/sovereign-l1/l1/x/cross-chain-registry"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
 	identityrootmodule "github.com/sovereign-l1/l1/x/identity-root"
@@ -96,6 +97,7 @@ func (app *L1App) initModules(
 		storagerentmodule.NewAppModule(&app.StorageRentKeeper),
 		identityrootmodule.NewAppModule(&app.IdentityRootKeeper),
 		bridgehubmodule.NewAppModule(&app.BridgeHubKeeper),
+		crosschainregistrymodule.NewAppModule(&app.CrossChainRegistryKeeper),
 		tokenfactorymodule.NewAppModule(appCodec, app.TokenFactoryKeeper),
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),

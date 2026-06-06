@@ -27,6 +27,7 @@ import (
 	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
+	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
@@ -66,6 +67,7 @@ var aetherCorePrototypeModules = []string{
 	storagerenttypes.ModuleName,
 	identityroottypes.ModuleName,
 	bridgehubtypes.ModuleName,
+	crosschainregistrytypes.ModuleName,
 }
 
 var aetherCoreSystemModules = []string{
@@ -99,6 +101,7 @@ func AetherCorePrototypeStoreKeys() []string {
 		storagerenttypes.StoreKey,
 		identityroottypes.StoreKey,
 		bridgehubtypes.StoreKey,
+		crosschainregistrytypes.StoreKey,
 	}
 }
 
@@ -149,6 +152,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		storagerenttypes.ModuleName,
 		identityroottypes.ModuleName,
 		bridgehubtypes.ModuleName,
+		crosschainregistrytypes.ModuleName,
 	}
 }
 
@@ -178,6 +182,7 @@ func aetherCoreEndBlockerOrder() []string {
 		storagerenttypes.ModuleName,
 		identityroottypes.ModuleName,
 		bridgehubtypes.ModuleName,
+		crosschainregistrytypes.ModuleName,
 	}
 }
 
@@ -217,6 +222,7 @@ func aetherCoreInitGenesisOrder() []string {
 		storagerenttypes.ModuleName,
 		identityroottypes.ModuleName,
 		bridgehubtypes.ModuleName,
+		crosschainregistrytypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,
@@ -259,6 +265,7 @@ func aetherCoreExportGenesisOrder() []string {
 		storagerenttypes.ModuleName,
 		identityroottypes.ModuleName,
 		bridgehubtypes.ModuleName,
+		crosschainregistrytypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,

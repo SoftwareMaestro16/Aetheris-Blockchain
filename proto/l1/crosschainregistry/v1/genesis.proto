@@ -1,0 +1,81 @@
+syntax = "proto3";
+package l1.crosschainregistry.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/cross-chain-registry/types";
+
+message CrossChainRegistryParams {
+  uint32 max_chains = 1;
+  uint32 max_channels = 2;
+  uint32 max_routes = 3;
+  uint32 max_risk_policies = 4;
+  uint32 max_risk_score = 5;
+  uint64 max_finality_blocks = 6;
+  uint64 max_finality_time_seconds = 7;
+  uint64 max_timeout_blocks = 8;
+  uint64 max_timeout_seconds = 9;
+}
+
+message FinalityAssumptions {
+  uint64 confirmation_blocks = 1;
+  uint64 finality_seconds = 2;
+}
+
+message TimeoutParameters {
+  uint64 timeout_blocks = 1;
+  uint64 timeout_seconds = 2;
+}
+
+message RegisteredChain {
+  string chain_id = 1;
+  string status = 2;
+  string client_type = 3;
+  string trust_level = 4;
+  repeated string channel_ids = 5;
+  string light_client_ref = 6;
+  uint32 risk_score = 7;
+  FinalityAssumptions finality = 8;
+  TimeoutParameters timeout = 9;
+  string risk_policy_id = 10;
+  uint64 registered_height = 11;
+  uint64 updated_height = 12;
+}
+
+message ChannelRecord {
+  string channel_id = 1;
+  string chain_id = 2;
+  string counterparty_chain_id = 3;
+  string client_id = 4;
+  bool active = 5;
+  uint64 registered_height = 6;
+}
+
+message BridgeRoute {
+  string route_id = 1;
+  string source_chain_id = 2;
+  string target_chain_id = 3;
+  string channel_id = 4;
+  string bridge_id = 5;
+  bool enabled = 6;
+}
+
+message RiskPolicy {
+  string policy_id = 1;
+  string chain_id = 2;
+  uint32 max_risk_score = 3;
+  repeated string allowed_client_types = 4;
+  string min_trust_level = 5;
+  bool require_light_client = 6;
+}
+
+message CrossChainRegistryState {
+  repeated RegisteredChain chains = 1;
+  repeated ChannelRecord channels = 2;
+  repeated BridgeRoute bridge_routes = 3;
+  repeated RiskPolicy risk_policies = 4;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  CrossChainRegistryParams registry_params = 2;
+  CrossChainRegistryState state = 3;
+}

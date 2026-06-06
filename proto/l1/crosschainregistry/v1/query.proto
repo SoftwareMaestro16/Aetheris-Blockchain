@@ -1,0 +1,52 @@
+syntax = "proto3";
+package l1.crosschainregistry.v1;
+
+import "l1/crosschainregistry/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/cross-chain-registry/types";
+
+message QueryRegisteredChainRequest {
+  string chain_id = 1;
+}
+
+message QueryRegisteredChainResponse {
+  RegisteredChain chain = 1;
+}
+
+message QueryRegisteredChainsRequest {}
+
+message QueryRegisteredChainsResponse {
+  repeated RegisteredChain chains = 1;
+}
+
+message QueryChannelRequest {
+  string channel_id = 1;
+}
+
+message QueryChannelResponse {
+  ChannelRecord channel = 1;
+}
+
+message QueryBridgeRouteRequest {
+  string route_id = 1;
+}
+
+message QueryBridgeRouteResponse {
+  BridgeRoute route = 1;
+}
+
+message QueryRiskPolicyRequest {
+  string chain_id = 1;
+}
+
+message QueryRiskPolicyResponse {
+  RiskPolicy policy = 1;
+}
+
+service Query {
+  rpc RegisteredChain(QueryRegisteredChainRequest) returns (QueryRegisteredChainResponse);
+  rpc RegisteredChains(QueryRegisteredChainsRequest) returns (QueryRegisteredChainsResponse);
+  rpc Channel(QueryChannelRequest) returns (QueryChannelResponse);
+  rpc BridgeRoute(QueryBridgeRouteRequest) returns (QueryBridgeRouteResponse);
+  rpc RiskPolicy(QueryRiskPolicyRequest) returns (QueryRiskPolicyResponse);
+}

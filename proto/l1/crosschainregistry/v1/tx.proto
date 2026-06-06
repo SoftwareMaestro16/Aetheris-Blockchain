@@ -1,0 +1,64 @@
+syntax = "proto3";
+package l1.crosschainregistry.v1;
+
+import "l1/crosschainregistry/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/cross-chain-registry/types";
+
+message MsgRegisterChain {
+  string authority = 1;
+  RegisteredChain chain = 2;
+  RiskPolicy risk_policy = 3;
+}
+
+message MsgRegisterChainResponse {
+  RegisteredChain chain = 1;
+}
+
+message MsgUpdateChainStatus {
+  string authority = 1;
+  string chain_id = 2;
+  string status = 3;
+  uint64 height = 4;
+}
+
+message MsgUpdateChainStatusResponse {
+  RegisteredChain chain = 1;
+}
+
+message MsgRegisterChannel {
+  string authority = 1;
+  ChannelRecord channel = 2;
+  repeated BridgeRoute routes = 3;
+}
+
+message MsgRegisterChannelResponse {
+  ChannelRecord channel = 1;
+}
+
+message MsgUpdateRiskPolicy {
+  string authority = 1;
+  string chain_id = 2;
+  RiskPolicy policy = 3;
+  uint64 height = 4;
+}
+
+message MsgUpdateRiskPolicyResponse {
+  RiskPolicy policy = 1;
+}
+
+message MsgRemoveChain {
+  string authority = 1;
+  string chain_id = 2;
+  uint64 height = 3;
+}
+
+message MsgRemoveChainResponse {}
+
+service Msg {
+  rpc RegisterChain(MsgRegisterChain) returns (MsgRegisterChainResponse);
+  rpc UpdateChainStatus(MsgUpdateChainStatus) returns (MsgUpdateChainStatusResponse);
+  rpc RegisterChannel(MsgRegisterChannel) returns (MsgRegisterChannelResponse);
+  rpc UpdateRiskPolicy(MsgUpdateRiskPolicy) returns (MsgUpdateRiskPolicyResponse);
+  rpc RemoveChain(MsgRemoveChain) returns (MsgRemoveChainResponse);
+}

@@ -64,6 +64,8 @@ import (
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutionkeeper "github.com/sovereign-l1/l1/x/constitution/keeper"
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
+	crosschainregistrykeeper "github.com/sovereign-l1/l1/x/cross-chain-registry/keeper"
+	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -156,31 +158,32 @@ type L1App struct {
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	// supplementary keepers
-	FeeGrantKeeper          feegrantkeeper.Keeper
-	AuthzKeeper             authzkeeper.Keeper
-	EpochsKeeper            *epochskeeper.Keeper
-	ProtocolPoolKeeper      protocolpoolkeeper.Keeper
-	ConfigKeeper            configkeeper.Keeper
-	ConstitutionKeeper      constitutionkeeper.Keeper
-	TokenFactoryKeeper      tokenfactorykeeper.Keeper
-	DexKeeper               dexkeeper.Keeper
-	FeesKeeper              feeskeeper.Keeper
-	AetherCoreKeeper        aethercorekeeper.Keeper
-	LoadKeeper              loadkeeper.Keeper
-	RoutingKeeper           routingkeeper.Keeper
-	ZonesKeeper             zoneskeeper.Keeper
-	MeshKeeper              meshkeeper.Keeper
-	NetworkingKeeper        networkingkeeper.Keeper
-	PaymentsKeeper          paymentskeeper.Keeper
-	SchedulerKeeper         schedulerkeeper.Keeper
-	AVMSchedulerKeeper      avmschedulerkeeper.Keeper
-	ActorRegistryKeeper     actorregistrykeeper.Keeper
-	StorageRentKeeper       storagerentkeeper.Keeper
-	IdentityRootKeeper      identityrootkeeper.Keeper
-	BridgeHubKeeper         bridgehubkeeper.Keeper
-	SystemRegistryKeeper    systemregistrykeeper.Keeper
-	ValidatorElectionKeeper validatorelectionkeeper.Keeper
-	ValidatorRegistryKeeper validatorregistrykeeper.Keeper
+	FeeGrantKeeper           feegrantkeeper.Keeper
+	AuthzKeeper              authzkeeper.Keeper
+	EpochsKeeper             *epochskeeper.Keeper
+	ProtocolPoolKeeper       protocolpoolkeeper.Keeper
+	ConfigKeeper             configkeeper.Keeper
+	ConstitutionKeeper       constitutionkeeper.Keeper
+	TokenFactoryKeeper       tokenfactorykeeper.Keeper
+	DexKeeper                dexkeeper.Keeper
+	FeesKeeper               feeskeeper.Keeper
+	AetherCoreKeeper         aethercorekeeper.Keeper
+	LoadKeeper               loadkeeper.Keeper
+	RoutingKeeper            routingkeeper.Keeper
+	ZonesKeeper              zoneskeeper.Keeper
+	MeshKeeper               meshkeeper.Keeper
+	NetworkingKeeper         networkingkeeper.Keeper
+	PaymentsKeeper           paymentskeeper.Keeper
+	SchedulerKeeper          schedulerkeeper.Keeper
+	AVMSchedulerKeeper       avmschedulerkeeper.Keeper
+	ActorRegistryKeeper      actorregistrykeeper.Keeper
+	StorageRentKeeper        storagerentkeeper.Keeper
+	IdentityRootKeeper       identityrootkeeper.Keeper
+	BridgeHubKeeper          bridgehubkeeper.Keeper
+	CrossChainRegistryKeeper crosschainregistrykeeper.Keeper
+	SystemRegistryKeeper     systemregistrykeeper.Keeper
+	ValidatorElectionKeeper  validatorelectionkeeper.Keeper
+	ValidatorRegistryKeeper  validatorregistrykeeper.Keeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -301,6 +304,7 @@ func NewL1App(
 		storagerenttypes.StoreKey,
 		identityroottypes.StoreKey,
 		bridgehubtypes.StoreKey,
+		crosschainregistrytypes.StoreKey,
 	)
 
 	// register streaming services
