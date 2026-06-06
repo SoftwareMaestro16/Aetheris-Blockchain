@@ -12,7 +12,7 @@ func TestAVMImplementationRoadmapMatchesSection19(t *testing.T) {
 	require.NoError(t, roadmap.Validate())
 	require.Equal(t, "AVM implementation roadmap", roadmap.RoadmapName)
 	require.Equal(t, ComputeAVMImplementationRoadmapHash(roadmap), roadmap.RoadmapHash)
-	require.Len(t, roadmap.Phases, 3)
+	require.Len(t, roadmap.Phases, 5)
 
 	byPhase := map[AVMImplementationRoadmapPhaseID]AVMImplementationRoadmapPhase{}
 	for _, phase := range roadmap.Phases {
@@ -23,6 +23,8 @@ func TestAVMImplementationRoadmapMatchesSection19(t *testing.T) {
 	require.Equal(t, "Specification and Test Vectors", byPhase[AVMRoadmapPhase0].Name)
 	require.Equal(t, "Sync Router", byPhase[AVMRoadmapPhase1].Name)
 	require.Equal(t, "Async Engine", byPhase[AVMRoadmapPhase2].Name)
+	require.Equal(t, "Cross-Zone Routing", byPhase[AVMRoadmapPhase3].Name)
+	require.Equal(t, "Actor Runtime", byPhase[AVMRoadmapPhase4].Name)
 }
 
 func TestAVMRoadmapPhase0DefinesSpecAndTestVectors(t *testing.T) {
@@ -123,6 +125,48 @@ func TestAVMRoadmapPhase2DefinesAsyncEngineMilestone(t *testing.T) {
 	require.Empty(t, phase.TestVectorTargets)
 }
 
+func TestAVMRoadmapPhase3DefinesCrossZoneRoutingMilestone(t *testing.T) {
+	roadmap, err := DefaultAVMImplementationRoadmap()
+	require.NoError(t, err)
+	phase := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase3)
+
+	require.ElementsMatch(t, []AVMImplementationRoadmapTask{
+		AVMRoadmapTaskZoneMetadata,
+		AVMRoadmapTaskZoneMessageFilters,
+		AVMRoadmapTaskCrossZoneInboxOutboxRoot,
+		AVMRoadmapTaskBounceSystem,
+		AVMRoadmapTaskCrossZoneValueAccounting,
+		AVMRoadmapTaskCrossZoneProofQueries,
+	}, phase.Tasks)
+	require.ElementsMatch(t, []AVMImplementationExitCriterion{
+		AVMRoadmapExitZoneAToZoneBAsync,
+		AVMRoadmapExitFailedCrossZoneTerminal,
+		AVMRoadmapExitCrossZoneReceiptsProofable,
+	}, phase.ExitCriteria)
+	require.Empty(t, phase.TestVectorTargets)
+}
+
+func TestAVMRoadmapPhase4DefinesActorRuntimeMilestone(t *testing.T) {
+	roadmap, err := DefaultAVMImplementationRoadmap()
+	require.NoError(t, err)
+	phase := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase4)
+
+	require.ElementsMatch(t, []AVMImplementationRoadmapTask{
+		AVMRoadmapTaskActorRecords,
+		AVMRoadmapTaskActorMailboxes,
+		AVMRoadmapTaskActorHandlerDispatch,
+		AVMRoadmapTaskActorStateIsolation,
+		AVMRoadmapTaskActorReceiptEmission,
+		AVMRoadmapTaskActorStateProofQuery,
+	}, phase.Tasks)
+	require.ElementsMatch(t, []AVMImplementationExitCriterion{
+		AVMRoadmapExitActorMailboxSerialExecution,
+		AVMRoadmapExitActorStateIsolation,
+		AVMRoadmapExitActorDeterministicReceipts,
+	}, phase.ExitCriteria)
+	require.Empty(t, phase.TestVectorTargets)
+}
+
 func TestAVMRoadmapRejectsMissingCrossOwnedAndHashMismatch(t *testing.T) {
 	roadmap, err := DefaultAVMImplementationRoadmap()
 	require.NoError(t, err)
@@ -155,6 +199,16 @@ func TestAVMRoadmapRejectsMissingCrossOwnedAndHashMismatch(t *testing.T) {
 	phase2.TestVectorTargets = append(phase2.TestVectorTargets, AVMRoadmapVectorAsyncMessageEncoding)
 	phase2.PhaseHash = ComputeAVMImplementationRoadmapPhaseHash(phase2)
 	require.ErrorContains(t, phase2.Validate(), "test vector target")
+
+	phase3 := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase3)
+	phase3.Tasks = append(phase3.Tasks, AVMRoadmapTaskActorRecords)
+	phase3.PhaseHash = ComputeAVMImplementationRoadmapPhaseHash(phase3)
+	require.ErrorContains(t, phase3.Validate(), "task")
+
+	phase4 := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase4)
+	phase4.ExitCriteria = removeAVMRoadmapExitCriterionForTest(phase4.ExitCriteria, AVMRoadmapExitActorStateIsolation)
+	phase4.PhaseHash = ComputeAVMImplementationRoadmapPhaseHash(phase4)
+	require.ErrorContains(t, phase4.Validate(), "exit criterion")
 }
 
 func TestAVMRoadmapRejectsNonConsensusCriticalPhase(t *testing.T) {
@@ -182,6 +236,16 @@ func removeAVMRoadmapTaskForTest(tasks []AVMImplementationRoadmapTask, target AV
 	for _, task := range tasks {
 		if task != target {
 			out = append(out, task)
+		}
+	}
+	return out
+}
+
+func removeAVMRoadmapExitCriterionForTest(criteria []AVMImplementationExitCriterion, target AVMImplementationExitCriterion) []AVMImplementationExitCriterion {
+	out := make([]AVMImplementationExitCriterion, 0, len(criteria))
+	for _, criterion := range criteria {
+		if criterion != target {
+			out = append(out, criterion)
 		}
 	}
 	return out

@@ -13,6 +13,8 @@ const (
 	AVMRoadmapPhase0 AVMImplementationRoadmapPhaseID = "phase_0_specification_and_test_vectors"
 	AVMRoadmapPhase1 AVMImplementationRoadmapPhaseID = "phase_1_sync_router"
 	AVMRoadmapPhase2 AVMImplementationRoadmapPhaseID = "phase_2_async_engine"
+	AVMRoadmapPhase3 AVMImplementationRoadmapPhaseID = "phase_3_cross_zone_routing"
+	AVMRoadmapPhase4 AVMImplementationRoadmapPhaseID = "phase_4_actor_runtime"
 
 	AVMRoadmapTaskCanonicalAsyncMessageEncoding AVMImplementationRoadmapTask = "define_canonical_async_message_encoding"
 	AVMRoadmapTaskMessageIDDerivation           AVMImplementationRoadmapTask = "define_message_id_derivation"
@@ -36,6 +38,20 @@ const (
 	AVMRoadmapTaskReplayTombstones  AVMImplementationRoadmapTask = "implement_replay_tombstones"
 	AVMRoadmapTaskQueueRoots        AVMImplementationRoadmapTask = "add_queue_roots"
 
+	AVMRoadmapTaskZoneMetadata             AVMImplementationRoadmapTask = "add_source_and_destination_zone_metadata"
+	AVMRoadmapTaskZoneMessageFilters       AVMImplementationRoadmapTask = "add_zone_message_filters"
+	AVMRoadmapTaskCrossZoneInboxOutboxRoot AVMImplementationRoadmapTask = "add_cross_zone_inbox_and_outbox_roots"
+	AVMRoadmapTaskBounceSystem             AVMImplementationRoadmapTask = "add_bounce_system"
+	AVMRoadmapTaskCrossZoneValueAccounting AVMImplementationRoadmapTask = "add_cross_zone_value_accounting"
+	AVMRoadmapTaskCrossZoneProofQueries    AVMImplementationRoadmapTask = "add_cross_zone_proof_queries"
+
+	AVMRoadmapTaskActorRecords         AVMImplementationRoadmapTask = "implement_actor_records"
+	AVMRoadmapTaskActorMailboxes       AVMImplementationRoadmapTask = "implement_actor_mailboxes"
+	AVMRoadmapTaskActorHandlerDispatch AVMImplementationRoadmapTask = "implement_actor_handler_dispatch"
+	AVMRoadmapTaskActorStateIsolation  AVMImplementationRoadmapTask = "implement_actor_state_isolation"
+	AVMRoadmapTaskActorReceiptEmission AVMImplementationRoadmapTask = "add_actor_receipt_emission"
+	AVMRoadmapTaskActorStateProofQuery AVMImplementationRoadmapTask = "add_actor_state_proof_query"
+
 	AVMRoadmapExitSignableHashableObjectsHaveTestVectors AVMImplementationExitCriterion = "signable_hashable_objects_have_test_vectors"
 	AVMRoadmapExitQueueOrderingTestCovered               AVMImplementationExitCriterion = "queue_ordering_test_covered"
 	AVMRoadmapExitRootEncodingFixed                      AVMImplementationExitCriterion = "root_encoding_fixed"
@@ -46,6 +62,14 @@ const (
 	AVMRoadmapExitAsyncScheduledLaterBlocks  AVMImplementationExitCriterion = "async_messages_scheduled_and_executed_in_later_blocks"
 	AVMRoadmapExitExpiredMessagesDoNotRun    AVMImplementationExitCriterion = "expired_messages_do_not_execute"
 	AVMRoadmapExitRetryDeadLetterDeterminism AVMImplementationExitCriterion = "retry_and_dead_letter_flows_are_deterministic"
+
+	AVMRoadmapExitZoneAToZoneBAsync          AVMImplementationExitCriterion = "zone_a_can_send_async_message_to_zone_b"
+	AVMRoadmapExitFailedCrossZoneTerminal    AVMImplementationExitCriterion = "failed_cross_zone_messages_bounce_or_dead_letter"
+	AVMRoadmapExitCrossZoneReceiptsProofable AVMImplementationExitCriterion = "cross_zone_receipts_are_proof_queryable"
+
+	AVMRoadmapExitActorMailboxSerialExecution AVMImplementationExitCriterion = "actors_execute_mailbox_messages_one_at_a_time"
+	AVMRoadmapExitActorStateIsolation         AVMImplementationExitCriterion = "actors_cannot_mutate_other_actor_state"
+	AVMRoadmapExitActorDeterministicReceipts  AVMImplementationExitCriterion = "actor_messages_are_deterministic_and_receipt_backed"
 
 	AVMRoadmapVectorAsyncMessageEncoding      AVMTestVectorTarget = "async_message_encoding"
 	AVMRoadmapVectorMessageIDDerivation       AVMTestVectorTarget = "message_id_derivation"
@@ -148,6 +172,42 @@ func DefaultAVMImplementationRoadmap() (AVMImplementationRoadmap, error) {
 			},
 			ConsensusCritical: true,
 		},
+		{
+			PhaseID: AVMRoadmapPhase3,
+			Name:    "Cross-Zone Routing",
+			Tasks: []AVMImplementationRoadmapTask{
+				AVMRoadmapTaskZoneMetadata,
+				AVMRoadmapTaskZoneMessageFilters,
+				AVMRoadmapTaskCrossZoneInboxOutboxRoot,
+				AVMRoadmapTaskBounceSystem,
+				AVMRoadmapTaskCrossZoneValueAccounting,
+				AVMRoadmapTaskCrossZoneProofQueries,
+			},
+			ExitCriteria: []AVMImplementationExitCriterion{
+				AVMRoadmapExitZoneAToZoneBAsync,
+				AVMRoadmapExitFailedCrossZoneTerminal,
+				AVMRoadmapExitCrossZoneReceiptsProofable,
+			},
+			ConsensusCritical: true,
+		},
+		{
+			PhaseID: AVMRoadmapPhase4,
+			Name:    "Actor Runtime",
+			Tasks: []AVMImplementationRoadmapTask{
+				AVMRoadmapTaskActorRecords,
+				AVMRoadmapTaskActorMailboxes,
+				AVMRoadmapTaskActorHandlerDispatch,
+				AVMRoadmapTaskActorStateIsolation,
+				AVMRoadmapTaskActorReceiptEmission,
+				AVMRoadmapTaskActorStateProofQuery,
+			},
+			ExitCriteria: []AVMImplementationExitCriterion{
+				AVMRoadmapExitActorMailboxSerialExecution,
+				AVMRoadmapExitActorStateIsolation,
+				AVMRoadmapExitActorDeterministicReceipts,
+			},
+			ConsensusCritical: true,
+		},
 	}
 	for i := range phases {
 		phase, err := NewAVMImplementationRoadmapPhase(phases[i])
@@ -246,14 +306,14 @@ func (r AVMImplementationRoadmap) Validate() error {
 }
 
 func AllAVMImplementationRoadmapPhaseIDs() []AVMImplementationRoadmapPhaseID {
-	phases := []AVMImplementationRoadmapPhaseID{AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2}
+	phases := []AVMImplementationRoadmapPhaseID{AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4}
 	sort.Slice(phases, func(i, j int) bool { return phases[i] < phases[j] })
 	return phases
 }
 
 func IsAVMImplementationRoadmapPhaseID(phaseID AVMImplementationRoadmapPhaseID) bool {
 	switch phaseID {
-	case AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2:
+	case AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4:
 		return true
 	default:
 		return false
@@ -359,6 +419,24 @@ func requiredAVMRoadmapTasks(phaseID AVMImplementationRoadmapPhaseID) []AVMImple
 			AVMRoadmapTaskReplayTombstones,
 			AVMRoadmapTaskQueueRoots,
 		}
+	case AVMRoadmapPhase3:
+		return []AVMImplementationRoadmapTask{
+			AVMRoadmapTaskZoneMetadata,
+			AVMRoadmapTaskZoneMessageFilters,
+			AVMRoadmapTaskCrossZoneInboxOutboxRoot,
+			AVMRoadmapTaskBounceSystem,
+			AVMRoadmapTaskCrossZoneValueAccounting,
+			AVMRoadmapTaskCrossZoneProofQueries,
+		}
+	case AVMRoadmapPhase4:
+		return []AVMImplementationRoadmapTask{
+			AVMRoadmapTaskActorRecords,
+			AVMRoadmapTaskActorMailboxes,
+			AVMRoadmapTaskActorHandlerDispatch,
+			AVMRoadmapTaskActorStateIsolation,
+			AVMRoadmapTaskActorReceiptEmission,
+			AVMRoadmapTaskActorStateProofQuery,
+		}
 	default:
 		return nil
 	}
@@ -382,6 +460,18 @@ func requiredAVMRoadmapExitCriteria(phaseID AVMImplementationRoadmapPhaseID) []A
 			AVMRoadmapExitAsyncScheduledLaterBlocks,
 			AVMRoadmapExitExpiredMessagesDoNotRun,
 			AVMRoadmapExitRetryDeadLetterDeterminism,
+		}
+	case AVMRoadmapPhase3:
+		return []AVMImplementationExitCriterion{
+			AVMRoadmapExitZoneAToZoneBAsync,
+			AVMRoadmapExitFailedCrossZoneTerminal,
+			AVMRoadmapExitCrossZoneReceiptsProofable,
+		}
+	case AVMRoadmapPhase4:
+		return []AVMImplementationExitCriterion{
+			AVMRoadmapExitActorMailboxSerialExecution,
+			AVMRoadmapExitActorStateIsolation,
+			AVMRoadmapExitActorDeterministicReceipts,
 		}
 	default:
 		return nil
