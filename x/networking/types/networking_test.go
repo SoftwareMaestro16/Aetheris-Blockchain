@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"crypto/ed25519"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1380,6 +1381,147 @@ func TestCrossZoneReceiptIsRollbackSafeAndProofQueryable(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestOverlayMessageQueueOrdersMessagesAndRejectsReplay(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	origin := signedNodeRecord(t, 0x67, salt, 100, NodeRoleService)
+	destination := signedNodeRecord(t, 0x68, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	queue, err := NewOverlayMessageQueue(desc.OverlayID, 8)
+	require.NoError(t, err)
+	lowPriority := testMeshMessage(t, MeshMessageService, desc.OverlayID, origin.NodeID, destination.NodeID, 5, 2)
+	highPriority := testMeshMessage(t, MeshMessageService, desc.OverlayID, origin.NodeID, destination.NodeID, 1, 1)
+
+	queue, err = EnqueueOverlayMessage(queue, lowPriority, 20)
+	require.NoError(t, err)
+	queue, err = EnqueueOverlayMessage(queue, highPriority, 20)
+	require.NoError(t, err)
+	_, err = EnqueueOverlayMessage(queue, highPriority, 20)
+	require.ErrorContains(t, err, "replay")
+
+	next, messages, err := DequeueOverlayMessages(queue, 1)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Equal(t, highPriority.MessageID, messages[0].MessageID)
+	require.Len(t, next.Messages, 1)
+	require.Contains(t, next.SeenMessageIDs, highPriority.MessageID)
+}
+
+func TestCrossZoneSequenceTrackerAssignsAndRejectsReplayAndGaps(t *testing.T) {
+	tracker := CrossZoneSequenceTracker{}
+	var seq uint64
+	var err error
+	tracker, seq, err = NextCrossZoneSequence(tracker, "APPLICATION_ZONE", "FINANCIAL_ZONE")
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), seq)
+	tracker, seq, err = NextCrossZoneSequence(tracker, "APPLICATION_ZONE", "FINANCIAL_ZONE")
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), seq)
+
+	first, err := NewCrossZoneMessage(CrossZoneMessage{
+		SourceZone:      "APPLICATION_ZONE",
+		DestinationZone: "FINANCIAL_ZONE",
+		SourceSequence:  1,
+		MessageHash:     HashParts("cz-sequence-1"),
+		ExpiryHeight:    100,
+		ReceiptPolicy:   ReceiptPolicyAlways,
+	})
+	require.NoError(t, err)
+	tracker, err = AcceptCrossZoneSequence(tracker, first, true, 20)
+	require.NoError(t, err)
+	_, err = AcceptCrossZoneSequence(tracker, first, true, 21)
+	require.ErrorContains(t, err, "replay")
+
+	gap, err := NewCrossZoneMessage(CrossZoneMessage{
+		SourceZone:      "APPLICATION_ZONE",
+		DestinationZone: "FINANCIAL_ZONE",
+		SourceSequence:  3,
+		MessageHash:     HashParts("cz-sequence-3"),
+		ExpiryHeight:    100,
+		ReceiptPolicy:   ReceiptPolicyAlways,
+	})
+	require.NoError(t, err)
+	_, err = AcceptCrossZoneSequence(tracker, gap, true, 22)
+	require.ErrorContains(t, err, "gap")
+	_, err = AcceptCrossZoneSequence(tracker, gap, false, 22)
+	require.NoError(t, err)
+}
+
+func TestReceiptDeliveryProtocolAcknowledgesAndFeedsMetrics(t *testing.T) {
+	receipt, err := NewCrossZoneReceipt(CrossZoneReceipt{
+		SourceZone:      "APPLICATION_ZONE",
+		DestinationZone: "FINANCIAL_ZONE",
+		SourceSequence:  12,
+		MessageHash:     HashParts("receipt-delivery-message"),
+		Status:          CrossZoneReceiptDelivered,
+		ReceiptPolicy:   ReceiptPolicyOnDelivery,
+		ProofHash:       HashParts("receipt-delivery-proof"),
+		ReceiptHeight:   44,
+		RollbackSafe:    true,
+		ProofQueryable:  true,
+	})
+	require.NoError(t, err)
+	delivery, err := NewReceiptDelivery(receipt, HashParts("receipt-destination-node"), 45)
+	require.NoError(t, err)
+	require.Equal(t, ReceiptDeliveryPending, delivery.State)
+	acked, err := AckReceiptDelivery(delivery, HashParts("receipt-ack"))
+	require.NoError(t, err)
+	require.Equal(t, ReceiptDeliveryAcknowledged, acked.State)
+
+	metrics, err := EvaluateL3Metrics(nil, []ReceiptDelivery{acked}, nil, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, metrics, 1)
+	require.Equal(t, uint64(1), metrics[0].ReceiptCount)
+	require.Equal(t, uint64(1), metrics[0].DeliveredCount)
+}
+
+func TestQueryResponseProofAttachmentIsRequiredAndMetriced(t *testing.T) {
+	_, err := NewQueryResponseProof(QueryResponseProof{
+		RequestID:      HashParts("query-request"),
+		Responder:      HashParts("query-responder"),
+		PayloadHash:    HashParts("query-payload"),
+		ResponseHeight: 50,
+	})
+	require.ErrorContains(t, err, "proof")
+
+	response, err := NewQueryResponseProof(QueryResponseProof{
+		RequestID:   HashParts("query-request"),
+		Responder:   HashParts("query-responder"),
+		PayloadHash: HashParts("query-payload"),
+		Proof: AetherMeshProof{
+			ProofType:   "iavl-query-proof",
+			ProofHash:   HashParts("query-proof"),
+			ProofHeight: 49,
+		},
+		ResponseHeight: 50,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ComputeQueryResponseID(response), response.ResponseID)
+	metrics, err := EvaluateL3Metrics(nil, nil, []QueryResponseProof{response}, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, metrics, 1)
+	require.Equal(t, uint64(1), metrics[0].QueryProofCount)
+}
+
+func TestL3MetricsAccountQueuesReplayDropsAndExpiry(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	origin := signedNodeRecord(t, 0x69, salt, 100, NodeRoleService)
+	destination := signedNodeRecord(t, 0x6a, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	queue, err := NewOverlayMessageQueue(desc.OverlayID, 8)
+	require.NoError(t, err)
+	msg := testMeshMessage(t, MeshMessageService, desc.OverlayID, origin.NodeID, destination.NodeID, 5, 3)
+	queue, err = EnqueueOverlayMessage(queue, msg, 20)
+	require.NoError(t, err)
+
+	metrics, err := EvaluateL3Metrics([]OverlayMessageQueue{queue}, nil, nil, map[string]uint64{desc.OverlayID: 2}, map[string]uint64{desc.OverlayID: 1})
+	require.NoError(t, err)
+	require.Len(t, metrics, 1)
+	require.Equal(t, desc.OverlayID, metrics[0].OverlayID)
+	require.Equal(t, uint64(1), metrics[0].QueuedCount)
+	require.Equal(t, uint64(2), metrics[0].ReplayDropCount)
+	require.Equal(t, uint64(1), metrics[0].ExpiredCount)
+}
+
 func TestLayerStackPreservesCometBFTBaselineAndExtensionOrder(t *testing.T) {
 	stack := DefaultLayerStack()
 	require.NoError(t, ValidateLayerStack(stack))
@@ -1831,6 +1973,23 @@ func testAdaptivePeer(t *testing.T, record NodeRecord, scoreBps uint32, latencyM
 		ReliabilityBps: reliabilityBps,
 	}
 	return AdaptivePeerFromNodeRecord(record, score, metrics, committed, 20)
+}
+
+func testMeshMessage(t *testing.T, messageType AetherMeshMessageType, overlayID, origin, destination string, priority uint32, sequence uint64) AetherMeshMessage {
+	t.Helper()
+
+	msg, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:        messageType,
+		Payload:     []byte(fmt.Sprintf("mesh-%s-%d", messageType, sequence)),
+		Origin:      origin,
+		Destination: destination,
+		Priority:    priority,
+		TTL:         50,
+		OverlayID:   overlayID,
+		Sequence:    sequence,
+	})
+	require.NoError(t, err)
+	return msg
 }
 
 func testGlobalAdaptivePeer(t *testing.T, record NodeRecord, scoreBps uint32, latencyMillis uint64, reliabilityBps uint32) AdaptivePeer {
