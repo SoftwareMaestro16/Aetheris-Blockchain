@@ -2,7 +2,7 @@ package types
 
 import "testing"
 
-func TestMigrationPathSpecCoversPhaseZeroThroughThree(t *testing.T) {
+func TestMigrationPathSpecCoversPhaseZeroThroughFive(t *testing.T) {
 	spec, err := DefaultMigrationPathSpec()
 	if err != nil {
 		t.Fatalf("default migration path spec: %v", err)
@@ -13,8 +13,8 @@ func TestMigrationPathSpecCoversPhaseZeroThroughThree(t *testing.T) {
 	if err := ValidateMigrationPathCoverage(); err != nil {
 		t.Fatalf("migration path coverage: %v", err)
 	}
-	if len(spec.Phases) != 4 {
-		t.Fatalf("expected 4 phases, got %d", len(spec.Phases))
+	if len(spec.Phases) != 6 {
+		t.Fatalf("expected 6 phases, got %d", len(spec.Phases))
 	}
 
 	phaseByID := map[MigrationPhaseID]MigrationPhase{}
@@ -53,6 +53,22 @@ func TestMigrationPathSpecCoversPhaseZeroThroughThree(t *testing.T) {
 	if len(phase3.ExitCriteria) != 3 {
 		t.Fatalf("expected phase 3 to cover 3 exit criteria, got %d", len(phase3.ExitCriteria))
 	}
+
+	phase4 := phaseByID[MigrationPhaseShardingRuntime]
+	if len(phase4.Tasks) != 7 {
+		t.Fatalf("expected phase 4 to cover 7 tasks, got %d", len(phase4.Tasks))
+	}
+	if len(phase4.ExitCriteria) != 3 {
+		t.Fatalf("expected phase 4 to cover 3 exit criteria, got %d", len(phase4.ExitCriteria))
+	}
+
+	phase5 := phaseByID[MigrationPhaseAVM20]
+	if len(phase5.Tasks) != 7 {
+		t.Fatalf("expected phase 5 to cover 7 tasks, got %d", len(phase5.Tasks))
+	}
+	if len(phase5.ExitCriteria) != 3 {
+		t.Fatalf("expected phase 5 to cover 3 exit criteria, got %d", len(phase5.ExitCriteria))
+	}
 }
 
 func TestMigrationPathSpecRootCanonicalAndRejectsTamper(t *testing.T) {
@@ -62,8 +78,10 @@ func TestMigrationPathSpecRootCanonicalAndRejectsTamper(t *testing.T) {
 	}
 
 	reordered, err := BuildMigrationPathSpec([]MigrationPhase{
+		migrationPhase(MigrationPhaseAVM20, "Phase 5: AVM 2.0", MigrationPhase5Tasks(), MigrationPhase5ExitCriteria()),
 		migrationPhase(MigrationPhaseZoneExtraction, "Phase 3: Zone Extraction", MigrationPhase3Tasks(), MigrationPhase3ExitCriteria()),
 		migrationPhase(MigrationPhaseBaselineHardening, "Phase 0: Baseline Hardening", MigrationPhase0Tasks(), MigrationPhase0ExitCriteria()),
+		migrationPhase(MigrationPhaseShardingRuntime, "Phase 4: Sharding Runtime", MigrationPhase4Tasks(), MigrationPhase4ExitCriteria()),
 		migrationPhase(MigrationPhaseMessageBus, "Phase 2: Message Bus", MigrationPhase2Tasks(), MigrationPhase2ExitCriteria()),
 		migrationPhase(MigrationPhaseCoreCommitments, "Phase 1: Core Commitments", MigrationPhase1Tasks(), MigrationPhase1ExitCriteria()),
 	})
@@ -222,6 +240,74 @@ func TestZoneExtractionMigrationEvidenceRequiresZoneIsolationAndPerBlockRoots(t 
 	}
 }
 
+func TestShardingRuntimeMigrationEvidenceRequiresMultiShardParallelAndSafeMessages(t *testing.T) {
+	evidence := validShardingRuntimeMigrationEvidence()
+	if err := evidence.Validate(); err != nil {
+		t.Fatalf("sharding runtime evidence should validate: %v", err)
+	}
+
+	notMultiShard := evidence
+	notMultiShard.MultiShardZones = false
+	notMultiShard.EvidenceHash = ComputeShardingRuntimeMigrationEvidenceHash(notMultiShard)
+	if err := notMultiShard.Validate(); err == nil {
+		t.Fatal("expected non multi-shard evidence to fail")
+	}
+
+	notParallel := evidence
+	notParallel.ParallelShardWorkloads = false
+	notParallel.EvidenceHash = ComputeShardingRuntimeMigrationEvidenceHash(notParallel)
+	if err := notParallel.Validate(); err == nil {
+		t.Fatal("expected non-parallel shard workload evidence to fail")
+	}
+
+	unsafeMessages := evidence
+	unsafeMessages.InflightMessagesSafe = false
+	unsafeMessages.EvidenceHash = ComputeShardingRuntimeMigrationEvidenceHash(unsafeMessages)
+	if err := unsafeMessages.Validate(); err == nil {
+		t.Fatal("expected unsafe in-flight message evidence to fail")
+	}
+
+	tamperedHash := evidence
+	tamperedHash.EvidenceHash = hashParts("different sharding runtime evidence")
+	if err := tamperedHash.Validate(); err == nil {
+		t.Fatal("expected tampered sharding runtime evidence hash to fail")
+	}
+}
+
+func TestAVM20MigrationEvidenceRequiresDeterministicContractsMessagesAndProofs(t *testing.T) {
+	evidence := validAVM20MigrationEvidence()
+	if err := evidence.Validate(); err != nil {
+		t.Fatalf("AVM 2.0 evidence should validate: %v", err)
+	}
+
+	notDeterministic := evidence
+	notDeterministic.DeterministicContracts = false
+	notDeterministic.EvidenceHash = ComputeAVM20MigrationEvidenceHash(notDeterministic)
+	if err := notDeterministic.Validate(); err == nil {
+		t.Fatal("expected non-deterministic AVM evidence to fail")
+	}
+
+	noAsyncMessages := evidence
+	noAsyncMessages.AsyncMessages = false
+	noAsyncMessages.EvidenceHash = ComputeAVM20MigrationEvidenceHash(noAsyncMessages)
+	if err := noAsyncMessages.Validate(); err == nil {
+		t.Fatal("expected missing async messages evidence to fail")
+	}
+
+	noProofs := evidence
+	noProofs.ContractProofsAvailable = false
+	noProofs.EvidenceHash = ComputeAVM20MigrationEvidenceHash(noProofs)
+	if err := noProofs.Validate(); err == nil {
+		t.Fatal("expected missing contract proofs evidence to fail")
+	}
+
+	tamperedHash := evidence
+	tamperedHash.EvidenceHash = hashParts("different AVM evidence")
+	if err := tamperedHash.Validate(); err == nil {
+		t.Fatal("expected tampered AVM evidence hash to fail")
+	}
+}
+
 func validBaselineHardeningEvidence() BaselineHardeningEvidence {
 	evidence := BaselineHardeningEvidence{
 		ModuleBoundaryDocsRoot:   hashParts("module boundary docs"),
@@ -290,5 +376,40 @@ func validZoneExtractionMigrationEvidence() ZoneExtractionMigrationEvidence {
 		ZoneRootsCommittedPerBlock: true,
 	}
 	evidence.EvidenceHash = ComputeZoneExtractionMigrationEvidenceHash(evidence)
+	return evidence
+}
+
+func validShardingRuntimeMigrationEvidence() ShardingRuntimeMigrationEvidence {
+	evidence := ShardingRuntimeMigrationEvidence{
+		ShardsModuleHash:        hashParts("x/shards"),
+		ShardLayoutRoot:         hashParts("shard layout descriptors"),
+		RouteKeyCalculationRoot: hashParts("route key calculation"),
+		PerShardInboxRoot:       hashParts("per shard inbox root"),
+		PerShardOutboxRoot:      hashParts("per shard outbox root"),
+		ShardRootAggregate:      hashParts("shard root aggregation"),
+		SplitMergeScheduleRoot:  hashParts("split merge scheduler"),
+		ShardMigrationRoot:      hashParts("deterministic shard migration"),
+		MultiShardZones:         true,
+		ParallelShardWorkloads:  true,
+		InflightMessagesSafe:    true,
+	}
+	evidence.EvidenceHash = ComputeShardingRuntimeMigrationEvidenceHash(evidence)
+	return evidence
+}
+
+func validAVM20MigrationEvidence() AVM20MigrationEvidence {
+	evidence := AVM20MigrationEvidence{
+		BytecodeFormatHash:      hashParts("AVM bytecode format"),
+		InterpreterRoot:         hashParts("AVM interpreter"),
+		GasTableRoot:            hashParts("AVM gas table"),
+		ContractStorageRoot:     hashParts("contract storage adapter"),
+		MessageSyscallRoot:      hashParts("contract message syscalls"),
+		ProofSyscallRoot:        hashParts("proof verification syscalls"),
+		ABIRegistryRoot:         hashParts("ABI registry"),
+		DeterministicContracts:  true,
+		AsyncMessages:           true,
+		ContractProofsAvailable: true,
+	}
+	evidence.EvidenceHash = ComputeAVM20MigrationEvidenceHash(evidence)
 	return evidence
 }

@@ -17,6 +17,8 @@ const (
 	MigrationPhaseCoreCommitments   MigrationPhaseID = "phase-1-core-commitments"
 	MigrationPhaseMessageBus        MigrationPhaseID = "phase-2-message-bus"
 	MigrationPhaseZoneExtraction    MigrationPhaseID = "phase-3-zone-extraction"
+	MigrationPhaseShardingRuntime   MigrationPhaseID = "phase-4-sharding-runtime"
+	MigrationPhaseAVM20             MigrationPhaseID = "phase-5-avm-2.0"
 
 	MigrationTaskModuleBoundaryDocs        MigrationTaskID = "module-boundary-documentation"
 	MigrationTaskStateExportValidation     MigrationTaskID = "state-export-validation"
@@ -46,6 +48,22 @@ const (
 	MigrationTaskZoneLocalFeePolicies   MigrationTaskID = "zone-local-fee-policies"
 	MigrationTaskZoneExecutionSummaries MigrationTaskID = "zone-execution-summaries"
 
+	MigrationTaskShardsModule                MigrationTaskID = "shards-module"
+	MigrationTaskShardLayoutDescriptors      MigrationTaskID = "shard-layout-descriptors"
+	MigrationTaskRouteKeyCalculation         MigrationTaskID = "route-key-calculation"
+	MigrationTaskPerShardMessageStores       MigrationTaskID = "per-shard-inbox-outbox"
+	MigrationTaskShardRootAggregation        MigrationTaskID = "shard-root-aggregation"
+	MigrationTaskSplitMergeScheduler         MigrationTaskID = "split-merge-scheduler"
+	MigrationTaskDeterministicShardMigration MigrationTaskID = "deterministic-shard-migration"
+
+	MigrationTaskAVMBytecodeFormat         MigrationTaskID = "avm-bytecode-format"
+	MigrationTaskAVMInterpreter            MigrationTaskID = "avm-interpreter"
+	MigrationTaskAVMGasTable               MigrationTaskID = "avm-gas-table"
+	MigrationTaskContractStorageAdapter    MigrationTaskID = "contract-storage-adapter"
+	MigrationTaskContractMessageSyscalls   MigrationTaskID = "contract-message-syscalls"
+	MigrationTaskProofVerificationSyscalls MigrationTaskID = "proof-verification-syscalls"
+	MigrationTaskABIRegistry               MigrationTaskID = "abi-registry"
+
 	MigrationExitSingleChainReproducibleExport MigrationExitCriterionID = "single-chain-state-reproducible-exportable"
 	MigrationExitLegacyInvariantCoverage       MigrationExitCriterionID = "legacy-module-invariant-coverage"
 	MigrationExitSafePrefixMigration           MigrationExitCriterionID = "safe-prefix-migration-upgrade-handlers"
@@ -61,6 +79,14 @@ const (
 	MigrationExitFinancialZoneExecution MigrationExitCriterionID = "financial-modules-execute-in-financial-zone"
 	MigrationExitIdentityZoneIsolated   MigrationExitCriterionID = "identity-module-isolated-zone"
 	MigrationExitZoneRootsPerBlock      MigrationExitCriterionID = "zone-roots-committed-per-block"
+
+	MigrationExitMultiShardZones                      MigrationExitCriterionID = "zones-run-with-multiple-shards"
+	MigrationExitParallelShardWorkloads               MigrationExitCriterionID = "independent-shard-workloads-parallel"
+	MigrationExitInflightMessagesSurviveLayoutChanges MigrationExitCriterionID = "in-flight-messages-survive-layout-changes"
+
+	MigrationExitContractZoneDeterministic    MigrationExitCriterionID = "contract-zone-runs-deterministic-contracts"
+	MigrationExitContractsEmitAsyncMessages   MigrationExitCriterionID = "contracts-emit-async-messages"
+	MigrationExitContractStateProofsAvailable MigrationExitCriterionID = "contract-state-proofs-available"
 )
 
 type MigrationTaskDescriptor struct {
@@ -153,12 +179,43 @@ type ZoneExtractionMigrationEvidence struct {
 	EvidenceHash               string
 }
 
+type ShardingRuntimeMigrationEvidence struct {
+	ShardsModuleHash        string
+	ShardLayoutRoot         string
+	RouteKeyCalculationRoot string
+	PerShardInboxRoot       string
+	PerShardOutboxRoot      string
+	ShardRootAggregate      string
+	SplitMergeScheduleRoot  string
+	ShardMigrationRoot      string
+	MultiShardZones         bool
+	ParallelShardWorkloads  bool
+	InflightMessagesSafe    bool
+	EvidenceHash            string
+}
+
+type AVM20MigrationEvidence struct {
+	BytecodeFormatHash      string
+	InterpreterRoot         string
+	GasTableRoot            string
+	ContractStorageRoot     string
+	MessageSyscallRoot      string
+	ProofSyscallRoot        string
+	ABIRegistryRoot         string
+	DeterministicContracts  bool
+	AsyncMessages           bool
+	ContractProofsAvailable bool
+	EvidenceHash            string
+}
+
 func DefaultMigrationPathSpec() (MigrationPathSpec, error) {
 	return BuildMigrationPathSpec([]MigrationPhase{
 		migrationPhase(MigrationPhaseBaselineHardening, "Phase 0: Baseline Hardening", MigrationPhase0Tasks(), MigrationPhase0ExitCriteria()),
 		migrationPhase(MigrationPhaseCoreCommitments, "Phase 1: Core Commitments", MigrationPhase1Tasks(), MigrationPhase1ExitCriteria()),
 		migrationPhase(MigrationPhaseMessageBus, "Phase 2: Message Bus", MigrationPhase2Tasks(), MigrationPhase2ExitCriteria()),
 		migrationPhase(MigrationPhaseZoneExtraction, "Phase 3: Zone Extraction", MigrationPhase3Tasks(), MigrationPhase3ExitCriteria()),
+		migrationPhase(MigrationPhaseShardingRuntime, "Phase 4: Sharding Runtime", MigrationPhase4Tasks(), MigrationPhase4ExitCriteria()),
+		migrationPhase(MigrationPhaseAVM20, "Phase 5: AVM 2.0", MigrationPhase5Tasks(), MigrationPhase5ExitCriteria()),
 	})
 }
 
@@ -218,6 +275,30 @@ func MigrationPhase3Tasks() []MigrationTaskDescriptor {
 	}
 }
 
+func MigrationPhase4Tasks() []MigrationTaskDescriptor {
+	return []MigrationTaskDescriptor{
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskShardsModule, "Implement x/shards.", "x/shards", "shard layouts;metrics;migration executor;zone adapters"),
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskShardLayoutDescriptors, "Add shard layout descriptors.", "ShardLayout and ShardDescriptor", "active shards;assignment modes;activation height;layout hash"),
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskRouteKeyCalculation, "Add route-key calculation.", "RouteKeyToShard", "zone_id;state_key;layout_epoch;committed shard layout"),
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskPerShardMessageStores, "Add per-shard inbox and outbox.", "shard message stores", "zone/{zone_id}/shard/{shard_id}/inbox and outbox roots"),
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskShardRootAggregation, "Add shard root aggregation.", "zone root aggregation", "shard_state_root;shard_roots_root;ZoneCommitment"),
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskSplitMergeScheduler, "Add split and merge scheduler.", "layout transition planner", "committed metrics;future layout_epoch;no mid-block routing changes"),
+		migrationTask(MigrationPhaseShardingRuntime, MigrationTaskDeterministicShardMigration, "Add deterministic shard migration.", "migration executor", "migration tasks;receipts;in-flight message delivery epoch"),
+	}
+}
+
+func MigrationPhase5Tasks() []MigrationTaskDescriptor {
+	return []MigrationTaskDescriptor{
+		migrationTask(MigrationPhaseAVM20, MigrationTaskAVMBytecodeFormat, "Implement AVM bytecode format.", "AVM bytecode codec", "canonical;versioned;hashable;malformed opcode rejection"),
+		migrationTask(MigrationPhaseAVM20, MigrationTaskAVMInterpreter, "Implement interpreter.", "AVM runtime", "deterministic stack execution;bounded memory;replay-safe outputs"),
+		migrationTask(MigrationPhaseAVM20, MigrationTaskAVMGasTable, "Implement gas table.", "AVM metering profile", "opcode;memory;storage;proof;message;event gas costs"),
+		migrationTask(MigrationPhaseAVM20, MigrationTaskContractStorageAdapter, "Implement contract storage adapter.", "Contract Zone Store v2 adapter", "contract prefixes;bounded reads and writes;storage root"),
+		migrationTask(MigrationPhaseAVM20, MigrationTaskContractMessageSyscalls, "Implement contract message syscalls.", "MSG_* syscalls", "prepaid async AetherMessage outputs;no remote mutation"),
+		migrationTask(MigrationPhaseAVM20, MigrationTaskProofVerificationSyscalls, "Implement proof verification syscalls.", "VERIFY_* syscalls", "metered Merkle, message, zone, and signature proof checks"),
+		migrationTask(MigrationPhaseAVM20, MigrationTaskABIRegistry, "Implement ABI registry.", "ABI descriptor registry", "canonical ABI descriptors;interface hash;code ID binding"),
+	}
+}
+
 func MigrationPhase0ExitCriteria() []MigrationExitCriterion {
 	return []MigrationExitCriterion{
 		migrationExitCriterion(MigrationPhaseBaselineHardening, MigrationExitSingleChainReproducibleExport, "Existing single-chain state is reproducible and exportable.", "state export manifest and genesis import hashes match after replay"),
@@ -250,6 +331,22 @@ func MigrationPhase3ExitCriteria() []MigrationExitCriterion {
 	}
 }
 
+func MigrationPhase4ExitCriteria() []MigrationExitCriterion {
+	return []MigrationExitCriterion{
+		migrationExitCriterion(MigrationPhaseShardingRuntime, MigrationExitMultiShardZones, "Zones can run with multiple shards.", "zone descriptors reference committed shard layouts with more than one active shard"),
+		migrationExitCriterion(MigrationPhaseShardingRuntime, MigrationExitParallelShardWorkloads, "Independent shard workloads execute in parallel.", "disjoint shard batches carry separate roots and no shared write locks"),
+		migrationExitCriterion(MigrationPhaseShardingRuntime, MigrationExitInflightMessagesSurviveLayoutChanges, "In-flight messages survive shard layout changes.", "messages retain source metadata and deliver by committed delivery epoch after split or merge"),
+	}
+}
+
+func MigrationPhase5ExitCriteria() []MigrationExitCriterion {
+	return []MigrationExitCriterion{
+		migrationExitCriterion(MigrationPhaseAVM20, MigrationExitContractZoneDeterministic, "Contract Zone runs deterministic contracts.", "same bytecode, state root, context, and input produce identical roots, receipts, gas, events, and messages"),
+		migrationExitCriterion(MigrationPhaseAVM20, MigrationExitContractsEmitAsyncMessages, "Contracts can emit async messages.", "MSG_* syscalls emit prepaid AetherMessage outbox entries without remote state mutation"),
+		migrationExitCriterion(MigrationPhaseAVM20, MigrationExitContractStateProofsAvailable, "Contract state proofs are available.", "code, instance, storage, ABI, event, inbox, and outbox proofs bind to Contract Zone roots"),
+	}
+}
+
 func (s MigrationPathSpec) Normalize() MigrationPathSpec {
 	if s.Version == 0 {
 		s.Version = MigrationPathSpecVersion
@@ -264,8 +361,8 @@ func (s MigrationPathSpec) ValidateFormat() error {
 	if s.Version != MigrationPathSpecVersion {
 		return fmt.Errorf("aethercore migration path spec version must be %d", MigrationPathSpecVersion)
 	}
-	if len(s.Phases) != 4 {
-		return errors.New("aethercore migration path spec requires phases 0 through 3")
+	if len(s.Phases) != 6 {
+		return errors.New("aethercore migration path spec requires phases 0 through 5")
 	}
 	seen := make(map[MigrationPhaseID]struct{}, len(s.Phases))
 	var previous MigrationPhaseID
@@ -293,6 +390,12 @@ func (s MigrationPathSpec) ValidateFormat() error {
 	}
 	if _, found := seen[MigrationPhaseZoneExtraction]; !found {
 		return errors.New("aethercore migration path missing phase 3 zone extraction")
+	}
+	if _, found := seen[MigrationPhaseShardingRuntime]; !found {
+		return errors.New("aethercore migration path missing phase 4 sharding runtime")
+	}
+	if _, found := seen[MigrationPhaseAVM20]; !found {
+		return errors.New("aethercore migration path missing phase 5 AVM 2.0")
 	}
 	if s.Root != "" {
 		if err := ValidateHash("aethercore migration path spec root", s.Root); err != nil {
@@ -737,6 +840,134 @@ func (e ZoneExtractionMigrationEvidence) Validate() error {
 	return nil
 }
 
+func (e ShardingRuntimeMigrationEvidence) Normalize() ShardingRuntimeMigrationEvidence {
+	e.ShardsModuleHash = normalizePerformanceHash(e.ShardsModuleHash)
+	e.ShardLayoutRoot = normalizePerformanceHash(e.ShardLayoutRoot)
+	e.RouteKeyCalculationRoot = normalizePerformanceHash(e.RouteKeyCalculationRoot)
+	e.PerShardInboxRoot = normalizePerformanceHash(e.PerShardInboxRoot)
+	e.PerShardOutboxRoot = normalizePerformanceHash(e.PerShardOutboxRoot)
+	e.ShardRootAggregate = normalizePerformanceHash(e.ShardRootAggregate)
+	e.SplitMergeScheduleRoot = normalizePerformanceHash(e.SplitMergeScheduleRoot)
+	e.ShardMigrationRoot = normalizePerformanceHash(e.ShardMigrationRoot)
+	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
+	return e
+}
+
+func (e ShardingRuntimeMigrationEvidence) ValidateFormat() error {
+	e = e.Normalize()
+	hashes := []struct {
+		name  string
+		value string
+	}{
+		{"aethercore migration shards module hash", e.ShardsModuleHash},
+		{"aethercore migration shard layout root", e.ShardLayoutRoot},
+		{"aethercore migration route key calculation root", e.RouteKeyCalculationRoot},
+		{"aethercore migration per-shard inbox root", e.PerShardInboxRoot},
+		{"aethercore migration per-shard outbox root", e.PerShardOutboxRoot},
+		{"aethercore migration shard root aggregate", e.ShardRootAggregate},
+		{"aethercore migration split merge schedule root", e.SplitMergeScheduleRoot},
+		{"aethercore migration shard migration root", e.ShardMigrationRoot},
+	}
+	for _, item := range hashes {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if !e.MultiShardZones {
+		return errors.New("aethercore migration sharding evidence requires multi-shard zones")
+	}
+	if !e.ParallelShardWorkloads {
+		return errors.New("aethercore migration sharding evidence requires parallel independent shard workloads")
+	}
+	if !e.InflightMessagesSafe {
+		return errors.New("aethercore migration sharding evidence requires in-flight messages to survive layout changes")
+	}
+	if e.EvidenceHash != "" {
+		if err := ValidateHash("aethercore migration sharding evidence hash", e.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e ShardingRuntimeMigrationEvidence) Validate() error {
+	e = e.Normalize()
+	if err := e.ValidateFormat(); err != nil {
+		return err
+	}
+	if e.EvidenceHash == "" {
+		return errors.New("aethercore migration sharding evidence hash is required")
+	}
+	expected := ComputeShardingRuntimeMigrationEvidenceHash(e)
+	if e.EvidenceHash != expected {
+		return fmt.Errorf("aethercore migration sharding evidence hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (e AVM20MigrationEvidence) Normalize() AVM20MigrationEvidence {
+	e.BytecodeFormatHash = normalizePerformanceHash(e.BytecodeFormatHash)
+	e.InterpreterRoot = normalizePerformanceHash(e.InterpreterRoot)
+	e.GasTableRoot = normalizePerformanceHash(e.GasTableRoot)
+	e.ContractStorageRoot = normalizePerformanceHash(e.ContractStorageRoot)
+	e.MessageSyscallRoot = normalizePerformanceHash(e.MessageSyscallRoot)
+	e.ProofSyscallRoot = normalizePerformanceHash(e.ProofSyscallRoot)
+	e.ABIRegistryRoot = normalizePerformanceHash(e.ABIRegistryRoot)
+	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
+	return e
+}
+
+func (e AVM20MigrationEvidence) ValidateFormat() error {
+	e = e.Normalize()
+	hashes := []struct {
+		name  string
+		value string
+	}{
+		{"aethercore migration AVM bytecode format hash", e.BytecodeFormatHash},
+		{"aethercore migration AVM interpreter root", e.InterpreterRoot},
+		{"aethercore migration AVM gas table root", e.GasTableRoot},
+		{"aethercore migration contract storage root", e.ContractStorageRoot},
+		{"aethercore migration contract message syscall root", e.MessageSyscallRoot},
+		{"aethercore migration proof syscall root", e.ProofSyscallRoot},
+		{"aethercore migration ABI registry root", e.ABIRegistryRoot},
+	}
+	for _, item := range hashes {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if !e.DeterministicContracts {
+		return errors.New("aethercore migration AVM evidence requires deterministic contract execution")
+	}
+	if !e.AsyncMessages {
+		return errors.New("aethercore migration AVM evidence requires async contract messages")
+	}
+	if !e.ContractProofsAvailable {
+		return errors.New("aethercore migration AVM evidence requires contract state proofs")
+	}
+	if e.EvidenceHash != "" {
+		if err := ValidateHash("aethercore migration AVM evidence hash", e.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e AVM20MigrationEvidence) Validate() error {
+	e = e.Normalize()
+	if err := e.ValidateFormat(); err != nil {
+		return err
+	}
+	if e.EvidenceHash == "" {
+		return errors.New("aethercore migration AVM evidence hash is required")
+	}
+	expected := ComputeAVM20MigrationEvidenceHash(e)
+	if e.EvidenceHash != expected {
+		return fmt.Errorf("aethercore migration AVM evidence hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
 func ValidateMigrationPathCoverage() error {
 	spec, err := DefaultMigrationPathSpec()
 	if err != nil {
@@ -775,6 +1006,24 @@ func ValidateMigrationPathCoverage() error {
 			MigrationTaskZoneLocalFeePolicies,
 			MigrationTaskZoneExecutionSummaries,
 		},
+		MigrationPhaseShardingRuntime: {
+			MigrationTaskShardsModule,
+			MigrationTaskShardLayoutDescriptors,
+			MigrationTaskRouteKeyCalculation,
+			MigrationTaskPerShardMessageStores,
+			MigrationTaskShardRootAggregation,
+			MigrationTaskSplitMergeScheduler,
+			MigrationTaskDeterministicShardMigration,
+		},
+		MigrationPhaseAVM20: {
+			MigrationTaskAVMBytecodeFormat,
+			MigrationTaskAVMInterpreter,
+			MigrationTaskAVMGasTable,
+			MigrationTaskContractStorageAdapter,
+			MigrationTaskContractMessageSyscalls,
+			MigrationTaskProofVerificationSyscalls,
+			MigrationTaskABIRegistry,
+		},
 	}
 	requiredCriteria := map[MigrationPhaseID][]MigrationExitCriterionID{
 		MigrationPhaseBaselineHardening: {
@@ -796,6 +1045,16 @@ func ValidateMigrationPathCoverage() error {
 			MigrationExitFinancialZoneExecution,
 			MigrationExitIdentityZoneIsolated,
 			MigrationExitZoneRootsPerBlock,
+		},
+		MigrationPhaseShardingRuntime: {
+			MigrationExitMultiShardZones,
+			MigrationExitParallelShardWorkloads,
+			MigrationExitInflightMessagesSurviveLayoutChanges,
+		},
+		MigrationPhaseAVM20: {
+			MigrationExitContractZoneDeterministic,
+			MigrationExitContractsEmitAsyncMessages,
+			MigrationExitContractStateProofsAvailable,
 		},
 	}
 	phaseByID := make(map[MigrationPhaseID]MigrationPhase, len(spec.Phases))
@@ -836,7 +1095,7 @@ func ValidateMigrationPathCoverage() error {
 }
 
 func IsMigrationPhaseID(id MigrationPhaseID) bool {
-	return id == MigrationPhaseBaselineHardening || id == MigrationPhaseCoreCommitments || id == MigrationPhaseMessageBus || id == MigrationPhaseZoneExtraction
+	return id == MigrationPhaseBaselineHardening || id == MigrationPhaseCoreCommitments || id == MigrationPhaseMessageBus || id == MigrationPhaseZoneExtraction || id == MigrationPhaseShardingRuntime || id == MigrationPhaseAVM20
 }
 
 func IsMigrationTaskID(phaseID MigrationPhaseID, taskID MigrationTaskID) bool {
@@ -972,6 +1231,39 @@ func ComputeZoneExtractionMigrationEvidenceHash(e ZoneExtractionMigrationEvidenc
 	})
 }
 
+func ComputeShardingRuntimeMigrationEvidenceHash(e ShardingRuntimeMigrationEvidence) string {
+	e = e.Normalize()
+	return hashRoot("aetheris-aek-migration-sharding-runtime-evidence-v1", func(w byteWriter) {
+		writePart(w, e.ShardsModuleHash)
+		writePart(w, e.ShardLayoutRoot)
+		writePart(w, e.RouteKeyCalculationRoot)
+		writePart(w, e.PerShardInboxRoot)
+		writePart(w, e.PerShardOutboxRoot)
+		writePart(w, e.ShardRootAggregate)
+		writePart(w, e.SplitMergeScheduleRoot)
+		writePart(w, e.ShardMigrationRoot)
+		writeBoolPart(w, e.MultiShardZones)
+		writeBoolPart(w, e.ParallelShardWorkloads)
+		writeBoolPart(w, e.InflightMessagesSafe)
+	})
+}
+
+func ComputeAVM20MigrationEvidenceHash(e AVM20MigrationEvidence) string {
+	e = e.Normalize()
+	return hashRoot("aetheris-aek-migration-avm-2.0-evidence-v1", func(w byteWriter) {
+		writePart(w, e.BytecodeFormatHash)
+		writePart(w, e.InterpreterRoot)
+		writePart(w, e.GasTableRoot)
+		writePart(w, e.ContractStorageRoot)
+		writePart(w, e.MessageSyscallRoot)
+		writePart(w, e.ProofSyscallRoot)
+		writePart(w, e.ABIRegistryRoot)
+		writeBoolPart(w, e.DeterministicContracts)
+		writeBoolPart(w, e.AsyncMessages)
+		writeBoolPart(w, e.ContractProofsAvailable)
+	})
+}
+
 func migrationPhase(phaseID MigrationPhaseID, title string, tasks []MigrationTaskDescriptor, criteria []MigrationExitCriterion) MigrationPhase {
 	phase := MigrationPhase{
 		PhaseID:      phaseID,
@@ -1077,6 +1369,26 @@ func phaseTasksForID(phaseID MigrationPhaseID) []MigrationTaskID {
 			MigrationTaskZoneLocalFeePolicies,
 			MigrationTaskZoneExecutionSummaries,
 		}
+	case MigrationPhaseShardingRuntime:
+		return []MigrationTaskID{
+			MigrationTaskShardsModule,
+			MigrationTaskShardLayoutDescriptors,
+			MigrationTaskRouteKeyCalculation,
+			MigrationTaskPerShardMessageStores,
+			MigrationTaskShardRootAggregation,
+			MigrationTaskSplitMergeScheduler,
+			MigrationTaskDeterministicShardMigration,
+		}
+	case MigrationPhaseAVM20:
+		return []MigrationTaskID{
+			MigrationTaskAVMBytecodeFormat,
+			MigrationTaskAVMInterpreter,
+			MigrationTaskAVMGasTable,
+			MigrationTaskContractStorageAdapter,
+			MigrationTaskContractMessageSyscalls,
+			MigrationTaskProofVerificationSyscalls,
+			MigrationTaskABIRegistry,
+		}
 	default:
 		return nil
 	}
@@ -1107,6 +1419,18 @@ func phaseExitCriteriaForID(phaseID MigrationPhaseID) []MigrationExitCriterionID
 			MigrationExitFinancialZoneExecution,
 			MigrationExitIdentityZoneIsolated,
 			MigrationExitZoneRootsPerBlock,
+		}
+	case MigrationPhaseShardingRuntime:
+		return []MigrationExitCriterionID{
+			MigrationExitMultiShardZones,
+			MigrationExitParallelShardWorkloads,
+			MigrationExitInflightMessagesSurviveLayoutChanges,
+		}
+	case MigrationPhaseAVM20:
+		return []MigrationExitCriterionID{
+			MigrationExitContractZoneDeterministic,
+			MigrationExitContractsEmitAsyncMessages,
+			MigrationExitContractStateProofsAvailable,
 		}
 	default:
 		return nil
