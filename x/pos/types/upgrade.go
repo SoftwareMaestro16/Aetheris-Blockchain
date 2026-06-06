@@ -884,6 +884,43 @@ type StakeSplittingSimulationResult struct {
 	SplitConcentrationBps    uint32
 }
 
+type CosmosSDKExtensionMode string
+
+const (
+	CosmosSDKExtensionModeExtend  CosmosSDKExtensionMode = "extend"
+	CosmosSDKExtensionModeReplace CosmosSDKExtensionMode = "replace"
+)
+
+type CosmosSDKModuleExtension struct {
+	ModuleName          string
+	ModulePath          string
+	ExtensionMode       CosmosSDKExtensionMode
+	PreservedInterfaces []string
+	AddedState          []string
+	RewardInputs        []string
+}
+
+type PosModuleRequirement struct {
+	ModuleName string
+	ModulePath string
+	Required   bool
+}
+
+type PosCompatibilityMiddleware struct {
+	Name          string
+	Layer         PosLayer
+	Extends       []string
+	ReadsModules  []string
+	WritesModules []string
+}
+
+type CosmosSDKCompatibilityManifest struct {
+	Extensions []CosmosSDKModuleExtension
+	Modules    []PosModuleRequirement
+	Middleware []PosCompatibilityMiddleware
+	Root       string
+}
+
 func (p CentralizationControlParams) Validate() error {
 	checks := []struct {
 		name  string
@@ -990,6 +1027,253 @@ func DefaultLayeredPosArchitecture() LayeredPosArchitecture {
 	architecture := LayeredPosArchitecture{Layers: layers}
 	architecture.Root = ComputeLayeredPosArchitectureRoot(layers)
 	return architecture
+}
+
+func DefaultCosmosSDKCompatibilityManifest() CosmosSDKCompatibilityManifest {
+	manifest := CosmosSDKCompatibilityManifest{
+		Extensions: []CosmosSDKModuleExtension{
+			{
+				ModuleName:          "staking",
+				ModulePath:          "x/staking",
+				ExtensionMode:       CosmosSDKExtensionModeExtend,
+				PreservedInterfaces: []string{"ValidatorI", "Delegation", "Redelegation", "UnbondingDelegation", "staking keeper hooks"},
+				AddedState:          []string{"delegation activation epoch", "validator score references", "risk window references", "capacity declarations"},
+			},
+			{
+				ModuleName:          "slashing",
+				ModulePath:          "x/slashing",
+				ExtensionMode:       CosmosSDKExtensionModeExtend,
+				PreservedInterfaces: []string{"ValidatorSigningInfo", "tombstone", "jail", "missed block bitmap"},
+				AddedState:          []string{"severity matrix", "role suspension", "future election score penalty", "delegator slash exposure"},
+			},
+			{
+				ModuleName:          "distribution",
+				ModulePath:          "x/distribution",
+				ExtensionMode:       CosmosSDKExtensionModeExtend,
+				PreservedInterfaces: []string{"delegator rewards", "validator outstanding rewards", "fee pool"},
+				AddedState:          []string{"role reward weights", "performance reward multiplier", "reporter reward routing"},
+				RewardInputs:        []string{"uptime score", "correctness score", "task completion rate", "role weight"},
+			},
+			{
+				ModuleName:          "mint",
+				ModulePath:          "x/mint",
+				ExtensionMode:       CosmosSDKExtensionModeExtend,
+				PreservedInterfaces: []string{"mint params", "minter", "fee collector emission"},
+				AddedState:          []string{"epoch reward budget", "workload-aware emission inputs", "security metric feedback"},
+				RewardInputs:        []string{"base emission", "participation rate", "security score", "performance budget"},
+			},
+		},
+		Modules: []PosModuleRequirement{
+			{ModuleName: "epoch", ModulePath: "x/epoch", Required: true},
+			{ModuleName: "validator_economy", ModulePath: "x/validator-economy", Required: true},
+			{ModuleName: "taskgroups", ModulePath: "x/taskgroups", Required: true},
+			{ModuleName: "evidence", ModulePath: "x/evidence", Required: true},
+			{ModuleName: "performance", ModulePath: "x/performance", Required: true},
+			{ModuleName: "delegation_market", ModulePath: "x/delegation-market", Required: false},
+			{ModuleName: "collators", ModulePath: "x/collators", Required: false},
+			{ModuleName: "fishermen", ModulePath: "x/fishermen", Required: false},
+			{ModuleName: "security_metrics", ModulePath: "x/security-metrics", Required: false},
+		},
+		Middleware: []PosCompatibilityMiddleware{
+			{Name: "epoch_management", Layer: PosLayerStakingCapital, Extends: []string{"staking", "slashing"}, ReadsModules: []string{"epoch", "staking"}, WritesModules: []string{"epoch"}},
+			{Name: "validator_scoring", Layer: PosLayerEconomicConsensus, Extends: []string{"staking"}, ReadsModules: []string{"staking", "slashing", "performance", "validator_economy"}, WritesModules: []string{"validator_economy"}},
+			{Name: "task_assignment", Layer: PosLayerTaskAssignment, Extends: []string{"staking"}, ReadsModules: []string{"epoch", "validator_economy", "staking"}, WritesModules: []string{"taskgroups"}},
+			{Name: "performance_accounting", Layer: PosLayerEconomicConsensus, Extends: []string{"distribution", "mint"}, ReadsModules: []string{"performance", "taskgroups", "staking"}, WritesModules: []string{"performance", "distribution"}},
+			{Name: "evidence_slashing", Layer: PosLayerEconomicConsensus, Extends: []string{"slashing", "distribution"}, ReadsModules: []string{"evidence", "taskgroups", "staking"}, WritesModules: []string{"evidence", "slashing", "distribution"}},
+		},
+	}
+	manifest.Root = ComputeCosmosSDKCompatibilityRoot(manifest)
+	return manifest
+}
+
+func RequiredPoSModuleNames(manifest CosmosSDKCompatibilityManifest) []string {
+	out := make([]string, 0)
+	for _, module := range manifest.Modules {
+		if module.Required {
+			out = append(out, module.ModuleName)
+		}
+	}
+	return out
+}
+
+func OptionalPoSModuleNames(manifest CosmosSDKCompatibilityManifest) []string {
+	out := make([]string, 0)
+	for _, module := range manifest.Modules {
+		if !module.Required {
+			out = append(out, module.ModuleName)
+		}
+	}
+	return out
+}
+
+func (m CosmosSDKCompatibilityManifest) Validate() error {
+	if len(m.Extensions) == 0 {
+		return errors.New("cosmos sdk compatibility extensions are required")
+	}
+	if len(m.Modules) == 0 {
+		return errors.New("pos compatibility modules are required")
+	}
+	if len(m.Middleware) == 0 {
+		return errors.New("pos compatibility middleware is required")
+	}
+	extensionByName := make(map[string]struct{}, len(m.Extensions))
+	for _, extension := range m.Extensions {
+		if err := extension.Validate(); err != nil {
+			return err
+		}
+		if extension.ExtensionMode != CosmosSDKExtensionModeExtend {
+			return fmt.Errorf("cosmos sdk module %s must be extended, not replaced", extension.ModuleName)
+		}
+		if _, found := extensionByName[extension.ModuleName]; found {
+			return fmt.Errorf("duplicate cosmos sdk extension %s", extension.ModuleName)
+		}
+		extensionByName[extension.ModuleName] = struct{}{}
+	}
+	for _, required := range []string{"staking", "slashing", "distribution", "mint"} {
+		if _, found := extensionByName[required]; !found {
+			return fmt.Errorf("required cosmos sdk extension %s is missing", required)
+		}
+	}
+	moduleByName := make(map[string]PosModuleRequirement, len(m.Modules))
+	for _, module := range m.Modules {
+		if err := module.Validate(); err != nil {
+			return err
+		}
+		if _, found := moduleByName[module.ModuleName]; found {
+			return fmt.Errorf("duplicate pos compatibility module %s", module.ModuleName)
+		}
+		moduleByName[module.ModuleName] = module
+	}
+	for _, required := range []string{"epoch", "validator_economy", "taskgroups", "evidence", "performance"} {
+		module, found := moduleByName[required]
+		if !found || !module.Required {
+			return fmt.Errorf("required pos module %s is missing", required)
+		}
+	}
+	for _, optional := range []string{"delegation_market", "collators", "fishermen", "security_metrics"} {
+		module, found := moduleByName[optional]
+		if !found || module.Required {
+			return fmt.Errorf("optional pos module %s is missing or marked required", optional)
+		}
+	}
+	for _, middleware := range m.Middleware {
+		if err := middleware.Validate(extensionByName, moduleByName); err != nil {
+			return err
+		}
+	}
+	if err := validatePosHash("cosmos sdk compatibility root", m.Root); err != nil {
+		return err
+	}
+	if expected := ComputeCosmosSDKCompatibilityRoot(m); expected != m.Root {
+		return errors.New("cosmos sdk compatibility root mismatch")
+	}
+	return nil
+}
+
+func (e CosmosSDKModuleExtension) Validate() error {
+	if err := validatePosToken("cosmos sdk extension module name", e.ModuleName); err != nil {
+		return err
+	}
+	if err := validatePosToken("cosmos sdk extension module path", e.ModulePath); err != nil {
+		return err
+	}
+	if e.ExtensionMode != CosmosSDKExtensionModeExtend && e.ExtensionMode != CosmosSDKExtensionModeReplace {
+		return fmt.Errorf("unsupported cosmos sdk extension mode %s", e.ExtensionMode)
+	}
+	if len(e.PreservedInterfaces) == 0 {
+		return fmt.Errorf("cosmos sdk extension %s must preserve baseline interfaces", e.ModuleName)
+	}
+	if len(e.AddedState) == 0 && len(e.RewardInputs) == 0 {
+		return fmt.Errorf("cosmos sdk extension %s must add state or reward inputs", e.ModuleName)
+	}
+	for _, value := range e.PreservedInterfaces {
+		if err := validatePosResponsibility("cosmos sdk preserved interface", value); err != nil {
+			return err
+		}
+	}
+	for _, value := range e.AddedState {
+		if err := validatePosResponsibility("cosmos sdk added state", value); err != nil {
+			return err
+		}
+	}
+	for _, value := range e.RewardInputs {
+		if err := validatePosResponsibility("cosmos sdk reward input", value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r PosModuleRequirement) Validate() error {
+	if err := validatePosToken("pos compatibility module name", r.ModuleName); err != nil {
+		return err
+	}
+	return validatePosToken("pos compatibility module path", r.ModulePath)
+}
+
+func (m PosCompatibilityMiddleware) Validate(extensions map[string]struct{}, modules map[string]PosModuleRequirement) error {
+	if err := validatePosToken("pos compatibility middleware name", m.Name); err != nil {
+		return err
+	}
+	if err := validatePosLayer(m.Layer); err != nil {
+		return err
+	}
+	if len(m.Extends) == 0 {
+		return fmt.Errorf("pos compatibility middleware %s must extend at least one sdk module", m.Name)
+	}
+	for _, extension := range m.Extends {
+		if err := validatePosToken("pos compatibility middleware extension", extension); err != nil {
+			return err
+		}
+		if _, found := extensions[extension]; !found {
+			return fmt.Errorf("pos compatibility middleware %s extends unknown sdk module %s", m.Name, extension)
+		}
+	}
+	if len(m.ReadsModules) == 0 {
+		return fmt.Errorf("pos compatibility middleware %s must read at least one module", m.Name)
+	}
+	referencedModules := append([]string{}, m.ReadsModules...)
+	referencedModules = append(referencedModules, m.WritesModules...)
+	for _, module := range referencedModules {
+		if err := validatePosToken("pos compatibility middleware module", module); err != nil {
+			return err
+		}
+		if _, sdkFound := extensions[module]; sdkFound {
+			continue
+		}
+		if _, posFound := modules[module]; !posFound {
+			return fmt.Errorf("pos compatibility middleware %s references unknown module %s", m.Name, module)
+		}
+	}
+	return nil
+}
+
+func ComputeCosmosSDKCompatibilityRoot(manifest CosmosSDKCompatibilityManifest) string {
+	return posHashRoot("aetheris-pos-cosmos-sdk-compatibility-v1", func(w posByteWriter) {
+		posWriteUint64(w, uint64(len(manifest.Extensions)))
+		for _, extension := range manifest.Extensions {
+			posWritePart(w, extension.ModuleName)
+			posWritePart(w, extension.ModulePath)
+			posWritePart(w, string(extension.ExtensionMode))
+			posWriteStringSlice(w, extension.PreservedInterfaces)
+			posWriteStringSlice(w, extension.AddedState)
+			posWriteStringSlice(w, extension.RewardInputs)
+		}
+		posWriteUint64(w, uint64(len(manifest.Modules)))
+		for _, module := range manifest.Modules {
+			posWritePart(w, module.ModuleName)
+			posWritePart(w, module.ModulePath)
+			posWriteUint64(w, boolAsUint64(module.Required))
+		}
+		posWriteUint64(w, uint64(len(manifest.Middleware)))
+		for _, middleware := range manifest.Middleware {
+			posWritePart(w, middleware.Name)
+			posWritePart(w, string(middleware.Layer))
+			posWriteStringSlice(w, middleware.Extends)
+			posWriteStringSlice(w, middleware.ReadsModules)
+			posWriteStringSlice(w, middleware.WritesModules)
+		}
+	})
 }
 
 func (a LayeredPosArchitecture) Validate() error {
@@ -5928,6 +6212,13 @@ func posWritePart(w posByteWriter, value string) {
 	binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 	_, _ = w.Write(length[:])
 	_, _ = w.Write([]byte(value))
+}
+
+func posWriteStringSlice(w posByteWriter, values []string) {
+	posWriteUint64(w, uint64(len(values)))
+	for _, value := range values {
+		posWritePart(w, value)
+	}
 }
 
 func posWriteUint64(w posByteWriter, value uint64) {

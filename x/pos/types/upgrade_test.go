@@ -75,6 +75,55 @@ func TestLayeredPoSArchitectureRejectsReorderedOrUpwardDependencies(t *testing.T
 	require.ErrorContains(t, architecture.Validate(), "lower layers")
 }
 
+func TestCosmosSDKCompatibilityManifestExtendsBaselineModules(t *testing.T) {
+	manifest := DefaultCosmosSDKCompatibilityManifest()
+	require.NoError(t, manifest.Validate())
+	require.Equal(t, ComputeCosmosSDKCompatibilityRoot(manifest), manifest.Root)
+	require.Equal(t, []string{"epoch", "validator_economy", "taskgroups", "evidence", "performance"}, RequiredPoSModuleNames(manifest))
+	require.Equal(t, []string{"delegation_market", "collators", "fishermen", "security_metrics"}, OptionalPoSModuleNames(manifest))
+
+	extensions := compatibilityExtensionsByName(manifest)
+	for _, moduleName := range []string{"staking", "slashing", "distribution", "mint"} {
+		extension, found := extensions[moduleName]
+		require.True(t, found, "missing sdk extension %s", moduleName)
+		require.Equal(t, CosmosSDKExtensionModeExtend, extension.ExtensionMode)
+		require.NotEmpty(t, extension.PreservedInterfaces)
+	}
+	names := compatibilityMiddlewareNames(manifest)
+	require.Contains(t, names, "validator_scoring")
+	require.Contains(t, names, "epoch_management")
+	require.Contains(t, names, "task_assignment")
+	require.Contains(t, names, "performance_accounting")
+	require.Contains(t, names, "evidence_slashing")
+}
+
+func TestCosmosSDKCompatibilityManifestRejectsReplacementOrMissingModules(t *testing.T) {
+	manifest := DefaultCosmosSDKCompatibilityManifest()
+	replacement := manifest
+	replacement.Extensions = append([]CosmosSDKModuleExtension{}, manifest.Extensions...)
+	replacement.Extensions[0].ExtensionMode = CosmosSDKExtensionModeReplace
+	replacement.Root = ComputeCosmosSDKCompatibilityRoot(replacement)
+	require.ErrorContains(t, replacement.Validate(), "extended, not replaced")
+
+	missing := manifest
+	missing.Modules = append([]PosModuleRequirement{}, manifest.Modules...)
+	for i, module := range missing.Modules {
+		if module.ModuleName == "performance" {
+			missing.Modules = append(missing.Modules[:i], missing.Modules[i+1:]...)
+			break
+		}
+	}
+	missing.Root = ComputeCosmosSDKCompatibilityRoot(missing)
+	require.ErrorContains(t, missing.Validate(), "required pos module performance")
+
+	unknown := manifest
+	unknown.Middleware = append([]PosCompatibilityMiddleware{}, manifest.Middleware...)
+	unknown.Middleware[0].WritesModules = append([]string{}, unknown.Middleware[0].WritesModules...)
+	unknown.Middleware[0].WritesModules = append(unknown.Middleware[0].WritesModules, "unknown_module")
+	unknown.Root = ComputeCosmosSDKCompatibilityRoot(unknown)
+	require.ErrorContains(t, unknown.Validate(), "unknown module")
+}
+
 func TestEpochDefinitionDefaultsMatchLifecycleParameters(t *testing.T) {
 	params := DefaultParams()
 
@@ -2002,4 +2051,20 @@ func posLayerSpecsByLayer(architecture LayeredPosArchitecture) map[PosLayer]PosL
 		specs[layer.Layer] = layer
 	}
 	return specs
+}
+
+func compatibilityExtensionsByName(manifest CosmosSDKCompatibilityManifest) map[string]CosmosSDKModuleExtension {
+	out := make(map[string]CosmosSDKModuleExtension, len(manifest.Extensions))
+	for _, extension := range manifest.Extensions {
+		out[extension.ModuleName] = extension
+	}
+	return out
+}
+
+func compatibilityMiddlewareNames(manifest CosmosSDKCompatibilityManifest) []string {
+	out := make([]string, len(manifest.Middleware))
+	for i, middleware := range manifest.Middleware {
+		out[i] = middleware.Name
+	}
+	return out
 }
