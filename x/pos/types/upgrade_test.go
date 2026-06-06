@@ -1,11 +1,43 @@
 package types
 
 import (
+	"slices"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLayeredPoSArchitectureMatchesTargetStack(t *testing.T) {
+	architecture := DefaultLayeredPosArchitecture()
+
+	require.NoError(t, architecture.Validate())
+	require.Equal(t, []PosLayer{
+		PosLayerEconomicConsensus,
+		PosLayerTaskAssignment,
+		PosLayerValidatorExecution,
+		PosLayerStakingCapital,
+		PosLayerBaseCometBFT,
+	}, DefaultPosLayerOrder())
+	require.Equal(t, ComputeLayeredPosArchitectureRoot(architecture.Layers), architecture.Root)
+	require.Contains(t, architecture.Layers[0].Responsibilities, "validator scoring")
+	require.Contains(t, architecture.Layers[1].Responsibilities, "workload validator groups")
+	require.Contains(t, architecture.Layers[2].Responsibilities, "block production")
+	require.Contains(t, architecture.Layers[3].Responsibilities, "delegation markets")
+	require.Contains(t, architecture.Layers[4].Responsibilities, "finality")
+}
+
+func TestLayeredPoSArchitectureRejectsReorderedOrUpwardDependencies(t *testing.T) {
+	architecture := DefaultLayeredPosArchitecture()
+	slices.Reverse(architecture.Layers)
+	architecture.Root = ComputeLayeredPosArchitectureRoot(architecture.Layers)
+	require.ErrorContains(t, architecture.Validate(), "pos layer 0")
+
+	architecture = DefaultLayeredPosArchitecture()
+	architecture.Layers[3].DependsOn = append(architecture.Layers[3].DependsOn, PosLayerEconomicConsensus)
+	architecture.Root = ComputeLayeredPosArchitectureRoot(architecture.Layers)
+	require.ErrorContains(t, architecture.Validate(), "lower layers")
+}
 
 func TestEpochLifecyclePhasesAndSeedAreDeterministic(t *testing.T) {
 	params := DefaultParams()

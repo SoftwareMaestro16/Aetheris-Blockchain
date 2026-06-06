@@ -180,6 +180,175 @@ type WorkloadRewardSettlement struct {
 	CompletedUnits uint64
 }
 
+type PosLayer string
+
+const (
+	PosLayerEconomicConsensus  PosLayer = "economic_consensus"
+	PosLayerTaskAssignment     PosLayer = "task_assignment"
+	PosLayerValidatorExecution PosLayer = "validator_execution"
+	PosLayerStakingCapital     PosLayer = "staking_capital"
+	PosLayerBaseCometBFT       PosLayer = "base_cometbft"
+)
+
+type PosLayerSpec struct {
+	Layer            PosLayer
+	Responsibilities []string
+	DependsOn        []PosLayer
+}
+
+type LayeredPosArchitecture struct {
+	Layers []PosLayerSpec
+	Root   string
+}
+
+func DefaultLayeredPosArchitecture() LayeredPosArchitecture {
+	layers := []PosLayerSpec{
+		{
+			Layer: PosLayerEconomicConsensus,
+			Responsibilities: []string{
+				"validator scoring",
+				"incentives",
+				"performance rewards",
+				"slashing severity",
+			},
+			DependsOn: []PosLayer{PosLayerTaskAssignment, PosLayerValidatorExecution, PosLayerStakingCapital, PosLayerBaseCometBFT},
+		},
+		{
+			Layer: PosLayerTaskAssignment,
+			Responsibilities: []string{
+				"shard validator groups",
+				"workload validator groups",
+				"evidence reviewer subsets",
+			},
+			DependsOn: []PosLayer{PosLayerValidatorExecution, PosLayerStakingCapital, PosLayerBaseCometBFT},
+		},
+		{
+			Layer: PosLayerValidatorExecution,
+			Responsibilities: []string{
+				"block production",
+				"state transition verification",
+				"fault rejection",
+			},
+			DependsOn: []PosLayer{PosLayerStakingCapital, PosLayerBaseCometBFT},
+		},
+		{
+			Layer: PosLayerStakingCapital,
+			Responsibilities: []string{
+				"validators",
+				"delegators",
+				"delegation markets",
+				"capital risk preferences",
+			},
+			DependsOn: []PosLayer{PosLayerBaseCometBFT},
+		},
+		{
+			Layer: PosLayerBaseCometBFT,
+			Responsibilities: []string{
+				"finality",
+				"proposal and vote protocol",
+				"validator public key set",
+			},
+		},
+	}
+	architecture := LayeredPosArchitecture{Layers: layers}
+	architecture.Root = ComputeLayeredPosArchitectureRoot(layers)
+	return architecture
+}
+
+func (a LayeredPosArchitecture) Validate() error {
+	if len(a.Layers) != len(DefaultPosLayerOrder()) {
+		return errors.New("layered pos architecture must define all layers")
+	}
+	expectedOrder := DefaultPosLayerOrder()
+	seen := make(map[PosLayer]int, len(a.Layers))
+	for i, layer := range a.Layers {
+		if layer.Layer != expectedOrder[i] {
+			return fmt.Errorf("pos layer %d must be %s", i, expectedOrder[i])
+		}
+		if _, found := seen[layer.Layer]; found {
+			return fmt.Errorf("duplicate pos layer %s", layer.Layer)
+		}
+		seen[layer.Layer] = i
+		if err := layer.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, layer := range a.Layers {
+		layerIndex := seen[layer.Layer]
+		for _, dependency := range layer.DependsOn {
+			dependencyIndex, found := seen[dependency]
+			if !found {
+				return fmt.Errorf("pos layer %s depends on unknown layer %s", layer.Layer, dependency)
+			}
+			if dependencyIndex <= layerIndex {
+				return fmt.Errorf("pos layer %s must depend only on lower layers", layer.Layer)
+			}
+		}
+	}
+	if err := validatePosHash("layered pos architecture root", a.Root); err != nil {
+		return err
+	}
+	if expected := ComputeLayeredPosArchitectureRoot(a.Layers); a.Root != expected {
+		return errors.New("layered pos architecture root mismatch")
+	}
+	return nil
+}
+
+func (s PosLayerSpec) Validate() error {
+	if err := validatePosLayer(s.Layer); err != nil {
+		return err
+	}
+	if len(s.Responsibilities) == 0 {
+		return fmt.Errorf("pos layer %s responsibilities are required", s.Layer)
+	}
+	for _, responsibility := range s.Responsibilities {
+		if err := validatePosResponsibility("pos layer responsibility", responsibility); err != nil {
+			return err
+		}
+	}
+	seen := make(map[PosLayer]struct{}, len(s.DependsOn))
+	for _, dependency := range s.DependsOn {
+		if err := validatePosLayer(dependency); err != nil {
+			return err
+		}
+		if dependency == s.Layer {
+			return fmt.Errorf("pos layer %s cannot depend on itself", s.Layer)
+		}
+		if _, found := seen[dependency]; found {
+			return fmt.Errorf("duplicate dependency %s for pos layer %s", dependency, s.Layer)
+		}
+		seen[dependency] = struct{}{}
+	}
+	return nil
+}
+
+func DefaultPosLayerOrder() []PosLayer {
+	return []PosLayer{
+		PosLayerEconomicConsensus,
+		PosLayerTaskAssignment,
+		PosLayerValidatorExecution,
+		PosLayerStakingCapital,
+		PosLayerBaseCometBFT,
+	}
+}
+
+func ComputeLayeredPosArchitectureRoot(layers []PosLayerSpec) string {
+	return posHashRoot("aetheris-pos-layered-architecture-v1", func(w posByteWriter) {
+		posWriteUint64(w, uint64(len(layers)))
+		for _, layer := range layers {
+			posWritePart(w, string(layer.Layer))
+			posWriteUint64(w, uint64(len(layer.Responsibilities)))
+			for _, responsibility := range layer.Responsibilities {
+				posWritePart(w, responsibility)
+			}
+			posWriteUint64(w, uint64(len(layer.DependsOn)))
+			for _, dependency := range layer.DependsOn {
+				posWritePart(w, string(dependency))
+			}
+		}
+	})
+}
+
 func DefaultEpochPhaseDurations(epochDurationSeconds uint64) EpochPhaseDurations {
 	delegation := epochDurationSeconds / 4
 	election := epochDurationSeconds / 12
@@ -911,6 +1080,15 @@ func validateValidatorRole(role ValidatorRole) error {
 	}
 }
 
+func validatePosLayer(layer PosLayer) error {
+	switch layer {
+	case PosLayerEconomicConsensus, PosLayerTaskAssignment, PosLayerValidatorExecution, PosLayerStakingCapital, PosLayerBaseCometBFT:
+		return nil
+	default:
+		return fmt.Errorf("unsupported pos layer %q", layer)
+	}
+}
+
 func validateValidatorRoles(roles []ValidatorRole) error {
 	seen := make(map[ValidatorRole]struct{}, len(roles))
 	for _, role := range roles {
@@ -1141,6 +1319,22 @@ func validatePosToken(fieldName string, value string) error {
 	}
 	for _, r := range value {
 		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' || r == ':' || r == '/' {
+			continue
+		}
+		return fmt.Errorf("%s contains invalid character", fieldName)
+	}
+	return nil
+}
+
+func validatePosResponsibility(fieldName string, value string) error {
+	if strings.TrimSpace(value) != value || value == "" {
+		return fmt.Errorf("%s is required and must not have surrounding whitespace", fieldName)
+	}
+	if len(value) > maxPosTokenLength {
+		return fmt.Errorf("%s must be <= %d bytes", fieldName, maxPosTokenLength)
+	}
+	for _, r := range value {
+		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' || r == ':' || r == '/' || r == ' ' || r == '+' {
 			continue
 		}
 		return fmt.Errorf("%s contains invalid character", fieldName)
