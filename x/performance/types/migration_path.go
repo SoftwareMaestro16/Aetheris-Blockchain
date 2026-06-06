@@ -16,6 +16,8 @@ const (
 	MigrationPhase3ZoneExtraction    MigrationPhase = "phase_3_zone_extraction"
 	MigrationPhase4ShardingRuntime   MigrationPhase = "phase_4_sharding_runtime"
 	MigrationPhase5AVM20             MigrationPhase = "phase_5_avm_2_0"
+	MigrationPhase6IdentityPayments  MigrationPhase = "phase_6_identity_payment_integration"
+	MigrationPhase7Performance       MigrationPhase = "phase_7_performance_hardening"
 )
 
 type GenesisImportCheck struct {
@@ -206,6 +208,65 @@ type MigrationPhase5Input struct {
 	AsyncMessageEmissionRoot  string
 	ContractStateProofRoot    string
 	ContractZoneExecutionRoot string
+}
+
+type IdentityPaymentFlowCheck struct {
+	FlowName        string
+	FlowRoot        string
+	ProofBacked     bool
+	Asynchronous    bool
+	Deterministic   bool
+	ZoneID          string
+	MessageTypeHash string
+}
+
+type WalletSDKHelperCheck struct {
+	HelperName    string
+	HelperHash    string
+	Available     bool
+	Deterministic bool
+}
+
+type MigrationPhase6Input struct {
+	AETIdentityProofRoot               string
+	CrossZoneIdentityLookupRoot        string
+	PaymentChannelSettlementRoot       string
+	ConditionalPaymentRoutingRoot      string
+	PaymentProofAPIRoot                string
+	IdentityFlows                      []IdentityPaymentFlowCheck
+	PaymentFlows                       []IdentityPaymentFlowCheck
+	WalletSDKHelpers                   []WalletSDKHelperCheck
+	NamesResolveThroughIdentityZone    bool
+	PaymentsSettleThroughFinancialZone bool
+	ContractsUseAsyncIdentityPayments  bool
+}
+
+type PerformanceHardeningCheck struct {
+	CheckName     string
+	EvidenceHash  string
+	Enabled       bool
+	Deterministic bool
+}
+
+type StoreV2BenchmarkCheck struct {
+	BenchmarkName string
+	ResultHash    string
+	Covered       bool
+	Bounded       bool
+}
+
+type MigrationPhase7Input struct {
+	BlockSTMWorkloadRoot                string
+	ConflictProfilingRoot               string
+	MempoolLaneRoot                     string
+	CongestionRoutingRoot               string
+	AdaptiveSyncRecoveryRoot            string
+	MultiZoneLoadSimulationRoot         string
+	HardeningChecks                     []PerformanceHardeningCheck
+	StoreV2Benchmarks                   []StoreV2BenchmarkCheck
+	IndependentExecutionScalesParallel  bool
+	StateSyncRecoversCommitments        bool
+	RoutingDeterministicUnderCongestion bool
 }
 
 type MigrationReadinessReport struct {
@@ -528,6 +589,110 @@ func BuildMigrationPhase5Readiness(input MigrationPhase5Input) MigrationReadines
 	return report
 }
 
+func BuildMigrationPhase6Readiness(input MigrationPhase6Input) MigrationReadinessReport {
+	input = input.Normalize()
+	failed := make([]string, 0)
+	evidence := make([]string, 0)
+	for _, item := range []struct {
+		label string
+		hash  string
+	}{
+		{"aet_identity_proofs", input.AETIdentityProofRoot},
+		{"cross_zone_identity_lookup_messages", input.CrossZoneIdentityLookupRoot},
+		{"payment_channel_settlement", input.PaymentChannelSettlementRoot},
+		{"conditional_payment_routing", input.ConditionalPaymentRoutingRoot},
+		{"payment_proof_apis", input.PaymentProofAPIRoot},
+	} {
+		if err := validateHexHash("migration phase 6 "+item.label, item.hash); err != nil {
+			failed = append(failed, item.label)
+		} else {
+			evidence = append(evidence, item.label+":"+item.hash)
+		}
+	}
+	if err := validateIdentityPaymentFlows("identity", input.IdentityFlows); err != nil {
+		failed = append(failed, "proof_backed_identity_flows")
+	} else {
+		evidence = append(evidence, "proof_backed_identity_flows:"+hashIdentityPaymentFlows("identity", input.IdentityFlows))
+	}
+	if err := validateIdentityPaymentFlows("payment", input.PaymentFlows); err != nil {
+		failed = append(failed, "trustless_payment_flows")
+	} else {
+		evidence = append(evidence, "trustless_payment_flows:"+hashIdentityPaymentFlows("payment", input.PaymentFlows))
+	}
+	if err := validateWalletSDKHelpers(input.WalletSDKHelpers); err != nil {
+		failed = append(failed, "wallet_sdk_helpers")
+	} else {
+		evidence = append(evidence, "wallet_sdk_helpers:"+hashWalletSDKHelpers(input.WalletSDKHelpers))
+	}
+	if !input.NamesResolveThroughIdentityZone {
+		failed = append(failed, "names_resolve_through_identity_zone")
+	}
+	if !input.PaymentsSettleThroughFinancialZone {
+		failed = append(failed, "payments_settle_through_financial_zone")
+	}
+	if !input.ContractsUseAsyncIdentityPayments {
+		failed = append(failed, "contracts_use_async_identity_payment_messages")
+	}
+	report := MigrationReadinessReport{
+		Phase:    MigrationPhase6IdentityPayments,
+		Passed:   len(failed) == 0,
+		Failed:   normalizeStringSet(failed),
+		Evidence: normalizeStringSet(evidence),
+	}
+	report.ReportHash = ComputeMigrationReadinessReportHash(report)
+	return report
+}
+
+func BuildMigrationPhase7Readiness(input MigrationPhase7Input) MigrationReadinessReport {
+	input = input.Normalize()
+	failed := make([]string, 0)
+	evidence := make([]string, 0)
+	for _, item := range []struct {
+		label string
+		hash  string
+	}{
+		{"blockstm_workloads", input.BlockSTMWorkloadRoot},
+		{"conflict_profiling", input.ConflictProfilingRoot},
+		{"mempool_lanes", input.MempoolLaneRoot},
+		{"congestion_aware_routing", input.CongestionRoutingRoot},
+		{"adaptive_sync_recovery_tests", input.AdaptiveSyncRecoveryRoot},
+		{"multi_zone_load_simulation", input.MultiZoneLoadSimulationRoot},
+	} {
+		if err := validateHexHash("migration phase 7 "+item.label, item.hash); err != nil {
+			failed = append(failed, item.label)
+		} else {
+			evidence = append(evidence, item.label+":"+item.hash)
+		}
+	}
+	if err := validatePerformanceHardeningChecks(input.HardeningChecks); err != nil {
+		failed = append(failed, "performance_hardening_checks")
+	} else {
+		evidence = append(evidence, "performance_hardening_checks:"+hashPerformanceHardeningChecks(input.HardeningChecks))
+	}
+	if err := validateStoreV2Benchmarks(input.StoreV2Benchmarks); err != nil {
+		failed = append(failed, "store_v2_benchmarks")
+	} else {
+		evidence = append(evidence, "store_v2_benchmarks:"+hashStoreV2Benchmarks(input.StoreV2Benchmarks))
+	}
+	if !input.IndependentExecutionScalesParallel {
+		failed = append(failed, "independent_execution_scales_parallel")
+	}
+	if !input.StateSyncRecoversCommitments {
+		failed = append(failed, "state_sync_recovers_zone_shard_commitments")
+	}
+	if !input.RoutingDeterministicUnderCongestion {
+		failed = append(failed, "routing_deterministic_under_congestion")
+	}
+	report := MigrationReadinessReport{
+		Phase:    MigrationPhase7Performance,
+		Passed:   len(failed) == 0,
+		Failed:   normalizeStringSet(failed),
+		Evidence: normalizeStringSet(evidence),
+	}
+	report.ReportHash = ComputeMigrationReadinessReportHash(report)
+	return report
+}
+
 func (i MigrationPhase0Input) Normalize() MigrationPhase0Input {
 	i.ModuleBoundaryDocHash = normalizeLowerHex(i.ModuleBoundaryDocHash)
 	i.StateExportValidationHash = normalizeLowerHex(i.StateExportValidationHash)
@@ -641,6 +806,55 @@ func (i MigrationPhase5Input) Normalize() MigrationPhase5Input {
 	i.AsyncMessageEmissionRoot = normalizeLowerHex(i.AsyncMessageEmissionRoot)
 	i.ContractStateProofRoot = normalizeLowerHex(i.ContractStateProofRoot)
 	i.ContractZoneExecutionRoot = normalizeLowerHex(i.ContractZoneExecutionRoot)
+	return i
+}
+
+func (i MigrationPhase6Input) Normalize() MigrationPhase6Input {
+	i.AETIdentityProofRoot = normalizeLowerHex(i.AETIdentityProofRoot)
+	i.CrossZoneIdentityLookupRoot = normalizeLowerHex(i.CrossZoneIdentityLookupRoot)
+	i.PaymentChannelSettlementRoot = normalizeLowerHex(i.PaymentChannelSettlementRoot)
+	i.ConditionalPaymentRoutingRoot = normalizeLowerHex(i.ConditionalPaymentRoutingRoot)
+	i.PaymentProofAPIRoot = normalizeLowerHex(i.PaymentProofAPIRoot)
+	for idx := range i.IdentityFlows {
+		i.IdentityFlows[idx] = i.IdentityFlows[idx].Normalize()
+	}
+	sort.SliceStable(i.IdentityFlows, func(left, right int) bool {
+		return i.IdentityFlows[left].FlowName < i.IdentityFlows[right].FlowName
+	})
+	for idx := range i.PaymentFlows {
+		i.PaymentFlows[idx] = i.PaymentFlows[idx].Normalize()
+	}
+	sort.SliceStable(i.PaymentFlows, func(left, right int) bool {
+		return i.PaymentFlows[left].FlowName < i.PaymentFlows[right].FlowName
+	})
+	for idx := range i.WalletSDKHelpers {
+		i.WalletSDKHelpers[idx] = i.WalletSDKHelpers[idx].Normalize()
+	}
+	sort.SliceStable(i.WalletSDKHelpers, func(left, right int) bool {
+		return i.WalletSDKHelpers[left].HelperName < i.WalletSDKHelpers[right].HelperName
+	})
+	return i
+}
+
+func (i MigrationPhase7Input) Normalize() MigrationPhase7Input {
+	i.BlockSTMWorkloadRoot = normalizeLowerHex(i.BlockSTMWorkloadRoot)
+	i.ConflictProfilingRoot = normalizeLowerHex(i.ConflictProfilingRoot)
+	i.MempoolLaneRoot = normalizeLowerHex(i.MempoolLaneRoot)
+	i.CongestionRoutingRoot = normalizeLowerHex(i.CongestionRoutingRoot)
+	i.AdaptiveSyncRecoveryRoot = normalizeLowerHex(i.AdaptiveSyncRecoveryRoot)
+	i.MultiZoneLoadSimulationRoot = normalizeLowerHex(i.MultiZoneLoadSimulationRoot)
+	for idx := range i.HardeningChecks {
+		i.HardeningChecks[idx] = i.HardeningChecks[idx].Normalize()
+	}
+	sort.SliceStable(i.HardeningChecks, func(left, right int) bool {
+		return i.HardeningChecks[left].CheckName < i.HardeningChecks[right].CheckName
+	})
+	for idx := range i.StoreV2Benchmarks {
+		i.StoreV2Benchmarks[idx] = i.StoreV2Benchmarks[idx].Normalize()
+	}
+	sort.SliceStable(i.StoreV2Benchmarks, func(left, right int) bool {
+		return i.StoreV2Benchmarks[left].BenchmarkName < i.StoreV2Benchmarks[right].BenchmarkName
+	})
 	return i
 }
 
@@ -1006,13 +1220,91 @@ func (c AVM20SyscallCheck) Validate() error {
 	return validateHexHash("migration AVM syscall hash", check.SyscallHash)
 }
 
+func (c IdentityPaymentFlowCheck) Normalize() IdentityPaymentFlowCheck {
+	c.FlowName = strings.TrimSpace(c.FlowName)
+	c.FlowRoot = normalizeLowerHex(c.FlowRoot)
+	c.ZoneID = strings.TrimSpace(c.ZoneID)
+	c.MessageTypeHash = normalizeLowerHex(c.MessageTypeHash)
+	return c
+}
+
+func (c IdentityPaymentFlowCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration identity payment flow name", check.FlowName); err != nil {
+		return err
+	}
+	if err := validateExecutionToken("migration identity payment flow zone id", check.ZoneID); err != nil {
+		return err
+	}
+	if !check.ProofBacked || !check.Asynchronous || !check.Deterministic {
+		return errors.New("migration identity payment flow must be proof-backed, asynchronous, and deterministic")
+	}
+	if err := validateHexHash("migration identity payment flow root", check.FlowRoot); err != nil {
+		return err
+	}
+	return validateHexHash("migration identity payment flow message type hash", check.MessageTypeHash)
+}
+
+func (c WalletSDKHelperCheck) Normalize() WalletSDKHelperCheck {
+	c.HelperName = strings.TrimSpace(c.HelperName)
+	c.HelperHash = normalizeLowerHex(c.HelperHash)
+	return c
+}
+
+func (c WalletSDKHelperCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration wallet SDK helper name", check.HelperName); err != nil {
+		return err
+	}
+	if !check.Available || !check.Deterministic {
+		return errors.New("migration wallet SDK helper must be available and deterministic")
+	}
+	return validateHexHash("migration wallet SDK helper hash", check.HelperHash)
+}
+
+func (c PerformanceHardeningCheck) Normalize() PerformanceHardeningCheck {
+	c.CheckName = strings.TrimSpace(c.CheckName)
+	c.EvidenceHash = normalizeLowerHex(c.EvidenceHash)
+	return c
+}
+
+func (c PerformanceHardeningCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration performance hardening check name", check.CheckName); err != nil {
+		return err
+	}
+	if !check.Enabled || !check.Deterministic {
+		return errors.New("migration performance hardening check must be enabled and deterministic")
+	}
+	return validateHexHash("migration performance hardening evidence hash", check.EvidenceHash)
+}
+
+func (c StoreV2BenchmarkCheck) Normalize() StoreV2BenchmarkCheck {
+	c.BenchmarkName = strings.TrimSpace(c.BenchmarkName)
+	c.ResultHash = normalizeLowerHex(c.ResultHash)
+	return c
+}
+
+func (c StoreV2BenchmarkCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration Store v2 benchmark name", check.BenchmarkName); err != nil {
+		return err
+	}
+	if !check.Covered || !check.Bounded {
+		return errors.New("migration Store v2 benchmark must be covered and bounded")
+	}
+	return validateHexHash("migration Store v2 benchmark result hash", check.ResultHash)
+}
+
 func (r MigrationReadinessReport) Validate() error {
 	if r.Phase != MigrationPhase0BaselineHardening &&
 		r.Phase != MigrationPhase1CoreCommitments &&
 		r.Phase != MigrationPhase2MessageBus &&
 		r.Phase != MigrationPhase3ZoneExtraction &&
 		r.Phase != MigrationPhase4ShardingRuntime &&
-		r.Phase != MigrationPhase5AVM20 {
+		r.Phase != MigrationPhase5AVM20 &&
+		r.Phase != MigrationPhase6IdentityPayments &&
+		r.Phase != MigrationPhase7Performance {
 		return errors.New("migration readiness phase is unsupported")
 	}
 	if r.Passed && len(r.Failed) > 0 {
@@ -1089,6 +1381,94 @@ func validateAVM20Syscalls(kind string, checks []AVM20SyscallCheck) error {
 	}
 	if len(seen) == 0 {
 		return fmt.Errorf("migration AVM %s syscalls are required", kind)
+	}
+	return nil
+}
+
+func validateIdentityPaymentFlows(kind string, checks []IdentityPaymentFlowCheck) error {
+	seen := make(map[string]struct{}, len(checks))
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		check = check.Normalize()
+		if _, exists := seen[check.FlowName]; exists {
+			return fmt.Errorf("migration duplicate %s flow: %s", kind, check.FlowName)
+		}
+		seen[check.FlowName] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return fmt.Errorf("migration %s flows are required", kind)
+	}
+	return nil
+}
+
+func validateWalletSDKHelpers(checks []WalletSDKHelperCheck) error {
+	required := map[string]struct{}{
+		"identity_lookup": {},
+		"payment_route":   {},
+	}
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		check = check.Normalize()
+		if _, found := required[check.HelperName]; found {
+			delete(required, check.HelperName)
+		}
+	}
+	if len(required) > 0 {
+		return fmt.Errorf("migration missing wallet SDK helpers: %v", sortedMapKeys(required))
+	}
+	return nil
+}
+
+func validatePerformanceHardeningChecks(checks []PerformanceHardeningCheck) error {
+	required := map[string]struct{}{
+		"blockstm_zone_shard_batches": {},
+		"conflict_profiling":          {},
+		"mempool_lanes":               {},
+		"congestion_aware_routing":    {},
+		"adaptive_sync_recovery":      {},
+		"multi_zone_load_simulation":  {},
+	}
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		check = check.Normalize()
+		if _, found := required[check.CheckName]; found {
+			delete(required, check.CheckName)
+		}
+	}
+	if len(required) > 0 {
+		return fmt.Errorf("migration missing performance hardening checks: %v", sortedMapKeys(required))
+	}
+	return nil
+}
+
+func validateStoreV2Benchmarks(checks []StoreV2BenchmarkCheck) error {
+	required := map[string]struct{}{
+		"direct_balance_read":           {},
+		"direct_identity_resolution":    {},
+		"recursive_identity_resolution": {},
+		"contract_storage_read_write":   {},
+		"message_enqueue_dequeue":       {},
+		"payment_channel_settle":        {},
+		"dex_pool_update":               {},
+		"proof_generation":              {},
+	}
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		check = check.Normalize()
+		if _, found := required[check.BenchmarkName]; found {
+			delete(required, check.BenchmarkName)
+		}
+	}
+	if len(required) > 0 {
+		return fmt.Errorf("migration missing Store v2 benchmarks: %v", sortedMapKeys(required))
 	}
 	return nil
 }
@@ -1246,6 +1626,51 @@ func hashAVM20Syscalls(kind string, checks []AVM20SyscallCheck) string {
 	for _, check := range checks {
 		check = check.Normalize()
 		parts = append(parts, check.SyscallName, check.SyscallHash, fmt.Sprintf("%t", check.Metered), fmt.Sprintf("%t", check.Enabled))
+	}
+	return hashStrings(parts...)
+}
+
+func hashIdentityPaymentFlows(kind string, checks []IdentityPaymentFlowCheck) string {
+	parts := []string{"migration-identity-payment-flows", kind}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(
+			parts,
+			check.FlowName,
+			check.FlowRoot,
+			check.ZoneID,
+			check.MessageTypeHash,
+			fmt.Sprintf("%t", check.ProofBacked),
+			fmt.Sprintf("%t", check.Asynchronous),
+			fmt.Sprintf("%t", check.Deterministic),
+		)
+	}
+	return hashStrings(parts...)
+}
+
+func hashWalletSDKHelpers(checks []WalletSDKHelperCheck) string {
+	parts := []string{"migration-wallet-sdk-helpers"}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(parts, check.HelperName, check.HelperHash, fmt.Sprintf("%t", check.Available), fmt.Sprintf("%t", check.Deterministic))
+	}
+	return hashStrings(parts...)
+}
+
+func hashPerformanceHardeningChecks(checks []PerformanceHardeningCheck) string {
+	parts := []string{"migration-performance-hardening-checks"}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(parts, check.CheckName, check.EvidenceHash, fmt.Sprintf("%t", check.Enabled), fmt.Sprintf("%t", check.Deterministic))
+	}
+	return hashStrings(parts...)
+}
+
+func hashStoreV2Benchmarks(checks []StoreV2BenchmarkCheck) string {
+	parts := []string{"migration-store-v2-benchmarks"}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(parts, check.BenchmarkName, check.ResultHash, fmt.Sprintf("%t", check.Covered), fmt.Sprintf("%t", check.Bounded))
 	}
 	return hashStrings(parts...)
 }

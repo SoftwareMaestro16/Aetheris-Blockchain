@@ -171,6 +171,63 @@ func TestMigrationPhase5ReadinessFailsMissingInterpreterGasProofSyscallAndProofR
 	require.NoError(t, report.Validate())
 }
 
+func TestMigrationPhase6ReadinessPassesIdentityAndPaymentIntegration(t *testing.T) {
+	report := BuildMigrationPhase6Readiness(validMigrationPhase6Input())
+	require.True(t, report.Passed, report.Failed)
+	require.Empty(t, report.Failed)
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase6ReadinessFailsUnbackedLookupMissingPaymentProofsAndWalletHelper(t *testing.T) {
+	input := validMigrationPhase6Input()
+	input.IdentityFlows[0].ProofBacked = false
+	input.PaymentProofAPIRoot = ""
+	input.WalletSDKHelpers = input.WalletSDKHelpers[:1]
+	input.PaymentsSettleThroughFinancialZone = false
+
+	report := BuildMigrationPhase6Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "proof_backed_identity_flows")
+	require.Contains(t, report.Failed, "payment_proof_apis")
+	require.Contains(t, report.Failed, "wallet_sdk_helpers")
+	require.Contains(t, report.Failed, "payments_settle_through_financial_zone")
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase6ReadinessRequiresAsyncContractMessages(t *testing.T) {
+	input := validMigrationPhase6Input()
+	input.PaymentFlows[0].Asynchronous = false
+	input.ContractsUseAsyncIdentityPayments = false
+
+	report := BuildMigrationPhase6Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "trustless_payment_flows")
+	require.Contains(t, report.Failed, "contracts_use_async_identity_payment_messages")
+}
+
+func TestMigrationPhase7ReadinessPassesPerformanceHardening(t *testing.T) {
+	report := BuildMigrationPhase7Readiness(validMigrationPhase7Input())
+	require.True(t, report.Passed, report.Failed)
+	require.Empty(t, report.Failed)
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase7ReadinessFailsMissingBenchmarksAndNondeterministicRouting(t *testing.T) {
+	input := validMigrationPhase7Input()
+	input.StoreV2Benchmarks = input.StoreV2Benchmarks[:3]
+	input.HardeningChecks[3].Deterministic = false
+	input.RoutingDeterministicUnderCongestion = false
+	input.StateSyncRecoversCommitments = false
+
+	report := BuildMigrationPhase7Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "performance_hardening_checks")
+	require.Contains(t, report.Failed, "store_v2_benchmarks")
+	require.Contains(t, report.Failed, "routing_deterministic_under_congestion")
+	require.Contains(t, report.Failed, "state_sync_recovers_zone_shard_commitments")
+	require.NoError(t, report.Validate())
+}
+
 func validMigrationPhase0Input() MigrationPhase0Input {
 	appHash := hashStrings("single-chain-app-hash")
 	return MigrationPhase0Input{
@@ -319,6 +376,63 @@ func validMigrationPhase5Input() MigrationPhase5Input {
 	}
 }
 
+func validMigrationPhase6Input() MigrationPhase6Input {
+	return MigrationPhase6Input{
+		AETIdentityProofRoot:          hashStrings("aet-identity-proofs"),
+		CrossZoneIdentityLookupRoot:   hashStrings("cross-zone-identity-lookups"),
+		PaymentChannelSettlementRoot:  hashStrings("payment-channel-settlement"),
+		ConditionalPaymentRoutingRoot: hashStrings("conditional-payment-routing"),
+		PaymentProofAPIRoot:           hashStrings("payment-proof-apis"),
+		IdentityFlows: []IdentityPaymentFlowCheck{
+			identityPaymentFlow("aet_resolve", "identity"),
+			identityPaymentFlow("cross_zone_identity_lookup", "identity"),
+		},
+		PaymentFlows: []IdentityPaymentFlowCheck{
+			identityPaymentFlow("payment_channel_settle", "financial"),
+			identityPaymentFlow("conditional_payment_route", "financial"),
+		},
+		WalletSDKHelpers: []WalletSDKHelperCheck{
+			walletSDKHelper("identity_lookup"),
+			walletSDKHelper("payment_route"),
+		},
+		NamesResolveThroughIdentityZone:    true,
+		PaymentsSettleThroughFinancialZone: true,
+		ContractsUseAsyncIdentityPayments:  true,
+	}
+}
+
+func validMigrationPhase7Input() MigrationPhase7Input {
+	return MigrationPhase7Input{
+		BlockSTMWorkloadRoot:        hashStrings("blockstm-zone-shard-workloads"),
+		ConflictProfilingRoot:       hashStrings("conflict-profiling"),
+		MempoolLaneRoot:             hashStrings("mempool-lanes"),
+		CongestionRoutingRoot:       hashStrings("congestion-aware-routing"),
+		AdaptiveSyncRecoveryRoot:    hashStrings("adaptive-sync-recovery-tests"),
+		MultiZoneLoadSimulationRoot: hashStrings("multi-zone-load-simulation"),
+		HardeningChecks: []PerformanceHardeningCheck{
+			performanceHardeningCheck("blockstm_zone_shard_batches"),
+			performanceHardeningCheck("conflict_profiling"),
+			performanceHardeningCheck("mempool_lanes"),
+			performanceHardeningCheck("congestion_aware_routing"),
+			performanceHardeningCheck("adaptive_sync_recovery"),
+			performanceHardeningCheck("multi_zone_load_simulation"),
+		},
+		StoreV2Benchmarks: []StoreV2BenchmarkCheck{
+			storeV2Benchmark("direct_balance_read"),
+			storeV2Benchmark("direct_identity_resolution"),
+			storeV2Benchmark("recursive_identity_resolution"),
+			storeV2Benchmark("contract_storage_read_write"),
+			storeV2Benchmark("message_enqueue_dequeue"),
+			storeV2Benchmark("payment_channel_settle"),
+			storeV2Benchmark("dex_pool_update"),
+			storeV2Benchmark("proof_generation"),
+		},
+		IndependentExecutionScalesParallel:  true,
+		StateSyncRecoversCommitments:        true,
+		RoutingDeterministicUnderCongestion: true,
+	}
+}
+
 func genesisImport(module string) GenesisImportCheck {
 	root := hashStrings("genesis", module)
 	return GenesisImportCheck{ModuleName: module, Active: true, Deterministic: true, ExportHash: root, ImportHash: root}
@@ -392,5 +506,44 @@ func avm20Syscall(name string) AVM20SyscallCheck {
 		SyscallHash: hashStrings("avm20-syscall", name),
 		Metered:     true,
 		Enabled:     true,
+	}
+}
+
+func identityPaymentFlow(name, zoneID string) IdentityPaymentFlowCheck {
+	return IdentityPaymentFlowCheck{
+		FlowName:        name,
+		FlowRoot:        hashStrings("identity-payment-flow", name),
+		ProofBacked:     true,
+		Asynchronous:    true,
+		Deterministic:   true,
+		ZoneID:          zoneID,
+		MessageTypeHash: hashStrings("identity-payment-message", name),
+	}
+}
+
+func walletSDKHelper(name string) WalletSDKHelperCheck {
+	return WalletSDKHelperCheck{
+		HelperName:    name,
+		HelperHash:    hashStrings("wallet-sdk-helper", name),
+		Available:     true,
+		Deterministic: true,
+	}
+}
+
+func performanceHardeningCheck(name string) PerformanceHardeningCheck {
+	return PerformanceHardeningCheck{
+		CheckName:     name,
+		EvidenceHash:  hashStrings("performance-hardening", name),
+		Enabled:       true,
+		Deterministic: true,
+	}
+}
+
+func storeV2Benchmark(name string) StoreV2BenchmarkCheck {
+	return StoreV2BenchmarkCheck{
+		BenchmarkName: name,
+		ResultHash:    hashStrings("store-v2-benchmark", name),
+		Covered:       true,
+		Bounded:       true,
 	}
 }
