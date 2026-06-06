@@ -12,6 +12,8 @@ type MigrationPhase string
 const (
 	MigrationPhase0BaselineHardening MigrationPhase = "phase_0_baseline_hardening"
 	MigrationPhase1CoreCommitments   MigrationPhase = "phase_1_core_commitments"
+	MigrationPhase2MessageBus        MigrationPhase = "phase_2_message_bus"
+	MigrationPhase3ZoneExtraction    MigrationPhase = "phase_3_zone_extraction"
 )
 
 type GenesisImportCheck struct {
@@ -78,6 +80,61 @@ type MigrationPhase1Input struct {
 	ProofMetadata           []ProofRootMetadataCheck
 	AppHashIncludesCoreRoot bool
 	CoreRootHash            string
+}
+
+type MsgBusStoreCheck struct {
+	StoreName string
+	RootHash  string
+	Committed bool
+}
+
+type MsgBusEncodingCheck struct {
+	CodecHash        string
+	MessageIDRoot    string
+	DeterministicIDs bool
+}
+
+type MsgBusExecutionCheck struct {
+	ExecutionRoot   string
+	Deterministic   bool
+	ExecutedLocally bool
+}
+
+type MsgBusSafetyCheck struct {
+	ExpiryRoot         string
+	BounceRoot         string
+	InclusionProofRoot string
+	ReceiptsProofRoot  string
+}
+
+type MigrationPhase2Input struct {
+	MsgBusModuleHash     string
+	Encoding             MsgBusEncodingCheck
+	Stores               []MsgBusStoreCheck
+	LocalExecution       MsgBusExecutionCheck
+	Safety               MsgBusSafetyCheck
+	FirstClassObjectRoot string
+}
+
+type ZoneExtractionCheck struct {
+	ZoneID               string
+	Extracted            bool
+	KeeperHash           string
+	StatePrefixRoot      string
+	FeePolicyHash        string
+	ExecutionSummaryHash string
+	CommittedRoot        string
+	Modules              []string
+}
+
+type MigrationPhase3Input struct {
+	FinancialZone                      ZoneExtractionCheck
+	IdentityZone                       ZoneExtractionCheck
+	ApplicationZone                    ZoneExtractionCheck
+	BankFeesTokenfactoryDEXInFinancial bool
+	IdentityIsolatedActivation         bool
+	ZoneRootsCommittedPerBlock         bool
+	ZoneCommitmentRoot                 string
 }
 
 type MigrationReadinessReport struct {
@@ -208,6 +265,88 @@ func BuildMigrationPhase1Readiness(input MigrationPhase1Input) MigrationReadines
 	return report
 }
 
+func BuildMigrationPhase2Readiness(input MigrationPhase2Input) MigrationReadinessReport {
+	input = input.Normalize()
+	failed := make([]string, 0)
+	evidence := make([]string, 0)
+	for _, item := range []struct {
+		label string
+		hash  string
+	}{
+		{"msgbus_module", input.MsgBusModuleHash},
+		{"first_class_message_objects", input.FirstClassObjectRoot},
+	} {
+		if err := validateHexHash("migration phase 2 "+item.label, item.hash); err != nil {
+			failed = append(failed, item.label)
+		} else {
+			evidence = append(evidence, item.label+":"+item.hash)
+		}
+	}
+	if err := input.Encoding.Validate(); err != nil {
+		failed = append(failed, "message_encoding_and_ids")
+	} else {
+		evidence = append(evidence, "message_encoding_and_ids:"+input.Encoding.MessageIDRoot)
+	}
+	if err := validateMsgBusStores(input.Stores); err != nil {
+		failed = append(failed, "inbox_outbox_receipt_stores")
+	} else {
+		evidence = append(evidence, "message_stores:"+hashMsgBusStores(input.Stores))
+	}
+	if err := input.LocalExecution.Validate(); err != nil {
+		failed = append(failed, "local_zone_message_execution")
+	} else {
+		evidence = append(evidence, "local_zone_message_execution:"+input.LocalExecution.ExecutionRoot)
+	}
+	if err := input.Safety.Validate(); err != nil {
+		failed = append(failed, "expiry_bounce_inclusion_receipt_proofs")
+	} else {
+		evidence = append(evidence, "message_safety:"+hashMsgBusSafety(input.Safety))
+	}
+	report := MigrationReadinessReport{
+		Phase:    MigrationPhase2MessageBus,
+		Passed:   len(failed) == 0,
+		Failed:   normalizeStringSet(failed),
+		Evidence: normalizeStringSet(evidence),
+	}
+	report.ReportHash = ComputeMigrationReadinessReportHash(report)
+	return report
+}
+
+func BuildMigrationPhase3Readiness(input MigrationPhase3Input) MigrationReadinessReport {
+	input = input.Normalize()
+	failed := make([]string, 0)
+	evidence := make([]string, 0)
+	for _, zone := range []ZoneExtractionCheck{input.FinancialZone, input.IdentityZone, input.ApplicationZone} {
+		if err := zone.Validate(); err != nil {
+			failed = append(failed, "zone_extraction:"+zone.ZoneID)
+		} else {
+			evidence = append(evidence, "zone_extraction:"+zone.ZoneID+":"+zone.CommittedRoot)
+		}
+	}
+	if !input.BankFeesTokenfactoryDEXInFinancial {
+		failed = append(failed, "financial_zone_modules")
+	}
+	if !input.IdentityIsolatedActivation {
+		failed = append(failed, "identity_zone_isolated_activation")
+	}
+	if !input.ZoneRootsCommittedPerBlock {
+		failed = append(failed, "zone_roots_committed_per_block")
+	}
+	if err := validateHexHash("migration phase 3 zone commitment root", input.ZoneCommitmentRoot); err != nil {
+		failed = append(failed, "zone_commitment_root")
+	} else {
+		evidence = append(evidence, "zone_commitment_root:"+input.ZoneCommitmentRoot)
+	}
+	report := MigrationReadinessReport{
+		Phase:    MigrationPhase3ZoneExtraction,
+		Passed:   len(failed) == 0,
+		Failed:   normalizeStringSet(failed),
+		Evidence: normalizeStringSet(evidence),
+	}
+	report.ReportHash = ComputeMigrationReadinessReportHash(report)
+	return report
+}
+
 func (i MigrationPhase0Input) Normalize() MigrationPhase0Input {
 	i.ModuleBoundaryDocHash = normalizeLowerHex(i.ModuleBoundaryDocHash)
 	i.StateExportValidationHash = normalizeLowerHex(i.StateExportValidationHash)
@@ -257,6 +396,29 @@ func (i MigrationPhase1Input) Normalize() MigrationPhase1Input {
 	sort.SliceStable(i.ProofMetadata, func(left, right int) bool {
 		return string(i.ProofMetadata[left].RootType) < string(i.ProofMetadata[right].RootType)
 	})
+	return i
+}
+
+func (i MigrationPhase2Input) Normalize() MigrationPhase2Input {
+	i.MsgBusModuleHash = normalizeLowerHex(i.MsgBusModuleHash)
+	i.Encoding = i.Encoding.Normalize()
+	for idx := range i.Stores {
+		i.Stores[idx] = i.Stores[idx].Normalize()
+	}
+	sort.SliceStable(i.Stores, func(left, right int) bool {
+		return i.Stores[left].StoreName < i.Stores[right].StoreName
+	})
+	i.LocalExecution = i.LocalExecution.Normalize()
+	i.Safety = i.Safety.Normalize()
+	i.FirstClassObjectRoot = normalizeLowerHex(i.FirstClassObjectRoot)
+	return i
+}
+
+func (i MigrationPhase3Input) Normalize() MigrationPhase3Input {
+	i.FinancialZone = i.FinancialZone.Normalize()
+	i.IdentityZone = i.IdentityZone.Normalize()
+	i.ApplicationZone = i.ApplicationZone.Normalize()
+	i.ZoneCommitmentRoot = normalizeLowerHex(i.ZoneCommitmentRoot)
 	return i
 }
 
@@ -377,8 +539,123 @@ func (c ProofRootMetadataCheck) Validate() error {
 	return validateHexHash("migration proof metadata hash", check.MetadataHash)
 }
 
+func (c MsgBusStoreCheck) Normalize() MsgBusStoreCheck {
+	c.StoreName = strings.TrimSpace(c.StoreName)
+	c.RootHash = normalizeLowerHex(c.RootHash)
+	return c
+}
+
+func (c MsgBusStoreCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration msgbus store name", check.StoreName); err != nil {
+		return err
+	}
+	if !check.Committed {
+		return errors.New("migration msgbus store must be committed")
+	}
+	return validateHexHash("migration msgbus store root", check.RootHash)
+}
+
+func (c MsgBusEncodingCheck) Normalize() MsgBusEncodingCheck {
+	c.CodecHash = normalizeLowerHex(c.CodecHash)
+	c.MessageIDRoot = normalizeLowerHex(c.MessageIDRoot)
+	return c
+}
+
+func (c MsgBusEncodingCheck) Validate() error {
+	check := c.Normalize()
+	if !check.DeterministicIDs {
+		return errors.New("migration msgbus message ids must be deterministic")
+	}
+	if err := validateHexHash("migration msgbus codec hash", check.CodecHash); err != nil {
+		return err
+	}
+	return validateHexHash("migration msgbus message id root", check.MessageIDRoot)
+}
+
+func (c MsgBusExecutionCheck) Normalize() MsgBusExecutionCheck {
+	c.ExecutionRoot = normalizeLowerHex(c.ExecutionRoot)
+	return c
+}
+
+func (c MsgBusExecutionCheck) Validate() error {
+	check := c.Normalize()
+	if !check.Deterministic || !check.ExecutedLocally {
+		return errors.New("migration msgbus local async execution must be deterministic and local")
+	}
+	return validateHexHash("migration msgbus local execution root", check.ExecutionRoot)
+}
+
+func (c MsgBusSafetyCheck) Normalize() MsgBusSafetyCheck {
+	c.ExpiryRoot = normalizeLowerHex(c.ExpiryRoot)
+	c.BounceRoot = normalizeLowerHex(c.BounceRoot)
+	c.InclusionProofRoot = normalizeLowerHex(c.InclusionProofRoot)
+	c.ReceiptsProofRoot = normalizeLowerHex(c.ReceiptsProofRoot)
+	return c
+}
+
+func (c MsgBusSafetyCheck) Validate() error {
+	check := c.Normalize()
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"migration msgbus expiry root", check.ExpiryRoot},
+		{"migration msgbus bounce root", check.BounceRoot},
+		{"migration msgbus inclusion proof root", check.InclusionProofRoot},
+		{"migration msgbus receipts proof root", check.ReceiptsProofRoot},
+	} {
+		if err := validateHexHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c ZoneExtractionCheck) Normalize() ZoneExtractionCheck {
+	c.ZoneID = strings.TrimSpace(c.ZoneID)
+	c.KeeperHash = normalizeLowerHex(c.KeeperHash)
+	c.StatePrefixRoot = normalizeLowerHex(c.StatePrefixRoot)
+	c.FeePolicyHash = normalizeLowerHex(c.FeePolicyHash)
+	c.ExecutionSummaryHash = normalizeLowerHex(c.ExecutionSummaryHash)
+	c.CommittedRoot = normalizeLowerHex(c.CommittedRoot)
+	c.Modules = normalizeStringSet(c.Modules)
+	return c
+}
+
+func (c ZoneExtractionCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration extracted zone id", check.ZoneID); err != nil {
+		return err
+	}
+	if !check.Extracted {
+		return errors.New("migration zone must be extracted")
+	}
+	if len(check.Modules) == 0 {
+		return errors.New("migration extracted zone requires modules")
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"migration zone keeper hash", check.KeeperHash},
+		{"migration zone state prefix root", check.StatePrefixRoot},
+		{"migration zone fee policy hash", check.FeePolicyHash},
+		{"migration zone execution summary hash", check.ExecutionSummaryHash},
+		{"migration zone committed root", check.CommittedRoot},
+	} {
+		if err := validateHexHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r MigrationReadinessReport) Validate() error {
-	if r.Phase != MigrationPhase0BaselineHardening && r.Phase != MigrationPhase1CoreCommitments {
+	if r.Phase != MigrationPhase0BaselineHardening &&
+		r.Phase != MigrationPhase1CoreCommitments &&
+		r.Phase != MigrationPhase2MessageBus &&
+		r.Phase != MigrationPhase3ZoneExtraction {
 		return errors.New("migration readiness phase is unsupported")
 	}
 	if r.Passed && len(r.Failed) > 0 {
@@ -389,6 +666,26 @@ func (r MigrationReadinessReport) Validate() error {
 	}
 	if r.ReportHash != ComputeMigrationReadinessReportHash(r) {
 		return errors.New("migration readiness report hash mismatch")
+	}
+	return nil
+}
+
+func validateMsgBusStores(checks []MsgBusStoreCheck) error {
+	required := map[string]struct{}{
+		"inbox":   {},
+		"outbox":  {},
+		"receipt": {},
+	}
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		if _, found := required[check.StoreName]; found {
+			delete(required, check.StoreName)
+		}
+	}
+	if len(required) > 0 {
+		return fmt.Errorf("migration missing msgbus stores: %v", sortedMapKeys(required))
 	}
 	return nil
 }
@@ -488,6 +785,20 @@ func hashProofMetadata(checks []ProofRootMetadataCheck) string {
 		parts = append(parts, string(check.RootType), fmt.Sprintf("%020d", check.Height), check.RootHash, check.MetadataHash)
 	}
 	return hashStrings(parts...)
+}
+
+func hashMsgBusStores(checks []MsgBusStoreCheck) string {
+	parts := []string{"migration-msgbus-stores"}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(parts, check.StoreName, check.RootHash, fmt.Sprintf("%t", check.Committed))
+	}
+	return hashStrings(parts...)
+}
+
+func hashMsgBusSafety(check MsgBusSafetyCheck) string {
+	check = check.Normalize()
+	return hashStrings("migration-msgbus-safety", check.ExpiryRoot, check.BounceRoot, check.InclusionProofRoot, check.ReceiptsProofRoot)
 }
 
 func invariantKey(check ModuleInvariantCheck) string {

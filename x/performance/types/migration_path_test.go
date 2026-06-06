@@ -69,6 +69,50 @@ func TestMigrationPhase1ReadinessRequiresRootQueriesAndProofMetadata(t *testing.
 	require.Contains(t, report.Failed, "root_query_apis")
 }
 
+func TestMigrationPhase2ReadinessPassesMessageBus(t *testing.T) {
+	report := BuildMigrationPhase2Readiness(validMigrationPhase2Input())
+	require.True(t, report.Passed, report.Failed)
+	require.Empty(t, report.Failed)
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase2ReadinessFailsMissingStoreAndNondeterministicLocalExecution(t *testing.T) {
+	input := validMigrationPhase2Input()
+	input.Stores = input.Stores[:2]
+	input.LocalExecution.Deterministic = false
+	input.Safety.InclusionProofRoot = ""
+
+	report := BuildMigrationPhase2Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "expiry_bounce_inclusion_receipt_proofs")
+	require.Contains(t, report.Failed, "inbox_outbox_receipt_stores")
+	require.Contains(t, report.Failed, "local_zone_message_execution")
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase3ReadinessPassesZoneExtraction(t *testing.T) {
+	report := BuildMigrationPhase3Readiness(validMigrationPhase3Input())
+	require.True(t, report.Passed, report.Failed)
+	require.Empty(t, report.Failed)
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase3ReadinessFailsIncompleteExtractionAndUncommittedRoots(t *testing.T) {
+	input := validMigrationPhase3Input()
+	input.FinancialZone.Extracted = false
+	input.BankFeesTokenfactoryDEXInFinancial = false
+	input.IdentityIsolatedActivation = false
+	input.ZoneRootsCommittedPerBlock = false
+
+	report := BuildMigrationPhase3Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "financial_zone_modules")
+	require.Contains(t, report.Failed, "identity_zone_isolated_activation")
+	require.Contains(t, report.Failed, "zone_extraction:financial")
+	require.Contains(t, report.Failed, "zone_roots_committed_per_block")
+	require.NoError(t, report.Validate())
+}
+
 func validMigrationPhase0Input() MigrationPhase0Input {
 	appHash := hashStrings("single-chain-app-hash")
 	return MigrationPhase0Input{
@@ -124,6 +168,46 @@ func validMigrationPhase1Input() MigrationPhase1Input {
 	}
 }
 
+func validMigrationPhase2Input() MigrationPhase2Input {
+	return MigrationPhase2Input{
+		MsgBusModuleHash: hashStrings("x-msgbus"),
+		Encoding: MsgBusEncodingCheck{
+			CodecHash:        hashStrings("msgbus-codec"),
+			MessageIDRoot:    hashStrings("msgbus-message-ids"),
+			DeterministicIDs: true,
+		},
+		Stores: []MsgBusStoreCheck{
+			msgBusStore("inbox"),
+			msgBusStore("outbox"),
+			msgBusStore("receipt"),
+		},
+		LocalExecution: MsgBusExecutionCheck{
+			ExecutionRoot:   hashStrings("msgbus-local-execution"),
+			Deterministic:   true,
+			ExecutedLocally: true,
+		},
+		Safety: MsgBusSafetyCheck{
+			ExpiryRoot:         hashStrings("msgbus-expiry"),
+			BounceRoot:         hashStrings("msgbus-bounce"),
+			InclusionProofRoot: hashStrings("msgbus-inclusion-proofs"),
+			ReceiptsProofRoot:  hashStrings("msgbus-receipt-proofs"),
+		},
+		FirstClassObjectRoot: hashStrings("first-class-message-objects"),
+	}
+}
+
+func validMigrationPhase3Input() MigrationPhase3Input {
+	return MigrationPhase3Input{
+		FinancialZone:                      zoneExtraction("financial", []string{"bank", "fees", "tokenfactory", "dex"}),
+		IdentityZone:                       zoneExtraction("identity", []string{"identity"}),
+		ApplicationZone:                    zoneExtraction("application", []string{"scheduler", "workflow"}),
+		BankFeesTokenfactoryDEXInFinancial: true,
+		IdentityIsolatedActivation:         true,
+		ZoneRootsCommittedPerBlock:         true,
+		ZoneCommitmentRoot:                 hashStrings("zone-commitments-per-block"),
+	}
+}
+
 func genesisImport(module string) GenesisImportCheck {
 	root := hashStrings("genesis", module)
 	return GenesisImportCheck{ModuleName: module, Active: true, Deterministic: true, ExportHash: root, ImportHash: root}
@@ -150,4 +234,21 @@ func rootQueryAPI(name string, rootType ProofRootType) RootQueryAPICheck {
 
 func proofMetadata(rootType ProofRootType) ProofRootMetadataCheck {
 	return ProofRootMetadataCheck{RootType: rootType, Height: 1, RootHash: hashStrings("root", string(rootType)), MetadataHash: hashStrings("metadata", string(rootType))}
+}
+
+func msgBusStore(name string) MsgBusStoreCheck {
+	return MsgBusStoreCheck{StoreName: name, RootHash: hashStrings("msgbus-store", name), Committed: true}
+}
+
+func zoneExtraction(zoneID string, modules []string) ZoneExtractionCheck {
+	return ZoneExtractionCheck{
+		ZoneID:               zoneID,
+		Extracted:            true,
+		KeeperHash:           hashStrings("zone-keeper", zoneID),
+		StatePrefixRoot:      hashStrings("zone-prefix", zoneID),
+		FeePolicyHash:        hashStrings("zone-fee-policy", zoneID),
+		ExecutionSummaryHash: hashStrings("zone-summary", zoneID),
+		CommittedRoot:        hashStrings("zone-root", zoneID),
+		Modules:              modules,
+	}
 }
