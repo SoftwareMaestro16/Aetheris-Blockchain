@@ -54,6 +54,15 @@ const (
 	ValidatorRoleEvidenceReviewer ValidatorRole = "evidence_reviewer"
 )
 
+type ValidatorCapacity struct {
+	MaxTaskGroups          uint32
+	SupportedWorkloads     []WorkloadType
+	ZoneSupport            []string
+	HardwareClassOptional  string
+	NetworkClassOptional   string
+	AvailabilityCommitment uint32
+}
+
 type EpochPhaseDurations struct {
 	DelegationSeconds       uint64
 	ElectionSeconds         uint64
@@ -105,6 +114,7 @@ type WorkloadTask struct {
 	WorkloadClass      string
 	RequiredValidators uint32
 	Roles              []ValidatorRole
+	ExcludedValidators []string
 }
 
 type WorkloadType string
@@ -158,6 +168,16 @@ type TaskGroupSet struct {
 	Seed    string
 	Groups  []TaskGroup
 	Root    string
+}
+
+type CapacityFaultEvidence struct {
+	ValidatorID       string
+	WorkloadID        string
+	WorkloadType      WorkloadType
+	AssignmentEpoch   uint64
+	EvidenceHeight    int64
+	UsedForAssignment bool
+	Finalized         bool
 }
 
 type DelegationIntent struct {
@@ -1039,13 +1059,16 @@ func BuildTaskAssignments(params Params, epoch EpochRecord, validators []ScoredV
 	})
 
 	assignments := make([]TaskAssignment, 0)
+	assignedTaskKeys := make(map[string]map[string]struct{})
 	for _, task := range orderedTasks {
+		key := taskKey(task)
 		for _, role := range normalizedRoles(task.Roles, DefaultTaskRoles()) {
-			eligible := validatorsForRole(validators, role)
+			eligible := validatorsForTaskRole(validators, task, role, assignedTaskKeys, key)
 			if uint32(len(eligible)) < task.RequiredValidators {
 				return TaskAssignmentSet{}, fmt.Errorf("insufficient validators for task %s role %s", task.TaskID, role)
 			}
 			selected := selectTaskValidatorIDs(epoch.Seed, task, role, eligible, task.RequiredValidators)
+			markTaskGroupAssignments(assignedTaskKeys, key, selected)
 			assignment := TaskAssignment{
 				TaskID:        task.TaskID,
 				WorkloadID:    task.WorkloadID,
@@ -1163,7 +1186,103 @@ func (t WorkloadTask) Validate(params Params) error {
 	if t.RequiredValidators > params.MaxTaskGroupValidators {
 		return fmt.Errorf("task validators must be <= %d", params.MaxTaskGroupValidators)
 	}
-	return validateValidatorRoles(t.Roles)
+	if err := validateValidatorRoles(t.Roles); err != nil {
+		return err
+	}
+	return validateExcludedValidators(t.ExcludedValidators)
+}
+
+func (c ValidatorCapacity) Validate() error {
+	if c.MaxTaskGroups == 0 && len(c.SupportedWorkloads) == 0 && len(c.ZoneSupport) == 0 && c.HardwareClassOptional == "" && c.NetworkClassOptional == "" && c.AvailabilityCommitment == 0 {
+		return nil
+	}
+	if c.MaxTaskGroups == 0 {
+		return errors.New("validator capacity max task groups must be positive when capacity is declared")
+	}
+	if c.AvailabilityCommitment > BasisPoints {
+		return fmt.Errorf("validator availability commitment must be <= %d bps", BasisPoints)
+	}
+	if err := validateWorkloadTypes(c.SupportedWorkloads); err != nil {
+		return err
+	}
+	if err := validateZoneSupport(c.ZoneSupport); err != nil {
+		return err
+	}
+	if c.HardwareClassOptional != "" {
+		if err := validatePosToken("hardware class", c.HardwareClassOptional); err != nil {
+			return err
+		}
+	}
+	if c.NetworkClassOptional != "" {
+		if err := validatePosToken("network class", c.NetworkClassOptional); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c ValidatorCapacity) SupportsAssignment(task WorkloadTask, assignedTaskKeys map[string]map[string]struct{}, validatorID string, taskKey string) bool {
+	if !c.supportsWorkload(task.WorkloadType) || !c.supportsZone(task.ZoneID) {
+		return false
+	}
+	if c.MaxTaskGroups == 0 {
+		return true
+	}
+	current := assignedTaskKeys[validatorID]
+	if _, alreadyAssignedToTask := current[taskKey]; alreadyAssignedToTask {
+		return true
+	}
+	return uint32(len(current)) < c.MaxTaskGroups
+}
+
+func (c ValidatorCapacity) supportsWorkload(workloadType WorkloadType) bool {
+	if len(c.SupportedWorkloads) == 0 {
+		return true
+	}
+	for _, supported := range c.SupportedWorkloads {
+		if supported == workloadType {
+			return true
+		}
+	}
+	return false
+}
+
+func (c ValidatorCapacity) supportsZone(zoneID string) bool {
+	if len(c.ZoneSupport) == 0 {
+		return true
+	}
+	for _, zone := range c.ZoneSupport {
+		if zone == zoneID {
+			return true
+		}
+	}
+	return false
+}
+
+func (e CapacityFaultEvidence) Validate() error {
+	if err := validatePosToken("capacity evidence validator id", e.ValidatorID); err != nil {
+		return err
+	}
+	if err := validatePosToken("capacity evidence workload id", e.WorkloadID); err != nil {
+		return err
+	}
+	if err := validateWorkloadType(e.WorkloadType); err != nil {
+		return err
+	}
+	if e.AssignmentEpoch == 0 {
+		return errors.New("capacity evidence assignment epoch is required")
+	}
+	if e.EvidenceHeight < 0 {
+		return errors.New("capacity evidence height cannot be negative")
+	}
+	return nil
+}
+
+func IsSlashableCapacityFault(evidence CapacityFaultEvidence) (bool, error) {
+	if err := evidence.Validate(); err != nil {
+		return false, err
+	}
+	return evidence.Finalized && evidence.UsedForAssignment, nil
 }
 
 func (a TaskAssignment) Validate() error {
@@ -1754,6 +1873,15 @@ func normalizeWorkloadTask(params Params, task WorkloadTask) WorkloadTask {
 	return out
 }
 
+func cloneValidatorCapacity(capacity ValidatorCapacity) ValidatorCapacity {
+	out := capacity
+	out.SupportedWorkloads = make([]WorkloadType, len(capacity.SupportedWorkloads))
+	copy(out.SupportedWorkloads, capacity.SupportedWorkloads)
+	out.ZoneSupport = make([]string, len(capacity.ZoneSupport))
+	copy(out.ZoneSupport, capacity.ZoneSupport)
+	return out
+}
+
 func validateWorkloadType(workloadType WorkloadType) error {
 	switch workloadType {
 	case WorkloadTypeGlobalConsensus,
@@ -1769,14 +1897,67 @@ func validateWorkloadType(workloadType WorkloadType) error {
 	}
 }
 
-func validatorsForRole(validators []ScoredValidator, role ValidatorRole) []ScoredValidator {
+func validateWorkloadTypes(workloadTypes []WorkloadType) error {
+	seen := make(map[WorkloadType]struct{}, len(workloadTypes))
+	for _, workloadType := range workloadTypes {
+		if err := validateWorkloadType(workloadType); err != nil {
+			return err
+		}
+		if _, found := seen[workloadType]; found {
+			return fmt.Errorf("duplicate supported workload %q", workloadType)
+		}
+		seen[workloadType] = struct{}{}
+	}
+	return nil
+}
+
+func validateZoneSupport(zones []string) error {
+	seen := make(map[string]struct{}, len(zones))
+	for _, zone := range zones {
+		if err := validatePosToken("zone support", zone); err != nil {
+			return err
+		}
+		if _, found := seen[zone]; found {
+			return fmt.Errorf("duplicate zone support %q", zone)
+		}
+		seen[zone] = struct{}{}
+	}
+	return nil
+}
+
+func validateExcludedValidators(validatorIDs []string) error {
+	seen := make(map[string]struct{}, len(validatorIDs))
+	for _, validatorID := range validatorIDs {
+		if err := validatePosToken("excluded validator id", validatorID); err != nil {
+			return err
+		}
+		if _, found := seen[validatorID]; found {
+			return fmt.Errorf("duplicate excluded validator %q", validatorID)
+		}
+		seen[validatorID] = struct{}{}
+	}
+	return nil
+}
+
+func validatorsForTaskRole(validators []ScoredValidator, task WorkloadTask, role ValidatorRole, assignedTaskKeys map[string]map[string]struct{}, taskKey string) []ScoredValidator {
 	out := make([]ScoredValidator, 0, len(validators))
 	for _, validator := range validators {
-		if ValidatorSupportsRole(validator.Candidate, role) {
+		if ValidatorSupportsRole(validator.Candidate, role) &&
+			!isExcludedValidator(validator.ValidatorID, task.ExcludedValidators) &&
+			validator.Capacity.SupportsAssignment(task, assignedTaskKeys, validator.ValidatorID, taskKey) {
 			out = append(out, validator)
 		}
 	}
 	return out
+}
+
+func isExcludedValidator(validatorID string, excluded []string) bool {
+	for _, excludedID := range excluded {
+		if excludedID == validatorID {
+			return true
+		}
+	}
+	return false
 }
 
 func selectTaskValidatorIDs(seed string, task WorkloadTask, role ValidatorRole, validators []ScoredValidator, required uint32) []string {
@@ -1823,6 +2004,15 @@ func selectTaskValidatorIDs(seed string, task WorkloadTask, role ValidatorRole, 
 
 func taskKey(task WorkloadTask) string {
 	return strings.Join([]string{task.TaskID, task.WorkloadID, string(task.WorkloadType), task.ZoneID, task.ShardID, task.WorkloadClass}, "|")
+}
+
+func markTaskGroupAssignments(assignedTaskKeys map[string]map[string]struct{}, taskKey string, validatorIDs []string) {
+	for _, validatorID := range validatorIDs {
+		if _, found := assignedTaskKeys[validatorID]; !found {
+			assignedTaskKeys[validatorID] = make(map[string]struct{})
+		}
+		assignedTaskKeys[validatorID][taskKey] = struct{}{}
+	}
 }
 
 func taskGroupMembers(assignments []TaskAssignment) []string {
@@ -1919,7 +2109,17 @@ func validateValidatorIDSet(fieldName string, values []string, expectedMembers [
 	if len(values) != len(expectedMembers) {
 		return fmt.Errorf("%s ids must include every task group member", fieldName)
 	}
-	return validateValidatorIDSubset(fieldName, values, expectedMembers)
+	if err := validateValidatorIDSubset(fieldName, values, expectedMembers); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, found := seen[value]; found {
+			return fmt.Errorf("duplicate %s id %q", fieldName, value)
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
 }
 
 func validateValidatorIDSubset(fieldName string, values []string, members []string) error {

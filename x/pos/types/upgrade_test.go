@@ -519,6 +519,118 @@ func TestTaskGroupsValidateWorkloadTypesAndHeightWindow(t *testing.T) {
 	require.ErrorContains(t, err, "expiry height")
 }
 
+func TestTaskAssignmentsRespectValidatorCapacityAndExclusions(t *testing.T) {
+	params := DefaultParams()
+	params.MinStakeNaet = sdkmath.NewInt(100)
+	params.MinTaskGroupValidators = 1
+	params.MaxTaskGroupValidators = 2
+	candidates := makeCandidates(3, 1_000)
+	for i := range candidates {
+		candidates[i].Roles = []ValidatorRole{ValidatorRoleVerifier}
+		candidates[i].Capacity = ValidatorCapacity{
+			MaxTaskGroups:          1,
+			SupportedWorkloads:     []WorkloadType{WorkloadTypeProofVerification},
+			ZoneSupport:            []string{"ZONE-A"},
+			HardwareClassOptional:  "hsm-small",
+			NetworkClassOptional:   "wan-low-latency",
+			AvailabilityCommitment: 9_800,
+		}
+	}
+	validators := scoredCandidates(t, params, candidates)
+	epoch, err := NewEpochRecord(params, 6, 60, 80, EpochPhaseAssignment, "", validators)
+	require.NoError(t, err)
+
+	assignments, err := BuildTaskAssignments(params, epoch, validators, []WorkloadTask{
+		{
+			TaskID:             "proof-a",
+			WorkloadID:         "proof-a",
+			WorkloadType:       WorkloadTypeProofVerification,
+			ZoneID:             "ZONE-A",
+			ShardID:            "proof",
+			WorkloadClass:      "proof",
+			RequiredValidators: 1,
+			Roles:              []ValidatorRole{ValidatorRoleVerifier},
+			ExcludedValidators: []string{"val-000"},
+		},
+		{
+			TaskID:             "proof-b",
+			WorkloadID:         "proof-b",
+			WorkloadType:       WorkloadTypeProofVerification,
+			ZoneID:             "ZONE-A",
+			ShardID:            "proof",
+			WorkloadClass:      "proof",
+			RequiredValidators: 1,
+			Roles:              []ValidatorRole{ValidatorRoleVerifier},
+			ExcludedValidators: []string{"val-000"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, assignments.Assignments, 2)
+	for _, assignment := range assignments.Assignments {
+		require.NotContains(t, assignment.Validators, "val-000")
+	}
+	require.NotEqual(t, assignments.Assignments[0].Validators[0], assignments.Assignments[1].Validators[0])
+
+	_, err = BuildTaskAssignments(params, epoch, validators, []WorkloadTask{{
+		TaskID:             "unsupported",
+		WorkloadID:         "unsupported",
+		WorkloadType:       WorkloadTypeDataAvailability,
+		ZoneID:             "ZONE-A",
+		ShardID:            "da",
+		WorkloadClass:      "da",
+		RequiredValidators: 1,
+		Roles:              []ValidatorRole{ValidatorRoleVerifier},
+	}})
+	require.ErrorContains(t, err, "insufficient validators")
+
+	_, err = BuildTaskAssignments(params, epoch, validators, []WorkloadTask{{
+		TaskID:             "unsupported-zone",
+		WorkloadID:         "unsupported-zone",
+		WorkloadType:       WorkloadTypeProofVerification,
+		ZoneID:             "ZONE-B",
+		ShardID:            "proof",
+		WorkloadClass:      "proof",
+		RequiredValidators: 1,
+		Roles:              []ValidatorRole{ValidatorRoleVerifier},
+	}})
+	require.ErrorContains(t, err, "insufficient validators")
+}
+
+func TestValidatorCapacityDeclarationValidationAndSlashableFault(t *testing.T) {
+	params := DefaultParams()
+	params.MinStakeNaet = sdkmath.NewInt(100)
+	candidate := candidate("val-capacity", 1_000, 0)
+	candidate.Capacity = ValidatorCapacity{SupportedWorkloads: []WorkloadType{WorkloadTypeProofVerification}}
+	require.ErrorContains(t, candidate.Validate(params), "max task groups")
+
+	candidate.Capacity = ValidatorCapacity{MaxTaskGroups: 1, AvailabilityCommitment: BasisPoints + 1}
+	require.ErrorContains(t, candidate.Validate(params), "availability commitment")
+
+	slashable, err := IsSlashableCapacityFault(CapacityFaultEvidence{
+		ValidatorID:       "val-capacity",
+		WorkloadID:        "proof-a",
+		WorkloadType:      WorkloadTypeProofVerification,
+		AssignmentEpoch:   7,
+		EvidenceHeight:    70,
+		UsedForAssignment: true,
+		Finalized:         true,
+	})
+	require.NoError(t, err)
+	require.True(t, slashable)
+
+	slashable, err = IsSlashableCapacityFault(CapacityFaultEvidence{
+		ValidatorID:       "val-capacity",
+		WorkloadID:        "proof-a",
+		WorkloadType:      WorkloadTypeProofVerification,
+		AssignmentEpoch:   7,
+		EvidenceHeight:    70,
+		UsedForAssignment: false,
+		Finalized:         true,
+	})
+	require.NoError(t, err)
+	require.False(t, slashable)
+}
+
 func TestDelegationIntentsRespectActivationDelayAndRiskProfile(t *testing.T) {
 	params := DefaultParams()
 	params.DelegationActivationEpochs = 2

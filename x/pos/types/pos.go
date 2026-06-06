@@ -98,6 +98,7 @@ type Candidate struct {
 	Jailed              bool
 	Tombstoned          bool
 	Roles               []ValidatorRole
+	Capacity            ValidatorCapacity
 	Nominations         []Nomination
 }
 
@@ -389,6 +390,9 @@ func (c Candidate) Validate(params Params) error {
 		return fmt.Errorf("validator commission exceeds cap %d bps", params.MaxCommissionBps)
 	}
 	if err := validateValidatorRoles(c.Roles); err != nil {
+		return err
+	}
+	if err := c.Capacity.Validate(); err != nil {
 		return err
 	}
 	if err := validateNominations(c.Nominations); err != nil {
@@ -775,6 +779,7 @@ func cloneCandidate(candidate Candidate) Candidate {
 	out.ValidatorID = strings.TrimSpace(candidate.ValidatorID)
 	out.Roles = make([]ValidatorRole, len(candidate.Roles))
 	copy(out.Roles, candidate.Roles)
+	out.Capacity = cloneValidatorCapacity(candidate.Capacity)
 	out.Nominations = make([]Nomination, len(candidate.Nominations))
 	copy(out.Nominations, candidate.Nominations)
 	return out
