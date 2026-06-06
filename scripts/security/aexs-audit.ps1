@@ -2697,6 +2697,144 @@ function Get-AexsDexExploitOverrides {
   return $overrides
 }
 
+function Get-AexsLoadSystemExploitOverrides {
+  $overrides = @{
+    "LOADEXP-01" = [ordered]@{
+      path            = "burst spam transactions to manipulate LOAD_SCORE beyond EMA smoothing and MAX_DELTA caps"
+      expected_state  = "LOAD_SCORE remains bounded in [0,1], applies EMA and MAX_DELTA, and cannot jump based on local spam bursts"
+      affected        = @("x/load", "x/routing", "mempool", "x/sharding/sim")
+      severity        = "High"
+      fix             = "add spam-burst load simulations with EMA, MAX_DELTA, deterministic replay, and no local-mempool dependency checks"
+    }
+    "LOADEXP-02" = [ordered]@{
+      path            = "inflate local mempool size artificially and attempt to alter consensus load state or shard activation"
+      expected_state  = "node-local mempool inflation cannot directly mutate consensus LOAD_SCORE or deterministic shard activation state"
+      affected        = @("x/load", "mempool", "x/sharding/sim")
+      severity        = "High"
+      fix             = "add local-vs-consensus mempool metric tests and reject node-local-only metrics from consensus state"
+    }
+    "LOADEXP-03" = [ordered]@{
+      path            = "saturate blocks with high gas usage to force unsafe load escalation or unrelated-zone degradation"
+      expected_state  = "block utilization contributes through normalized deterministic metrics and cannot bypass spike caps or unrelated zone isolation"
+      affected        = @("x/load", "x/fees", "x/sharding/sim", "app")
+      severity        = "High"
+      fix             = "add block saturation scenarios for normalized gas utilization, zone isolation, and fee/degradation bounds"
+    }
+    "LOADEXP-04" = [ordered]@{
+      path            = "amplify execution delay with slow transactions or VM-like workloads to poison execution_time_score"
+      expected_state  = "execution delay metrics are bounded, deterministic, and cannot include node-local wall-clock or hardware-specific timings"
+      affected        = @("x/load", "x/vm", "x/execution", "app")
+      severity        = "Critical"
+      fix             = "add deterministic execution-time metric tests that reject wall-clock and hardware-dependent inputs"
+    }
+    "LOADEXP-05" = [ordered]@{
+      path            = "slowly poison EMA windows with sustained near-threshold load to activate shards or fees at attacker-chosen times"
+      expected_state  = "EMA, window size, thresholds, and cooldowns remain deterministic and resistant to slow-poison manipulation"
+      affected        = @("x/load", "x/sharding/sim", "x/fees")
+      severity        = "High"
+      fix             = "add EMA slow-poison simulations across low/medium/high thresholds, cooldowns, and export/import replay"
+    }
+    "LOADEXP-06" = [ordered]@{
+      path            = "oscillate load around thresholds to repeatedly activate/deactivate shards and destabilize fees"
+      expected_state  = "MAX_DELTA, EMA, threshold hysteresis, and cooldowns prevent unsafe oscillation and deterministic state churn"
+      affected        = @("x/load", "x/sharding/sim", "x/fees")
+      severity        = "High"
+      fix             = "add oscillating load tests for spike cap, cooldown, shard activation/deactivation, and fee stability"
+    }
+    "LOADEXP-07" = [ordered]@{
+      path            = "target specific routing keys to overload a shard while manipulating load metrics and active shard counts"
+      expected_state  = "shard assignment and activation remain deterministic, data-available, and resistant to overload targeting"
+      affected        = @("x/load", "x/routing", "x/sharding/sim")
+      severity        = "Critical"
+      fix             = "add shard overload targeting simulations with routing keys, active shard counts, data availability, and validator reassignment"
+    }
+    "LOADEXP-08" = [ordered]@{
+      path            = "overpay priority fees to game load priority, degrade lower-priority users, or force route changes"
+      expected_state  = "fee class is bounded and cannot manipulate routing, load score, or starvation beyond deterministic priority rules"
+      affected        = @("x/load", "x/fees", "x/routing", "x/reputation")
+      severity        = "High"
+      fix             = "add priority fee gaming tests for bounded fee class, starvation prevention, and route invariance"
+    }
+    "LOADEXP-09" = [ordered]@{
+      path            = "destabilize adaptive fees through alternating congestion, fee overpayment, and load threshold manipulation"
+      expected_state  = "dynamic fees remain governance-bounded, deterministic, and resistant to oscillation or attacker-driven instability"
+      affected        = @("x/load", "x/fees", "x/gov")
+      severity        = "High"
+      fix             = "add adaptive fee destabilization tests for governance bounds, load thresholds, hysteresis, and deterministic replay"
+    }
+  }
+  return $overrides
+}
+
+function Get-AexsRoutingEngineExploitOverrides {
+  $overrides = @{
+    "ROUTEEXP-01" = [ordered]@{
+      path            = "bias routing decisions with crafted message types, actor keys, routing hints, or fee/reputation classes"
+      expected_state  = "routing remains a pure deterministic classifier over stable message strings and bounded protocol inputs"
+      affected        = @("x/routing", "x/load", "x/fees", "x/reputation")
+      severity        = "Critical"
+      fix             = "add routing bias tests for msg classification, primary actor extraction, bounded fee/reputation classes, and ignored local hints"
+    }
+    "ROUTEEXP-02" = [ordered]@{
+      path            = "target one execution zone with transactions that manipulate class selection or locality to create zone congestion"
+      expected_state  = "zone selection follows deterministic class/locality rules and congestion is isolated without affecting unrelated zones"
+      affected        = @("x/routing", "x/zones", "x/load", "x/sharding/sim")
+      severity        = "High"
+      fix             = "add zone congestion tests for class mapping, locality extraction, load isolation, and unrelated-zone progress"
+    }
+    "ROUTEEXP-03" = [ordered]@{
+      path            = "starve compute shards through skewed routing keys, priority ordering, active shard count changes, or epoch boundaries"
+      expected_state  = "valid shard work has bounded progress and shard assignment remains deterministic across routing epochs"
+      affected        = @("x/routing", "x/sharding/sim", "x/scheduler")
+      severity        = "High"
+      fix             = "add compute shard starvation simulations with skewed keys, epoch changes, and priority queue fairness checks"
+    }
+    "ROUTEEXP-04" = [ordered]@{
+      path            = "monopolize a hot zone by concentrating traffic, fees, and actor locality to suppress other zones"
+      expected_state  = "hot-zone load cannot monopolize global execution capacity or suppress unrelated zone routing progress"
+      affected        = @("x/routing", "x/load", "x/zones", "x/sharding/sim")
+      severity        = "High"
+      fix             = "add hot-zone monopolization tests for zone-level quotas, shard activation, and unrelated-zone progress"
+    }
+    "ROUTEEXP-05" = [ordered]@{
+      path            = "predict deterministic routes and choose actor keys to target desired shards or validators for MEV or overload"
+      expected_state  = "deterministic route predictability cannot violate fairness, safety, shard bounds, or validator assignment rules"
+      affected        = @("x/routing", "x/sharding/sim", "x/market")
+      severity        = "Medium"
+      fix             = "add route prediction abuse simulations with actor key grinding, shard distribution checks, and validator reassignment bounds"
+    }
+    "ROUTEEXP-06" = [ordered]@{
+      path            = "create cross-zone routing loops through async messages, bounce/refund paths, or malformed destination hints"
+      expected_state  = "routing loop prevention and message depth limits reject cyclic routes before queue or state mutation"
+      affected        = @("x/routing", "x/mesh", "x/queue", "x/messaging")
+      severity        = "Critical"
+      fix             = "add cross-zone routing loop tests for async messages, bounce/refund, route depth, and replay markers"
+    }
+    "ROUTEEXP-07" = [ordered]@{
+      path            = "cause route desync between nodes with map insertion order, local latency, local mempool order, or wall-clock inputs"
+      expected_state  = "same transaction and state produce the same route on every node independent of local ordering, latency, or wall-clock"
+      affected        = @("x/routing", "x/load", "app", "mempool")
+      severity        = "Critical"
+      fix             = "add route determinism tests across map order, local mempool order, replay, restart, and platform variation"
+    }
+    "ROUTEEXP-08" = [ordered]@{
+      path            = "misclassify transactions with ambiguous message type strings, malformed payloads, spoofed domains, or contract/locality hints"
+      expected_state  = "unknown or ambiguous transaction class rejects safely and valid class selection is stable across nodes"
+      affected        = @("x/routing", "x/identity", "x/vm", "x/execution")
+      severity        = "High"
+      fix             = "add transaction classification tests for stable type strings, malformed payloads, domain keys, contract keys, and unknown classes"
+    }
+    "ROUTEEXP-09" = [ordered]@{
+      path            = "use overpaid fees, non-native fees, or fee-class overflow to manipulate route destination or priority beyond caps"
+      expected_state  = "fee-based routing signals are bounded, naet-only for protocol fees, and cannot override deterministic zone/shard assignment"
+      affected        = @("x/routing", "x/fees", "x/reputation")
+      severity        = "High"
+      fix             = "add fee-based routing gaming tests for overpayment caps, non-naet rejection, fee-class overflow, and route invariance"
+    }
+  }
+  return $overrides
+}
+
 function Get-AexsExploitRecordsForSection {
   param(
     [string]$Text,
@@ -3121,6 +3259,32 @@ $requiredDexExploitTerms = @(
   "Attempt rounding exploit."
 )
 
+$requiredLoadSystemExploitTerms = @(
+  "Load System Exploits",
+  'Attempt `LOAD_SCORE` manipulation through spam bursts.',
+  "Attempt artificial mempool inflation.",
+  "Attempt block saturation.",
+  "Attempt execution delay amplification.",
+  "Attempt EMA slow-poison attack.",
+  "Attempt load spike oscillation.",
+  "Attempt shard overload targeting through load manipulation.",
+  "Attempt priority fee gaming.",
+  "Attempt adaptive fee destabilization."
+)
+
+$requiredRoutingEngineExploitTerms = @(
+  "Routing Engine Exploits",
+  "Attempt routing bias exploitation.",
+  "Attempt zone congestion targeting.",
+  "Attempt compute shard starvation.",
+  "Attempt hot-zone monopolization.",
+  "Attempt deterministic route prediction abuse.",
+  "Attempt cross-zone routing loop.",
+  "Attempt routing desync between nodes.",
+  "Attempt transaction misclassification.",
+  "Attempt fee-based routing gaming."
+)
+
 $sourceFailures = @()
 foreach ($term in $requiredSourceTerms) {
   if (-not (Test-AexsTextAny -Text $taskText -Terms @($term)) -and -not (Test-AexsTextAny -Text $pipelineText -Terms @($term))) {
@@ -3175,6 +3339,12 @@ if ([string]::IsNullOrWhiteSpace($exploitCatalogSection)) {
   }
   foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredDexExploitTerms)) {
     $sourceFailures += "missing DEX exploit catalog term: $term"
+  }
+  foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredLoadSystemExploitTerms)) {
+    $sourceFailures += "missing load system exploit catalog term: $term"
+  }
+  foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredRoutingEngineExploitTerms)) {
+    $sourceFailures += "missing routing engine exploit catalog term: $term"
   }
 }
 
@@ -3289,7 +3459,21 @@ foreach ($record in $dexExploitRecords) {
   $record["invalid_reasons"] = $invalidReasons
 }
 $invalidDexExploitRecords = @($dexExploitRecords | Where-Object { -not $_["valid"] })
-$exploitRecords = @($coreExploitRecords + $slashingExploitRecords + $txAuthBankExploitRecords + $tokenEconomyExploitRecords + $dexExploitRecords)
+$loadSystemExploitRecords = @(Get-AexsExploitRecordsForSection -Text $taskText -CampaignId $campaignId -SectionNumber 6 -SectionTitle "Load System Exploits" -IdPrefix "LOADEXP" -SeedNamespace "load-system-exploit" -Overrides (Get-AexsLoadSystemExploitOverrides) -DefaultAffectedModules @("x/load", "x/routing", "x/sharding/sim") -DefaultSeverity "High")
+foreach ($record in $loadSystemExploitRecords) {
+  $invalidReasons = @(Test-AexsExploitRecord -Record $record)
+  $record["valid"] = $invalidReasons.Count -eq 0
+  $record["invalid_reasons"] = $invalidReasons
+}
+$invalidLoadSystemExploitRecords = @($loadSystemExploitRecords | Where-Object { -not $_["valid"] })
+$routingEngineExploitRecords = @(Get-AexsExploitRecordsForSection -Text $taskText -CampaignId $campaignId -SectionNumber 7 -SectionTitle "Routing Engine Exploits" -IdPrefix "ROUTEEXP" -SeedNamespace "routing-engine-exploit" -Overrides (Get-AexsRoutingEngineExploitOverrides) -DefaultAffectedModules @("x/routing", "x/load", "x/sharding/sim") -DefaultSeverity "High")
+foreach ($record in $routingEngineExploitRecords) {
+  $invalidReasons = @(Test-AexsExploitRecord -Record $record)
+  $record["valid"] = $invalidReasons.Count -eq 0
+  $record["invalid_reasons"] = $invalidReasons
+}
+$invalidRoutingEngineExploitRecords = @($routingEngineExploitRecords | Where-Object { -not $_["valid"] })
+$exploitRecords = @($coreExploitRecords + $slashingExploitRecords + $txAuthBankExploitRecords + $tokenEconomyExploitRecords + $dexExploitRecords + $loadSystemExploitRecords + $routingEngineExploitRecords)
 $invalidExploitRecords = @($exploitRecords | Where-Object { -not $_["valid"] })
 $mandatoryInvariantPassRate = 0
 $auditPassed = $false
@@ -3881,6 +4065,14 @@ $summary = [ordered]@{
   invalid_dex_exploit_count           = $invalidDexExploitRecords.Count
   dex_exploit_ids                     = @($dexExploitRecords | ForEach-Object { $_["exploit_id"] })
   invalid_dex_exploit_records         = @($invalidDexExploitRecords | ForEach-Object { $_["exploit_id"] })
+  load_system_exploit_count           = $loadSystemExploitRecords.Count
+  invalid_load_system_exploit_count   = $invalidLoadSystemExploitRecords.Count
+  load_system_exploit_ids             = @($loadSystemExploitRecords | ForEach-Object { $_["exploit_id"] })
+  invalid_load_system_exploit_records = @($invalidLoadSystemExploitRecords | ForEach-Object { $_["exploit_id"] })
+  routing_engine_exploit_count        = $routingEngineExploitRecords.Count
+  invalid_routing_engine_exploit_count = $invalidRoutingEngineExploitRecords.Count
+  routing_engine_exploit_ids          = @($routingEngineExploitRecords | ForEach-Object { $_["exploit_id"] })
+  invalid_routing_engine_exploit_records = @($invalidRoutingEngineExploitRecords | ForEach-Object { $_["exploit_id"] })
   atomic_task_count                   = $atomicTasks.Count
   invalid_atomic_task_count           = $invalidAtomicTasks.Count
   invalid_atomic_tasks                = @($invalidAtomicTasks | ForEach-Object { $_["task_id"] })
@@ -4046,6 +4238,10 @@ $report += "- token/economy exploit records: $($tokenEconomyExploitRecords.Count
 $report += "- invalid token/economy exploit records: $($invalidTokenEconomyExploitRecords.Count)"
 $report += "- DEX exploit records: $($dexExploitRecords.Count)"
 $report += "- invalid DEX exploit records: $($invalidDexExploitRecords.Count)"
+$report += "- load system exploit records: $($loadSystemExploitRecords.Count)"
+$report += "- invalid load system exploit records: $($invalidLoadSystemExploitRecords.Count)"
+$report += "- routing engine exploit records: $($routingEngineExploitRecords.Count)"
+$report += "- invalid routing engine exploit records: $($invalidRoutingEngineExploitRecords.Count)"
 $report += ""
 $report += "## Gate Decision"
 $report += ""
@@ -4065,6 +4261,8 @@ $report += "- invalid slashing bypass exploit records: $(@($invalidSlashingExplo
 $report += "- invalid transaction/auth/bank exploit records: $(@($invalidTxAuthBankExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 $report += "- invalid token/economy exploit records: $(@($invalidTokenEconomyExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 $report += "- invalid DEX exploit records: $(@($invalidDexExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+$report += "- invalid load system exploit records: $(@($invalidLoadSystemExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+$report += "- invalid routing engine exploit records: $(@($invalidRoutingEngineExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 $report += ""
 $report += "## Module Matrix"
 $report += ""
@@ -4145,6 +4343,18 @@ if ($dexExploitRecords.Count -lt 10) {
 }
 if ($invalidDexExploitRecords.Count -gt 0) {
   throw "AEXS DEX exploit catalog validation failed for record(s): $(@($invalidDexExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+}
+if ($loadSystemExploitRecords.Count -lt 9) {
+  throw "AEXS load system exploit catalog validation failed: fewer than required load system exploit records"
+}
+if ($invalidLoadSystemExploitRecords.Count -gt 0) {
+  throw "AEXS load system exploit catalog validation failed for record(s): $(@($invalidLoadSystemExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+}
+if ($routingEngineExploitRecords.Count -lt 9) {
+  throw "AEXS routing engine exploit catalog validation failed: fewer than required routing engine exploit records"
+}
+if ($invalidRoutingEngineExploitRecords.Count -gt 0) {
+  throw "AEXS routing engine exploit catalog validation failed for record(s): $(@($invalidRoutingEngineExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 }
 if ($invalidExploitRecords.Count -gt 0) {
   throw "AEXS exploit catalog validation failed for record(s): $(@($invalidExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"

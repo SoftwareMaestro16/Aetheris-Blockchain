@@ -71,7 +71,11 @@ try {
   Assert-True ($result.invalid_token_economy_exploit_count -eq 0) "AEXS must not generate invalid token/economy exploit records"
   Assert-True ($result.dex_exploit_count -ge 10) "AEXS must record DEX exploit catalog entries"
   Assert-True ($result.invalid_dex_exploit_count -eq 0) "AEXS must not generate invalid DEX exploit records"
-  Assert-True ($result.exploit_count -ge 51) "AEXS must record all current exploit catalog entries"
+  Assert-True ($result.load_system_exploit_count -ge 9) "AEXS must record load system exploit catalog entries"
+  Assert-True ($result.invalid_load_system_exploit_count -eq 0) "AEXS must not generate invalid load system exploit records"
+  Assert-True ($result.routing_engine_exploit_count -ge 9) "AEXS must record routing engine exploit catalog entries"
+  Assert-True ($result.invalid_routing_engine_exploit_count -eq 0) "AEXS must not generate invalid routing engine exploit records"
+  Assert-True ($result.exploit_count -ge 69) "AEXS must record all current exploit catalog entries"
   Assert-True ($result.invalid_exploit_count -eq 0) "AEXS must not generate invalid exploit records"
 
   foreach ($module in @(
@@ -333,7 +337,25 @@ try {
       "DEXEXP-07",
       "DEXEXP-08",
       "DEXEXP-09",
-      "DEXEXP-10"
+      "DEXEXP-10",
+      "LOADEXP-01",
+      "LOADEXP-02",
+      "LOADEXP-03",
+      "LOADEXP-04",
+      "LOADEXP-05",
+      "LOADEXP-06",
+      "LOADEXP-07",
+      "LOADEXP-08",
+      "LOADEXP-09",
+      "ROUTEEXP-01",
+      "ROUTEEXP-02",
+      "ROUTEEXP-03",
+      "ROUTEEXP-04",
+      "ROUTEEXP-05",
+      "ROUTEEXP-06",
+      "ROUTEEXP-07",
+      "ROUTEEXP-08",
+      "ROUTEEXP-09"
     )) {
     Assert-True ($exploitById.ContainsKey($exploitId)) "exploit catalog record missing: $exploitId"
   }
@@ -377,6 +399,24 @@ try {
   Assert-True ($exploitById["DEXEXP-08"].exploit_path -match "bank movement failure") "DEXEXP-08 must record failed bank movement partial update"
   Assert-True ($exploitById["DEXEXP-09"].exploit_path -match "Bypass slippage|bypass slippage") "DEXEXP-09 must record slippage bypass"
   Assert-True ($exploitById["DEXEXP-10"].exploit_path -match "rounding") "DEXEXP-10 must record rounding exploit"
+  Assert-True ($exploitById["LOADEXP-01"].exploit_path -match "LOAD_SCORE") "LOADEXP-01 must record LOAD_SCORE spam manipulation"
+  Assert-True ($exploitById["LOADEXP-02"].exploit_path -match "mempool size") "LOADEXP-02 must record artificial mempool inflation"
+  Assert-True ($exploitById["LOADEXP-03"].exploit_path -match "Saturate blocks|saturate blocks") "LOADEXP-03 must record block saturation"
+  Assert-True ($exploitById["LOADEXP-04"].exploit_path -match "execution delay") "LOADEXP-04 must record execution delay amplification"
+  Assert-True ($exploitById["LOADEXP-05"].exploit_path -match "poison EMA") "LOADEXP-05 must record EMA slow-poison attack"
+  Assert-True ($exploitById["LOADEXP-06"].exploit_path -match "oscillate load") "LOADEXP-06 must record load spike oscillation"
+  Assert-True ($exploitById["LOADEXP-07"].exploit_path -match "overload a shard") "LOADEXP-07 must record shard overload targeting"
+  Assert-True ($exploitById["LOADEXP-08"].exploit_path -match "priority fees") "LOADEXP-08 must record priority fee gaming"
+  Assert-True ($exploitById["LOADEXP-09"].exploit_path -match "adaptive fees") "LOADEXP-09 must record adaptive fee destabilization"
+  Assert-True ($exploitById["ROUTEEXP-01"].exploit_path -match "bias routing decisions") "ROUTEEXP-01 must record routing bias exploitation"
+  Assert-True ($exploitById["ROUTEEXP-02"].exploit_path -match "execution zone") "ROUTEEXP-02 must record zone congestion targeting"
+  Assert-True ($exploitById["ROUTEEXP-03"].exploit_path -match "starve compute shards") "ROUTEEXP-03 must record compute shard starvation"
+  Assert-True ($exploitById["ROUTEEXP-04"].exploit_path -match "hot zone") "ROUTEEXP-04 must record hot-zone monopolization"
+  Assert-True ($exploitById["ROUTEEXP-05"].exploit_path -match "Predict deterministic routes|predict deterministic routes") "ROUTEEXP-05 must record route prediction abuse"
+  Assert-True ($exploitById["ROUTEEXP-06"].exploit_path -match "cross-zone routing loops") "ROUTEEXP-06 must record cross-zone routing loop"
+  Assert-True ($exploitById["ROUTEEXP-07"].exploit_path -match "route desync") "ROUTEEXP-07 must record routing desync"
+  Assert-True ($exploitById["ROUTEEXP-08"].exploit_path -match "Misclassify transactions|misclassify transactions") "ROUTEEXP-08 must record transaction misclassification"
+  Assert-True ($exploitById["ROUTEEXP-09"].exploit_path -match "fee-class overflow") "ROUTEEXP-09 must record fee-based routing gaming"
 
   $campaignSetup = Get-Content -Raw -LiteralPath (Join-Path $result.output_dir "campaign-setup.json") | ConvertFrom-Json
   Assert-True ($campaignSetup.campaign_id -eq $result.campaign_id) "campaign setup campaign id must match summary"

@@ -441,6 +441,14 @@ constant-product invariant breaks, liquidity drain swap sequences, pool
 initialization manipulation, LP token inflation, liquidity removal races,
 zero-liquidity edge cases, reserve/module balance desynchronization, failed
 bank movement partial updates, slippage bypass, and rounding exploits.
+The load system catalog section covers `LOAD_SCORE` spam manipulation,
+artificial mempool inflation, block saturation, execution-delay amplification,
+EMA slow-poison attacks, load spike oscillation, shard overload targeting,
+priority fee gaming, and adaptive fee destabilization. The routing engine
+catalog section covers routing bias exploitation, zone congestion targeting,
+compute shard starvation, hot-zone monopolization, deterministic route
+prediction abuse, cross-zone routing loops, routing desync between nodes,
+transaction misclassification, and fee-based routing gaming.
 
 The base-chain `x/auth`, `x/bank`, `x/staking`, `x/slashing`, `x/gov`,
 `x/distribution`, `x/fees`, `x/tokenfactory`, `x/dex`, `x/identity`,
