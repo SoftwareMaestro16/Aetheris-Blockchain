@@ -760,6 +760,24 @@ func TestPaymentObservabilityMetricsCoverOperationalSignals(t *testing.T) {
 	}, "observability rejected")
 	require.NoError(t, err)
 	state.Events = append(state.Events, rejected)
+	state, err = RefreshAsyncExecutionQueues(state, currentHeight)
+	require.NoError(t, err)
+	state, _, err = EnqueueExpiredPromise(state, activePromise, alice, 28)
+	require.NoError(t, err)
+	state.FeeCharges = append(state.FeeCharges, PaymentFeeCharge{
+		FeeID:          HashParts("observability-routing-fee"),
+		FeeClass:       PaymentFeeClassRoutingAdvertisement,
+		ChannelID:      conditionChannel.ChannelID,
+		ObjectID:       HashParts("observability-routing-advertisement"),
+		Payer:          alice,
+		Denom:          NativeDenom,
+		Amount:         "7",
+		RequiredAmount: "7",
+		StorageBytes:   128,
+		MultiplierBps:  10_000,
+		Height:         28,
+	}.Normalize())
+	sortPaymentFeeCharges(state.FeeCharges)
 	require.NoError(t, state.Validate())
 
 	evidenceID := HashParts("observability-evidence")
@@ -801,7 +819,7 @@ func TestPaymentObservabilityMetricsCoverOperationalSignals(t *testing.T) {
 	require.Equal(t, uint64(1), metrics.FraudProofsRejected)
 	require.Equal(t, uint64(1), metrics.PenaltiesApplied)
 	require.Equal(t, uint64(1), metrics.ReporterRewardsPaid)
-	require.Equal(t, "6", metrics.SettlementFeesCollected)
+	require.Equal(t, "13", metrics.SettlementFeesCollected)
 	require.Equal(t, DefaultOpeningFee, metrics.ChannelOpenFeeAverage)
 	require.Equal(t, uint64(9), metrics.DisputeInclusionLatency)
 	require.Equal(t, uint64(1), metrics.ChallengePeriodNearExpiryCount)
@@ -809,6 +827,75 @@ func TestPaymentObservabilityMetricsCoverOperationalSignals(t *testing.T) {
 	require.Greater(t, metrics.StoreV2PaymentModuleReadLatencyOps, uint64(0))
 	require.GreaterOrEqual(t, metrics.StoreV2PaymentModuleWriteLatencyOps, metrics.StoreV2PaymentModuleReadLatencyOps)
 	require.NoError(t, ValidateHash("observability metrics hash", metrics.MetricsHash))
+
+	alerts, err := EvaluatePaymentObservabilityAlerts(state, metrics, PaymentObservabilityAlertThresholds{
+		WindowBlocks:              100,
+		HighPendingDisputeCount:   0,
+		NearExpiryWithoutFinalize: 0,
+		FraudProofRejectionSpike:  0,
+		ChannelOpenSpamSpike:      0,
+		PromiseExpiryBacklog:      0,
+		SettlementQueueBacklog:    0,
+		BlockSTMConflictRateBps:   1,
+		StoreLatencyOps:           1,
+		WatchReplayLagBlocks:      1,
+		RoutingGossipSpamRateBps:  1,
+	}, PaymentObservabilityExternalSignals{
+		WatcherReplayHeight:   20,
+		RoutingGossipMessages: 10,
+		RoutingGossipRejected: 5,
+	})
+	require.NoError(t, err)
+	require.Len(t, alerts, 10)
+	alertTypes := make(map[PaymentObservabilityAlertType]bool, len(alerts))
+	for _, alert := range alerts {
+		require.NoError(t, alert.Validate())
+		alertTypes[alert.AlertType] = true
+	}
+	for _, alertType := range []PaymentObservabilityAlertType{
+		PaymentAlertHighPendingDisputeCount,
+		PaymentAlertChallengeNearExpiryWithoutFinalization,
+		PaymentAlertFraudProofRejectionSpike,
+		PaymentAlertChannelOpenSpamSpike,
+		PaymentAlertPromiseExpiryBacklog,
+		PaymentAlertSettlementQueueBacklog,
+		PaymentAlertBlockSTMConflictRateAboveThreshold,
+		PaymentAlertPaymentModuleStoreLatencyAboveThreshold,
+		PaymentAlertWatchServiceEventReplayLag,
+		PaymentAlertRoutingGossipSpamRateAboveThreshold,
+	} {
+		require.True(t, alertTypes[alertType], "missing alert %s", alertType)
+	}
+
+	reports, err := BuildPaymentObservabilityReports(state, fraud, metrics, 1, currentHeight)
+	require.NoError(t, err)
+	require.Len(t, reports, 8)
+	reportTypes := make(map[PaymentObservabilityReportType]PaymentObservabilityReport, len(reports))
+	for _, report := range reports {
+		require.NoError(t, report.Validate())
+		reportTypes[report.ReportType] = report
+	}
+	for _, reportType := range []PaymentObservabilityReportType{
+		PaymentReportDailyLockedLiquidity,
+		PaymentReportDailySettlementVolume,
+		PaymentReportDailyRoutingFee,
+		PaymentReportDailyDisputeAndFraud,
+		PaymentReportDailyStateFootprint,
+		PaymentReportWeeklyChannelChurn,
+		PaymentReportWeeklyLiquidityConcentration,
+		PaymentReportWeeklyPerformance,
+	} {
+		require.Contains(t, reportTypes, reportType)
+	}
+	require.Equal(t, "2800", reportTypes[PaymentReportDailyLockedLiquidity].TotalLockedNaet)
+	require.Equal(t, "998", reportTypes[PaymentReportDailySettlementVolume].SettlementVolumeNaet)
+	require.Equal(t, "7", reportTypes[PaymentReportDailyRoutingFee].RoutingFeesNaet)
+	require.Equal(t, uint64(2), reportTypes[PaymentReportDailyDisputeAndFraud].FraudProofsSubmitted)
+	require.Greater(t, reportTypes[PaymentReportDailyStateFootprint].StateFootprintRecords, uint64(0))
+	require.Equal(t, uint64(4), reportTypes[PaymentReportWeeklyChannelChurn].ChannelOpens)
+	require.Equal(t, uint64(1), reportTypes[PaymentReportWeeklyChannelChurn].ChannelSettlements)
+	require.Greater(t, reportTypes[PaymentReportWeeklyLiquidityConcentration].LiquidityConcentrationBps, uint64(0))
+	require.Equal(t, uint64(10000), reportTypes[PaymentReportWeeklyPerformance].BlockSTMConflictRateBps)
 }
 
 func TestSettlementArbitrationBoundaryRejectsNonDeterministicInputs(t *testing.T) {
