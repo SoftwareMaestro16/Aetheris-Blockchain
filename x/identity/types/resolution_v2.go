@@ -280,6 +280,10 @@ func ValidateUnifiedResolutionRecordV2(record UnifiedResolutionRecordV2) error {
 	if record.MaxPayloadBytes > MaxUnifiedPayloadBytesV2 {
 		return fmt.Errorf("identity v2 unified max_payload_bytes must not exceed %d", MaxUnifiedPayloadBytesV2)
 	}
+	payloadBytes := EstimateUnifiedResolverPayloadBytesV2(record)
+	if payloadBytes > record.MaxPayloadBytes {
+		return fmt.Errorf("identity v2 unified resolver payload size %d exceeds max_payload_bytes %d", payloadBytes, record.MaxPayloadBytes)
+	}
 	if record.SchemaVersion != UnifiedResolutionSchemaVersionV2 {
 		return fmt.Errorf("unsupported identity v2 unified schema_version %d", record.SchemaVersion)
 	}
