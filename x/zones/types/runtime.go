@@ -16,11 +16,14 @@ const (
 	ZoneStateNamespacePrefix = "zone/state/"
 	ZoneQueueNamespacePrefix = "zone/queue/"
 	ZoneProofNamespacePrefix = "zone/proof/"
+	ZoneQueryNamespacePrefix = "zone/query/"
 	ZoneKVPrefixRoot         = "zones/"
+	ZonePipelinePrefix       = "zone/pipeline/"
 
 	MaxZoneMessageTypeLength = 96
 	MaxZoneEndpointLength    = 128
 	MaxZoneNamespaceLength   = 128
+	MaxZoneModuleNameLength  = 96
 )
 
 type ZoneExecutionBudget struct {
@@ -56,7 +59,11 @@ type ZoneRuntimeState struct {
 	StateNamespace      string
 	QueueNamespace      string
 	ProofNamespace      string
+	QueryNamespace      string
 	KVPrefix            string
+	ModuleSet           []string
+	ModuleSetRoot       string
+	ExecutionPipeline   string
 	StateRoot           string
 	ReceiptRoot         string
 	MessageRoot         string
@@ -111,7 +118,10 @@ func NewZoneRuntimeState(zone Zone, stateRoot string, queue []ZoneMessage, budge
 		StateNamespace:      ZoneStateNamespace(zone.ID),
 		QueueNamespace:      ZoneQueueNamespace(zone.ID),
 		ProofNamespace:      ZoneProofNamespace(zone.ID),
+		QueryNamespace:      ZoneQueryNamespace(zone.ID),
 		KVPrefix:            ZoneKVPrefix(zone.ID),
+		ModuleSet:           DefaultZoneModuleSet(zone),
+		ExecutionPipeline:   ZoneExecutionPipeline(zone.ID),
 		StateRoot:           stateRoot,
 		ReceiptRoot:         EmptyRootHash(),
 		MessageRoot:         ComputeZoneMessageRoot(queue),
@@ -121,6 +131,7 @@ func NewZoneRuntimeState(zone Zone, stateRoot string, queue []ZoneMessage, budge
 		GasPolicy:           gasPolicy,
 		MessageFilter:       filter,
 	}
+	runtime.ModuleSetRoot = ComputeZoneModuleSetRoot(runtime.ModuleSet)
 	runtime.ProofRoot = ComputeZoneRuntimeProofRoot(runtime)
 	return runtime, runtime.Validate()
 }
@@ -186,8 +197,23 @@ func (z ZoneRuntimeState) Validate() error {
 	if err := validateZoneNamespace("zone proof namespace", z.ProofNamespace, ZoneProofNamespace(z.ZoneID)); err != nil {
 		return err
 	}
+	if err := validateZoneNamespace("zone query namespace", z.QueryNamespace, ZoneQueryNamespace(z.ZoneID)); err != nil {
+		return err
+	}
 	if err := validateZoneNamespace("zone KV prefix", z.KVPrefix, ZoneKVPrefix(z.ZoneID)); err != nil {
 		return err
+	}
+	if err := validateRuntimeToken("zone execution pipeline", z.ExecutionPipeline, MaxZoneNamespaceLength); err != nil {
+		return err
+	}
+	if err := validateZoneModuleSet(z.ModuleSet); err != nil {
+		return err
+	}
+	if err := ValidateHash("zone module set root", z.ModuleSetRoot); err != nil {
+		return err
+	}
+	if z.ModuleSetRoot != ComputeZoneModuleSetRoot(z.ModuleSet) {
+		return errors.New("zone module set root mismatch")
 	}
 	for _, item := range []struct {
 		name  string
@@ -222,6 +248,7 @@ func (z ZoneRuntimeState) Validate() error {
 }
 
 func (z ZoneRuntimeState) Clone() ZoneRuntimeState {
+	z.ModuleSet = append([]string(nil), z.ModuleSet...)
 	z.MessageQueue = cloneZoneMessages(z.MessageQueue)
 	z.MessageFilter.AllowedMessageTypes = append([]string(nil), z.MessageFilter.AllowedMessageTypes...)
 	return z
@@ -346,8 +373,26 @@ func ZoneProofNamespace(id ZoneID) string {
 	return ZoneProofNamespacePrefix + string(id)
 }
 
+func ZoneQueryNamespace(id ZoneID) string {
+	return ZoneQueryNamespacePrefix + string(id)
+}
+
 func ZoneKVPrefix(id ZoneID) string {
 	return ZoneKVPrefixRoot + string(id) + "/"
+}
+
+func ZoneExecutionPipeline(id ZoneID) string {
+	return ZonePipelinePrefix + string(id)
+}
+
+func DefaultZoneModuleSet(zone Zone) []string {
+	modules := []string{
+		"kind:" + string(zone.Kind),
+		"transition:" + zone.StateTransitionID,
+		"vm:" + string(zone.VMPolicy),
+	}
+	sort.Strings(modules)
+	return modules
 }
 
 func EmptyRootHash() string {
@@ -381,7 +426,10 @@ func ComputeZoneRuntimeProofRoot(runtime ZoneRuntimeState) string {
 	writeRuntimePart(h, runtime.StateNamespace)
 	writeRuntimePart(h, runtime.QueueNamespace)
 	writeRuntimePart(h, runtime.ProofNamespace)
+	writeRuntimePart(h, runtime.QueryNamespace)
 	writeRuntimePart(h, runtime.KVPrefix)
+	writeRuntimePart(h, runtime.ModuleSetRoot)
+	writeRuntimePart(h, runtime.ExecutionPipeline)
 	writeRuntimePart(h, runtime.StateRoot)
 	writeRuntimePart(h, runtime.ReceiptRoot)
 	writeRuntimePart(h, runtime.MessageRoot)
@@ -397,6 +445,18 @@ func ComputeZoneRuntimeProofRoot(runtime ZoneRuntimeState) string {
 	sort.Strings(filter)
 	for _, item := range filter {
 		writeRuntimePart(h, item)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeZoneModuleSetRoot(modules []string) string {
+	ordered := append([]string(nil), modules...)
+	sort.Strings(ordered)
+	h := sha256.New()
+	writeRuntimePart(h, "aetheris-zone-module-set-v1")
+	writeRuntimeUint64(h, uint64(len(ordered)))
+	for _, module := range ordered {
+		writeRuntimePart(h, module)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -442,6 +502,28 @@ func validateZoneMessageQueue(zoneID ZoneID, queue []ZoneMessage, budget ZoneExe
 		return err
 	}
 	_ = consumed
+	return nil
+}
+
+func validateZoneModuleSet(modules []string) error {
+	if len(modules) == 0 {
+		return errors.New("zone module set must contain at least one module")
+	}
+	seen := make(map[string]struct{}, len(modules))
+	var previous string
+	for i, module := range modules {
+		if err := validateRuntimeToken("zone module", module, MaxZoneModuleNameLength); err != nil {
+			return err
+		}
+		if _, found := seen[module]; found {
+			return fmt.Errorf("duplicate zone module %q", module)
+		}
+		seen[module] = struct{}{}
+		if i > 0 && previous >= module {
+			return errors.New("zone module set must be sorted canonically")
+		}
+		previous = module
+	}
 	return nil
 }
 

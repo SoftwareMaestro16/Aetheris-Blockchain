@@ -25,7 +25,10 @@ func TestZoneRuntimeStateIsolatesQueuesBudgetsNamespacesAndProofRoot(t *testing.
 	require.Equal(t, ZoneStateNamespace(ZoneIDContract), runtime.StateNamespace)
 	require.Equal(t, ZoneQueueNamespace(ZoneIDContract), runtime.QueueNamespace)
 	require.Equal(t, ZoneProofNamespace(ZoneIDContract), runtime.ProofNamespace)
+	require.Equal(t, ZoneQueryNamespace(ZoneIDContract), runtime.QueryNamespace)
 	require.Equal(t, ZoneKVPrefix(ZoneIDContract), runtime.KVPrefix)
+	require.Equal(t, ZoneExecutionPipeline(ZoneIDContract), runtime.ExecutionPipeline)
+	require.Equal(t, ComputeZoneModuleSetRoot(runtime.ModuleSet), runtime.ModuleSetRoot)
 	require.Equal(t, uint64(1), runtime.MessageQueue[0].Sequence)
 	require.Equal(t, ComputeZoneMessageRoot(runtime.MessageQueue), runtime.MessageRoot)
 	require.Equal(t, ComputeZoneRuntimeProofRoot(runtime), runtime.ProofRoot)
@@ -66,6 +69,19 @@ func TestZoneRuntimeRejectsCrossZoneMessagesNamespaceDriftAndFilterViolations(t 
 	runtime.StateNamespace = ZoneStateNamespace(ZoneIDFinancial)
 	runtime.ProofRoot = ComputeZoneRuntimeProofRoot(runtime)
 	require.ErrorContains(t, runtime.Validate(), "state namespace")
+
+	runtime, err = NewZoneRuntimeState(zone, hash("contract-state"), nil, DefaultZoneExecutionBudget(), DefaultZoneGasPolicy(), DefaultZoneMessageFilter())
+	require.NoError(t, err)
+	runtime.QueryNamespace = ZoneQueryNamespace(ZoneIDFinancial)
+	runtime.ProofRoot = ComputeZoneRuntimeProofRoot(runtime)
+	require.ErrorContains(t, runtime.Validate(), "query namespace")
+
+	runtime, err = NewZoneRuntimeState(zone, hash("contract-state"), nil, DefaultZoneExecutionBudget(), DefaultZoneGasPolicy(), DefaultZoneMessageFilter())
+	require.NoError(t, err)
+	runtime.ModuleSet = []string{"vm:AVM", "kind:CONTRACT"}
+	runtime.ModuleSetRoot = ComputeZoneModuleSetRoot(runtime.ModuleSet)
+	runtime.ProofRoot = ComputeZoneRuntimeProofRoot(runtime)
+	require.ErrorContains(t, runtime.Validate(), "module set")
 }
 
 func TestParallelExecutionPlanRejectsOverlappingZonePrefixes(t *testing.T) {
