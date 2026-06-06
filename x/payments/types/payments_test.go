@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -3023,6 +3024,114 @@ func TestPaymentBlockAccumulatorAggregatesAfterSettlementHotPath(t *testing.T) {
 	require.Equal(t, "3", acc.FeeAmount)
 	require.Equal(t, "7", acc.PenaltyAmount)
 	require.Equal(t, uint64(1), acc.OperationCount)
+}
+
+func TestStoreV2LayoutUsesSpecifiedPrefixesAndCompactChannelRecords(t *testing.T) {
+	alice := testAddress(0x89)
+	bob := testAddress(0x8a)
+	channel := signedChannel(t, "store-v2-layout", "100", alice, bob)
+	channel.RoutingAdvertised = true
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	openLayout, err := BuildStoreV2Layout(state)
+	require.NoError(t, err)
+	require.Len(t, openLayout.ChannelStates, 1)
+	require.False(t, openLayout.ChannelStates[0].SubmittedOnChain)
+	require.Equal(t, channel.LatestState.StateHash, openLayout.ChannelStates[0].FullState.StateHash)
+	require.Empty(t, openLayout.ChannelStates[0].FullState.Signatures)
+
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "40"},
+		{Participant: bob, Amount: "60"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "1")
+	require.NoError(t, err)
+
+	layout, err := BuildStoreV2Layout(state)
+	require.NoError(t, err)
+	require.Equal(t, StoreV2MigrationVersion, layout.Version)
+	require.Len(t, layout.Channels, 1)
+	require.Equal(t, StoreV2ChannelKey(channel.ChannelID), layout.Channels[0].Key)
+	require.True(t, strings.HasPrefix(layout.Channels[0].Key, "payments/channels/"))
+	require.Empty(t, layout.Channels[0].Channel.LatestState.Signatures)
+	require.Equal(t, StoreV2PendingCloseKey(channel.ChannelID), layout.Channels[0].PendingCloseKey)
+	require.Equal(t, PaymentRoutingAdvertisementIndexKey(channel.ChannelID), layout.Channels[0].RoutingAdvertisementKey)
+	require.Len(t, layout.ParticipantChannels, 2)
+	require.True(t, strings.HasPrefix(layout.ParticipantChannels[0].Key, "payments/participant_channels/"))
+	require.Len(t, layout.PendingCloses, 1)
+	require.Equal(t, StoreV2PendingCloseKey(channel.ChannelID), layout.PendingCloses[0].Key)
+
+	var submittedFullState bool
+	for _, record := range layout.ChannelStates {
+		require.True(t, strings.HasPrefix(record.Key, "payments/channel_states/"))
+		if record.SubmittedOnChain && record.Nonce == closeState.Nonce {
+			submittedFullState = len(record.FullState.Signatures) == len(channel.Participants)
+		}
+	}
+	require.True(t, submittedFullState)
+}
+
+func TestStoreV2PrunesExpiredTombstonesAndConditions(t *testing.T) {
+	channelID := HashParts("store-v2-prune-channel")
+	layout := StoreV2Layout{
+		Version: StoreV2MigrationVersion,
+		Conditions: []StoreV2ConditionRecord{
+			{Key: StoreV2ConditionKey(HashParts("expired-condition")), Version: StoreV2MigrationVersion, ConditionID: HashParts("expired-condition"), ChannelID: channelID, ExpiresHeight: 10},
+			{Key: StoreV2ConditionKey(HashParts("active-condition")), Version: StoreV2MigrationVersion, ConditionID: HashParts("active-condition"), ChannelID: channelID, ExpiresHeight: 30},
+			{Key: StoreV2ConditionKey(HashParts("settled-condition")), Version: StoreV2MigrationVersion, ConditionID: HashParts("settled-condition"), ChannelID: channelID, ExpiresHeight: 40, Settled: true},
+		},
+		SettlementTombstones: []StoreV2SettlementTombstoneRecord{
+			{
+				Key:       StoreV2SettlementTombstoneKey(HashParts("old-channel")),
+				Version:   StoreV2MigrationVersion,
+				ChannelID: HashParts("old-channel"),
+				Tombstone: ClosedChannelTombstone{ChainID: "aetheris-test-1", ChannelID: HashParts("old-channel"), FinalizedNonce: 1, StateHash: HashParts("old-state"), ClosedHeight: 5, ExpiresHeight: 15},
+			},
+			{
+				Key:       StoreV2SettlementTombstoneKey(HashParts("kept-channel")),
+				Version:   StoreV2MigrationVersion,
+				ChannelID: HashParts("kept-channel"),
+				Tombstone: ClosedChannelTombstone{ChainID: "aetheris-test-1", ChannelID: HashParts("kept-channel"), FinalizedNonce: 1, StateHash: HashParts("kept-state"), ClosedHeight: 5, ExpiresHeight: 35},
+			},
+		},
+	}
+	layout = layout.Normalize()
+	require.NoError(t, layout.Validate())
+
+	pruned, err := PruneStoreV2Layout(layout, 20)
+	require.NoError(t, err)
+	require.Len(t, pruned.Conditions, 1)
+	require.Equal(t, StoreV2ConditionKey(HashParts("active-condition")), pruned.Conditions[0].Key)
+	require.Len(t, pruned.SettlementTombstones, 1)
+	require.Equal(t, StoreV2SettlementTombstoneKey(HashParts("kept-channel")), pruned.SettlementTombstones[0].Key)
+}
+
+func TestStoreV2ParticipantIndexPagination(t *testing.T) {
+	alice := testAddress(0x8b)
+	bob := testAddress(0x8c)
+	first := signedChannel(t, "store-v2-page-first", "100", alice, bob)
+	second := signedChannel(t, "store-v2-page-second", "100", alice, bob)
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, first)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, second)
+	require.NoError(t, err)
+	layout, err := BuildStoreV2Layout(state)
+	require.NoError(t, err)
+
+	page, err := QueryStoreV2ParticipantChannels(layout, ParticipantChannelPageRequest{Address: alice, Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, page.Entries, 1)
+	require.Equal(t, uint64(2), page.Total)
+	require.Equal(t, uint64(1), page.NextOffset)
+	next, err := QueryStoreV2ParticipantChannels(layout, ParticipantChannelPageRequest{Address: alice, Offset: page.NextOffset, Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, next.Entries, 1)
+	require.Zero(t, next.NextOffset)
+	require.NotEqual(t, page.Entries[0].ChannelID, next.Entries[0].ChannelID)
 }
 
 func BenchmarkPaymentChannelOpenAccessPlan(b *testing.B) {

@@ -18,6 +18,18 @@ const (
 	PaymentsKeySettlementPrefix          = "settlement"
 	PaymentsKeyCustodyPrefix             = "custody"
 	PaymentsKeyBlockAccumulatorPrefix    = "block_accumulator"
+
+	StoreV2MigrationVersion = uint64(2)
+
+	StoreV2KeyChannelsPrefix             = "channels"
+	StoreV2KeyChannelStatesPrefix        = "channel_states"
+	StoreV2KeyPendingClosesPrefix        = "pending_closes"
+	StoreV2KeyConditionsPrefix           = "conditions"
+	StoreV2KeyVirtualChannelsPrefix      = "virtual_channels"
+	StoreV2KeyParticipantChannelsPrefix  = "participant_channels"
+	StoreV2KeySettlementTombstonesPrefix = "settlement_tombstones"
+	StoreV2KeyFeeAccumulatorsPrefix      = "fee_accumulators"
+	StoreV2KeyFraudProofsPrefix          = "fraud_proofs"
 )
 
 func PaymentChannelKey(channelID string) string {
@@ -54,6 +66,46 @@ func PaymentCustodyKey(channelID string) string {
 
 func PaymentBlockAccumulatorKey(blockHeight uint64) string {
 	return paymentKey(PaymentsKeyBlockAccumulatorPrefix, fmt.Sprintf("%020d", blockHeight))
+}
+
+func StoreV2ChannelKey(channelID string) string {
+	return paymentKey(StoreV2KeyChannelsPrefix, normalizeHash(channelID))
+}
+
+func StoreV2ChannelStateKey(channelID string, nonce uint64) string {
+	return paymentKey(StoreV2KeyChannelStatesPrefix, normalizeHash(channelID), fmt.Sprintf("%020d", nonce))
+}
+
+func StoreV2PendingCloseKey(channelID string) string {
+	return paymentKey(StoreV2KeyPendingClosesPrefix, normalizeHash(channelID))
+}
+
+func StoreV2ConditionKey(conditionID string) string {
+	return paymentKey(StoreV2KeyConditionsPrefix, normalizeHash(conditionID))
+}
+
+func StoreV2VirtualChannelKey(virtualChannelID string) string {
+	return paymentKey(StoreV2KeyVirtualChannelsPrefix, normalizeHash(virtualChannelID))
+}
+
+func StoreV2ParticipantChannelKey(address, channelID string) string {
+	return paymentKey(StoreV2KeyParticipantChannelsPrefix, strings.TrimSpace(address), normalizeHash(channelID))
+}
+
+func StoreV2ParticipantChannelPrefix(address string) string {
+	return paymentKey(StoreV2KeyParticipantChannelsPrefix, strings.TrimSpace(address))
+}
+
+func StoreV2SettlementTombstoneKey(channelID string) string {
+	return paymentKey(StoreV2KeySettlementTombstonesPrefix, normalizeHash(channelID))
+}
+
+func StoreV2FeeAccumulatorKey(blockOrEpoch, bucket string) string {
+	return paymentKey(StoreV2KeyFeeAccumulatorsPrefix, strings.TrimSpace(blockOrEpoch), strings.TrimSpace(bucket))
+}
+
+func StoreV2FraudProofKey(proofID string) string {
+	return paymentKey(StoreV2KeyFraudProofsPrefix, normalizeHash(proofID))
 }
 
 func paymentKey(parts ...string) string {

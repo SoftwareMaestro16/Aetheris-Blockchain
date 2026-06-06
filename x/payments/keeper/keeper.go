@@ -523,6 +523,33 @@ func (k Keeper) Settlements(req *prototype.PageRequest) ([]paymentstypes.Settlem
 	return out, res, nil
 }
 
+func (k Keeper) StoreV2Layout() (paymentstypes.StoreV2Layout, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.StoreV2Layout{}, err
+	}
+	return paymentstypes.BuildStoreV2Layout(k.genesis.State)
+}
+
+func (k Keeper) ParticipantChannels(address string, req *prototype.PageRequest) ([]paymentstypes.StoreV2ParticipantChannelRecord, prototype.PageResponse, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	layout, err := paymentstypes.BuildStoreV2Layout(k.genesis.State)
+	if err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	pageReq := paymentstypes.ParticipantChannelPageRequest{Address: address}
+	if req != nil {
+		pageReq.Offset = req.Offset
+		pageReq.Limit = req.Limit
+	}
+	page, err := paymentstypes.QueryStoreV2ParticipantChannels(layout, pageReq)
+	if err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	return page.Entries, prototype.PageResponse{NextOffset: page.NextOffset}, nil
+}
+
 func (k Keeper) RoutePayment(from, to, amount string, currentHeight uint64, maxHops int) ([]paymentstypes.ChannelEdge, error) {
 	return paymentstypes.RoutePayment(k.genesis.State, from, to, amount, currentHeight, maxHops)
 }

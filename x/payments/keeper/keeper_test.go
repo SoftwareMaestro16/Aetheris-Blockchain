@@ -67,6 +67,33 @@ func TestKeeperPaymentLifecycleWhenEnabled(t *testing.T) {
 	require.Equal(t, []paymentstypes.SettlementRecord{settlement}, settlements)
 }
 
+func TestKeeperStoreV2ParticipantChannelPagination(t *testing.T) {
+	k := NewKeeper()
+	gs := DefaultGenesis()
+	gs.Params = prototype.TestnetParams()
+	require.NoError(t, k.InitGenesis(gs))
+
+	alice := keeperAddress(0x63)
+	bob := keeperAddress(0x64)
+	first := keeperSignedChannel(t, "keeper-store-v2-first", "100", alice, bob)
+	second := keeperSignedChannel(t, "keeper-store-v2-second", "100", alice, bob)
+	require.NoError(t, k.OpenChannel(first))
+	require.NoError(t, k.OpenChannel(second))
+
+	layout, err := k.StoreV2Layout()
+	require.NoError(t, err)
+	require.Len(t, layout.Channels, 2)
+	entries, page, err := k.ParticipantChannels(alice, &prototype.PageRequest{Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, uint64(1), page.NextOffset)
+	next, page, err := k.ParticipantChannels(alice, &prototype.PageRequest{Offset: page.NextOffset, Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, next, 1)
+	require.Zero(t, page.NextOffset)
+	require.NotEqual(t, entries[0].ChannelID, next[0].ChannelID)
+}
+
 func keeperSignedChannel(t *testing.T, salt, collateral, left, right string) paymentstypes.ChannelRecord {
 	t.Helper()
 
