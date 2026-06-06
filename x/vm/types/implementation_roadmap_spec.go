@@ -17,6 +17,8 @@ const (
 	AVMRoadmapPhase4 AVMImplementationRoadmapPhaseID = "phase_4_actor_runtime"
 	AVMRoadmapPhase5 AVMImplementationRoadmapPhaseID = "phase_5_continuations"
 	AVMRoadmapPhase6 AVMImplementationRoadmapPhaseID = "phase_6_contract_backends"
+	AVMRoadmapPhase7 AVMImplementationRoadmapPhaseID = "phase_7_interface_system"
+	AVMRoadmapPhase8 AVMImplementationRoadmapPhaseID = "phase_8_performance_and_hardening"
 
 	AVMRoadmapTaskCanonicalAsyncMessageEncoding AVMImplementationRoadmapTask = "define_canonical_async_message_encoding"
 	AVMRoadmapTaskMessageIDDerivation           AVMImplementationRoadmapTask = "define_message_id_derivation"
@@ -67,6 +69,19 @@ const (
 	AVMRoadmapTaskStoreV2StorageAdapter    AVMImplementationRoadmapTask = "add_store_v2_storage_adapter"
 	AVMRoadmapTaskContractGasMetering      AVMImplementationRoadmapTask = "add_gas_metering_for_contract_execution"
 
+	AVMRoadmapTaskInterfaceRegistry    AVMImplementationRoadmapTask = "implement_interface_registry"
+	AVMRoadmapTaskInterfaceDescriptors AVMImplementationRoadmapTask = "add_methods_events_async_handlers_and_get_method_descriptors"
+	AVMRoadmapTaskInterfaceHashVerify  AVMImplementationRoadmapTask = "add_interface_hash_verification"
+	AVMRoadmapTaskSDKCLIBindingMeta    AVMImplementationRoadmapTask = "add_sdk_and_cli_binding_metadata"
+	AVMRoadmapTaskWalletUIMetadata     AVMImplementationRoadmapTask = "add_wallet_ui_generation_metadata"
+
+	AVMRoadmapTaskBlockSTMConflictBenchmarks AVMImplementationRoadmapTask = "add_blockstm_conflict_benchmarks"
+	AVMRoadmapTaskQueueThroughputBenchmarks  AVMImplementationRoadmapTask = "add_queue_throughput_benchmarks"
+	AVMRoadmapTaskActorExecutionBenchmarks   AVMImplementationRoadmapTask = "add_actor_execution_benchmarks"
+	AVMRoadmapTaskRootGenerationBenchmarks   AVMImplementationRoadmapTask = "add_root_generation_benchmarks"
+	AVMRoadmapTaskReplayDeterminismSuite     AVMImplementationRoadmapTask = "add_replay_and_determinism_test_suite"
+	AVMRoadmapTaskUpgradeCompatibilityTests  AVMImplementationRoadmapTask = "add_upgrade_compatibility_tests"
+
 	AVMRoadmapExitSignableHashableObjectsHaveTestVectors AVMImplementationExitCriterion = "signable_hashable_objects_have_test_vectors"
 	AVMRoadmapExitQueueOrderingTestCovered               AVMImplementationExitCriterion = "queue_ordering_test_covered"
 	AVMRoadmapExitRootEncodingFixed                      AVMImplementationExitCriterion = "root_encoding_fixed"
@@ -92,6 +107,13 @@ const (
 	AVMRoadmapExitContractsSyncAsyncHandlers AVMImplementationExitCriterion = "contracts_can_execute_sync_and_async_handlers"
 	AVMRoadmapExitContractsEmitAsyncMessages AVMImplementationExitCriterion = "contracts_can_emit_async_messages"
 	AVMRoadmapExitContractStateProofable     AVMImplementationExitCriterion = "contract_state_is_proof_queryable"
+
+	AVMRoadmapExitVerifiableInterfaces AVMImplementationExitCriterion = "contracts_and_services_expose_verifiable_interfaces"
+	AVMRoadmapExitClientsBuildCalls    AVMImplementationExitCriterion = "clients_can_build_calls_from_interface_descriptors"
+
+	AVMRoadmapExitReplayDeterministic       AVMImplementationExitCriterion = "avm_execution_is_deterministic_under_replay"
+	AVMRoadmapExitParallelIndependentActors AVMImplementationExitCriterion = "independent_zones_and_actors_execute_in_parallel_where_supported"
+	AVMRoadmapExitBoundedQueueRootCosts     AVMImplementationExitCriterion = "queue_and_root_generation_costs_remain_bounded"
 
 	AVMRoadmapVectorAsyncMessageEncoding      AVMTestVectorTarget = "async_message_encoding"
 	AVMRoadmapVectorMessageIDDerivation       AVMTestVectorTarget = "message_id_derivation"
@@ -264,6 +286,40 @@ func DefaultAVMImplementationRoadmap() (AVMImplementationRoadmap, error) {
 			},
 			ConsensusCritical: true,
 		},
+		{
+			PhaseID: AVMRoadmapPhase7,
+			Name:    "Interface System",
+			Tasks: []AVMImplementationRoadmapTask{
+				AVMRoadmapTaskInterfaceRegistry,
+				AVMRoadmapTaskInterfaceDescriptors,
+				AVMRoadmapTaskInterfaceHashVerify,
+				AVMRoadmapTaskSDKCLIBindingMeta,
+				AVMRoadmapTaskWalletUIMetadata,
+			},
+			ExitCriteria: []AVMImplementationExitCriterion{
+				AVMRoadmapExitVerifiableInterfaces,
+				AVMRoadmapExitClientsBuildCalls,
+			},
+			ConsensusCritical: true,
+		},
+		{
+			PhaseID: AVMRoadmapPhase8,
+			Name:    "Performance and Hardening",
+			Tasks: []AVMImplementationRoadmapTask{
+				AVMRoadmapTaskBlockSTMConflictBenchmarks,
+				AVMRoadmapTaskQueueThroughputBenchmarks,
+				AVMRoadmapTaskActorExecutionBenchmarks,
+				AVMRoadmapTaskRootGenerationBenchmarks,
+				AVMRoadmapTaskReplayDeterminismSuite,
+				AVMRoadmapTaskUpgradeCompatibilityTests,
+			},
+			ExitCriteria: []AVMImplementationExitCriterion{
+				AVMRoadmapExitReplayDeterministic,
+				AVMRoadmapExitParallelIndependentActors,
+				AVMRoadmapExitBoundedQueueRootCosts,
+			},
+			ConsensusCritical: true,
+		},
 	}
 	for i := range phases {
 		phase, err := NewAVMImplementationRoadmapPhase(phases[i])
@@ -362,14 +418,14 @@ func (r AVMImplementationRoadmap) Validate() error {
 }
 
 func AllAVMImplementationRoadmapPhaseIDs() []AVMImplementationRoadmapPhaseID {
-	phases := []AVMImplementationRoadmapPhaseID{AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4, AVMRoadmapPhase5, AVMRoadmapPhase6}
+	phases := []AVMImplementationRoadmapPhaseID{AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4, AVMRoadmapPhase5, AVMRoadmapPhase6, AVMRoadmapPhase7, AVMRoadmapPhase8}
 	sort.Slice(phases, func(i, j int) bool { return phases[i] < phases[j] })
 	return phases
 }
 
 func IsAVMImplementationRoadmapPhaseID(phaseID AVMImplementationRoadmapPhaseID) bool {
 	switch phaseID {
-	case AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4, AVMRoadmapPhase5, AVMRoadmapPhase6:
+	case AVMRoadmapPhase0, AVMRoadmapPhase1, AVMRoadmapPhase2, AVMRoadmapPhase3, AVMRoadmapPhase4, AVMRoadmapPhase5, AVMRoadmapPhase6, AVMRoadmapPhase7, AVMRoadmapPhase8:
 		return true
 	default:
 		return false
@@ -510,6 +566,23 @@ func requiredAVMRoadmapTasks(phaseID AVMImplementationRoadmapPhaseID) []AVMImple
 			AVMRoadmapTaskStoreV2StorageAdapter,
 			AVMRoadmapTaskContractGasMetering,
 		}
+	case AVMRoadmapPhase7:
+		return []AVMImplementationRoadmapTask{
+			AVMRoadmapTaskInterfaceRegistry,
+			AVMRoadmapTaskInterfaceDescriptors,
+			AVMRoadmapTaskInterfaceHashVerify,
+			AVMRoadmapTaskSDKCLIBindingMeta,
+			AVMRoadmapTaskWalletUIMetadata,
+		}
+	case AVMRoadmapPhase8:
+		return []AVMImplementationRoadmapTask{
+			AVMRoadmapTaskBlockSTMConflictBenchmarks,
+			AVMRoadmapTaskQueueThroughputBenchmarks,
+			AVMRoadmapTaskActorExecutionBenchmarks,
+			AVMRoadmapTaskRootGenerationBenchmarks,
+			AVMRoadmapTaskReplayDeterminismSuite,
+			AVMRoadmapTaskUpgradeCompatibilityTests,
+		}
 	default:
 		return nil
 	}
@@ -556,6 +629,17 @@ func requiredAVMRoadmapExitCriteria(phaseID AVMImplementationRoadmapPhaseID) []A
 			AVMRoadmapExitContractsSyncAsyncHandlers,
 			AVMRoadmapExitContractsEmitAsyncMessages,
 			AVMRoadmapExitContractStateProofable,
+		}
+	case AVMRoadmapPhase7:
+		return []AVMImplementationExitCriterion{
+			AVMRoadmapExitVerifiableInterfaces,
+			AVMRoadmapExitClientsBuildCalls,
+		}
+	case AVMRoadmapPhase8:
+		return []AVMImplementationExitCriterion{
+			AVMRoadmapExitReplayDeterministic,
+			AVMRoadmapExitParallelIndependentActors,
+			AVMRoadmapExitBoundedQueueRootCosts,
 		}
 	default:
 		return nil

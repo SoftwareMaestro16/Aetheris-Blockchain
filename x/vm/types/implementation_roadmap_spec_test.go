@@ -12,7 +12,7 @@ func TestAVMImplementationRoadmapMatchesSection19(t *testing.T) {
 	require.NoError(t, roadmap.Validate())
 	require.Equal(t, "AVM implementation roadmap", roadmap.RoadmapName)
 	require.Equal(t, ComputeAVMImplementationRoadmapHash(roadmap), roadmap.RoadmapHash)
-	require.Len(t, roadmap.Phases, 7)
+	require.Len(t, roadmap.Phases, 9)
 
 	byPhase := map[AVMImplementationRoadmapPhaseID]AVMImplementationRoadmapPhase{}
 	for _, phase := range roadmap.Phases {
@@ -27,6 +27,8 @@ func TestAVMImplementationRoadmapMatchesSection19(t *testing.T) {
 	require.Equal(t, "Actor Runtime", byPhase[AVMRoadmapPhase4].Name)
 	require.Equal(t, "Continuations", byPhase[AVMRoadmapPhase5].Name)
 	require.Equal(t, "Contract Backends", byPhase[AVMRoadmapPhase6].Name)
+	require.Equal(t, "Interface System", byPhase[AVMRoadmapPhase7].Name)
+	require.Equal(t, "Performance and Hardening", byPhase[AVMRoadmapPhase8].Name)
 }
 
 func TestAVMRoadmapPhase0DefinesSpecAndTestVectors(t *testing.T) {
@@ -209,6 +211,46 @@ func TestAVMRoadmapPhase6DefinesContractBackendsMilestone(t *testing.T) {
 	require.Empty(t, phase.TestVectorTargets)
 }
 
+func TestAVMRoadmapPhase7DefinesInterfaceSystemMilestone(t *testing.T) {
+	roadmap, err := DefaultAVMImplementationRoadmap()
+	require.NoError(t, err)
+	phase := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase7)
+
+	require.ElementsMatch(t, []AVMImplementationRoadmapTask{
+		AVMRoadmapTaskInterfaceRegistry,
+		AVMRoadmapTaskInterfaceDescriptors,
+		AVMRoadmapTaskInterfaceHashVerify,
+		AVMRoadmapTaskSDKCLIBindingMeta,
+		AVMRoadmapTaskWalletUIMetadata,
+	}, phase.Tasks)
+	require.ElementsMatch(t, []AVMImplementationExitCriterion{
+		AVMRoadmapExitVerifiableInterfaces,
+		AVMRoadmapExitClientsBuildCalls,
+	}, phase.ExitCriteria)
+	require.Empty(t, phase.TestVectorTargets)
+}
+
+func TestAVMRoadmapPhase8DefinesPerformanceHardeningMilestone(t *testing.T) {
+	roadmap, err := DefaultAVMImplementationRoadmap()
+	require.NoError(t, err)
+	phase := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase8)
+
+	require.ElementsMatch(t, []AVMImplementationRoadmapTask{
+		AVMRoadmapTaskBlockSTMConflictBenchmarks,
+		AVMRoadmapTaskQueueThroughputBenchmarks,
+		AVMRoadmapTaskActorExecutionBenchmarks,
+		AVMRoadmapTaskRootGenerationBenchmarks,
+		AVMRoadmapTaskReplayDeterminismSuite,
+		AVMRoadmapTaskUpgradeCompatibilityTests,
+	}, phase.Tasks)
+	require.ElementsMatch(t, []AVMImplementationExitCriterion{
+		AVMRoadmapExitReplayDeterministic,
+		AVMRoadmapExitParallelIndependentActors,
+		AVMRoadmapExitBoundedQueueRootCosts,
+	}, phase.ExitCriteria)
+	require.Empty(t, phase.TestVectorTargets)
+}
+
 func TestAVMRoadmapRejectsMissingCrossOwnedAndHashMismatch(t *testing.T) {
 	roadmap, err := DefaultAVMImplementationRoadmap()
 	require.NoError(t, err)
@@ -261,6 +303,16 @@ func TestAVMRoadmapRejectsMissingCrossOwnedAndHashMismatch(t *testing.T) {
 	phase6.ExitCriteria = removeAVMRoadmapExitCriterionForTest(phase6.ExitCriteria, AVMRoadmapExitContractStateProofable)
 	phase6.PhaseHash = ComputeAVMImplementationRoadmapPhaseHash(phase6)
 	require.ErrorContains(t, phase6.Validate(), "exit criterion")
+
+	phase7 := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase7)
+	phase7.Tasks = append(phase7.Tasks, AVMRoadmapTaskReplayDeterminismSuite)
+	phase7.PhaseHash = ComputeAVMImplementationRoadmapPhaseHash(phase7)
+	require.ErrorContains(t, phase7.Validate(), "task")
+
+	phase8 := roadmapPhaseForTest(t, roadmap, AVMRoadmapPhase8)
+	phase8.ExitCriteria = removeAVMRoadmapExitCriterionForTest(phase8.ExitCriteria, AVMRoadmapExitBoundedQueueRootCosts)
+	phase8.PhaseHash = ComputeAVMImplementationRoadmapPhaseHash(phase8)
+	require.ErrorContains(t, phase8.Validate(), "exit criterion")
 }
 
 func TestAVMRoadmapRejectsNonConsensusCriticalPhase(t *testing.T) {
