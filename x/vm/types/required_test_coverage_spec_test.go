@@ -12,7 +12,7 @@ func TestAVMRequiredTestCoverageSpecMatchesSection20(t *testing.T) {
 	require.NoError(t, spec.Validate())
 	require.Equal(t, "AVM required test coverage", spec.SpecName)
 	require.Equal(t, ComputeAVMRequiredTestCoverageSpecHash(spec), spec.SpecHash)
-	require.Len(t, spec.Groups, 4)
+	require.Len(t, spec.Groups, 5)
 
 	byCategory := map[AVMRequiredTestCoverageCategory]AVMRequiredTestCoverageGroup{}
 	for _, group := range spec.Groups {
@@ -23,6 +23,7 @@ func TestAVMRequiredTestCoverageSpecMatchesSection20(t *testing.T) {
 	require.Len(t, byCategory[AVMTestCoverageCategoryIntegration].Cases, 10)
 	require.Len(t, byCategory[AVMTestCoverageCategoryInvariant].Cases, 9)
 	require.Len(t, byCategory[AVMTestCoverageCategoryFuzz].Cases, 9)
+	require.Len(t, byCategory[AVMTestCoverageCategoryPerformance].Cases, 9)
 }
 
 func TestAVMRequiredUnitCoverageMatchesSection201(t *testing.T) {
@@ -152,6 +153,37 @@ func TestAVMRequiredFuzzCoverageMatchesSection204(t *testing.T) {
 		AVMFuzzCoverageContinuationStatePayloads,
 		AVMFuzzCoverageContractStorageKeys,
 		AVMFuzzCoverageInterfaceSchemaPayloads,
+	}, group.Cases)
+}
+
+func TestAVMRequiredPerformanceCoverageMatchesSection205(t *testing.T) {
+	group, err := NewAVMRequiredTestCoverageGroup(AVMRequiredTestCoverageGroup{
+		Category: AVMTestCoverageCategoryPerformance,
+		Cases: []AVMRequiredTestCoverageCase{
+			AVMPerformanceCoverageQueueInsertThroughput,
+			AVMPerformanceCoverageQueueDrainThroughput,
+			AVMPerformanceCoverageAsyncExecutionThroughput,
+			AVMPerformanceCoverageActorMailboxThroughput,
+			AVMPerformanceCoverageContinuationResumeThroughput,
+			AVMPerformanceCoverageCrossZoneThroughput,
+			AVMPerformanceCoverageReceiptProofGenerationLatency,
+			AVMPerformanceCoverageAVMRootGenerationLatency,
+			AVMPerformanceCoverageBlockSTMConflictRateByWorkload,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, group.Validate())
+	require.Equal(t, ComputeAVMRequiredTestCoverageGroupHash(group), group.GroupHash)
+	require.ElementsMatch(t, []AVMRequiredTestCoverageCase{
+		AVMPerformanceCoverageQueueInsertThroughput,
+		AVMPerformanceCoverageQueueDrainThroughput,
+		AVMPerformanceCoverageAsyncExecutionThroughput,
+		AVMPerformanceCoverageActorMailboxThroughput,
+		AVMPerformanceCoverageContinuationResumeThroughput,
+		AVMPerformanceCoverageCrossZoneThroughput,
+		AVMPerformanceCoverageReceiptProofGenerationLatency,
+		AVMPerformanceCoverageAVMRootGenerationLatency,
+		AVMPerformanceCoverageBlockSTMConflictRateByWorkload,
 	}, group.Cases)
 }
 

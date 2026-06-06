@@ -14,6 +14,7 @@ const (
 	AVMTestCoverageCategoryIntegration AVMRequiredTestCoverageCategory = "integration"
 	AVMTestCoverageCategoryInvariant   AVMRequiredTestCoverageCategory = "invariant"
 	AVMTestCoverageCategoryFuzz        AVMRequiredTestCoverageCategory = "fuzz"
+	AVMTestCoverageCategoryPerformance AVMRequiredTestCoverageCategory = "performance"
 
 	AVMUnitCoverageMessageIDDerivation       AVMRequiredTestCoverageCase = "message_id_derivation"
 	AVMUnitCoverageSenderNonceValidation     AVMRequiredTestCoverageCase = "sender_nonce_validation"
@@ -57,6 +58,16 @@ const (
 	AVMFuzzCoverageContinuationStatePayloads AVMRequiredTestCoverageCase = "continuation_state_payloads"
 	AVMFuzzCoverageContractStorageKeys       AVMRequiredTestCoverageCase = "contract_storage_keys"
 	AVMFuzzCoverageInterfaceSchemaPayloads   AVMRequiredTestCoverageCase = "interface_schema_payloads"
+
+	AVMPerformanceCoverageQueueInsertThroughput          AVMRequiredTestCoverageCase = "queue_insert_throughput"
+	AVMPerformanceCoverageQueueDrainThroughput           AVMRequiredTestCoverageCase = "queue_drain_throughput"
+	AVMPerformanceCoverageAsyncExecutionThroughput       AVMRequiredTestCoverageCase = "async_message_execution_throughput"
+	AVMPerformanceCoverageActorMailboxThroughput         AVMRequiredTestCoverageCase = "actor_mailbox_throughput"
+	AVMPerformanceCoverageContinuationResumeThroughput   AVMRequiredTestCoverageCase = "continuation_resume_throughput"
+	AVMPerformanceCoverageCrossZoneThroughput            AVMRequiredTestCoverageCase = "cross_zone_message_throughput"
+	AVMPerformanceCoverageReceiptProofGenerationLatency  AVMRequiredTestCoverageCase = "receipt_proof_generation_latency"
+	AVMPerformanceCoverageAVMRootGenerationLatency       AVMRequiredTestCoverageCase = "avm_root_generation_latency"
+	AVMPerformanceCoverageBlockSTMConflictRateByWorkload AVMRequiredTestCoverageCase = "blockstm_conflict_rate_by_workload"
 
 	MaxAVMRequiredTestCoverageCategories = 8
 	MaxAVMRequiredTestCoverageCases      = 64
@@ -137,6 +148,20 @@ func DefaultAVMRequiredTestCoverageSpec() (AVMRequiredTestCoverageSpec, error) {
 				AVMFuzzCoverageContinuationStatePayloads,
 				AVMFuzzCoverageContractStorageKeys,
 				AVMFuzzCoverageInterfaceSchemaPayloads,
+			},
+		},
+		{
+			Category: AVMTestCoverageCategoryPerformance,
+			Cases: []AVMRequiredTestCoverageCase{
+				AVMPerformanceCoverageQueueInsertThroughput,
+				AVMPerformanceCoverageQueueDrainThroughput,
+				AVMPerformanceCoverageAsyncExecutionThroughput,
+				AVMPerformanceCoverageActorMailboxThroughput,
+				AVMPerformanceCoverageContinuationResumeThroughput,
+				AVMPerformanceCoverageCrossZoneThroughput,
+				AVMPerformanceCoverageReceiptProofGenerationLatency,
+				AVMPerformanceCoverageAVMRootGenerationLatency,
+				AVMPerformanceCoverageBlockSTMConflictRateByWorkload,
 			},
 		},
 	}
@@ -225,14 +250,14 @@ func (s AVMRequiredTestCoverageSpec) Validate() error {
 }
 
 func AllAVMRequiredTestCoverageCategories() []AVMRequiredTestCoverageCategory {
-	categories := []AVMRequiredTestCoverageCategory{AVMTestCoverageCategoryFuzz, AVMTestCoverageCategoryIntegration, AVMTestCoverageCategoryInvariant, AVMTestCoverageCategoryUnit}
+	categories := []AVMRequiredTestCoverageCategory{AVMTestCoverageCategoryFuzz, AVMTestCoverageCategoryIntegration, AVMTestCoverageCategoryInvariant, AVMTestCoverageCategoryPerformance, AVMTestCoverageCategoryUnit}
 	sort.Slice(categories, func(i, j int) bool { return categories[i] < categories[j] })
 	return categories
 }
 
 func IsAVMRequiredTestCoverageCategory(category AVMRequiredTestCoverageCategory) bool {
 	switch category {
-	case AVMTestCoverageCategoryUnit, AVMTestCoverageCategoryIntegration, AVMTestCoverageCategoryInvariant, AVMTestCoverageCategoryFuzz:
+	case AVMTestCoverageCategoryUnit, AVMTestCoverageCategoryIntegration, AVMTestCoverageCategoryInvariant, AVMTestCoverageCategoryFuzz, AVMTestCoverageCategoryPerformance:
 		return true
 	default:
 		return false
@@ -364,6 +389,18 @@ func requiredAVMRequiredTestCoverageCases(category AVMRequiredTestCoverageCatego
 			AVMFuzzCoverageContinuationStatePayloads,
 			AVMFuzzCoverageContractStorageKeys,
 			AVMFuzzCoverageInterfaceSchemaPayloads,
+		}
+	case AVMTestCoverageCategoryPerformance:
+		return []AVMRequiredTestCoverageCase{
+			AVMPerformanceCoverageQueueInsertThroughput,
+			AVMPerformanceCoverageQueueDrainThroughput,
+			AVMPerformanceCoverageAsyncExecutionThroughput,
+			AVMPerformanceCoverageActorMailboxThroughput,
+			AVMPerformanceCoverageContinuationResumeThroughput,
+			AVMPerformanceCoverageCrossZoneThroughput,
+			AVMPerformanceCoverageReceiptProofGenerationLatency,
+			AVMPerformanceCoverageAVMRootGenerationLatency,
+			AVMPerformanceCoverageBlockSTMConflictRateByWorkload,
 		}
 	default:
 		return nil
