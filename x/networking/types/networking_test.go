@@ -789,6 +789,118 @@ func TestOverlayRoutingConsensusSafetyRequiresCommittedRoutingTable(t *testing.T
 	require.Equal(t, fast.NodeID, plan.TargetNodeIDs[0])
 }
 
+func TestAdaptiveOverlayGraphBuildsPeerSetsAndPreservesGlobalDiversity(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	local := signedNodeRecord(t, 0x43, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	peers := []AdaptivePeer{
+		testAdaptivePeer(t, signedNodeRecord(t, 0x44, salt, 100, NodeRoleService), 9_500, 11, 9_100, true),
+		testAdaptivePeer(t, signedNodeRecord(t, 0x45, salt, 100, NodeRoleService), 8_800, 24, 9_800, true),
+		testAdaptivePeer(t, signedNodeRecord(t, 0x46, salt, 100, NodeRoleService), 8_200, 50, 8_900, false),
+		testAdaptivePeer(t, signedNodeRecord(t, 0x47, salt, 100, NodeRoleService), 7_500, 80, 9_700, false),
+		testAdaptivePeer(t, signedNodeRecord(t, 0x48, salt, 100, NodeRoleFull), 7_000, 120, 8_000, false),
+	}
+	peers[len(peers)-1].ZonesSupported = nil
+	peers[len(peers)-1].Services = nil
+
+	graph, err := BuildAdaptiveOverlayGraph(desc, local.NodeID, peers, 7, HashParts("adaptive-policy"))
+	require.NoError(t, err)
+	require.NoError(t, graph.Validate(desc))
+	require.NotEmpty(t, graph.FastSet)
+	require.NotEmpty(t, graph.StableSet)
+	require.NotEmpty(t, graph.RandomSet)
+	require.NotEmpty(t, graph.ZoneSet)
+	require.NotEmpty(t, graph.ServiceSet)
+	require.NotEmpty(t, graph.FallbackSet)
+	require.Equal(t, peers[0].NodeID, graph.FastSet[0].NodeID)
+	require.Equal(t, peers[1].NodeID, graph.StableSet[0].NodeID)
+	require.GreaterOrEqual(t, distinctAdaptivePeerBuckets(graph.RandomSet), uint32(2))
+	require.NoError(t, ValidateAdaptiveOverlayGraphUse(graph, false))
+	require.ErrorContains(t, ValidateAdaptiveOverlayGraphUse(graph, true), "advisory")
+	graph.LivePeerScoresCommitted = true
+	require.NoError(t, ValidateAdaptiveOverlayGraphUse(graph, true))
+}
+
+func TestAdaptiveOverlayGraphRejectsEclipseAndZoneReplacement(t *testing.T) {
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	peerA := AdaptivePeer{NodeID: HashParts("aa-peer-a"), ScoreBps: 8_000, ReliabilityBps: 8_000, ZonesSupported: []string{"APPLICATION_ZONE"}}
+	peerB := AdaptivePeer{NodeID: HashParts("aa-peer-b"), ScoreBps: 7_000, ReliabilityBps: 7_000, ZonesSupported: []string{"APPLICATION_ZONE"}}
+	graph := AdaptiveOverlayGraph{
+		OverlayID:    desc.OverlayID,
+		LocalNodeID:  HashParts("local-adaptive-node"),
+		RoutingEpoch: 1,
+		RandomSet:    []AdaptivePeer{peerA, peerB},
+		FallbackSet:  []AdaptivePeer{peerA},
+		FastSet:      []AdaptivePeer{peerA},
+		StableSet:    []AdaptivePeer{peerB},
+		ZoneSet:      []AdaptivePeer{peerA, peerB},
+		ServiceSet:   []AdaptivePeer{},
+		PolicyHash:   HashParts("bad-adaptive-policy"),
+	}
+	require.ErrorContains(t, graph.Validate(desc), "zone peers")
+
+	graph.ZoneSet = nil
+	graph.RandomSet = nil
+	require.ErrorContains(t, graph.Validate(desc), "eclipse")
+}
+
+func TestPeerScoreDecayIsBoundedByPolicy(t *testing.T) {
+	decayed, err := DecayPeerScore(PeerScore{ScoreBps: 9_000}, 3, PeerScoreDecayPolicy{
+		MaxDecayBpsPerEpoch: 1_000,
+		MinScoreBps:         4_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(6_000), decayed.ScoreBps)
+
+	decayed, err = DecayPeerScore(PeerScore{ScoreBps: 4_500}, 5, PeerScoreDecayPolicy{
+		MaxDecayBpsPerEpoch: 1_000,
+		MinScoreBps:         4_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(4_000), decayed.ScoreBps)
+
+	_, err = DecayPeerScore(PeerScore{ScoreBps: 9_000}, 1, PeerScoreDecayPolicy{
+		MaxDecayBpsPerEpoch: BasisPoints + 1,
+	})
+	require.ErrorContains(t, err, "decay")
+}
+
+func TestRoutingTableCommitmentGuardsExecutionScheduling(t *testing.T) {
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	commitment, err := NewRoutingTableCommitment(RoutingTableCommitment{
+		RoutingEpoch: 3,
+		OverlayRoots: []OverlayRouteRoot{
+			{OverlayID: desc.OverlayID, RootHash: HashParts("service-overlay-root")},
+		},
+		ZoneRouteRoot:          HashParts("zone-route-root"),
+		ServiceRouteRoot:       HashParts("service-route-root"),
+		PeerClassRoot:          HashParts("peer-class-root"),
+		CongestionSnapshotRoot: HashParts("congestion-snapshot-root"),
+		PolicyHash:             desc.PolicyHash,
+	})
+	require.NoError(t, err)
+	require.NoError(t, commitment.Validate())
+	require.NotEmpty(t, ComputeRoutingTableCommitmentHash(commitment))
+
+	require.NoError(t, ValidateRoutingTableUse(RoutingTableUse{
+		Commitment:                commitment,
+		UsedForPhysicalForwarding: true,
+	}))
+	require.ErrorContains(t, ValidateRoutingTableUse(RoutingTableUse{
+		Commitment:                 commitment,
+		UsedForExecutionScheduling: true,
+	}), "execution scheduling")
+	require.NoError(t, ValidateRoutingTableUse(RoutingTableUse{
+		Commitment:                 commitment,
+		Committed:                  true,
+		UsedForExecutionScheduling: true,
+	}))
+
+	tampered := commitment
+	tampered.OverlayRoots[0].RootHash = "not-a-hash"
+	require.ErrorContains(t, tampered.Validate(), "lowercase hex")
+}
+
 func TestLayerStackPreservesCometBFTBaselineAndExtensionOrder(t *testing.T) {
 	stack := DefaultLayerStack()
 	require.NoError(t, ValidateLayerStack(stack))
@@ -1229,6 +1341,17 @@ func testOverlayMembershipProof(t *testing.T, record NodeRecord, desc OverlayDes
 	created, err := NewOverlayMembershipProof(proof)
 	require.NoError(t, err)
 	return created
+}
+
+func testAdaptivePeer(t *testing.T, record NodeRecord, scoreBps uint32, latencyMillis uint64, reliabilityBps uint32, committed bool) AdaptivePeer {
+	t.Helper()
+
+	score := PeerScore{ScoreBps: scoreBps}
+	metrics := PeerMetrics{
+		LatencyMillis:  latencyMillis,
+		ReliabilityBps: reliabilityBps,
+	}
+	return AdaptivePeerFromNodeRecord(record, score, metrics, committed, 20)
 }
 
 func testSessionRequest(local, remote NodeRecord, openedHeight, expiresHeight uint64, nonce string, channels []ChannelClass) SessionRequest {
