@@ -46,6 +46,8 @@ import (
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
+	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -54,6 +56,8 @@ import (
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
+	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
@@ -235,9 +239,11 @@ func (app *L1App) initKeepers(
 		app.DistrKeeper,
 		govAuthority,
 	)
+	app.AetherCoreKeeper = aethercorekeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[aethercoretypes.StoreKey]))
 	app.LoadKeeper = loadkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[loadtypes.StoreKey]))
 	app.RoutingKeeper = routingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[routingtypes.StoreKey]))
 	app.ZonesKeeper = zoneskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[zonestypes.StoreKey]))
 	app.MeshKeeper = meshkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[meshtypes.StoreKey]))
+	app.NetworkingKeeper = networkingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[networkingtypes.StoreKey]))
 	return txConfig
 }

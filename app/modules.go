@@ -32,10 +32,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	"github.com/cosmos/cosmos-sdk/x/upgrade"
 
+	aethercoremodule "github.com/sovereign-l1/l1/x/aethercore"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
 	loadmodule "github.com/sovereign-l1/l1/x/load"
 	meshmodule "github.com/sovereign-l1/l1/x/mesh"
+	networkingmodule "github.com/sovereign-l1/l1/x/networking"
 	routingmodule "github.com/sovereign-l1/l1/x/routing"
 	tokenfactorymodule "github.com/sovereign-l1/l1/x/tokenfactory"
 	zonesmodule "github.com/sovereign-l1/l1/x/zones"
@@ -64,10 +66,12 @@ func (app *L1App) initModules(
 		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		epochs.NewAppModule(app.EpochsKeeper),
 		protocolpool.NewAppModule(app.ProtocolPoolKeeper, app.AccountKeeper, app.BankKeeper),
+		aethercoremodule.NewAppModule(app.AetherCoreKeeper),
 		loadmodule.NewAppModule(app.LoadKeeper),
 		routingmodule.NewAppModule(app.RoutingKeeper),
 		zonesmodule.NewAppModule(app.ZonesKeeper),
 		meshmodule.NewAppModule(app.MeshKeeper),
+		networkingmodule.NewAppModule(app.NetworkingKeeper),
 		tokenfactorymodule.NewAppModule(appCodec, app.TokenFactoryKeeper),
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),

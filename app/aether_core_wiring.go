@@ -21,10 +21,12 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
+	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
@@ -39,10 +41,12 @@ const (
 )
 
 var aetherCorePrototypeModules = []string{
+	aethercoretypes.ModuleName,
 	loadtypes.ModuleName,
 	routingtypes.ModuleName,
 	zonestypes.ModuleName,
 	meshtypes.ModuleName,
+	networkingtypes.ModuleName,
 }
 
 func AetherCoreRoutingExecutionPoint() RoutingExecutionPoint {
@@ -55,10 +59,12 @@ func AetherCorePrototypeModuleNames() []string {
 
 func AetherCorePrototypeStoreKeys() []string {
 	return []string{
+		aethercoretypes.StoreKey,
 		loadtypes.StoreKey,
 		routingtypes.StoreKey,
 		zonestypes.StoreKey,
 		meshtypes.StoreKey,
+		networkingtypes.StoreKey,
 	}
 }
 
@@ -77,10 +83,12 @@ func aetherCoreBeginBlockerOrder() []string {
 		genutiltypes.ModuleName,
 		authz.ModuleName,
 		epochstypes.ModuleName,
+		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
 		zonestypes.ModuleName,
 		meshtypes.ModuleName,
+		networkingtypes.ModuleName,
 	}
 }
 
@@ -92,10 +100,12 @@ func aetherCoreEndBlockerOrder() []string {
 		genutiltypes.ModuleName,
 		feegrant.ModuleName,
 		protocolpooltypes.ModuleName,
+		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
 		zonestypes.ModuleName,
 		meshtypes.ModuleName,
+		networkingtypes.ModuleName,
 	}
 }
 
@@ -117,10 +127,12 @@ func aetherCoreInitGenesisOrder() []string {
 		consensusparamtypes.ModuleName,
 		epochstypes.ModuleName,
 		protocolpooltypes.ModuleName,
+		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
 		zonestypes.ModuleName,
 		meshtypes.ModuleName,
+		networkingtypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,
@@ -145,10 +157,12 @@ func aetherCoreExportGenesisOrder() []string {
 		upgradetypes.ModuleName,
 		vestingtypes.ModuleName,
 		epochstypes.ModuleName,
+		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
 		zonestypes.ModuleName,
 		meshtypes.ModuleName,
+		networkingtypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,

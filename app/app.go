@@ -52,6 +52,8 @@ import (
 
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
+	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
+	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -60,6 +62,8 @@ import (
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
+	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
@@ -135,10 +139,12 @@ type L1App struct {
 	TokenFactoryKeeper tokenfactorykeeper.Keeper
 	DexKeeper          dexkeeper.Keeper
 	FeesKeeper         feeskeeper.Keeper
+	AetherCoreKeeper   aethercorekeeper.Keeper
 	LoadKeeper         loadkeeper.Keeper
 	RoutingKeeper      routingkeeper.Keeper
 	ZonesKeeper        zoneskeeper.Keeper
 	MeshKeeper         meshkeeper.Keeper
+	NetworkingKeeper   networkingkeeper.Keeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -241,10 +247,12 @@ func NewL1App(
 		tokenfactorytypes.StoreKey,
 		dextypes.StoreKey,
 		feestypes.StoreKey,
+		aethercoretypes.StoreKey,
 		loadtypes.StoreKey,
 		routingtypes.StoreKey,
 		zonestypes.StoreKey,
 		meshtypes.StoreKey,
+		networkingtypes.StoreKey,
 	)
 
 	// register streaming services

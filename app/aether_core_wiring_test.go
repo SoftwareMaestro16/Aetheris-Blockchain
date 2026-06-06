@@ -15,10 +15,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	sims "github.com/cosmos/cosmos-sdk/testutil/sims"
 
+	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
+	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
+	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
+	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
@@ -44,6 +48,13 @@ func TestAetherCoreWiringGateRegistersPrototypeModulesDisabled(t *testing.T) {
 		require.True(t, slices.Contains(app.ModuleManager.OrderEndBlockers, moduleName), moduleName)
 	}
 
+	aetherCoreGenesis := decodeJSONGenesis[aethercorekeeper.GenesisState](t, genesis[aethercoretypes.ModuleName])
+	require.False(t, aetherCoreGenesis.Params.Enabled)
+	require.Empty(t, aetherCoreGenesis.State.ZoneDescriptors)
+	require.Empty(t, aetherCoreGenesis.State.ServiceDescriptors)
+	require.Empty(t, aetherCoreGenesis.State.ZoneCommitments)
+	require.Empty(t, aetherCoreGenesis.State.GlobalRoots)
+
 	loadGenesis := decodeJSONGenesis[loadkeeper.GenesisState](t, genesis[loadtypes.ModuleName])
 	require.False(t, loadGenesis.Params.Enabled)
 	require.Empty(t, loadGenesis.History)
@@ -61,6 +72,12 @@ func TestAetherCoreWiringGateRegistersPrototypeModulesDisabled(t *testing.T) {
 	require.False(t, meshGenesis.Params.Enabled)
 	require.Empty(t, meshGenesis.State.Destinations)
 	require.Empty(t, meshGenesis.State.ReplayMarkers)
+
+	networkingGenesis := decodeJSONGenesis[networkingkeeper.GenesisState](t, genesis[networkingtypes.ModuleName])
+	require.False(t, networkingGenesis.Params.Enabled)
+	require.NotEmpty(t, networkingGenesis.State.ChannelPolicies)
+	require.Empty(t, networkingGenesis.State.NodeRecords)
+	require.Empty(t, networkingGenesis.State.Sessions)
 }
 
 func TestFeatureDisabledMainnetProfileHasNoActiveProductionShardingBehavior(t *testing.T) {
@@ -73,6 +90,10 @@ func TestFeatureDisabledMainnetProfileHasNoActiveProductionShardingBehavior(t *t
 	err = app.ZonesKeeper.RegisterZone(zonestypes.Zone{})
 	require.ErrorContains(t, err, "disabled")
 	err = app.MeshKeeper.RegisterDestination(meshtypes.MeshDestination{})
+	require.ErrorContains(t, err, "disabled")
+	err = app.NetworkingKeeper.RegisterNodeRecord(networkingtypes.NodeRecord{}, nil, 1)
+	require.ErrorContains(t, err, "disabled")
+	err = app.AetherCoreKeeper.RegisterZoneDescriptor(aethercoretypes.ZoneDescriptor{})
 	require.ErrorContains(t, err, "disabled")
 }
 
@@ -107,6 +128,10 @@ func TestAetherCorePrototypeStateSurvivesRestartWhenDisabled(t *testing.T) {
 	require.NoError(t, err)
 	sourceMesh, err := source.MeshKeeper.ExportGenesisState(sourceCtx)
 	require.NoError(t, err)
+	sourceNetworking, err := source.NetworkingKeeper.ExportGenesisState(sourceCtx)
+	require.NoError(t, err)
+	sourceAetherCore, err := source.AetherCoreKeeper.ExportGenesisState(sourceCtx)
+	require.NoError(t, err)
 
 	restarted := NewL1App(log.NewNopLogger(), db, true, appOptions)
 	restartedCtx := restarted.NewUncachedContext(false, cmtproto.Header{Height: restarted.LastBlockHeight()})
@@ -118,11 +143,17 @@ func TestAetherCorePrototypeStateSurvivesRestartWhenDisabled(t *testing.T) {
 	require.NoError(t, err)
 	restartedMesh, err := restarted.MeshKeeper.ExportGenesisState(restartedCtx)
 	require.NoError(t, err)
+	restartedNetworking, err := restarted.NetworkingKeeper.ExportGenesisState(restartedCtx)
+	require.NoError(t, err)
+	restartedAetherCore, err := restarted.AetherCoreKeeper.ExportGenesisState(restartedCtx)
+	require.NoError(t, err)
 
+	require.Equal(t, sourceAetherCore, restartedAetherCore)
 	require.Equal(t, sourceLoad, restartedLoad)
 	require.Equal(t, sourceRouting, restartedRouting)
 	require.Equal(t, sourceZones, restartedZones)
 	require.Equal(t, sourceMesh, restartedMesh)
+	require.Equal(t, sourceNetworking, restartedNetworking)
 }
 
 func decodeJSONGenesis[T any](t *testing.T, raw json.RawMessage) T {
