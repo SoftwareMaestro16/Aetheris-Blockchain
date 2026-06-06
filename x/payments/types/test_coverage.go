@@ -13,6 +13,8 @@ type RequiredTestCoverageID string
 const (
 	RequiredTestCoverageUnit        RequiredTestCoverageKind = "UNIT"
 	RequiredTestCoverageIntegration RequiredTestCoverageKind = "INTEGRATION"
+	RequiredTestCoverageInvariant   RequiredTestCoverageKind = "INVARIANT"
+	RequiredTestCoverageFuzz        RequiredTestCoverageKind = "FUZZ"
 )
 
 type RequiredTestCoverageEntry struct {
@@ -27,6 +29,8 @@ type RequiredTestCoverageEntry struct {
 type RequiredTestCoverageReport struct {
 	UnitCount        uint64
 	IntegrationCount uint64
+	InvariantCount   uint64
+	FuzzCount        uint64
 	Entries          []RequiredTestCoverageEntry
 	ReportHash       string
 }
@@ -56,6 +60,25 @@ func BuildRequiredTestCoverageReport() RequiredTestCoverageReport {
 		requiredIntegrationCoverage("integration_fraud_reward", "Fraud proof with reporter reward.", []string{"TestFraudProofVerificationFeeRefundsWhenAccepted", "TestFraudProofVerificationModuleDedupGasPenaltyAndRewardClaim"}, "SubmitFraudProofWithPolicy", "ReporterRewardFromPenaltyRecord"),
 		requiredIntegrationCoverage("integration_fee_congestion_during_dispute", "Fee congestion during dispute.", []string{"TestDisputePriorityPolicyNearExpiryFraudAndStressInclusion", "TestPaymentFeeScheduleChargesStorageAndDynamicMultiplier"}, "ComputeDisputeTransactionPriority", "DynamicFeeMultiplier"),
 		requiredIntegrationCoverage("integration_store_snapshot_pending_close", "Store snapshot recovery during pending close.", []string{"TestAdaptiveSyncSnapshotRecoversNodeDuringActiveDispute", "TestKeeperAdaptiveSyncSnapshotRecovery"}, "BuildAdaptiveSyncSnapshot", "RecoverAdaptiveSyncSafety"),
+		requiredInvariantCoverage("invariant_locked_collateral_active_balances_reserves_penalties", "Locked collateral equals active balances plus reserves plus pending penalties.", []string{"TestLockedCollateralInvariantForEveryFinalityState", "TestDisputeAndPenaltyFinalityTransitionsRetainCollateralUntilSettlement"}, "ValidateLockedCollateralForFinality", "validateCollateralConservation"),
+		requiredInvariantCoverage("invariant_settlement_never_overpays_locked_collateral", "Settlement never pays more than locked collateral.", []string{"TestFinalSettlementRequiresResolvedConditionsAndUnlocksCustody", "TestPaymentChannelCloseDisputeFraudAndSettlement"}, "SettlementRecord.ValidateForChannel", "applySettlementAdjustments"),
+		requiredInvariantCoverage("invariant_promise_reserve_within_channel_balance", "Promise reserve cannot exceed channel balance.", []string{"TestConditionalPromiseObjectSignatureReserveAndReplayRules", "TestKeeperConditionalPaymentsModuleMessagesAndInvariants"}, "ValidateReservedBalancesForConditions", "BuildConditionRootUpdateFromPromises"),
+		requiredInvariantCoverage("invariant_expired_promises_not_resolvable", "Expired promises cannot be resolved.", []string{"TestTimeoutOrderingAndExpiryResolutionReleaseConditionRoot", "FuzzPaymentRequiredFuzzVectors"}, "RevealPromisePreimage", "ConditionalPromise.TimeoutHeight"),
+		requiredInvariantCoverage("invariant_preimage_single_settlement_per_promise", "Same preimage cannot settle the same promise twice.", []string{"TestHashLockedPreimageRevealResolvesLinkedPromisesAndTracksPreimage", "TestSettlementRejectsReusedConditionAndPreimageClaims"}, "ConditionClaimRecord", "rejectReusedConditionClaims"),
+		requiredInvariantCoverage("invariant_finalized_channel_id_cannot_reopen", "Finalized channel cannot be reopened with same ID.", []string{"TestPaymentChannelCloseDisputeFraudAndSettlement", "TestPaymentChannelModuleMessagesDispatchAnteAndInvariants"}, "OpenChannel", "SettlementTombstone"),
+		requiredInvariantCoverage("invariant_penalties_non_negative_balances", "Penalties cannot produce negative balances.", []string{"TestPenaltyMatrixCoversFraudProofCategoriesAndBoundsBalances", "TestFraudProofInvalidBalanceRoutesPenaltyRemainder"}, "ValidatePenaltyWithinAvailableBalance", "applySettlementAdjustments"),
+		requiredInvariantCoverage("invariant_fee_buckets_sum_collected_fees", "Fee buckets sum to collected fees.", []string{"TestPaymentBlockAccumulatorAggregatesAfterSettlementHotPath", "TestPaymentChannelModuleMessagesDispatchAnteAndInvariants"}, "AccumulatePaymentBlockAccounting", "ChannelFeeAccumulatorFromBlock"),
+		requiredInvariantCoverage("invariant_same_channel_writes_conflict", "Same-channel writes conflict deterministically.", []string{"TestBlockSTMConflictProfileDetectsSameChannelConflicts", "TestPaymentChannelModuleBlockSTMProfilesMessageConflicts"}, "ProfileBlockSTMConflicts", "PaymentChannelMessageAccessPlan"),
+		requiredInvariantCoverage("invariant_distinct_channel_settlements_hot_keys", "Distinct-channel settlements do not share hot write keys.", []string{"TestBlockSTMAccessPlanUsesPerChannelKeysAndDefersAccounting", "TestSettlementBatchRequiresIndependentChannels"}, "AccessPlanForSettlementOperation", "PaymentBlockAccumulatorKey"),
+		requiredFuzzCoverage("fuzz_malformed_signed_states", "Malformed signed states.", []string{"FuzzPaymentRequiredFuzzVectors", "TestSignatureEnvelopeRejectsReplayAndWrongCommitment"}, "ChannelState.ValidateForChannel", "ComputeStateSignaturePreimageHash"),
+		requiredFuzzCoverage("fuzz_random_nonce_ordering", "Random nonce ordering.", []string{"FuzzPaymentRequiredFuzzVectors", "TestRollbackVectorsRejectNonceAndPreviousHashRollback"}, "AcceptSignedState", "ValidatePreviousHashContinuity"),
+		requiredFuzzCoverage("fuzz_conflicting_same_nonce_states", "Conflicting same-nonce states.", []string{"FuzzPaymentRequiredFuzzVectors", "FuzzCanonicalFraudEvidenceHashMalformedInputs"}, "FraudProofTypeDoubleSign", "ComputeCanonicalFraudEvidenceHash"),
+		requiredFuzzCoverage("fuzz_invalid_promise_links", "Invalid promise links.", []string{"FuzzPaymentRequiredFuzzVectors", "TestBatchConditionSettlementRejectsBrokenRouteInvariants"}, "ConditionLinkageProof", "BatchSettleLinkedPromises"),
+		requiredFuzzCoverage("fuzz_timeout_boundary_conditions", "Timeout boundary conditions.", []string{"FuzzPaymentRequiredFuzzVectors", "TestTimeoutOrderingAndExpiryResolutionReleaseConditionRoot"}, "ValidatePromiseTimeoutOrdering", "RevealPromisePreimage"),
+		requiredFuzzCoverage("fuzz_batch_settlement_ordering", "Batch settlement ordering.", []string{"FuzzPaymentRequiredFuzzVectors", "TestSettlementBatchGroupingByChannelKey"}, "NewSettlementBatch", "ComputeBatchRoot"),
+		requiredFuzzCoverage("fuzz_fraud_proof_duplicate_encodings", "Fraud proof duplicate encodings.", []string{"FuzzPaymentRequiredFuzzVectors", "TestFraudProofVerificationModuleDedupGasPenaltyAndRewardClaim"}, "ComputeCanonicalFraudEvidenceHash", "FraudProofVerificationState.HasEvidence"),
+		requiredFuzzCoverage("fuzz_route_failure_classifications", "Route failure classifications.", []string{"FuzzPaymentRequiredFuzzVectors", "TestRouteFailureScoringReducesLocalRoutingScore"}, "ClassifyRouteFailure", "BuildRouteFailureScore"),
+		requiredFuzzCoverage("fuzz_async_delta_aggregation", "Async delta aggregation.", []string{"FuzzPaymentRequiredFuzzVectors", "TestAsyncCheckpointAggregationExposureExpiryAndProof"}, "BuildAsyncCheckpointState", "ComputeAsyncDeltaRootForChannel"),
 	}
 	report := RequiredTestCoverageReport{Entries: normalizeRequiredTestCoverageEntries(entries)}
 	for _, entry := range report.Entries {
@@ -64,6 +87,10 @@ func BuildRequiredTestCoverageReport() RequiredTestCoverageReport {
 			report.UnitCount++
 		case RequiredTestCoverageIntegration:
 			report.IntegrationCount++
+		case RequiredTestCoverageInvariant:
+			report.InvariantCount++
+		case RequiredTestCoverageFuzz:
+			report.FuzzCount++
 		}
 	}
 	report.ReportHash = ComputeRequiredTestCoverageReportHash(report)
@@ -76,6 +103,8 @@ func ValidateRequiredTestCoverageReport(report RequiredTestCoverageReport) error
 	seen := make(map[RequiredTestCoverageID]struct{}, len(required))
 	unitCount := uint64(0)
 	integrationCount := uint64(0)
+	invariantCount := uint64(0)
+	fuzzCount := uint64(0)
 	for _, entry := range report.Entries {
 		entry = entry.Normalize()
 		if !isRequiredTestCoverageID(entry.CoverageID) {
@@ -85,13 +114,18 @@ func ValidateRequiredTestCoverageReport(report RequiredTestCoverageReport) error
 			return fmt.Errorf("duplicate payments required test coverage %q", entry.CoverageID)
 		}
 		seen[entry.CoverageID] = struct{}{}
-		if entry.Kind != RequiredTestCoverageUnit && entry.Kind != RequiredTestCoverageIntegration {
+		if entry.Kind != RequiredTestCoverageUnit && entry.Kind != RequiredTestCoverageIntegration && entry.Kind != RequiredTestCoverageInvariant && entry.Kind != RequiredTestCoverageFuzz {
 			return fmt.Errorf("unknown payments required test coverage kind %q", entry.Kind)
 		}
-		if entry.Kind == RequiredTestCoverageUnit {
+		switch entry.Kind {
+		case RequiredTestCoverageUnit:
 			unitCount++
-		} else {
+		case RequiredTestCoverageIntegration:
 			integrationCount++
+		case RequiredTestCoverageInvariant:
+			invariantCount++
+		case RequiredTestCoverageFuzz:
+			fuzzCount++
 		}
 		if entry.Description == "" || len(entry.TestNames) == 0 || len(entry.Evidence) == 0 {
 			return fmt.Errorf("payments required test coverage %q lacks description, test names, or evidence", entry.CoverageID)
@@ -108,10 +142,10 @@ func ValidateRequiredTestCoverageReport(report RequiredTestCoverageReport) error
 			return fmt.Errorf("missing payments required test coverage %q", id)
 		}
 	}
-	if unitCount != 14 || integrationCount != 9 {
-		return errors.New("payments required test coverage counts must match section 16.1 and 16.2")
+	if unitCount != 14 || integrationCount != 9 || invariantCount != 10 || fuzzCount != 9 {
+		return errors.New("payments required test coverage counts must match section 16.1 through 16.4")
 	}
-	if report.UnitCount != unitCount || report.IntegrationCount != integrationCount {
+	if report.UnitCount != unitCount || report.IntegrationCount != integrationCount || report.InvariantCount != invariantCount || report.FuzzCount != fuzzCount {
 		return errors.New("payments required test coverage counters are invalid")
 	}
 	if err := ValidateHash("payments required test coverage report hash", report.ReportHash); err != nil {
@@ -125,7 +159,7 @@ func ValidateRequiredTestCoverageReport(report RequiredTestCoverageReport) error
 
 func ComputeRequiredTestCoverageReportHash(report RequiredTestCoverageReport) string {
 	report.Entries = normalizeRequiredTestCoverageEntries(report.Entries)
-	parts := []string{"payments-required-test-coverage-v1", fmt.Sprintf("%020d", report.UnitCount), fmt.Sprintf("%020d", report.IntegrationCount)}
+	parts := []string{"payments-required-test-coverage-v1", fmt.Sprintf("%020d", report.UnitCount), fmt.Sprintf("%020d", report.IntegrationCount), fmt.Sprintf("%020d", report.InvariantCount), fmt.Sprintf("%020d", report.FuzzCount)}
 	for _, entry := range report.Entries {
 		entry = entry.Normalize()
 		parts = append(parts, string(entry.CoverageID), string(entry.Kind), entry.Description, entry.EvidenceHash)
@@ -157,6 +191,14 @@ func requiredUnitCoverage(id RequiredTestCoverageID, description string, tests [
 
 func requiredIntegrationCoverage(id RequiredTestCoverageID, description string, tests []string, evidence ...string) RequiredTestCoverageEntry {
 	return requiredTestCoverage(id, RequiredTestCoverageIntegration, description, tests, evidence...)
+}
+
+func requiredInvariantCoverage(id RequiredTestCoverageID, description string, tests []string, evidence ...string) RequiredTestCoverageEntry {
+	return requiredTestCoverage(id, RequiredTestCoverageInvariant, description, tests, evidence...)
+}
+
+func requiredFuzzCoverage(id RequiredTestCoverageID, description string, tests []string, evidence ...string) RequiredTestCoverageEntry {
+	return requiredTestCoverage(id, RequiredTestCoverageFuzz, description, tests, evidence...)
 }
 
 func requiredTestCoverage(id RequiredTestCoverageID, kind RequiredTestCoverageKind, description string, tests []string, evidence ...string) RequiredTestCoverageEntry {
@@ -223,6 +265,25 @@ func requiredTestCoverageIDs() []RequiredTestCoverageID {
 		"integration_fraud_reward",
 		"integration_fee_congestion_during_dispute",
 		"integration_store_snapshot_pending_close",
+		"invariant_locked_collateral_active_balances_reserves_penalties",
+		"invariant_settlement_never_overpays_locked_collateral",
+		"invariant_promise_reserve_within_channel_balance",
+		"invariant_expired_promises_not_resolvable",
+		"invariant_preimage_single_settlement_per_promise",
+		"invariant_finalized_channel_id_cannot_reopen",
+		"invariant_penalties_non_negative_balances",
+		"invariant_fee_buckets_sum_collected_fees",
+		"invariant_same_channel_writes_conflict",
+		"invariant_distinct_channel_settlements_hot_keys",
+		"fuzz_malformed_signed_states",
+		"fuzz_random_nonce_ordering",
+		"fuzz_conflicting_same_nonce_states",
+		"fuzz_invalid_promise_links",
+		"fuzz_timeout_boundary_conditions",
+		"fuzz_batch_settlement_ordering",
+		"fuzz_fraud_proof_duplicate_encodings",
+		"fuzz_route_failure_classifications",
+		"fuzz_async_delta_aggregation",
 	}
 }
 

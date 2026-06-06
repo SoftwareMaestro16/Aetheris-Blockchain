@@ -539,7 +539,9 @@ func TestRequiredPaymentTestCoverageMatrixCoversUnitAndIntegrationSpecs(t *testi
 	require.NoError(t, ValidateRequiredTestCoverageReport(report))
 	require.Equal(t, uint64(14), report.UnitCount)
 	require.Equal(t, uint64(9), report.IntegrationCount)
-	require.Len(t, report.Entries, 23)
+	require.Equal(t, uint64(10), report.InvariantCount)
+	require.Equal(t, uint64(9), report.FuzzCount)
+	require.Len(t, report.Entries, 42)
 
 	seen := map[RequiredTestCoverageID]RequiredTestCoverageEntry{}
 	for _, entry := range report.Entries {
@@ -552,6 +554,10 @@ func TestRequiredPaymentTestCoverageMatrixCoversUnitAndIntegrationSpecs(t *testi
 	require.Contains(t, seen["unit_channel_id_generation"].Evidence, "HashParts")
 	require.Equal(t, RequiredTestCoverageIntegration, seen["integration_parent_dispute_with_virtual_active"].Kind)
 	require.Contains(t, seen["integration_parent_dispute_with_virtual_active"].TestNames, "TestParentChannelDisputeWhileVirtualChannelIsActive")
+	require.Equal(t, RequiredTestCoverageInvariant, seen["invariant_same_channel_writes_conflict"].Kind)
+	require.Contains(t, seen["invariant_same_channel_writes_conflict"].TestNames, "TestBlockSTMConflictProfileDetectsSameChannelConflicts")
+	require.Equal(t, RequiredTestCoverageFuzz, seen["fuzz_async_delta_aggregation"].Kind)
+	require.Contains(t, seen["fuzz_async_delta_aggregation"].TestNames, "FuzzPaymentRequiredFuzzVectors")
 
 	duplicate := report
 	duplicate.Entries = append(duplicate.Entries, report.Entries[0])
@@ -561,7 +567,9 @@ func TestRequiredPaymentTestCoverageMatrixCoversUnitAndIntegrationSpecs(t *testi
 	missing := report
 	missing.Entries = missing.Entries[:len(missing.Entries)-1]
 	missing.UnitCount = 14
-	missing.IntegrationCount = 8
+	missing.IntegrationCount = 9
+	missing.InvariantCount = 10
+	missing.FuzzCount = 8
 	missing.ReportHash = ComputeRequiredTestCoverageReportHash(missing)
 	require.ErrorContains(t, ValidateRequiredTestCoverageReport(missing), "missing payments required test coverage")
 }
@@ -1924,6 +1932,99 @@ func FuzzCanonicalFraudEvidenceHashMalformedInputs(f *testing.F) {
 			PenaltyAmount:   "20",
 		}
 		require.NoError(t, ValidateHash("fuzz canonical fraud evidence", ComputeCanonicalFraudEvidenceHash(channel, proof)))
+	})
+}
+
+func FuzzPaymentRequiredFuzzVectors(f *testing.F) {
+	for i, seed := range []string{
+		"malformed signed state",
+		"random nonce ordering",
+		"conflicting same nonce",
+		"invalid promise links",
+		"timeout boundary",
+		"batch ordering",
+		"duplicate fraud encoding",
+		"node queue congestion",
+		"async delta aggregation",
+	} {
+		f.Add(seed, uint64(i), int64(i+1), seed)
+	}
+	f.Fuzz(func(t *testing.T, seed string, selector uint64, skew int64, reason string) {
+		if len(seed) > 64 {
+			seed = seed[:64]
+		}
+		if len(reason) > 128 {
+			reason = reason[:128]
+		}
+		alice := testAddress(0xb5)
+		router := testAddress(0xb6)
+		bob := testAddress(0xb7)
+		amount := fmt.Sprintf("%d", uint64(1+(absInt64(skew)%20)))
+		channel := signedChannel(t, "required-fuzz-"+seed, "1000", alice, bob)
+
+		switch selector % 9 {
+		case 0:
+			malformed := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{{Participant: alice, Amount: "900"}, {Participant: bob, Amount: "100"}})
+			malformed.SignaturePreimageHash = HashParts("malformed-signature-preimage", seed)
+			require.Error(t, malformed.ValidateForChannel(channel, true))
+		case 1:
+			state := EmptyStateWithChannel(t, channel)
+			stale := signedState(t, channel, 1, channel.OpeningStateHash, []Balance{{Participant: alice, Amount: "1000"}, {Participant: bob, Amount: "0"}})
+			_, err := AcceptSignedState(state, channel.ChannelID, stale, 20)
+			require.ErrorContains(t, err, "strictly increase")
+		case 2:
+			left := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{{Participant: alice, Amount: "900"}, {Participant: bob, Amount: "100"}})
+			right := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{{Participant: alice, Amount: "800"}, {Participant: bob, Amount: "200"}})
+			require.NotEqual(t, left.StateHash, right.StateHash)
+			proof := FraudProof{ProofID: HashParts("required-fuzz-conflict", seed), ProofType: FraudProofTypeDoubleSign, StateA: left, StateB: right, EvidenceHash: HashParts("required-fuzz-evidence", seed), PenaltyDenom: NativeDenom, PenaltyAmount: amount}
+			require.NoError(t, ValidateHash("required fuzz canonical conflict", ComputeCanonicalFraudEvidenceHash(channel, proof)))
+		case 3:
+			routeID := HashParts("required-fuzz-route", seed)
+			hashLock := HashParts("required-fuzz-promise-preimage", seed)
+			first := signedRoutePromise(t, channel, HashParts("required-fuzz-promise-first", seed), routeID, alice, router, "20", "0", 3, 70, hashLock, "", "")
+			second := signedRoutePromise(t, channel, HashParts("required-fuzz-promise-second", seed), routeID, router, bob, "20", "1", 4, 40, hashLock, HashParts("wrong-previous", seed), "")
+			err := (ConditionLinkageProof{RouteID: routeID, Promises: []ConditionalPromise{first, second}, Sender: alice, Receiver: bob, Amount: "20", TotalFees: "1", HashLock: hashLock, TimeoutMargin: DefaultTimeoutMargin}).ValidateForState(EmptyStateWithChannel(t, channel), nil)
+			require.Error(t, err)
+		case 4:
+			base := signedReserveState(t, channel, 2, channel.OpeningStateHash, "20", "0", []Balance{{Participant: alice, Amount: "970"}, {Participant: bob, Amount: "10"}})
+			promiseChannel := channel
+			promiseChannel.LatestState = base
+			state := EmptyStateWithChannel(t, channel)
+			state, err := AcceptSignedState(state, channel.ChannelID, base, 20)
+			require.NoError(t, err)
+			promise := signedPromiseWithHashLock(t, promiseChannel, "required-fuzz-timeout-"+seed, alice, bob, amount, "0", 3, 30, HashParts("required-fuzz-timeout-preimage"))
+			_, _, err = RevealPromisePreimage(state, PreimageRevealRequest{ChannelID: channel.ChannelID, Promises: []ConditionalPromise{promise}, Preimage: "required-fuzz-timeout-preimage", Revealer: bob, CurrentHeight: 31})
+			require.ErrorContains(t, err, "timed out")
+		case 5:
+			firstOp := SettlementOperation{OperationID: HashParts("required-fuzz-op-first", seed), OperationType: BatchOperationSettle, ChannelID: channel.ChannelID, Nonce: 1, StateHash: channel.LatestState.StateHash}
+			secondChannel := signedChannel(t, "required-fuzz-batch-second-"+seed, "1000", alice, router)
+			secondOp := SettlementOperation{OperationID: HashParts("required-fuzz-op-second", seed), OperationType: BatchOperationClose, ChannelID: secondChannel.ChannelID, Nonce: 1, StateHash: secondChannel.LatestState.StateHash}
+			batch, err := NewSettlementBatch(HashParts("required-fuzz-batch", seed), []SettlementOperation{secondOp, firstOp})
+			require.NoError(t, err)
+			tampered := batch
+			tampered.RootHash = HashParts("wrong-batch-root", seed)
+			require.ErrorContains(t, tampered.Validate(), "root")
+		case 6:
+			left := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{{Participant: alice, Amount: "950"}, {Participant: bob, Amount: "50"}})
+			right := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{{Participant: alice, Amount: "940"}, {Participant: bob, Amount: "60"}})
+			firstProof := FraudProof{ProofID: HashParts("required-fuzz-proof-a", seed), ProofType: FraudProofTypeDoubleSign, StateA: left, StateB: right, EvidenceHash: HashParts("required-fuzz-proof-evidence", seed), PenaltyDenom: NativeDenom, PenaltyAmount: amount}
+			secondProof := firstProof
+			secondProof.ProofID = HashParts("required-fuzz-proof-b", seed)
+			require.Equal(t, ComputeCanonicalFraudEvidenceHash(channel, firstProof), ComputeCanonicalFraudEvidenceHash(channel, secondProof))
+		case 7:
+			class := ClassifyRouteFailure(reason)
+			require.True(t, IsRouteFailureClass(class))
+			_, err := BuildRouteFailureScore(RouteFailureReport{ChannelID: channel.ChannelID, From: alice, To: bob, FailureClass: class, Retryable: true, ObservedHeight: 30}, 1, DefaultRouteFailureScoringPolicy())
+			require.NoError(t, err)
+		case 8:
+			asyncChannel := signedAsyncChannel(t, "required-fuzz-async-"+seed, "1000", []Balance{{Participant: alice, Amount: "1000"}, {Participant: bob, Amount: "0"}}, 10, 10, "100", 70, alice, bob)
+			delta := signedAsyncDelta(t, asyncChannel, "required-fuzz-delta-"+seed, alice, bob, amount, 3, 4, 40)
+			checkpoint, err := BuildAsyncCheckpointState(asyncChannel, []AsyncPaymentDelta{delta}, 4, 30)
+			require.NoError(t, err)
+			require.NoError(t, ValidateHash("required fuzz async checkpoint", checkpoint.StateHash))
+			_, err = BuildAsyncCheckpointState(asyncChannel, []AsyncPaymentDelta{delta, delta}, 5, 30)
+			require.Error(t, err)
+		}
 	})
 }
 
@@ -6503,6 +6604,16 @@ func amountFor(balances []Balance, participant string) string {
 		}
 	}
 	return ""
+}
+
+func absInt64(value int64) int64 {
+	if value == -9223372036854775808 {
+		return 9223372036854775807
+	}
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func paymentEventTypes(events []PaymentEvent) []string {
