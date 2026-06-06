@@ -14,6 +14,8 @@ type RequiredCoverageID string
 const (
 	RequiredCoverageDeterminism RequiredCoverageKind = "determinism"
 	RequiredCoverageInvariant   RequiredCoverageKind = "invariant"
+	RequiredCoverageSimulation  RequiredCoverageKind = "simulation"
+	RequiredCoveragePerformance RequiredCoverageKind = "performance"
 
 	RequiredCoverageSameBlockZoneRoots    RequiredCoverageID = "same-block-identical-zone-roots"
 	RequiredCoverageSameBlockMessageRoots RequiredCoverageID = "same-block-identical-message-roots"
@@ -29,6 +31,24 @@ const (
 	RequiredCoverageContractStateProofRoot     RequiredCoverageID = "contract-state-proof-matches-zone-root"
 	RequiredCoverageShardSplitPreservesKeys    RequiredCoverageID = "shard-split-preserves-state-keys"
 	RequiredCoverageShardMergePreservesKeys    RequiredCoverageID = "shard-merge-preserves-state-keys"
+
+	RequiredCoverageHighVolumeBankTransfers  RequiredCoverageID = "high-volume-bank-transfers-across-shards"
+	RequiredCoverageIdentityResolverBursts   RequiredCoverageID = "identity-resolver-update-bursts"
+	RequiredCoverageContractAsyncCallChains  RequiredCoverageID = "contract-async-call-chains"
+	RequiredCoveragePaymentTimeoutBounce     RequiredCoverageID = "payment-route-timeout-and-bounce"
+	RequiredCoverageDEXShardConflictUpdates  RequiredCoverageID = "dex-pool-updates-under-shard-conflict"
+	RequiredCoverageCrossZoneCongestion      RequiredCoverageID = "cross-zone-congestion"
+	RequiredCoverageShardSplitSustainedLoad  RequiredCoverageID = "shard-split-under-sustained-load"
+	RequiredCoverageAdaptiveSyncActiveQueues RequiredCoverageID = "node-recovery-adaptivesync-active-message-queues"
+
+	RequiredCoverageLocalZoneTPS                 RequiredCoverageID = "local-zone-tps"
+	RequiredCoverageCrossShardMessageThroughput  RequiredCoverageID = "cross-shard-message-throughput"
+	RequiredCoverageCrossZoneMessageThroughput   RequiredCoverageID = "cross-zone-message-throughput"
+	RequiredCoverageAVMInstructionThroughput     RequiredCoverageID = "avm-instruction-throughput"
+	RequiredCoverageStoreV2ProofLatency          RequiredCoverageID = "store-v2-proof-generation-latency"
+	RequiredCoverageBlockSTMConflictRate         RequiredCoverageID = "blockstm-conflict-rate-by-workload"
+	RequiredCoverageMempoolGroupingEffectiveness RequiredCoverageID = "mempool-grouping-effectiveness"
+	RequiredCoverageMultiZoneStateSyncTime       RequiredCoverageID = "state-sync-time-with-multiple-zones"
 )
 
 type RequiredTestCase struct {
@@ -50,9 +70,13 @@ type RequiredTestCoverageEvidence struct {
 	CoverageRoot           string
 	DeterminismVectorRoot  string
 	InvariantVectorRoot    string
+	SimulationVectorRoot   string
+	PerformanceVectorRoot  string
 	ReplayHarnessRoot      string
 	DeterminismTestsPassed bool
 	InvariantTestsPassed   bool
+	SimulationTestsPassed  bool
+	PerformanceTestsPassed bool
 	EvidenceHash           string
 }
 
@@ -73,9 +97,11 @@ func BuildRequiredTestCoverageSpec(tests []RequiredTestCase) (RequiredTestCovera
 }
 
 func RequiredTestCases() []RequiredTestCase {
-	tests := make([]RequiredTestCase, 0, 13)
+	tests := make([]RequiredTestCase, 0, 29)
 	tests = append(tests, DeterminismTestCases()...)
 	tests = append(tests, InvariantTestCases()...)
+	tests = append(tests, SimulationTestCases()...)
+	tests = append(tests, PerformanceTestCases()...)
 	return tests
 }
 
@@ -99,6 +125,32 @@ func InvariantTestCases() []RequiredTestCase {
 		requiredTest(RequiredCoverageInvariant, RequiredCoverageContractStateProofRoot, "Contract state proof matches contract zone root.", "contract proof invariant", "Verify code, instance, storage, ABI, and event proofs through the committed Contract Zone root."),
 		requiredTest(RequiredCoverageInvariant, RequiredCoverageShardSplitPreservesKeys, "Shard split preserves all state keys.", "shard split migration invariant", "Compare pre-split key manifest with deterministic post-split shard manifests and require no missing or duplicate keys."),
 		requiredTest(RequiredCoverageInvariant, RequiredCoverageShardMergePreservesKeys, "Shard merge preserves all state keys.", "shard merge migration invariant", "Compare pre-merge shard manifests with merged shard manifest and require all keys and values to be preserved."),
+	}
+}
+
+func SimulationTestCases() []RequiredTestCase {
+	return []RequiredTestCase{
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageHighVolumeBankTransfers, "High-volume bank transfers across shards.", "financial shard load simulator", "Generate account-address-routed transfers across many shards and require deterministic balances, escrows, receipts, and shard roots."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageIdentityResolverBursts, "Identity resolver update bursts.", "Identity Zone burst simulator", "Apply high-volume resolver and reverse-record updates and require deterministic resolver roots, receipts, and cache invalidations."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageContractAsyncCallChains, "Contract async call chains.", "Contract Zone async simulator", "Execute chained promise, callback, timeout, and outbound message flows and require deterministic receipts and contract roots."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoveragePaymentTimeoutBounce, "Payment route timeout and bounce.", "payment route simulator", "Drive routed payments through timeout, refund, and bounce paths and require value conservation and proofable receipts."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageDEXShardConflictUpdates, "DEX pool updates under shard conflict.", "DEX conflict simulator", "Run contending pool updates and swaps against shard-routed pools and require deterministic conflict handling and pool roots."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageCrossZoneCongestion, "Cross-zone congestion.", "cross-zone congestion simulator", "Saturate message queues across zones and require committed congestion metrics, deterministic delivery order, expiry, and receipt roots."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageShardSplitSustainedLoad, "Shard split under sustained load.", "shard split load simulator", "Sustain gas, queue, and state-size pressure until a future split epoch is scheduled and migrated deterministically."),
+		requiredTest(RequiredCoverageSimulation, RequiredCoverageAdaptiveSyncActiveQueues, "Node recovery with AdaptiveSync during active message queues.", "AdaptiveSync queue recovery simulator", "Recover a node while message queues are active and require identical zone, shard, inbox, outbox, and receipt commitments."),
+	}
+}
+
+func PerformanceTestCases() []RequiredTestCase {
+	return []RequiredTestCase{
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageLocalZoneTPS, "Local zone TPS.", "local zone benchmark", "Measure same-zone same-shard transaction throughput with deterministic root output and bounded variance reporting."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageCrossShardMessageThroughput, "Cross-shard message throughput.", "cross-shard throughput benchmark", "Measure shard-local outbox to destination inbox throughput and receipt rate under fixed committed layouts."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageCrossZoneMessageThroughput, "Cross-zone message throughput.", "cross-zone throughput benchmark", "Measure committed cross-zone message delivery, expiry, and receipt throughput under deterministic scheduling."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageAVMInstructionThroughput, "AVM instruction throughput.", "AVM runtime benchmark", "Measure instruction execution throughput by opcode class with deterministic gas and output roots."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageStoreV2ProofLatency, "Store v2 proof generation latency.", "Store v2 proof benchmark", "Measure account, resolver, contract, message, and payment proof generation latency under committed roots."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageBlockSTMConflictRate, "BlockSTM conflict rate by workload.", "BlockSTM conflict benchmark", "Measure conflict rate for bank, DEX, identity, contract, and payment workloads using canonical conflict keys."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageMempoolGroupingEffectiveness, "Mempool grouping effectiveness.", "zonemempool grouping benchmark", "Measure proposal grouping quality by zone, shard, priority, expiry, and transaction hash order."),
+		requiredTest(RequiredCoveragePerformance, RequiredCoverageMultiZoneStateSyncTime, "State sync time with multiple zones.", "multi-zone state sync benchmark", "Measure AdaptiveSync recovery time for core roots, zone roots, shard roots, message roots, and proof metadata."),
 	}
 }
 
@@ -210,6 +262,8 @@ func (e RequiredTestCoverageEvidence) Normalize() RequiredTestCoverageEvidence {
 	e.CoverageRoot = normalizePerformanceHash(e.CoverageRoot)
 	e.DeterminismVectorRoot = normalizePerformanceHash(e.DeterminismVectorRoot)
 	e.InvariantVectorRoot = normalizePerformanceHash(e.InvariantVectorRoot)
+	e.SimulationVectorRoot = normalizePerformanceHash(e.SimulationVectorRoot)
+	e.PerformanceVectorRoot = normalizePerformanceHash(e.PerformanceVectorRoot)
 	e.ReplayHarnessRoot = normalizePerformanceHash(e.ReplayHarnessRoot)
 	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
 	return e
@@ -224,6 +278,8 @@ func (e RequiredTestCoverageEvidence) ValidateFormat() error {
 		{"aethercore required test coverage root", e.CoverageRoot},
 		{"aethercore required determinism vector root", e.DeterminismVectorRoot},
 		{"aethercore required invariant vector root", e.InvariantVectorRoot},
+		{"aethercore required simulation vector root", e.SimulationVectorRoot},
+		{"aethercore required performance vector root", e.PerformanceVectorRoot},
 		{"aethercore required replay harness root", e.ReplayHarnessRoot},
 	}
 	for _, item := range hashes {
@@ -236,6 +292,12 @@ func (e RequiredTestCoverageEvidence) ValidateFormat() error {
 	}
 	if !e.InvariantTestsPassed {
 		return errors.New("aethercore required test coverage evidence requires invariant tests to pass")
+	}
+	if !e.SimulationTestsPassed {
+		return errors.New("aethercore required test coverage evidence requires simulation tests to pass")
+	}
+	if !e.PerformanceTestsPassed {
+		return errors.New("aethercore required test coverage evidence requires performance tests to pass")
 	}
 	if e.EvidenceHash != "" {
 		if err := ValidateHash("aethercore required test coverage evidence hash", e.EvidenceHash); err != nil {
@@ -282,6 +344,26 @@ func ValidateRequiredTestCoverage() error {
 			RequiredCoverageContractStateProofRoot,
 			RequiredCoverageShardSplitPreservesKeys,
 			RequiredCoverageShardMergePreservesKeys,
+		},
+		RequiredCoverageSimulation: {
+			RequiredCoverageHighVolumeBankTransfers,
+			RequiredCoverageIdentityResolverBursts,
+			RequiredCoverageContractAsyncCallChains,
+			RequiredCoveragePaymentTimeoutBounce,
+			RequiredCoverageDEXShardConflictUpdates,
+			RequiredCoverageCrossZoneCongestion,
+			RequiredCoverageShardSplitSustainedLoad,
+			RequiredCoverageAdaptiveSyncActiveQueues,
+		},
+		RequiredCoveragePerformance: {
+			RequiredCoverageLocalZoneTPS,
+			RequiredCoverageCrossShardMessageThroughput,
+			RequiredCoverageCrossZoneMessageThroughput,
+			RequiredCoverageAVMInstructionThroughput,
+			RequiredCoverageStoreV2ProofLatency,
+			RequiredCoverageBlockSTMConflictRate,
+			RequiredCoverageMempoolGroupingEffectiveness,
+			RequiredCoverageMultiZoneStateSyncTime,
 		},
 	}
 	seen := make(map[RequiredCoverageKind]map[RequiredCoverageID]struct{}, len(required))
@@ -330,14 +412,18 @@ func ComputeRequiredTestCoverageEvidenceHash(e RequiredTestCoverageEvidence) str
 		writePart(w, e.CoverageRoot)
 		writePart(w, e.DeterminismVectorRoot)
 		writePart(w, e.InvariantVectorRoot)
+		writePart(w, e.SimulationVectorRoot)
+		writePart(w, e.PerformanceVectorRoot)
 		writePart(w, e.ReplayHarnessRoot)
 		writeBoolPart(w, e.DeterminismTestsPassed)
 		writeBoolPart(w, e.InvariantTestsPassed)
+		writeBoolPart(w, e.SimulationTestsPassed)
+		writeBoolPart(w, e.PerformanceTestsPassed)
 	})
 }
 
 func IsRequiredCoverageKind(kind RequiredCoverageKind) bool {
-	return kind == RequiredCoverageDeterminism || kind == RequiredCoverageInvariant
+	return kind == RequiredCoverageDeterminism || kind == RequiredCoverageInvariant || kind == RequiredCoverageSimulation || kind == RequiredCoveragePerformance
 }
 
 func IsRequiredCoverageID(kind RequiredCoverageKind, id RequiredCoverageID) bool {
@@ -383,6 +469,10 @@ func requiredCoverageKindRank(kind RequiredCoverageKind) int {
 		return 0
 	case RequiredCoverageInvariant:
 		return 1
+	case RequiredCoverageSimulation:
+		return 2
+	case RequiredCoveragePerformance:
+		return 3
 	default:
 		return 99
 	}
@@ -408,6 +498,28 @@ func requiredCoverageIDsForKind(kind RequiredCoverageKind) []RequiredCoverageID 
 			RequiredCoverageContractStateProofRoot,
 			RequiredCoverageShardSplitPreservesKeys,
 			RequiredCoverageShardMergePreservesKeys,
+		}
+	case RequiredCoverageSimulation:
+		return []RequiredCoverageID{
+			RequiredCoverageHighVolumeBankTransfers,
+			RequiredCoverageIdentityResolverBursts,
+			RequiredCoverageContractAsyncCallChains,
+			RequiredCoveragePaymentTimeoutBounce,
+			RequiredCoverageDEXShardConflictUpdates,
+			RequiredCoverageCrossZoneCongestion,
+			RequiredCoverageShardSplitSustainedLoad,
+			RequiredCoverageAdaptiveSyncActiveQueues,
+		}
+	case RequiredCoveragePerformance:
+		return []RequiredCoverageID{
+			RequiredCoverageLocalZoneTPS,
+			RequiredCoverageCrossShardMessageThroughput,
+			RequiredCoverageCrossZoneMessageThroughput,
+			RequiredCoverageAVMInstructionThroughput,
+			RequiredCoverageStoreV2ProofLatency,
+			RequiredCoverageBlockSTMConflictRate,
+			RequiredCoverageMempoolGroupingEffectiveness,
+			RequiredCoverageMultiZoneStateSyncTime,
 		}
 	default:
 		return nil

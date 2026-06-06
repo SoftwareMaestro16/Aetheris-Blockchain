@@ -26,6 +26,12 @@ func TestRequiredTestCoverageCoversSectionSeventeen(t *testing.T) {
 	if counts[RequiredCoverageInvariant] != 8 {
 		t.Fatalf("expected 8 invariant tests, got %d", counts[RequiredCoverageInvariant])
 	}
+	if counts[RequiredCoverageSimulation] != 8 {
+		t.Fatalf("expected 8 simulation tests, got %d", counts[RequiredCoverageSimulation])
+	}
+	if counts[RequiredCoveragePerformance] != 8 {
+		t.Fatalf("expected 8 performance tests, got %d", counts[RequiredCoveragePerformance])
+	}
 	if byID[RequiredCoverageSameBlockZoneRoots].Target != "block replay harness" {
 		t.Fatalf("unexpected zone root determinism target: %s", byID[RequiredCoverageSameBlockZoneRoots].Target)
 	}
@@ -38,6 +44,12 @@ func TestRequiredTestCoverageCoversSectionSeventeen(t *testing.T) {
 	if byID[RequiredCoverageShardMergePreservesKeys].Target != "shard merge migration invariant" {
 		t.Fatalf("unexpected shard merge target: %s", byID[RequiredCoverageShardMergePreservesKeys].Target)
 	}
+	if byID[RequiredCoverageAdaptiveSyncActiveQueues].Target != "AdaptiveSync queue recovery simulator" {
+		t.Fatalf("unexpected AdaptiveSync simulation target: %s", byID[RequiredCoverageAdaptiveSyncActiveQueues].Target)
+	}
+	if byID[RequiredCoverageStoreV2ProofLatency].Target != "Store v2 proof benchmark" {
+		t.Fatalf("unexpected Store v2 benchmark target: %s", byID[RequiredCoverageStoreV2ProofLatency].Target)
+	}
 }
 
 func TestRequiredTestCoverageRootCanonicalAndRejectsTamper(t *testing.T) {
@@ -47,7 +59,9 @@ func TestRequiredTestCoverageRootCanonicalAndRejectsTamper(t *testing.T) {
 	}
 
 	reordered := append([]RequiredTestCase{}, InvariantTestCases()...)
+	reordered = append(reordered, PerformanceTestCases()...)
 	reordered = append(reordered, DeterminismTestCases()...)
+	reordered = append(reordered, SimulationTestCases()...)
 	reorderedSpec, err := BuildRequiredTestCoverageSpec(reordered)
 	if err != nil {
 		t.Fatalf("reordered required test coverage: %v", err)
@@ -87,7 +101,7 @@ func TestRequiredTestCoverageRejectsWrongKindAndMissingAssertion(t *testing.T) {
 	}
 }
 
-func TestRequiredTestCoverageEvidenceRequiresDeterminismAndInvariantPasses(t *testing.T) {
+func TestRequiredTestCoverageEvidenceRequiresAllCoverageGroupsToPass(t *testing.T) {
 	evidence := validRequiredTestCoverageEvidence(t)
 	if err := evidence.Validate(); err != nil {
 		t.Fatalf("required coverage evidence should validate: %v", err)
@@ -107,6 +121,20 @@ func TestRequiredTestCoverageEvidenceRequiresDeterminismAndInvariantPasses(t *te
 		t.Fatal("expected evidence without invariant pass to fail")
 	}
 
+	noSimulation := evidence
+	noSimulation.SimulationTestsPassed = false
+	noSimulation.EvidenceHash = ComputeRequiredTestCoverageEvidenceHash(noSimulation)
+	if err := noSimulation.Validate(); err == nil {
+		t.Fatal("expected evidence without simulation pass to fail")
+	}
+
+	noPerformance := evidence
+	noPerformance.PerformanceTestsPassed = false
+	noPerformance.EvidenceHash = ComputeRequiredTestCoverageEvidenceHash(noPerformance)
+	if err := noPerformance.Validate(); err == nil {
+		t.Fatal("expected evidence without performance pass to fail")
+	}
+
 	tampered := evidence
 	tampered.EvidenceHash = hashParts("tampered required coverage evidence")
 	if err := tampered.Validate(); err == nil {
@@ -124,9 +152,13 @@ func validRequiredTestCoverageEvidence(t *testing.T) RequiredTestCoverageEvidenc
 		CoverageRoot:           spec.Root,
 		DeterminismVectorRoot:  hashParts("determinism vectors"),
 		InvariantVectorRoot:    hashParts("invariant vectors"),
+		SimulationVectorRoot:   hashParts("simulation vectors"),
+		PerformanceVectorRoot:  hashParts("performance vectors"),
 		ReplayHarnessRoot:      hashParts("replay harness"),
 		DeterminismTestsPassed: true,
 		InvariantTestsPassed:   true,
+		SimulationTestsPassed:  true,
+		PerformanceTestsPassed: true,
 	}
 	evidence.EvidenceHash = ComputeRequiredTestCoverageEvidenceHash(evidence)
 	return evidence
