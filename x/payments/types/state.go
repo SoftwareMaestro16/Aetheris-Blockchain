@@ -60,6 +60,12 @@ func openChannelRecord(state PaymentsState, channel ChannelRecord) (PaymentsStat
 	if _, found := state.ChannelByID(channel.ChannelID); found {
 		return PaymentsState{}, PaymentEvent{}, errors.New("payments channel already exists")
 	}
+	if err := (SettlementArbitrationInput{
+		Operation: SettlementArbitrationOpen,
+		ChannelID: channel.ChannelID,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, PaymentEvent{}, err
+	}
 	if err := channel.LatestState.ValidateForChannel(channel, true); err != nil {
 		return PaymentsState{}, PaymentEvent{}, err
 	}
@@ -234,6 +240,14 @@ func SubmitClose(state PaymentsState, channelID string, closingState ChannelStat
 		SettlementFee:      settlementFee,
 		State:              closingState.Normalize(),
 	}
+	if err := (SettlementArbitrationInput{
+		Operation:     SettlementArbitrationUnilateralClose,
+		ChannelID:     channel.ChannelID,
+		SignedState:   pending.State,
+		CurrentHeight: currentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, err
+	}
 	if err := pending.ValidateForChannel(channel); err != nil {
 		return PaymentsState{}, err
 	}
@@ -322,6 +336,14 @@ func CooperativeClose(state PaymentsState, channelID string, closingState Channe
 		return PaymentsState{}, SettlementRecord{}, errors.New("payments cooperative close submitter must be participant")
 	}
 	closingState = closingState.Normalize()
+	if err := (SettlementArbitrationInput{
+		Operation:     SettlementArbitrationCooperativeClose,
+		ChannelID:     channel.ChannelID,
+		SignedState:   closingState,
+		CurrentHeight: currentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, SettlementRecord{}, err
+	}
 	if err := closingState.ValidateForChannel(channel, true); err != nil {
 		return PaymentsState{}, SettlementRecord{}, err
 	}
@@ -383,6 +405,14 @@ func ReceiverClose(state PaymentsState, channelID string, claim UnidirectionalCl
 		return PaymentsState{}, SettlementRecord{}, errors.New("payments receiver close submitter must be receiver")
 	}
 	claim = claim.Normalize()
+	if err := (SettlementArbitrationInput{
+		Operation:     SettlementArbitrationUnilateralClose,
+		ChannelID:     channel.ChannelID,
+		Claim:         claim,
+		CurrentHeight: currentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, SettlementRecord{}, err
+	}
 	if err := claim.ValidateForChannel(channel); err != nil {
 		return PaymentsState{}, SettlementRecord{}, err
 	}
@@ -534,6 +564,15 @@ func DisputeChannel(state PaymentsState, req ChannelDisputeRequest) (PaymentsSta
 	if req.CurrentHeight > channel.PendingClose.SettleAfterHeight {
 		return PaymentsState{}, errors.New("payments dispute window has closed")
 	}
+	if err := (SettlementArbitrationInput{
+		Operation:       SettlementArbitrationDispute,
+		ChannelID:       channel.ChannelID,
+		SignedState:     req.NewerState,
+		ConditionProofs: req.ConditionProofs,
+		CurrentHeight:   req.CurrentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, err
+	}
 	if err := req.NewerState.ValidateForChannel(channel, false); err != nil {
 		return PaymentsState{}, err
 	}
@@ -614,6 +653,14 @@ func SubmitFraudProof(state PaymentsState, channelID string, proof FraudProof, c
 		return PaymentsState{}, errors.New("payments fraud proof window has closed")
 	}
 	proof = proof.Normalize()
+	if err := (SettlementArbitrationInput{
+		Operation:     SettlementArbitrationFraudProof,
+		ChannelID:     channel.ChannelID,
+		FraudProof:    proof,
+		CurrentHeight: currentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, err
+	}
 	if err := proof.ValidateForChannel(channel); err != nil {
 		return PaymentsState{}, err
 	}
@@ -649,6 +696,15 @@ func FraudClose(state PaymentsState, channelID string, currentHeight uint64) (Pa
 	}
 	if len(channel.PendingClose.FraudProofs) == 0 || len(channel.PendingClose.Penalties) == 0 {
 		return PaymentsState{}, SettlementRecord{}, errors.New("payments fraud close requires accepted proof")
+	}
+	if err := (SettlementArbitrationInput{
+		Operation:       SettlementArbitrationFinalSettlement,
+		ChannelID:       channel.ChannelID,
+		SignedState:     channel.PendingClose.State,
+		ConditionProofs: channel.PendingClose.ConditionProofs,
+		CurrentHeight:   currentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, SettlementRecord{}, err
 	}
 	if err := rejectReusedConditionClaims(state, channel, channel.PendingClose.ConditionProofs); err != nil {
 		return PaymentsState{}, SettlementRecord{}, err
@@ -710,6 +766,15 @@ func FinalizeSettlementWithRequest(state PaymentsState, req FinalSettlementReque
 		return PaymentsState{}, SettlementRecord{}, errors.New("payments settlement is still in dispute window")
 	}
 	resolutions := mergeConditionResolutions(channel.PendingClose.ConditionProofs, req.ResolvedConditions)
+	if err := (SettlementArbitrationInput{
+		Operation:       SettlementArbitrationFinalSettlement,
+		ChannelID:       channel.ChannelID,
+		SignedState:     channel.PendingClose.State,
+		ConditionProofs: resolutions,
+		CurrentHeight:   req.CurrentHeight,
+	}).ValidateForChannel(channel); err != nil {
+		return PaymentsState{}, SettlementRecord{}, err
+	}
 	if err := rejectReusedConditionClaims(state, channel, resolutions); err != nil {
 		return PaymentsState{}, SettlementRecord{}, err
 	}

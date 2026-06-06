@@ -107,6 +107,21 @@ const (
 	BatchOperationSettle  BatchOperationType = "SETTLE"
 )
 
+type SettlementArbitrationOperation string
+
+const (
+	SettlementArbitrationOpen                SettlementArbitrationOperation = "OPEN"
+	SettlementArbitrationCollateralCustody   SettlementArbitrationOperation = "COLLATERAL_CUSTODY"
+	SettlementArbitrationCooperativeClose    SettlementArbitrationOperation = "COOPERATIVE_CLOSE"
+	SettlementArbitrationUnilateralClose     SettlementArbitrationOperation = "UNILATERAL_CLOSE"
+	SettlementArbitrationDispute             SettlementArbitrationOperation = "DISPUTE"
+	SettlementArbitrationFraudProof          SettlementArbitrationOperation = "FRAUD_PROOF"
+	SettlementArbitrationConditionResolution SettlementArbitrationOperation = "CONDITION_RESOLUTION"
+	SettlementArbitrationPenaltyRouting      SettlementArbitrationOperation = "PENALTY_ROUTING"
+	SettlementArbitrationFinalSettlement     SettlementArbitrationOperation = "FINAL_SETTLEMENT"
+	SettlementArbitrationReplayProtection    SettlementArbitrationOperation = "REPLAY_PROTECTION"
+)
+
 type VirtualChannelStatus string
 
 const (
@@ -327,6 +342,21 @@ type FinalSettlementRequest struct {
 	CurrentHeight       uint64
 	FeeAccountingState  string
 	RoutingFeeClaimHash string
+}
+
+type SettlementArbitrationInput struct {
+	Operation         SettlementArbitrationOperation
+	ChannelID         string
+	SignedState       ChannelState
+	Claim             UnidirectionalClaim
+	FraudProof        FraudProof
+	ConditionProofs   []ConditionResolution
+	RouteHints        []ChannelEdge
+	GossipStateHash   string
+	ExternalLiquidity []Balance
+	UnsignedBalances  []Balance
+	OffchainIntent    string
+	CurrentHeight     uint64
 }
 
 type StateHashDebug struct {
@@ -873,6 +903,172 @@ func (r FinalSettlementRequest) Normalize() FinalSettlementRequest {
 	r.FeeAccountingState = strings.TrimSpace(r.FeeAccountingState)
 	r.RoutingFeeClaimHash = normalizeOptionalHash(r.RoutingFeeClaimHash)
 	return r
+}
+
+func (i SettlementArbitrationInput) Normalize() SettlementArbitrationInput {
+	i.ChannelID = normalizeHash(i.ChannelID)
+	i.SignedState = i.SignedState.Normalize()
+	i.Claim = i.Claim.Normalize()
+	i.FraudProof = i.FraudProof.Normalize()
+	i.ConditionProofs = normalizeConditionResolutions(i.ConditionProofs)
+	for index := range i.RouteHints {
+		i.RouteHints[index] = i.RouteHints[index].Normalize()
+	}
+	i.GossipStateHash = normalizeOptionalHash(i.GossipStateHash)
+	i.ExternalLiquidity = normalizeBalances(i.ExternalLiquidity)
+	i.UnsignedBalances = normalizeBalances(i.UnsignedBalances)
+	i.OffchainIntent = strings.TrimSpace(i.OffchainIntent)
+	return i
+}
+
+func (i SettlementArbitrationInput) ValidateForChannel(channel ChannelRecord) error {
+	input := i.Normalize()
+	channel = channel.Normalize()
+	if err := channel.ValidateCore(); err != nil {
+		return err
+	}
+	if input.ChannelID != channel.ChannelID {
+		return errors.New("payments settlement arbitration channel mismatch")
+	}
+	if !IsSettlementArbitrationOperation(input.Operation) {
+		return fmt.Errorf("unknown payments settlement arbitration operation %q", input.Operation)
+	}
+	if len(input.RouteHints) > 0 {
+		return errors.New("payments settlement contract must not select payment routes")
+	}
+	if input.GossipStateHash != "" {
+		return errors.New("payments settlement contract must not trust gossip state")
+	}
+	if len(input.ExternalLiquidity) > 0 {
+		return errors.New("payments settlement contract must not depend on external liquidity reports")
+	}
+	if len(input.UnsignedBalances) > 0 {
+		return errors.New("payments settlement contract must not accept unsigned balance updates")
+	}
+	if input.OffchainIntent != "" {
+		return errors.New("payments settlement contract must not infer participant intent from unsigned off-chain messages")
+	}
+	if input.CurrentHeight == 0 && operationRequiresHeight(input.Operation) {
+		return errors.New("payments settlement arbitration height must be positive")
+	}
+	if input.Operation == SettlementArbitrationCollateralCustody {
+		return validateSettlementCustody(channel)
+	}
+	if input.Operation == SettlementArbitrationFraudProof {
+		return input.FraudProof.ValidateForChannel(channel)
+	}
+	if input.Operation == SettlementArbitrationReplayProtection {
+		return validateSettlementReplayProtection(channel, input.SignedState)
+	}
+	if input.Operation == SettlementArbitrationPenaltyRouting {
+		if input.FraudProof.ProofID == "" {
+			return errors.New("payments settlement penalty routing requires accepted fraud proof")
+		}
+		return input.FraudProof.ValidateForChannel(channel)
+	}
+	if input.Operation == SettlementArbitrationConditionResolution {
+		if err := validateSettlementSignedState(channel, input.SignedState, false); err != nil {
+			return err
+		}
+		return validateConditionResolutionsForState(input.SignedState, channel, input.ConditionProofs, true)
+	}
+	if input.Operation == SettlementArbitrationOpen {
+		if err := validateSettlementCustody(channel); err != nil {
+			return err
+		}
+		return validateSettlementSignedState(channel, channel.LatestState, true)
+	}
+	if input.Operation == SettlementArbitrationUnilateralClose && !input.Claim.IsZero() {
+		if err := input.Claim.ValidateForChannel(channel); err != nil {
+			return err
+		}
+		return validateSettlementClaimReplayProtection(channel, input.Claim)
+	}
+	requireAll := input.Operation == SettlementArbitrationCooperativeClose
+	if err := validateSettlementSignedState(channel, input.SignedState, requireAll); err != nil {
+		return err
+	}
+	return validateSettlementReplayProtection(channel, input.SignedState)
+}
+
+func IsSettlementArbitrationOperation(operation SettlementArbitrationOperation) bool {
+	switch operation {
+	case SettlementArbitrationOpen,
+		SettlementArbitrationCollateralCustody,
+		SettlementArbitrationCooperativeClose,
+		SettlementArbitrationUnilateralClose,
+		SettlementArbitrationDispute,
+		SettlementArbitrationFraudProof,
+		SettlementArbitrationConditionResolution,
+		SettlementArbitrationPenaltyRouting,
+		SettlementArbitrationFinalSettlement,
+		SettlementArbitrationReplayProtection:
+		return true
+	default:
+		return false
+	}
+}
+
+func operationRequiresHeight(operation SettlementArbitrationOperation) bool {
+	switch operation {
+	case SettlementArbitrationUnilateralClose,
+		SettlementArbitrationDispute,
+		SettlementArbitrationFraudProof,
+		SettlementArbitrationFinalSettlement,
+		SettlementArbitrationReplayProtection:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateSettlementCustody(channel ChannelRecord) error {
+	if channel.Denom != NativeDenom || channel.CustodyDenom != NativeDenom {
+		return fmt.Errorf("payments settlement custody must use %s", NativeDenom)
+	}
+	if channel.Collateral == "" || channel.CustodyAmount == "" {
+		return errors.New("payments settlement custody amount is required")
+	}
+	if channel.CustodyAmount != channel.Collateral {
+		return errors.New("payments settlement custody must equal locked collateral")
+	}
+	return validatePositiveInt("payments settlement custody amount", channel.CustodyAmount)
+}
+
+func validateSettlementSignedState(channel ChannelRecord, signedState ChannelState, requireAllParticipants bool) error {
+	state := signedState.Normalize()
+	if state.StateHash == "" {
+		return errors.New("payments settlement arbitration signed state is required")
+	}
+	return state.ValidateForChannel(channel, requireAllParticipants)
+}
+
+func validateSettlementReplayProtection(channel ChannelRecord, signedState ChannelState) error {
+	state := signedState.Normalize()
+	if state.StateHash == "" {
+		return errors.New("payments settlement replay protection signed state is required")
+	}
+	if state.Nonce < channel.FinalizedNonce {
+		return errors.New("payments settlement replay state nonce is below finalized nonce")
+	}
+	if channel.Status == ChannelStatusSettled && state.Nonce <= channel.FinalizedNonce {
+		return errors.New("payments settlement replay state targets closed channel")
+	}
+	return state.ValidateForChannel(channel, false)
+}
+
+func validateSettlementClaimReplayProtection(channel ChannelRecord, claim UnidirectionalClaim) error {
+	claim = claim.Normalize()
+	if claim.StateHash == "" {
+		return errors.New("payments settlement replay protection signed claim is required")
+	}
+	if claim.Nonce < channel.FinalizedNonce {
+		return errors.New("payments settlement replay claim nonce is below finalized nonce")
+	}
+	if channel.Status == ChannelStatusSettled && claim.Nonce <= channel.FinalizedNonce {
+		return errors.New("payments settlement replay claim targets closed channel")
+	}
+	return claim.ValidateForChannel(channel)
 }
 
 func (r ConditionResolution) Normalize() ConditionResolution {

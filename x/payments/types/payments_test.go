@@ -60,6 +60,63 @@ func TestPaymentChannelCloseDisputeFraudAndSettlement(t *testing.T) {
 	require.Empty(t, state.CustodyLocks)
 }
 
+func TestSettlementArbitrationBoundaryRejectsNonDeterministicInputs(t *testing.T) {
+	alice := testAddress(0x12)
+	bob := testAddress(0x13)
+	channel := signedChannel(t, "settlement-boundary", "1000", alice, bob)
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "450"},
+		{Participant: bob, Amount: "550"},
+	})
+
+	valid := SettlementArbitrationInput{
+		Operation:     SettlementArbitrationUnilateralClose,
+		ChannelID:     channel.ChannelID,
+		SignedState:   closeState,
+		CurrentHeight: 20,
+	}
+	require.NoError(t, valid.ValidateForChannel(channel))
+
+	withRoute := valid
+	withRoute.RouteHints = []ChannelEdge{{ChannelID: channel.ChannelID}}
+	require.ErrorContains(t, withRoute.ValidateForChannel(channel), "must not select payment routes")
+
+	withGossip := valid
+	withGossip.GossipStateHash = HashParts("gossip", channel.ChannelID)
+	require.ErrorContains(t, withGossip.ValidateForChannel(channel), "must not trust gossip")
+
+	withLiquidity := valid
+	withLiquidity.ExternalLiquidity = []Balance{{Participant: alice, Amount: "1000"}}
+	require.ErrorContains(t, withLiquidity.ValidateForChannel(channel), "must not depend on external liquidity")
+
+	withUnsignedBalance := valid
+	withUnsignedBalance.UnsignedBalances = []Balance{{Participant: bob, Amount: "1000"}}
+	require.ErrorContains(t, withUnsignedBalance.ValidateForChannel(channel), "must not accept unsigned balance")
+
+	withIntent := valid
+	withIntent.OffchainIntent = "alice verbally approved this close"
+	require.ErrorContains(t, withIntent.ValidateForChannel(channel), "must not infer participant intent")
+}
+
+func TestSettlementArbitrationBoundaryRequiresSignedState(t *testing.T) {
+	alice := testAddress(0x16)
+	bob := testAddress(0x17)
+	channel := signedChannel(t, "settlement-signed-state", "1000", alice, bob)
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "300"},
+		{Participant: bob, Amount: "700"},
+	})
+	closeState.Signatures = nil
+
+	err := (SettlementArbitrationInput{
+		Operation:     SettlementArbitrationUnilateralClose,
+		ChannelID:     channel.ChannelID,
+		SignedState:   closeState,
+		CurrentHeight: 20,
+	}).ValidateForChannel(channel)
+	require.ErrorContains(t, err, "quorum")
+}
+
 func TestDisputeRequestEmitsEventAndAppliesOptionalFraudProof(t *testing.T) {
 	alice := testAddress(0x14)
 	bob := testAddress(0x15)
