@@ -216,6 +216,20 @@ func (k Keeper) ProcessKernelProposal(ctx types.KernelConsensusContext, plan typ
 	return types.ProcessKernelProposal(ctx, k.genesis.State, plan)
 }
 
+func (k Keeper) PrepareKernelABCIProposal(ctx types.KernelConsensusContext, localTxs, routedMessages []types.KernelMessageEnvelope, limits types.KernelGasLimits) (types.KernelABCIProposal, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return types.KernelABCIProposal{}, err
+	}
+	return types.PrepareKernelABCIProposal(ctx, k.genesis.State, localTxs, routedMessages, limits)
+}
+
+func (k Keeper) ProcessKernelABCIProposal(ctx types.KernelConsensusContext, proposal types.KernelABCIProposal, envelopes []types.KernelMessageEnvelope, limits types.KernelGasLimits) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	return types.ProcessKernelABCIProposal(ctx, k.genesis.State, proposal, envelopes, limits)
+}
+
 func (k *Keeper) FinalizeKernelBlock(ctx types.KernelConsensusContext, plan types.KernelBlockPlan, input types.KernelFinalizationInput) (types.KernelFinalization, error) {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return types.KernelFinalization{}, err
@@ -226,6 +240,32 @@ func (k *Keeper) FinalizeKernelBlock(ctx types.KernelConsensusContext, plan type
 	}
 	k.genesis.State = next
 	return finalization, nil
+}
+
+func (k *Keeper) FinalizeKernelABCIBlock(ctx types.KernelConsensusContext, proposal types.KernelABCIProposal, envelopes []types.KernelMessageEnvelope, input types.KernelFinalizationInput, cleanupQueue []types.KernelCleanupItem, cleanupLimit uint64) (types.KernelFinalization, types.KernelCleanupResult, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return types.KernelFinalization{}, types.KernelCleanupResult{}, err
+	}
+	next, finalization, cleanup, err := types.FinalizeKernelABCIBlock(ctx, k.genesis.State, proposal, envelopes, input, cleanupQueue, cleanupLimit)
+	if err != nil {
+		return types.KernelFinalization{}, types.KernelCleanupResult{}, err
+	}
+	k.genesis.State = next
+	return finalization, cleanup, nil
+}
+
+func (k Keeper) CommitKernelABCIBlock(finalization types.KernelFinalization, appHash string) (types.KernelABCICommitRecord, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return types.KernelABCICommitRecord{}, err
+	}
+	return types.CommitKernelABCIBlock(finalization, appHash)
+}
+
+func (k Keeper) CollectZoneExecutionSummary(height uint64, zoneID types.ZoneID, envelopes []types.KernelMessageEnvelope, receipts []types.ExecutionReceipt, gasUsed uint64, eventsRoot string) (types.ZoneExecutionSummary, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return types.ZoneExecutionSummary{}, err
+	}
+	return types.CollectZoneExecutionSummary(height, zoneID, envelopes, receipts, gasUsed, eventsRoot)
 }
 
 func (k *Keeper) CommitGlobalRoot(height uint64, contributions types.RootContributions) (types.GlobalStateRoot, error) {
@@ -265,6 +305,10 @@ func (k Keeper) BuildKernelExportManifest(height uint64, appHash string) (types.
 		return types.ExportManifest{}, err
 	}
 	return types.BuildKernelExportManifest(k.genesis.State, height, appHash)
+}
+
+func (k Keeper) ValidateRootAggregationInvariants() error {
+	return types.ValidateRootAggregationInvariants(k.genesis.State)
 }
 
 func (k Keeper) LatestRootSnapshot() (types.RootSnapshot, bool) {

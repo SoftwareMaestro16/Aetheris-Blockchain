@@ -79,3 +79,12 @@ func validateModuleName(value string) error {
 func validatePolicyID(fieldName, value string) error {
 	return validateToken(fieldName, value, MaxScopeLength)
 }
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}

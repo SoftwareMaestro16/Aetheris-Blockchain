@@ -441,7 +441,6 @@ func ComputeKernelABCICommitHash(record KernelABCICommitRecord) string {
 func validateKernelEnvelopes(ctx KernelConsensusContext, state CoreState, envelopes []KernelMessageEnvelope, limits KernelGasLimits) error {
 	var blockGas uint64
 	zoneGas := make(map[ZoneID]uint64)
-	lastNonceBySender := make(map[string]uint64)
 	seen := make(map[string]struct{}, len(envelopes))
 	for _, envelope := range normalizeKernelEnvelopes(envelopes) {
 		if err := envelope.ValidateBasic(ctx, state); err != nil {
@@ -452,10 +451,6 @@ func validateKernelEnvelopes(ctx KernelConsensusContext, state CoreState, envelo
 			return errors.New("duplicate aethercore kernel envelope nonce")
 		}
 		seen[key] = struct{}{}
-		if last := lastNonceBySender[envelope.Sender]; last >= envelope.Nonce {
-			return errors.New("aethercore kernel envelopes must be nonce ordered per sender")
-		}
-		lastNonceBySender[envelope.Sender] = envelope.Nonce
 		if limits.MaxBlockGas-blockGas < envelope.GasLimit {
 			return errors.New("aethercore kernel proposal exceeds block gas")
 		}

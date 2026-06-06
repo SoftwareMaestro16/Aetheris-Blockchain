@@ -102,6 +102,71 @@ func TestBuildProposalScheduleChecksRegisteredZones(t *testing.T) {
 	require.ErrorContains(t, err, "not registered")
 }
 
+func TestKeeperABCILifecycleHooksAndInvariants(t *testing.T) {
+	keeper := NewKeeper()
+	require.NoError(t, keeper.UpdateParams(types.DefaultAuthority, types.TestnetParams()))
+	require.NoError(t, keeper.RegisterZoneDescriptor(keeperZone(types.ZoneIDFinancial, types.ZoneTypeFinancial, "financial")))
+	require.NoError(t, keeper.RegisterZoneDescriptor(keeperZone(types.ZoneIDContract, types.ZoneTypeContract, "contract")))
+	require.NoError(t, keeper.RegisterShardLayout(keeperLayout(t, types.ZoneIDFinancial, 1, []types.ShardID{"0"})))
+	require.NoError(t, keeper.RegisterShardLayout(keeperLayout(t, types.ZoneIDContract, 1, []types.ShardID{"0"})))
+	require.NoError(t, keeper.AppendZoneCommitment(keeperCommitment(t, 10, types.ZoneIDFinancial)))
+	_, err := keeper.CommitBlockRoots(10)
+	require.NoError(t, err)
+
+	ctx := types.KernelConsensusContext{ChainID: "aetheris-testnet", Height: 11, BlockTimeUnix: 1_700_000_011}
+	envelope := types.KernelMessageEnvelope{
+		Kind:             types.KernelMessageLocalTx,
+		TxHash:           keeperHash("keeper-abci-local"),
+		SourceZone:       types.ZoneIDFinancial,
+		SourceShard:      "0",
+		DestinationZone:  types.ZoneIDFinancial,
+		DestinationShard: "0",
+		Sender:           "keeper.sender",
+		Nonce:            1,
+		GasLimit:         100,
+		PriorityClass:    1,
+		AdmissionHeight:  11,
+	}
+	proposal, err := keeper.PrepareKernelABCIProposal(ctx, []types.KernelMessageEnvelope{envelope}, nil, types.KernelGasLimits{MaxBlockGas: 1_000, MaxZoneGas: 500})
+	require.NoError(t, err)
+	require.NoError(t, keeper.ProcessKernelABCIProposal(ctx, proposal, []types.KernelMessageEnvelope{envelope}, types.KernelGasLimits{MaxBlockGas: 1_000, MaxZoneGas: 500}))
+
+	classified, err := types.ClassifyTransaction(keeper.ExportGenesis().State, types.ClassificationInput{
+		Height:           11,
+		TxHash:           envelope.TxHash,
+		SourceZone:       types.ZoneIDFinancial,
+		SourceShard:      "0",
+		DestinationZone:  types.ZoneIDFinancial,
+		DestinationShard: "0",
+		AdmissionHeight:  11,
+	})
+	require.NoError(t, err)
+	receipt, err := types.ExecuteSync(classified, types.ExecutionResult{Success: true, ResultHash: keeperHash("keeper-abci-result")}, 11, 1)
+	require.NoError(t, err)
+	receiptsRoot, err := types.ComputeExecutionReceiptsRoot([]types.ExecutionReceipt{receipt})
+	require.NoError(t, err)
+	contributions := keeperContributions(11)
+	contributions.ReceiptsRoot = receiptsRoot
+	finalization, cleanup, err := keeper.FinalizeKernelABCIBlock(ctx, proposal, []types.KernelMessageEnvelope{envelope}, types.KernelFinalizationInput{
+		ZoneCommitments: []types.ZoneCommitment{
+			keeperCommitment(t, 11, types.ZoneIDFinancial),
+			keeperCommitment(t, 11, types.ZoneIDContract),
+		},
+		Receipts:      []types.ExecutionReceipt{receipt},
+		Contributions: contributions,
+	}, []types.KernelCleanupItem{{QueueID: "receipts", ItemID: "old", HeightDue: 11, DeleteRoot: keeperHash("cleanup")}}, 1)
+	require.NoError(t, err)
+	require.Len(t, cleanup.Processed, 1)
+	record, err := keeper.CommitKernelABCIBlock(finalization, keeperHash("keeper-abci-apphash"))
+	require.NoError(t, err)
+	require.Equal(t, finalization.GlobalRoot.GlobalRoot, record.GlobalRoot)
+	require.NoError(t, keeper.ValidateRootAggregationInvariants())
+
+	summary, err := keeper.CollectZoneExecutionSummary(11, types.ZoneIDFinancial, []types.KernelMessageEnvelope{envelope}, []types.ExecutionReceipt{receipt}, 100, keeperHash("events"))
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), summary.LocalTxCount)
+}
+
 func TestExportImportRoundTripDeterministic(t *testing.T) {
 	source := keeperWithState(t, []types.ZoneID{types.ZoneIDFinancial, types.ZoneIDContract})
 	_, err := source.CommitGlobalRoot(5, keeperContributions(5))
