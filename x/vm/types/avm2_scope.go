@@ -17,20 +17,65 @@ const (
 	MaxAVM2TokenLength               = 128
 	MaxAVM2PayloadTypeLength         = MaxAsyncMessagePayloadType
 
-	AVM2OpNoop              AVM2Opcode = "NOOP"
-	AVM2OpPush              AVM2Opcode = "PUSH"
-	AVM2OpPop               AVM2Opcode = "POP"
-	AVM2OpMemGrow           AVM2Opcode = "MEM_GROW"
-	AVM2OpKVGet             AVM2Opcode = "KV_GET"
-	AVM2OpKVSet             AVM2Opcode = "KV_SET"
-	AVM2OpKVDelete          AVM2Opcode = "KV_DELETE"
-	AVM2OpKVRangeBounded    AVM2Opcode = "KV_RANGE_BOUNDED"
-	AVM2OpVerifyMerkleProof AVM2Opcode = "VERIFY_MERKLE_PROOF"
-	AVM2OpMsgSend           AVM2Opcode = "MSG_SEND"
-	AVM2OpPromiseNew        AVM2Opcode = "PROMISE_NEW"
-	AVM2OpPromiseResolve    AVM2Opcode = "PROMISE_RESOLVE"
-	AVM2OpABIExport         AVM2Opcode = "ABI_EXPORT"
-	AVM2OpEmitEvent         AVM2Opcode = "EMIT_EVENT"
+	AVM2OpNoop               AVM2Opcode = "NOOP"
+	AVM2OpPush               AVM2Opcode = "PUSH"
+	AVM2OpPop                AVM2Opcode = "POP"
+	AVM2OpDup                AVM2Opcode = "DUP"
+	AVM2OpSwap               AVM2Opcode = "SWAP"
+	AVM2OpLoadLocal          AVM2Opcode = "LOAD_LOCAL"
+	AVM2OpStoreLocal         AVM2Opcode = "STORE_LOCAL"
+	AVM2OpAdd                AVM2Opcode = "ADD"
+	AVM2OpSub                AVM2Opcode = "SUB"
+	AVM2OpMul                AVM2Opcode = "MUL"
+	AVM2OpDiv                AVM2Opcode = "DIV"
+	AVM2OpMod                AVM2Opcode = "MOD"
+	AVM2OpNeg                AVM2Opcode = "NEG"
+	AVM2OpCmp                AVM2Opcode = "CMP"
+	AVM2OpJmp                AVM2Opcode = "JMP"
+	AVM2OpJmpIf              AVM2Opcode = "JMP_IF"
+	AVM2OpCallInternal       AVM2Opcode = "CALL_INTERNAL"
+	AVM2OpRet                AVM2Opcode = "RET"
+	AVM2OpAbort              AVM2Opcode = "ABORT"
+	AVM2OpMemLoad            AVM2Opcode = "MEM_LOAD"
+	AVM2OpMemStore           AVM2Opcode = "MEM_STORE"
+	AVM2OpMemCopy            AVM2Opcode = "MEM_COPY"
+	AVM2OpMemSize            AVM2Opcode = "MEM_SIZE"
+	AVM2OpMemGrow            AVM2Opcode = "MEM_GROW"
+	AVM2OpKVGet              AVM2Opcode = "KV_GET"
+	AVM2OpKVSet              AVM2Opcode = "KV_SET"
+	AVM2OpKVDelete           AVM2Opcode = "KV_DELETE"
+	AVM2OpKVExists           AVM2Opcode = "KV_EXISTS"
+	AVM2OpKVRangeBounded     AVM2Opcode = "KV_RANGE_BOUNDED"
+	AVM2OpHash               AVM2Opcode = "HASH"
+	AVM2OpVerifySig          AVM2Opcode = "VERIFY_SIG"
+	AVM2OpVerifyMerkleProof  AVM2Opcode = "VERIFY_MERKLE_PROOF"
+	AVM2OpVerifyMessageProof AVM2Opcode = "VERIFY_MESSAGE_PROOF"
+	AVM2OpVerifyZoneRoot     AVM2Opcode = "VERIFY_ZONE_ROOT"
+	AVM2OpMsgNew             AVM2Opcode = "MSG_NEW"
+	AVM2OpMsgSetValue        AVM2Opcode = "MSG_SET_VALUE"
+	AVM2OpMsgSetPayload      AVM2Opcode = "MSG_SET_PAYLOAD"
+	AVM2OpMsgSetGas          AVM2Opcode = "MSG_SET_GAS"
+	AVM2OpMsgSetExpiry       AVM2Opcode = "MSG_SET_EXPIRY"
+	AVM2OpMsgSend            AVM2Opcode = "MSG_SEND"
+	AVM2OpMsgBounce          AVM2Opcode = "MSG_BOUNCE"
+	AVM2OpPromiseNew         AVM2Opcode = "PROMISE_NEW"
+	AVM2OpPromiseAwait       AVM2Opcode = "PROMISE_AWAIT"
+	AVM2OpPromiseResolve     AVM2Opcode = "PROMISE_RESOLVE"
+	AVM2OpPromiseReject      AVM2Opcode = "PROMISE_REJECT"
+	AVM2OpPromiseTimeout     AVM2Opcode = "PROMISE_TIMEOUT"
+	AVM2OpABIExport          AVM2Opcode = "ABI_EXPORT"
+	AVM2OpABIMethod          AVM2Opcode = "ABI_METHOD"
+	AVM2OpABIEvent           AVM2Opcode = "ABI_EVENT"
+	AVM2OpABIRequire         AVM2Opcode = "ABI_REQUIRE"
+	AVM2OpEmitEvent          AVM2Opcode = "EMIT_EVENT"
+	AVM2OpCtxHeight          AVM2Opcode = "CTX_HEIGHT"
+	AVM2OpCtxChainID         AVM2Opcode = "CTX_CHAIN_ID"
+	AVM2OpCtxZoneID          AVM2Opcode = "CTX_ZONE_ID"
+	AVM2OpCtxShardID         AVM2Opcode = "CTX_SHARD_ID"
+	AVM2OpCtxCaller          AVM2Opcode = "CTX_CALLER"
+	AVM2OpCtxContract        AVM2Opcode = "CTX_CONTRACT"
+	AVM2OpCtxValue           AVM2Opcode = "CTX_VALUE"
+	AVM2OpCtxGasLeft         AVM2Opcode = "CTX_GAS_LEFT"
 
 	AVM2OpExternalNetwork       AVM2Opcode        = "SYSCALL_EXTERNAL_NETWORK"
 	AVM2OpWallClock             AVM2Opcode        = "SYSCALL_WALL_CLOCK"
@@ -52,8 +97,40 @@ const (
 )
 
 type AVM2Opcode string
+type AVM2InstructionCategory string
 type AVM2PromiseStatus string
 type AVM2ProofRootType string
+
+const (
+	AVM2CategoryCoreStack   AVM2InstructionCategory = "core_stack"
+	AVM2CategoryArithmetic  AVM2InstructionCategory = "arithmetic"
+	AVM2CategoryControlFlow AVM2InstructionCategory = "control_flow"
+	AVM2CategoryMemory      AVM2InstructionCategory = "memory"
+	AVM2CategoryStorage     AVM2InstructionCategory = "storage"
+	AVM2CategoryCryptoProof AVM2InstructionCategory = "crypto_and_proofs"
+	AVM2CategoryMessages    AVM2InstructionCategory = "messages"
+	AVM2CategoryPromises    AVM2InstructionCategory = "promises"
+	AVM2CategoryABI         AVM2InstructionCategory = "abi"
+	AVM2CategoryContext     AVM2InstructionCategory = "context"
+)
+
+type AVM2OpcodeDescriptor struct {
+	Opcode   AVM2Opcode
+	Category AVM2InstructionCategory
+	Purpose  string
+	GasCost  uint64
+}
+
+type AVM2InstructionSet struct {
+	Version uint64
+	Opcodes []AVM2OpcodeDescriptor
+	SetHash string
+}
+
+type AVM2OpcodeGasEntry struct {
+	Opcode AVM2Opcode
+	Gas    uint64
+}
 
 type AVM2Limits struct {
 	MaxInstructions       uint32
@@ -73,17 +150,23 @@ type AVM2Limits struct {
 }
 
 type AVM2GasTable struct {
-	BaseInstructionGas uint64
-	MemoryByteGas      uint64
-	StorageReadGas     uint64
-	StorageWriteGas    uint64
-	ProofByteGas       uint64
-	MessageCreateGas   uint64
-	MessageByteGas     uint64
-	EventByteGas       uint64
-	ABIExportGas       uint64
-	PromiseGas         uint64
-	TableHash          string
+	BaseInstructionGas      uint64
+	OpcodeCosts             []AVM2OpcodeGasEntry
+	MemoryByteGas           uint64
+	StorageReadGas          uint64
+	StorageWriteGas         uint64
+	StorageReadByteGas      uint64
+	StorageWriteByteGas     uint64
+	ProofByteGas            uint64
+	ProofDepthGas           uint64
+	MessageCreateGas        uint64
+	MessageEnvelopeGas      uint64
+	MessageByteGas          uint64
+	ForwardingFeeReserveGas uint64
+	EventByteGas            uint64
+	ABIExportGas            uint64
+	PromiseGas              uint64
+	TableHash               string
 }
 
 type AVM2ExecutionContext struct {
@@ -215,18 +298,96 @@ func DefaultAVM2Limits() AVM2Limits {
 	}
 }
 
+func DefaultAVM2InstructionSet() (AVM2InstructionSet, error) {
+	opcodes := []AVM2OpcodeDescriptor{
+		{Opcode: AVM2OpPush, Category: AVM2CategoryCoreStack, Purpose: "push canonical value onto stack", GasCost: 1},
+		{Opcode: AVM2OpPop, Category: AVM2CategoryCoreStack, Purpose: "pop stack value", GasCost: 1},
+		{Opcode: AVM2OpDup, Category: AVM2CategoryCoreStack, Purpose: "duplicate stack value", GasCost: 1},
+		{Opcode: AVM2OpSwap, Category: AVM2CategoryCoreStack, Purpose: "swap top stack values", GasCost: 1},
+		{Opcode: AVM2OpLoadLocal, Category: AVM2CategoryCoreStack, Purpose: "load bounded local value", GasCost: 2},
+		{Opcode: AVM2OpStoreLocal, Category: AVM2CategoryCoreStack, Purpose: "store bounded local value", GasCost: 2},
+		{Opcode: AVM2OpAdd, Category: AVM2CategoryArithmetic, Purpose: "bounded integer addition", GasCost: 2},
+		{Opcode: AVM2OpSub, Category: AVM2CategoryArithmetic, Purpose: "bounded integer subtraction", GasCost: 2},
+		{Opcode: AVM2OpMul, Category: AVM2CategoryArithmetic, Purpose: "bounded integer multiplication", GasCost: 3},
+		{Opcode: AVM2OpDiv, Category: AVM2CategoryArithmetic, Purpose: "bounded integer division", GasCost: 3},
+		{Opcode: AVM2OpMod, Category: AVM2CategoryArithmetic, Purpose: "bounded integer modulo", GasCost: 3},
+		{Opcode: AVM2OpNeg, Category: AVM2CategoryArithmetic, Purpose: "bounded integer negation", GasCost: 2},
+		{Opcode: AVM2OpCmp, Category: AVM2CategoryArithmetic, Purpose: "bounded integer comparison", GasCost: 2},
+		{Opcode: AVM2OpJmp, Category: AVM2CategoryControlFlow, Purpose: "deterministic jump target", GasCost: 2},
+		{Opcode: AVM2OpJmpIf, Category: AVM2CategoryControlFlow, Purpose: "deterministic conditional jump target", GasCost: 2},
+		{Opcode: AVM2OpCallInternal, Category: AVM2CategoryControlFlow, Purpose: "bounded internal call", GasCost: 5},
+		{Opcode: AVM2OpRet, Category: AVM2CategoryControlFlow, Purpose: "return from internal call", GasCost: 2},
+		{Opcode: AVM2OpAbort, Category: AVM2CategoryControlFlow, Purpose: "abort execution with consumed gas", GasCost: 2},
+		{Opcode: AVM2OpMemLoad, Category: AVM2CategoryMemory, Purpose: "bounded memory load", GasCost: 2},
+		{Opcode: AVM2OpMemStore, Category: AVM2CategoryMemory, Purpose: "bounded memory store", GasCost: 2},
+		{Opcode: AVM2OpMemCopy, Category: AVM2CategoryMemory, Purpose: "bounded memory copy", GasCost: 3},
+		{Opcode: AVM2OpMemSize, Category: AVM2CategoryMemory, Purpose: "read bounded memory size", GasCost: 1},
+		{Opcode: AVM2OpMemGrow, Category: AVM2CategoryMemory, Purpose: "grow bounded memory", GasCost: 2},
+		{Opcode: AVM2OpKVGet, Category: AVM2CategoryStorage, Purpose: "Store v2 contract-local get", GasCost: 4},
+		{Opcode: AVM2OpKVSet, Category: AVM2CategoryStorage, Purpose: "Store v2 contract-local set", GasCost: 8},
+		{Opcode: AVM2OpKVDelete, Category: AVM2CategoryStorage, Purpose: "Store v2 contract-local delete", GasCost: 8},
+		{Opcode: AVM2OpKVExists, Category: AVM2CategoryStorage, Purpose: "Store v2 contract-local exists", GasCost: 4},
+		{Opcode: AVM2OpKVRangeBounded, Category: AVM2CategoryStorage, Purpose: "Store v2 bounded range scan", GasCost: 8},
+		{Opcode: AVM2OpHash, Category: AVM2CategoryCryptoProof, Purpose: "deterministic hashing", GasCost: 4},
+		{Opcode: AVM2OpVerifySig, Category: AVM2CategoryCryptoProof, Purpose: "deterministic signature proof validation", GasCost: 20},
+		{Opcode: AVM2OpVerifyMerkleProof, Category: AVM2CategoryCryptoProof, Purpose: "Merkle proof validation", GasCost: 20},
+		{Opcode: AVM2OpVerifyMessageProof, Category: AVM2CategoryCryptoProof, Purpose: "message inclusion proof validation", GasCost: 20},
+		{Opcode: AVM2OpVerifyZoneRoot, Category: AVM2CategoryCryptoProof, Purpose: "zone root proof validation", GasCost: 20},
+		{Opcode: AVM2OpMsgNew, Category: AVM2CategoryMessages, Purpose: "construct message envelope", GasCost: 10},
+		{Opcode: AVM2OpMsgSetValue, Category: AVM2CategoryMessages, Purpose: "set message value", GasCost: 3},
+		{Opcode: AVM2OpMsgSetPayload, Category: AVM2CategoryMessages, Purpose: "set message payload", GasCost: 3},
+		{Opcode: AVM2OpMsgSetGas, Category: AVM2CategoryMessages, Purpose: "set message gas limit", GasCost: 3},
+		{Opcode: AVM2OpMsgSetExpiry, Category: AVM2CategoryMessages, Purpose: "set message expiry", GasCost: 3},
+		{Opcode: AVM2OpMsgSend, Category: AVM2CategoryMessages, Purpose: "emit prepaid message", GasCost: 20},
+		{Opcode: AVM2OpMsgBounce, Category: AVM2CategoryMessages, Purpose: "emit bounded bounce message", GasCost: 20},
+		{Opcode: AVM2OpPromiseNew, Category: AVM2CategoryPromises, Purpose: "create pending promise", GasCost: 8},
+		{Opcode: AVM2OpPromiseAwait, Category: AVM2CategoryPromises, Purpose: "register non-blocking promise await", GasCost: 8},
+		{Opcode: AVM2OpPromiseResolve, Category: AVM2CategoryPromises, Purpose: "resolve promise from receipt", GasCost: 8},
+		{Opcode: AVM2OpPromiseReject, Category: AVM2CategoryPromises, Purpose: "reject promise from failure receipt", GasCost: 8},
+		{Opcode: AVM2OpPromiseTimeout, Category: AVM2CategoryPromises, Purpose: "time out promise deterministically", GasCost: 8},
+		{Opcode: AVM2OpABIExport, Category: AVM2CategoryABI, Purpose: "export committed ABI descriptor", GasCost: 5},
+		{Opcode: AVM2OpABIMethod, Category: AVM2CategoryABI, Purpose: "validate ABI method selector", GasCost: 3},
+		{Opcode: AVM2OpABIEvent, Category: AVM2CategoryABI, Purpose: "validate ABI event descriptor", GasCost: 3},
+		{Opcode: AVM2OpABIRequire, Category: AVM2CategoryABI, Purpose: "validate required ABI interface", GasCost: 3},
+		{Opcode: AVM2OpEmitEvent, Category: AVM2CategoryABI, Purpose: "emit deterministic contract event", GasCost: 5},
+		{Opcode: AVM2OpCtxHeight, Category: AVM2CategoryContext, Purpose: "read consensus height", GasCost: 1},
+		{Opcode: AVM2OpCtxChainID, Category: AVM2CategoryContext, Purpose: "read chain id", GasCost: 1},
+		{Opcode: AVM2OpCtxZoneID, Category: AVM2CategoryContext, Purpose: "read zone id", GasCost: 1},
+		{Opcode: AVM2OpCtxShardID, Category: AVM2CategoryContext, Purpose: "read shard id", GasCost: 1},
+		{Opcode: AVM2OpCtxCaller, Category: AVM2CategoryContext, Purpose: "read caller", GasCost: 1},
+		{Opcode: AVM2OpCtxContract, Category: AVM2CategoryContext, Purpose: "read contract address", GasCost: 1},
+		{Opcode: AVM2OpCtxValue, Category: AVM2CategoryContext, Purpose: "read call value", GasCost: 1},
+		{Opcode: AVM2OpCtxGasLeft, Category: AVM2CategoryContext, Purpose: "read remaining gas after current charge", GasCost: 1},
+		{Opcode: AVM2OpNoop, Category: AVM2CategoryCoreStack, Purpose: "deterministic no-op", GasCost: 1},
+	}
+	set := AVM2InstructionSet{Version: AVM2DefaultInstructionSet, Opcodes: opcodes}
+	set = canonicalAVM2InstructionSet(set)
+	set.SetHash = ComputeAVM2InstructionSetHash(set)
+	return set, set.Validate()
+}
+
 func DefaultAVM2GasTable() (AVM2GasTable, error) {
+	set, err := DefaultAVM2InstructionSet()
+	if err != nil {
+		return AVM2GasTable{}, err
+	}
 	table := AVM2GasTable{
-		BaseInstructionGas: 1,
-		MemoryByteGas:      1,
-		StorageReadGas:     2,
-		StorageWriteGas:    4,
-		ProofByteGas:       3,
-		MessageCreateGas:   20,
-		MessageByteGas:     1,
-		EventByteGas:       1,
-		ABIExportGas:       5,
-		PromiseGas:         8,
+		BaseInstructionGas:      1,
+		OpcodeCosts:             AVM2OpcodeGasEntriesFromInstructionSet(set),
+		MemoryByteGas:           1,
+		StorageReadGas:          2,
+		StorageWriteGas:         4,
+		StorageReadByteGas:      1,
+		StorageWriteByteGas:     2,
+		ProofByteGas:            3,
+		ProofDepthGas:           5,
+		MessageCreateGas:        20,
+		MessageEnvelopeGas:      8,
+		MessageByteGas:          1,
+		ForwardingFeeReserveGas: 1,
+		EventByteGas:            1,
+		ABIExportGas:            5,
+		PromiseGas:              8,
 	}
 	table.TableHash = ComputeAVM2GasTableHash(table)
 	return table, table.Validate()
@@ -267,17 +428,66 @@ func ExecuteAVM2Program(program AVM2Program, ctx AVM2ExecutionContext, limits AV
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack depth exceeded")
 			}
 			result.Stack = append(result.Stack, hex.EncodeToString(instruction.Value))
-		case AVM2OpPop:
+		case AVM2OpPop, AVM2OpStoreLocal:
 			if len(result.Stack) == 0 {
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack underflow")
 			}
 			result.Stack = result.Stack[:len(result.Stack)-1]
+		case AVM2OpDup:
+			if len(result.Stack) == 0 {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack underflow")
+			}
+			if len(result.Stack) >= int(limits.MaxStackDepth) {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack depth exceeded")
+			}
+			result.Stack = append(result.Stack, result.Stack[len(result.Stack)-1])
+		case AVM2OpSwap:
+			if len(result.Stack) < 2 {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack underflow")
+			}
+			result.Stack[len(result.Stack)-1], result.Stack[len(result.Stack)-2] = result.Stack[len(result.Stack)-2], result.Stack[len(result.Stack)-1]
+		case AVM2OpLoadLocal:
+			if len(result.Stack) >= int(limits.MaxStackDepth) {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack depth exceeded")
+			}
+			result.Stack = append(result.Stack, ComputeAVM2BytesHash([]byte(instruction.Key)))
+		case AVM2OpAdd, AVM2OpSub, AVM2OpMul, AVM2OpDiv, AVM2OpMod, AVM2OpCmp:
+			if len(result.Stack) < 2 {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack underflow")
+			}
+			right := result.Stack[len(result.Stack)-1]
+			left := result.Stack[len(result.Stack)-2]
+			result.Stack = result.Stack[:len(result.Stack)-2]
+			result.Stack = append(result.Stack, ComputeAVM2BytesHash([]byte(string(instruction.Opcode)+":"+left+":"+right)))
+		case AVM2OpNeg:
+			if len(result.Stack) == 0 {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack underflow")
+			}
+			result.Stack[len(result.Stack)-1] = ComputeAVM2BytesHash([]byte("NEG:" + result.Stack[len(result.Stack)-1]))
+		case AVM2OpJmp, AVM2OpJmpIf, AVM2OpCallInternal, AVM2OpRet:
+			if instruction.Opcode == AVM2OpJmpIf && len(result.Stack) == 0 {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack underflow")
+			}
+		case AVM2OpAbort:
+			return AVM2ExecutionResult{}, errors.New("AVM 2.0 execution aborted")
 		case AVM2OpMemGrow:
 			result.MemoryBytes += uint64(instruction.MemoryGrow)
 			if result.MemoryBytes > limits.MaxMemoryBytes {
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 memory limit exceeded")
 			}
-		case AVM2OpKVGet, AVM2OpKVRangeBounded:
+		case AVM2OpMemLoad, AVM2OpMemStore, AVM2OpMemCopy:
+			if instruction.MemoryGrow > 0 {
+				result.MemoryBytes += uint64(instruction.MemoryGrow)
+				if result.MemoryBytes > limits.MaxMemoryBytes {
+					return AVM2ExecutionResult{}, errors.New("AVM 2.0 memory limit exceeded")
+				}
+			}
+		case AVM2OpMemSize:
+			if len(result.Stack) >= int(limits.MaxStackDepth) {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack depth exceeded")
+			}
+			result.Stack = append(result.Stack, fmt.Sprintf("%020d", result.MemoryBytes))
+		case AVM2OpKVGet, AVM2OpKVExists, AVM2OpKVRangeBounded:
 			if err := ValidateAVM2StoreV2Key(ctx, instruction.Key, limits); err != nil {
 				return AVM2ExecutionResult{}, err
 			}
@@ -301,13 +511,22 @@ func ExecuteAVM2Program(program AVM2Program, ctx AVM2ExecutionContext, limits AV
 				return AVM2ExecutionResult{}, err
 			}
 			result.StorageWrites = append(result.StorageWrites, AVM2StorageWrite{Key: instruction.Key, ValueHash: ComputeAVM2BytesHash(nil), Deleted: true})
-		case AVM2OpVerifyMerkleProof:
+		case AVM2OpHash:
+			if len(result.Stack) >= int(limits.MaxStackDepth) {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack depth exceeded")
+			}
+			result.Stack = append(result.Stack, ComputeAVM2BytesHash(instruction.Value))
+		case AVM2OpVerifySig, AVM2OpVerifyMerkleProof, AVM2OpVerifyMessageProof, AVM2OpVerifyZoneRoot:
 			proof := canonicalAVM2ProofInput(instruction.Proof)
 			if err := proof.Validate(limits); err != nil {
 				return AVM2ExecutionResult{}, err
 			}
 			result.ProofsVerified = append(result.ProofsVerified, proof)
-		case AVM2OpMsgSend:
+		case AVM2OpMsgNew, AVM2OpMsgSetValue, AVM2OpMsgSetPayload, AVM2OpMsgSetGas, AVM2OpMsgSetExpiry:
+			if err := canonicalAVMAsyncMessage(instruction.Message).Validate(); err != nil {
+				return AVM2ExecutionResult{}, fmt.Errorf("AVM 2.0 message builder: %w", err)
+			}
+		case AVM2OpMsgSend, AVM2OpMsgBounce:
 			if ctx.ReadOnly {
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 read-only simulation cannot emit messages")
 			}
@@ -319,7 +538,12 @@ func ExecuteAVM2Program(program AVM2Program, ctx AVM2ExecutionContext, limits AV
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 output message limit exceeded")
 			}
 			result.OutputMessages = append(result.OutputMessages, msg)
-		case AVM2OpPromiseNew, AVM2OpPromiseResolve:
+		case AVM2OpPromiseAwait:
+			promise := canonicalAVM2PromiseState(instruction.Promise)
+			if err := promise.Validate(); err != nil {
+				return AVM2ExecutionResult{}, err
+			}
+		case AVM2OpPromiseNew, AVM2OpPromiseResolve, AVM2OpPromiseReject, AVM2OpPromiseTimeout:
 			if ctx.ReadOnly {
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 read-only simulation cannot mutate promise state")
 			}
@@ -331,12 +555,14 @@ func ExecuteAVM2Program(program AVM2Program, ctx AVM2ExecutionContext, limits AV
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 promise write limit exceeded")
 			}
 			result.Promises = append(result.Promises, promise)
-		case AVM2OpABIExport:
+		case AVM2OpABIExport, AVM2OpABIMethod, AVM2OpABIEvent, AVM2OpABIRequire:
 			abi := canonicalAVM2ABIDescriptor(instruction.ABI)
 			if err := abi.Validate(limits); err != nil {
 				return AVM2ExecutionResult{}, err
 			}
-			result.ABIDescriptors = append(result.ABIDescriptors, abi)
+			if instruction.Opcode == AVM2OpABIExport {
+				result.ABIDescriptors = append(result.ABIDescriptors, abi)
+			}
 		case AVM2OpEmitEvent:
 			if ctx.ReadOnly {
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 read-only simulation cannot emit events")
@@ -349,6 +575,11 @@ func ExecuteAVM2Program(program AVM2Program, ctx AVM2ExecutionContext, limits AV
 				return AVM2ExecutionResult{}, errors.New("AVM 2.0 event limit exceeded")
 			}
 			result.Events = append(result.Events, event)
+		case AVM2OpCtxHeight, AVM2OpCtxChainID, AVM2OpCtxZoneID, AVM2OpCtxShardID, AVM2OpCtxCaller, AVM2OpCtxContract, AVM2OpCtxValue, AVM2OpCtxGasLeft:
+			if len(result.Stack) >= int(limits.MaxStackDepth) {
+				return AVM2ExecutionResult{}, errors.New("AVM 2.0 stack depth exceeded")
+			}
+			result.Stack = append(result.Stack, AVM2ContextValue(instruction.Opcode, ctx, result.GasUsed))
 		default:
 			return AVM2ExecutionResult{}, fmt.Errorf("unsupported AVM 2.0 opcode %q", instruction.Opcode)
 		}
@@ -422,12 +653,72 @@ func (l AVM2Limits) Validate() error {
 	return nil
 }
 
+func (s AVM2InstructionSet) Validate() error {
+	s = canonicalAVM2InstructionSet(s)
+	if s.Version == 0 {
+		return errors.New("AVM 2.0 instruction set version must be positive")
+	}
+	if len(s.Opcodes) == 0 {
+		return errors.New("AVM 2.0 instruction set must declare opcodes")
+	}
+	seen := make(map[AVM2Opcode]struct{}, len(s.Opcodes))
+	for i, opcode := range s.Opcodes {
+		if !IsAVM2SupportedOpcode(opcode.Opcode) {
+			return fmt.Errorf("AVM 2.0 instruction set contains unsupported opcode %q", opcode.Opcode)
+		}
+		if IsAVM2ForbiddenOpcode(opcode.Opcode) {
+			return fmt.Errorf("AVM 2.0 instruction set contains forbidden opcode %q", opcode.Opcode)
+		}
+		if !IsAVM2InstructionCategory(opcode.Category) {
+			return fmt.Errorf("invalid AVM 2.0 instruction category %q", opcode.Category)
+		}
+		if strings.TrimSpace(opcode.Purpose) == "" {
+			return errors.New("AVM 2.0 opcode purpose is required")
+		}
+		if len(opcode.Purpose) > 256 {
+			return errors.New("AVM 2.0 opcode purpose must be <= 256 bytes")
+		}
+		if opcode.GasCost == 0 {
+			return errors.New("AVM 2.0 opcode gas cost must be positive")
+		}
+		if _, found := seen[opcode.Opcode]; found {
+			return fmt.Errorf("duplicate AVM 2.0 opcode %q", opcode.Opcode)
+		}
+		seen[opcode.Opcode] = struct{}{}
+		if i > 0 && s.Opcodes[i-1].Opcode >= opcode.Opcode {
+			return errors.New("AVM 2.0 opcodes must be sorted canonically")
+		}
+	}
+	for _, opcode := range AllAVM2SupportedOpcodes() {
+		if _, found := seen[opcode]; !found {
+			return fmt.Errorf("AVM 2.0 instruction set missing opcode %q", opcode)
+		}
+	}
+	if err := zonestypes.ValidateHash("AVM 2.0 instruction set hash", s.SetHash); err != nil {
+		return err
+	}
+	if s.SetHash != ComputeAVM2InstructionSetHash(s) {
+		return errors.New("AVM 2.0 instruction set hash mismatch")
+	}
+	return nil
+}
+
 func (t AVM2GasTable) Validate() error {
+	t = canonicalAVM2GasTable(t)
 	if t.BaseInstructionGas == 0 || t.MemoryByteGas == 0 || t.StorageReadGas == 0 || t.StorageWriteGas == 0 {
 		return errors.New("AVM 2.0 gas table execution and storage gas must be positive")
 	}
-	if t.ProofByteGas == 0 || t.MessageCreateGas == 0 || t.MessageByteGas == 0 || t.EventByteGas == 0 || t.ABIExportGas == 0 || t.PromiseGas == 0 {
+	if t.StorageReadByteGas == 0 || t.StorageWriteByteGas == 0 || t.ProofByteGas == 0 || t.ProofDepthGas == 0 {
+		return errors.New("AVM 2.0 gas table byte and proof gas must be positive")
+	}
+	if t.MessageCreateGas == 0 || t.MessageEnvelopeGas == 0 || t.MessageByteGas == 0 || t.ForwardingFeeReserveGas == 0 {
+		return errors.New("AVM 2.0 gas table message gas must be positive")
+	}
+	if t.EventByteGas == 0 || t.ABIExportGas == 0 || t.PromiseGas == 0 {
 		return errors.New("AVM 2.0 gas table proof, message, event, ABI, and promise gas must be positive")
+	}
+	if err := validateAVM2OpcodeGasEntries(t.OpcodeCosts); err != nil {
+		return err
 	}
 	if t.TableHash == "" {
 		return errors.New("AVM 2.0 gas table hash is required")
@@ -437,6 +728,36 @@ func (t AVM2GasTable) Validate() error {
 	}
 	if t.TableHash != ComputeAVM2GasTableHash(t) {
 		return errors.New("AVM 2.0 gas table hash mismatch")
+	}
+	return nil
+}
+
+func validateAVM2OpcodeGasEntries(entries []AVM2OpcodeGasEntry) error {
+	if len(entries) == 0 {
+		return errors.New("AVM 2.0 gas table must declare opcode costs")
+	}
+	entries = append([]AVM2OpcodeGasEntry(nil), entries...)
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Opcode < entries[j].Opcode })
+	seen := make(map[AVM2Opcode]struct{}, len(entries))
+	for i, entry := range entries {
+		if !IsAVM2SupportedOpcode(entry.Opcode) {
+			return fmt.Errorf("AVM 2.0 gas table contains unsupported opcode %q", entry.Opcode)
+		}
+		if entry.Gas == 0 {
+			return fmt.Errorf("AVM 2.0 gas table opcode %q cost must be positive", entry.Opcode)
+		}
+		if _, found := seen[entry.Opcode]; found {
+			return fmt.Errorf("duplicate AVM 2.0 gas table opcode %q", entry.Opcode)
+		}
+		seen[entry.Opcode] = struct{}{}
+		if i > 0 && entries[i-1].Opcode >= entry.Opcode {
+			return errors.New("AVM 2.0 gas table opcode entries must be sorted canonically")
+		}
+	}
+	for _, opcode := range AllAVM2SupportedOpcodes() {
+		if _, found := seen[opcode]; !found {
+			return fmt.Errorf("AVM 2.0 gas table missing opcode %q", opcode)
+		}
 	}
 	return nil
 }
@@ -488,11 +809,23 @@ func (i AVM2Instruction) Validate(limits AVM2Limits, gasTable AVM2GasTable) erro
 		return fmt.Errorf("AVM 2.0 instruction gas must be in 1..%d", limits.MaxInstructionGas)
 	}
 	switch i.Opcode {
+	case AVM2OpLoadLocal, AVM2OpStoreLocal:
+		if err := validateEngineToken("AVM 2.0 local key", i.Key, MaxAVM2TokenLength); err != nil {
+			return err
+		}
+	case AVM2OpJmp, AVM2OpJmpIf, AVM2OpCallInternal:
+		if i.RangeLimit == 0 {
+			return errors.New("AVM 2.0 control flow target must be explicit")
+		}
 	case AVM2OpMemGrow:
 		if i.MemoryGrow == 0 {
 			return errors.New("AVM 2.0 memory growth must be positive")
 		}
-	case AVM2OpKVGet, AVM2OpKVSet, AVM2OpKVDelete, AVM2OpKVRangeBounded:
+	case AVM2OpMemLoad, AVM2OpMemStore, AVM2OpMemCopy:
+		if uint64(i.MemoryGrow) > limits.MaxMemoryBytes {
+			return errors.New("AVM 2.0 memory operation exceeds memory limit")
+		}
+	case AVM2OpKVGet, AVM2OpKVSet, AVM2OpKVDelete, AVM2OpKVExists, AVM2OpKVRangeBounded:
 		if strings.TrimSpace(i.Key) == "" {
 			return errors.New("AVM 2.0 storage key is required")
 		}
@@ -502,13 +835,13 @@ func (i AVM2Instruction) Validate(limits AVM2Limits, gasTable AVM2GasTable) erro
 		if i.Opcode == AVM2OpKVRangeBounded && (i.RangeLimit == 0 || i.RangeLimit > limits.MaxBoundedRangeItems) {
 			return fmt.Errorf("AVM 2.0 bounded range limit must be in 1..%d", limits.MaxBoundedRangeItems)
 		}
-	case AVM2OpVerifyMerkleProof:
+	case AVM2OpVerifySig, AVM2OpVerifyMerkleProof, AVM2OpVerifyMessageProof, AVM2OpVerifyZoneRoot:
 		return canonicalAVM2ProofInput(i.Proof).Validate(limits)
-	case AVM2OpMsgSend:
+	case AVM2OpMsgNew, AVM2OpMsgSetValue, AVM2OpMsgSetPayload, AVM2OpMsgSetGas, AVM2OpMsgSetExpiry, AVM2OpMsgSend, AVM2OpMsgBounce:
 		return canonicalAVMAsyncMessage(i.Message).Validate()
-	case AVM2OpPromiseNew, AVM2OpPromiseResolve:
+	case AVM2OpPromiseNew, AVM2OpPromiseAwait, AVM2OpPromiseResolve, AVM2OpPromiseReject, AVM2OpPromiseTimeout:
 		return canonicalAVM2PromiseState(i.Promise).Validate()
-	case AVM2OpABIExport:
+	case AVM2OpABIExport, AVM2OpABIMethod, AVM2OpABIEvent, AVM2OpABIRequire:
 		return canonicalAVM2ABIDescriptor(i.ABI).Validate(limits)
 	case AVM2OpEmitEvent:
 		return canonicalAVM2Event(i.Event).Validate(limits)
@@ -753,34 +1086,59 @@ func ValidateAVM2StoreV2Key(ctx AVM2ExecutionContext, key string, limits AVM2Lim
 }
 
 func AVM2InstructionGas(i AVM2Instruction, table AVM2GasTable, limits AVM2Limits) (uint64, error) {
+	table = canonicalAVM2GasTable(table)
 	if i.GasOverride > 0 {
 		return i.GasOverride, nil
 	}
-	gas := table.BaseInstructionGas
-	var err error
+	opGas, found := table.OpcodeGas(i.Opcode)
+	if !found {
+		return 0, fmt.Errorf("AVM 2.0 gas table missing opcode %q", i.Opcode)
+	}
+	gas, err := checkedAVMGasAdd(table.BaseInstructionGas, opGas)
+	if err != nil {
+		return 0, err
+	}
 	switch i.Opcode {
-	case AVM2OpMemGrow:
+	case AVM2OpMemGrow, AVM2OpMemLoad, AVM2OpMemStore, AVM2OpMemCopy:
 		gas, err = checkedAVMGasAdd(gas, uint64(i.MemoryGrow)*table.MemoryByteGas)
-	case AVM2OpKVGet, AVM2OpKVRangeBounded:
+	case AVM2OpKVGet, AVM2OpKVExists, AVM2OpKVRangeBounded:
 		gas, err = checkedAVMGasAdd(gas, table.StorageReadGas)
+		if err == nil {
+			gas, err = checkedAVMGasAdd(gas, uint64(len(i.Key))*table.StorageReadByteGas)
+		}
 	case AVM2OpKVSet, AVM2OpKVDelete:
 		gas, err = checkedAVMGasAdd(gas, table.StorageWriteGas)
 		if err == nil {
-			gas, err = checkedAVMGasAdd(gas, uint64(len(i.Value))*table.StorageWriteGas)
+			gas, err = checkedAVMGasAdd(gas, uint64(len(i.Key))*table.StorageWriteByteGas)
 		}
-	case AVM2OpVerifyMerkleProof:
+		if err == nil {
+			gas, err = checkedAVMGasAdd(gas, uint64(len(i.Value))*table.StorageWriteByteGas)
+		}
+	case AVM2OpVerifySig, AVM2OpVerifyMerkleProof, AVM2OpVerifyMessageProof, AVM2OpVerifyZoneRoot:
 		gas, err = checkedAVMGasAdd(gas, uint64(len(i.Proof.ProofBytes))*table.ProofByteGas)
-	case AVM2OpMsgSend:
+		if err == nil {
+			gas, err = checkedAVMGasAdd(gas, uint64(i.Proof.ProofVersion)*table.ProofDepthGas)
+		}
+	case AVM2OpMsgNew, AVM2OpMsgSetValue, AVM2OpMsgSetPayload, AVM2OpMsgSetGas, AVM2OpMsgSetExpiry, AVM2OpMsgSend, AVM2OpMsgBounce:
 		gas, err = checkedAVMGasAdd(gas, table.MessageCreateGas)
+		if err == nil {
+			gas, err = checkedAVMGasAdd(gas, table.MessageEnvelopeGas)
+		}
 		if err == nil {
 			gas, err = checkedAVMGasAdd(gas, uint64(len(i.Message.Payload))*table.MessageByteGas)
 		}
-	case AVM2OpPromiseNew, AVM2OpPromiseResolve:
+		if err == nil && (i.Opcode == AVM2OpMsgSend || i.Opcode == AVM2OpMsgBounce) {
+			gas, err = checkedAVMGasAdd(gas, table.ForwardingFeeReserveGas)
+		}
+	case AVM2OpPromiseNew, AVM2OpPromiseAwait, AVM2OpPromiseResolve, AVM2OpPromiseReject, AVM2OpPromiseTimeout:
 		gas, err = checkedAVMGasAdd(gas, table.PromiseGas)
-	case AVM2OpABIExport:
+	case AVM2OpABIExport, AVM2OpABIMethod, AVM2OpABIEvent, AVM2OpABIRequire:
 		gas, err = checkedAVMGasAdd(gas, table.ABIExportGas)
 	case AVM2OpEmitEvent:
 		gas, err = checkedAVMGasAdd(gas, table.EventByteGas)
+		if err == nil {
+			gas, err = checkedAVMGasAdd(gas, uint64(len(i.Event.PayloadHash))*table.EventByteGas)
+		}
 	}
 	if err != nil {
 		return 0, err
@@ -793,8 +1151,43 @@ func AVM2InstructionGas(i AVM2Instruction, table AVM2GasTable, limits AVM2Limits
 
 func IsAVM2SupportedOpcode(op AVM2Opcode) bool {
 	switch op {
-	case AVM2OpNoop, AVM2OpPush, AVM2OpPop, AVM2OpMemGrow, AVM2OpKVGet, AVM2OpKVSet, AVM2OpKVDelete, AVM2OpKVRangeBounded,
-		AVM2OpVerifyMerkleProof, AVM2OpMsgSend, AVM2OpPromiseNew, AVM2OpPromiseResolve, AVM2OpABIExport, AVM2OpEmitEvent:
+	case AVM2OpNoop, AVM2OpPush, AVM2OpPop, AVM2OpDup, AVM2OpSwap, AVM2OpLoadLocal, AVM2OpStoreLocal,
+		AVM2OpAdd, AVM2OpSub, AVM2OpMul, AVM2OpDiv, AVM2OpMod, AVM2OpNeg, AVM2OpCmp,
+		AVM2OpJmp, AVM2OpJmpIf, AVM2OpCallInternal, AVM2OpRet, AVM2OpAbort,
+		AVM2OpMemLoad, AVM2OpMemStore, AVM2OpMemCopy, AVM2OpMemSize, AVM2OpMemGrow,
+		AVM2OpKVGet, AVM2OpKVSet, AVM2OpKVDelete, AVM2OpKVExists, AVM2OpKVRangeBounded,
+		AVM2OpHash, AVM2OpVerifySig, AVM2OpVerifyMerkleProof, AVM2OpVerifyMessageProof, AVM2OpVerifyZoneRoot,
+		AVM2OpMsgNew, AVM2OpMsgSetValue, AVM2OpMsgSetPayload, AVM2OpMsgSetGas, AVM2OpMsgSetExpiry, AVM2OpMsgSend, AVM2OpMsgBounce,
+		AVM2OpPromiseNew, AVM2OpPromiseAwait, AVM2OpPromiseResolve, AVM2OpPromiseReject, AVM2OpPromiseTimeout,
+		AVM2OpABIExport, AVM2OpABIMethod, AVM2OpABIEvent, AVM2OpABIRequire, AVM2OpEmitEvent,
+		AVM2OpCtxHeight, AVM2OpCtxChainID, AVM2OpCtxZoneID, AVM2OpCtxShardID, AVM2OpCtxCaller, AVM2OpCtxContract, AVM2OpCtxValue, AVM2OpCtxGasLeft:
+		return true
+	default:
+		return false
+	}
+}
+
+func AllAVM2SupportedOpcodes() []AVM2Opcode {
+	return []AVM2Opcode{
+		AVM2OpAbort, AVM2OpABIEvent, AVM2OpABIExport, AVM2OpABIMethod, AVM2OpABIRequire,
+		AVM2OpAdd, AVM2OpCallInternal, AVM2OpCmp, AVM2OpCtxCaller, AVM2OpCtxChainID,
+		AVM2OpCtxContract, AVM2OpCtxGasLeft, AVM2OpCtxHeight, AVM2OpCtxShardID, AVM2OpCtxValue,
+		AVM2OpCtxZoneID, AVM2OpDiv, AVM2OpDup, AVM2OpEmitEvent, AVM2OpHash, AVM2OpJmp,
+		AVM2OpJmpIf, AVM2OpKVDelete, AVM2OpKVExists, AVM2OpKVGet, AVM2OpKVRangeBounded,
+		AVM2OpKVSet, AVM2OpLoadLocal, AVM2OpMemCopy, AVM2OpMemGrow, AVM2OpMemLoad,
+		AVM2OpMemSize, AVM2OpMemStore, AVM2OpMod, AVM2OpMsgBounce, AVM2OpMsgNew,
+		AVM2OpMsgSend, AVM2OpMsgSetExpiry, AVM2OpMsgSetGas, AVM2OpMsgSetPayload,
+		AVM2OpMsgSetValue, AVM2OpMul, AVM2OpNeg, AVM2OpNoop, AVM2OpPop, AVM2OpPromiseAwait,
+		AVM2OpPromiseNew, AVM2OpPromiseReject, AVM2OpPromiseResolve, AVM2OpPromiseTimeout,
+		AVM2OpPush, AVM2OpRet, AVM2OpStoreLocal, AVM2OpSub, AVM2OpSwap,
+		AVM2OpVerifyMerkleProof, AVM2OpVerifyMessageProof, AVM2OpVerifySig, AVM2OpVerifyZoneRoot,
+	}
+}
+
+func IsAVM2InstructionCategory(category AVM2InstructionCategory) bool {
+	switch category {
+	case AVM2CategoryCoreStack, AVM2CategoryArithmetic, AVM2CategoryControlFlow, AVM2CategoryMemory, AVM2CategoryStorage,
+		AVM2CategoryCryptoProof, AVM2CategoryMessages, AVM2CategoryPromises, AVM2CategoryABI, AVM2CategoryContext:
 		return true
 	default:
 		return false
@@ -828,22 +1221,96 @@ func IsAVM2ProofRootType(rootType AVM2ProofRootType) bool {
 	}
 }
 
+func AVM2OpcodeGasEntriesFromInstructionSet(set AVM2InstructionSet) []AVM2OpcodeGasEntry {
+	set = canonicalAVM2InstructionSet(set)
+	entries := make([]AVM2OpcodeGasEntry, 0, len(set.Opcodes))
+	for _, opcode := range set.Opcodes {
+		entries = append(entries, AVM2OpcodeGasEntry{Opcode: opcode.Opcode, Gas: opcode.GasCost})
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].Opcode < entries[j].Opcode })
+	return entries
+}
+
+func (t AVM2GasTable) OpcodeGas(opcode AVM2Opcode) (uint64, bool) {
+	t = canonicalAVM2GasTable(t)
+	for _, entry := range t.OpcodeCosts {
+		if entry.Opcode == opcode {
+			return entry.Gas, true
+		}
+	}
+	return 0, false
+}
+
+func AVM2ContextValue(opcode AVM2Opcode, ctx AVM2ExecutionContext, gasUsed uint64) string {
+	ctx = canonicalAVM2ExecutionContext(ctx)
+	switch opcode {
+	case AVM2OpCtxHeight:
+		return fmt.Sprintf("%020d", ctx.Height)
+	case AVM2OpCtxChainID:
+		return ctx.ChainID
+	case AVM2OpCtxZoneID:
+		return string(ctx.ZoneID)
+	case AVM2OpCtxShardID:
+		return fmt.Sprintf("%020d", ctx.ShardID)
+	case AVM2OpCtxCaller:
+		return ctx.Caller
+	case AVM2OpCtxContract:
+		return ctx.ContractAddress
+	case AVM2OpCtxValue:
+		return fmt.Sprintf("%020d", ctx.ValueNAET)
+	case AVM2OpCtxGasLeft:
+		if gasUsed >= ctx.GasLimit {
+			return "00000000000000000000"
+		}
+		return fmt.Sprintf("%020d", ctx.GasLimit-gasUsed)
+	default:
+		return ""
+	}
+}
+
 func ComputeAVM2BytesHash(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
 }
 
+func ComputeAVM2InstructionSetHash(set AVM2InstructionSet) string {
+	set = canonicalAVM2InstructionSet(set)
+	set.SetHash = ""
+	h := sha256.New()
+	writeEnginePart(h, "aetheris-avm2-instruction-set-v1")
+	writeEngineUint64(h, set.Version)
+	writeEngineUint64(h, uint64(len(set.Opcodes)))
+	for _, opcode := range set.Opcodes {
+		writeEnginePart(h, string(opcode.Opcode))
+		writeEnginePart(h, string(opcode.Category))
+		writeEnginePart(h, opcode.Purpose)
+		writeEngineUint64(h, opcode.GasCost)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func ComputeAVM2GasTableHash(table AVM2GasTable) string {
+	table = canonicalAVM2GasTable(table)
 	table.TableHash = ""
 	h := sha256.New()
 	writeEnginePart(h, "aetheris-avm2-gas-table-v1")
 	writeEngineUint64(h, table.BaseInstructionGas)
+	writeEngineUint64(h, uint64(len(table.OpcodeCosts)))
+	for _, entry := range table.OpcodeCosts {
+		writeEnginePart(h, string(entry.Opcode))
+		writeEngineUint64(h, entry.Gas)
+	}
 	writeEngineUint64(h, table.MemoryByteGas)
 	writeEngineUint64(h, table.StorageReadGas)
 	writeEngineUint64(h, table.StorageWriteGas)
+	writeEngineUint64(h, table.StorageReadByteGas)
+	writeEngineUint64(h, table.StorageWriteByteGas)
 	writeEngineUint64(h, table.ProofByteGas)
+	writeEngineUint64(h, table.ProofDepthGas)
 	writeEngineUint64(h, table.MessageCreateGas)
+	writeEngineUint64(h, table.MessageEnvelopeGas)
 	writeEngineUint64(h, table.MessageByteGas)
+	writeEngineUint64(h, table.ForwardingFeeReserveGas)
 	writeEngineUint64(h, table.EventByteGas)
 	writeEngineUint64(h, table.ABIExportGas)
 	writeEngineUint64(h, table.PromiseGas)
@@ -1026,6 +1493,27 @@ func canonicalAVM2ExecutionContext(ctx AVM2ExecutionContext) AVM2ExecutionContex
 	ctx.Caller = strings.TrimSpace(ctx.Caller)
 	ctx.ContextHash = strings.TrimSpace(ctx.ContextHash)
 	return ctx
+}
+
+func canonicalAVM2InstructionSet(set AVM2InstructionSet) AVM2InstructionSet {
+	set.Opcodes = append([]AVM2OpcodeDescriptor(nil), set.Opcodes...)
+	for i := range set.Opcodes {
+		set.Opcodes[i].Purpose = strings.TrimSpace(set.Opcodes[i].Purpose)
+	}
+	sort.SliceStable(set.Opcodes, func(i, j int) bool {
+		return set.Opcodes[i].Opcode < set.Opcodes[j].Opcode
+	})
+	set.SetHash = strings.TrimSpace(set.SetHash)
+	return set
+}
+
+func canonicalAVM2GasTable(table AVM2GasTable) AVM2GasTable {
+	table.OpcodeCosts = append([]AVM2OpcodeGasEntry(nil), table.OpcodeCosts...)
+	sort.SliceStable(table.OpcodeCosts, func(i, j int) bool {
+		return table.OpcodeCosts[i].Opcode < table.OpcodeCosts[j].Opcode
+	})
+	table.TableHash = strings.TrimSpace(table.TableHash)
+	return table
 }
 
 func canonicalAVM2Program(program AVM2Program) AVM2Program {

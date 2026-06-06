@@ -30,6 +30,44 @@ func TestAVM2ProgramRejectsForbiddenSurfaces(t *testing.T) {
 	}
 }
 
+func TestAVM2InstructionSetCoversSpecAndGasTable(t *testing.T) {
+	set, err := DefaultAVM2InstructionSet()
+	require.NoError(t, err)
+	require.Len(t, set.Opcodes, len(AllAVM2SupportedOpcodes()))
+	require.Equal(t, ComputeAVM2InstructionSetHash(set), set.SetHash)
+
+	byCategory := map[AVM2InstructionCategory]int{}
+	for _, descriptor := range set.Opcodes {
+		byCategory[descriptor.Category]++
+	}
+	for _, category := range []AVM2InstructionCategory{
+		AVM2CategoryCoreStack,
+		AVM2CategoryArithmetic,
+		AVM2CategoryControlFlow,
+		AVM2CategoryMemory,
+		AVM2CategoryStorage,
+		AVM2CategoryCryptoProof,
+		AVM2CategoryMessages,
+		AVM2CategoryPromises,
+		AVM2CategoryABI,
+		AVM2CategoryContext,
+	} {
+		require.Positive(t, byCategory[category], string(category))
+	}
+
+	table := mustAVM2GasTable(t)
+	for _, opcode := range AllAVM2SupportedOpcodes() {
+		gas, found := table.OpcodeGas(opcode)
+		require.True(t, found, string(opcode))
+		require.Positive(t, gas)
+	}
+
+	missing := table
+	missing.OpcodeCosts = missing.OpcodeCosts[1:]
+	missing.TableHash = ComputeAVM2GasTableHash(missing)
+	require.ErrorContains(t, missing.Validate(), "missing opcode")
+}
+
 func TestAVM2ExecutionEnforcesBoundsAndGas(t *testing.T) {
 	limits := DefaultAVM2Limits()
 	limits.MaxStackDepth = 1
@@ -65,6 +103,66 @@ func TestAVM2ExecutionEnforcesBoundsAndGas(t *testing.T) {
 	lowGas.ContextHash = ComputeAVM2ContextHash(lowGas)
 	_, err = ExecuteAVM2Program(memoryOverflow, lowGas, limits, gasTable)
 	require.ErrorContains(t, err, "exhausted gas")
+}
+
+func TestAVM2InstructionGasChargesResourceInputs(t *testing.T) {
+	limits := DefaultAVM2Limits()
+	table := mustAVM2GasTable(t)
+	ctx := mustAVM2Context(t, false)
+
+	smallWrite := AVM2Instruction{Opcode: AVM2OpKVSet, Key: AVMContractStorageKey(ctx.ContractAddress, "a"), Value: []byte("x")}
+	largeWrite := AVM2Instruction{Opcode: AVM2OpKVSet, Key: AVMContractStorageKey(ctx.ContractAddress, "a"), Value: []byte("xxxxxxxx")}
+	smallGas, err := AVM2InstructionGas(smallWrite, table, limits)
+	require.NoError(t, err)
+	largeGas, err := AVM2InstructionGas(largeWrite, table, limits)
+	require.NoError(t, err)
+	require.Greater(t, largeGas, smallGas)
+
+	proof := mustAVM2Proof(t, limits)
+	proofOp := AVM2Instruction{Opcode: AVM2OpVerifyMerkleProof, Proof: proof}
+	proofGas, err := AVM2InstructionGas(proofOp, table, limits)
+	require.NoError(t, err)
+	proof.ProofBytes = append(proof.ProofBytes, []byte("more-proof")...)
+	proof.ProofVersion++
+	proof.ProofHash = ComputeAVM2ProofHash(proof)
+	largerProofGas, err := AVM2InstructionGas(AVM2Instruction{Opcode: AVM2OpVerifyMerkleProof, Proof: proof}, table, limits)
+	require.NoError(t, err)
+	require.Greater(t, largerProofGas, proofGas)
+
+	msg := mustAVM2Message(t)
+	builderGas, err := AVM2InstructionGas(AVM2Instruction{Opcode: AVM2OpMsgNew, Message: msg}, table, limits)
+	require.NoError(t, err)
+	sendGas, err := AVM2InstructionGas(AVM2Instruction{Opcode: AVM2OpMsgSend, Message: msg}, table, limits)
+	require.NoError(t, err)
+	require.Greater(t, sendGas, builderGas)
+}
+
+func TestAVM2ContextAndStackOpcodesAreDeterministic(t *testing.T) {
+	limits := DefaultAVM2Limits()
+	table := mustAVM2GasTable(t)
+	ctx := mustAVM2Context(t, false)
+
+	program, err := NewAVM2Program(AVM2Program{
+		VMVersion:             AVM2VMVersion,
+		InstructionSetVersion: AVM2DefaultInstructionSet,
+		Instructions: []AVM2Instruction{
+			{Opcode: AVM2OpCtxHeight},
+			{Opcode: AVM2OpDup},
+			{Opcode: AVM2OpSwap},
+			{Opcode: AVM2OpPop},
+			{Opcode: AVM2OpCtxChainID},
+			{Opcode: AVM2OpCtxGasLeft},
+		},
+		MaxRecursionDepth: 1,
+	}, limits, table)
+	require.NoError(t, err)
+
+	result, err := ExecuteAVM2Program(program, ctx, limits, table)
+	require.NoError(t, err)
+	require.Len(t, result.Stack, 3)
+	require.Equal(t, "00000000000000000010", result.Stack[0])
+	require.Equal(t, "aetheris-local", result.Stack[1])
+	require.NotEmpty(t, result.Stack[2])
 }
 
 func TestAVM2ScopeCommitsStoreMessagesProofsABIEvents(t *testing.T) {
