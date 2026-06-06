@@ -62,6 +62,8 @@ import (
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
+	nativeevidencekeeper "github.com/sovereign-l1/l1/x/evidence/keeper"
+	nativeevidencetypes "github.com/sovereign-l1/l1/x/evidence/types"
 	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
 	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -250,6 +252,7 @@ func (app *L1App) initKeepers(
 	app.EpochsKeeper.SetHooks(epochstypes.NewMultiEpochHooks())
 	app.ConstitutionKeeper = constitutionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[constitutiontypes.StoreKey]))
 	app.SystemRegistryKeeper = systemregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[systemregistrytypes.StoreKey]))
+	app.NativeEvidenceKeeper = nativeevidencekeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nativeevidencetypes.StoreKey]))
 	app.ValidatorElectionKeeper = validatorelectionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorelectiontypes.StoreKey]))
 	app.ValidatorRegistryKeeper = validatorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorregistrytypes.StoreKey]))
 	app.ConfigKeeper = configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey]))

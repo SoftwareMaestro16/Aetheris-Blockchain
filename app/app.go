@@ -68,6 +68,8 @@ import (
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
+	nativeevidencekeeper "github.com/sovereign-l1/l1/x/evidence/keeper"
+	nativeevidencetypes "github.com/sovereign-l1/l1/x/evidence/types"
 	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
 	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -191,6 +193,7 @@ type L1App struct {
 	CrossChainRegistryKeeper  crosschainregistrykeeper.Keeper
 	ShardingCoordinatorKeeper shardingcoordinatorkeeper.Keeper
 	SystemRegistryKeeper      systemregistrykeeper.Keeper
+	NativeEvidenceKeeper      nativeevidencekeeper.Keeper
 	ValidatorElectionKeeper   validatorelectionkeeper.Keeper
 	ValidatorRegistryKeeper   validatorregistrykeeper.Keeper
 
@@ -294,6 +297,7 @@ func NewL1App(
 		protocolpooltypes.StoreKey,
 		constitutiontypes.StoreKey,
 		systemregistrytypes.StoreKey,
+		nativeevidencetypes.StoreKey,
 		validatorelectiontypes.StoreKey,
 		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,

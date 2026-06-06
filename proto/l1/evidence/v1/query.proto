@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package l1.evidence.v1;
+
+import "l1/evidence/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/evidence/v1;evidencev1";
+
+service Query {
+  rpc Evidence(QueryEvidenceRequest) returns (QueryEvidenceResponse);
+  rpc EvidenceByValidator(QueryEvidenceByValidatorRequest) returns (QueryEvidenceListResponse);
+  rpc EvidenceByReporter(QueryEvidenceByReporterRequest) returns (QueryEvidenceListResponse);
+  rpc PendingEvidence(QueryPendingEvidenceRequest) returns (QueryEvidenceListResponse);
+  rpc EvidenceParams(QueryEvidenceParamsRequest) returns (QueryEvidenceParamsResponse);
+}
+
+message QueryEvidenceRequest {
+  string evidence_id = 1;
+}
+
+message QueryEvidenceResponse {
+  EvidenceRecord evidence = 1;
+}
+
+message QueryEvidenceByValidatorRequest {
+  string validator_address = 1;
+}
+
+message QueryEvidenceByReporterRequest {
+  string reporter = 1;
+}
+
+message QueryPendingEvidenceRequest {}
+
+message QueryEvidenceListResponse {
+  repeated EvidenceRecord evidence = 1;
+}
+
+message QueryEvidenceParamsRequest {}
+
+message QueryEvidenceParamsResponse {
+  Params params = 1;
+}

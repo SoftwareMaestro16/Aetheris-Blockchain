@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package l1.evidence.v1;
+
+import "l1/evidence/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/evidence/v1;evidencev1";
+
+service Msg {
+  rpc SubmitEvidence(MsgSubmitEvidence) returns (MsgSubmitEvidenceResponse);
+  rpc VoteEvidence(MsgVoteEvidence) returns (MsgVoteEvidenceResponse);
+  rpc FinalizeEvidence(MsgFinalizeEvidence) returns (MsgFinalizeEvidenceResponse);
+  rpc CancelExpiredEvidence(MsgCancelExpiredEvidence) returns (MsgCancelExpiredEvidenceResponse);
+}
+
+message MsgSubmitEvidence {
+  string authority = 1;
+  string evidence_id = 2;
+  string evidence_type = 3;
+  string accused_validator = 4;
+  string reporter = 5;
+  string proof_payload_hash = 6;
+  uint32 payload_size_bytes = 7;
+  bool requires_review = 8;
+  uint32 slash_fraction_bps = 9;
+  uint64 reward_naet = 10;
+  uint64 height = 11;
+}
+
+message MsgSubmitEvidenceResponse {
+  EvidenceRecord evidence = 1;
+}
+
+message MsgVoteEvidence {
+  string authority = 1;
+  string evidence_id = 2;
+  string voter = 3;
+  bool accept = 4;
+  uint32 voting_power_bps = 5;
+  uint64 height = 6;
+}
+
+message MsgVoteEvidenceResponse {
+  EvidenceRecord evidence = 1;
+}
+
+message MsgFinalizeEvidence {
+  string authority = 1;
+  string evidence_id = 2;
+  uint64 height = 3;
+}
+
+message MsgFinalizeEvidenceResponse {
+  EvidenceRecord evidence = 1;
+}
+
+message MsgCancelExpiredEvidence {
+  string authority = 1;
+  string evidence_id = 2;
+  uint64 height = 3;
+}
+
+message MsgCancelExpiredEvidenceResponse {
+  EvidenceRecord evidence = 1;
+}

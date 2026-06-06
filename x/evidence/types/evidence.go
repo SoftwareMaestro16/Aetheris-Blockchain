@@ -10,11 +10,14 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 
+	"github.com/sovereign-l1/l1/app/addressing"
+	"github.com/sovereign-l1/l1/x/internal/prototype"
 	postypes "github.com/sovereign-l1/l1/x/pos/types"
 )
 
 const (
-	ModuleName = "evidence"
+	ModuleName = "native-evidence"
+	StoreKey   = ModuleName
 
 	SubmitterRoleReporter  = "reporter"
 	SubmitterRoleFisherman = "fisherman"
@@ -29,11 +32,24 @@ const (
 )
 
 type Params struct {
-	ReporterDepositNaet        sdkmath.Int
-	FishermanDepositNaet       sdkmath.Int
-	ReporterRewardBps          uint32
-	InvalidEvidenceBurnBps     uint32
-	InvalidEvidenceRedirectBps uint32
+	ReporterDepositNaet           sdkmath.Int
+	FishermanDepositNaet          sdkmath.Int
+	ReporterRewardBps             uint32
+	InvalidEvidenceBurnBps        uint32
+	InvalidEvidenceRedirectBps    uint32
+	Authority                     string
+	MaxEvidence                   uint32
+	MaxPendingEvidence            uint32
+	MaxProofHashBytes             uint32
+	MaxPayloadBytes               uint32
+	MaxVotes                      uint32
+	MaxSideEffectHistory          uint32
+	EvidenceTTLBlocks             uint64
+	ReviewQuorumBps               uint32
+	MinSlashFractionBps           uint32
+	MaxSlashFractionBps           uint32
+	CriticalFaultSlashFractionBps uint32
+	MaxReporterRewardNaet         uint64
 }
 
 type EvidenceSubmission struct {
@@ -80,11 +96,24 @@ type EvidenceMarketSettlement struct {
 
 func DefaultParams() Params {
 	return Params{
-		ReporterDepositNaet:        sdkmath.NewInt(DefaultReporterDepositNaet),
-		FishermanDepositNaet:       sdkmath.NewInt(DefaultFishermanDepositNaet),
-		ReporterRewardBps:          postypes.DefaultReporterRewardBps,
-		InvalidEvidenceBurnBps:     DefaultInvalidEvidenceBurnBps,
-		InvalidEvidenceRedirectBps: DefaultInvalidEvidenceRedirectBps,
+		ReporterDepositNaet:           sdkmath.NewInt(DefaultReporterDepositNaet),
+		FishermanDepositNaet:          sdkmath.NewInt(DefaultFishermanDepositNaet),
+		ReporterRewardBps:             postypes.DefaultReporterRewardBps,
+		InvalidEvidenceBurnBps:        DefaultInvalidEvidenceBurnBps,
+		InvalidEvidenceRedirectBps:    DefaultInvalidEvidenceRedirectBps,
+		Authority:                     prototype.DefaultAuthority,
+		MaxEvidence:                   MaxEvidenceV1,
+		MaxPendingEvidence:            MaxPendingEvidenceV1,
+		MaxProofHashBytes:             MaxProofHashBytesV1,
+		MaxPayloadBytes:               MaxPayloadBytesV1,
+		MaxVotes:                      MaxVotesV1,
+		MaxSideEffectHistory:          MaxSideEffectHistoryV1,
+		EvidenceTTLBlocks:             DefaultEvidenceTTLBlocks,
+		ReviewQuorumBps:               DefaultReviewQuorumBps,
+		MinSlashFractionBps:           DefaultMinSlashFractionBps,
+		MaxSlashFractionBps:           DefaultMaxSlashFractionBps,
+		CriticalFaultSlashFractionBps: DefaultCriticalSlashFractionBps,
+		MaxReporterRewardNaet:         DefaultReporterRewardNaet,
 	}
 }
 
@@ -101,6 +130,39 @@ func (p Params) Validate() error {
 	totalPenaltyBps := uint64(p.InvalidEvidenceBurnBps) + uint64(p.InvalidEvidenceRedirectBps)
 	if totalPenaltyBps != uint64(postypes.BasisPoints) {
 		return fmt.Errorf("invalid evidence deposit routing must sum to %d bps", postypes.BasisPoints)
+	}
+	if err := addressing.ValidateAuthorityAddress("native evidence authority", p.Authority); err != nil {
+		return err
+	}
+	if p.MaxEvidence == 0 || p.MaxEvidence > MaxEvidenceV1 {
+		return fmt.Errorf("native evidence max evidence must be between 1 and %d", MaxEvidenceV1)
+	}
+	if p.MaxPendingEvidence == 0 || p.MaxPendingEvidence > p.MaxEvidence || p.MaxPendingEvidence > MaxPendingEvidenceV1 {
+		return fmt.Errorf("native evidence max pending evidence must be between 1 and %d and <= max evidence", MaxPendingEvidenceV1)
+	}
+	if p.MaxProofHashBytes == 0 || p.MaxProofHashBytes > MaxProofHashBytesV1 {
+		return fmt.Errorf("native evidence max proof hash bytes must be between 1 and %d", MaxProofHashBytesV1)
+	}
+	if p.MaxPayloadBytes == 0 || p.MaxPayloadBytes > MaxPayloadBytesV1 {
+		return fmt.Errorf("native evidence max payload bytes must be between 1 and %d", MaxPayloadBytesV1)
+	}
+	if p.MaxVotes == 0 || p.MaxVotes > MaxVotesV1 {
+		return fmt.Errorf("native evidence max votes must be between 1 and %d", MaxVotesV1)
+	}
+	if p.MaxSideEffectHistory == 0 || p.MaxSideEffectHistory > MaxSideEffectHistoryV1 {
+		return fmt.Errorf("native evidence max side effect history must be between 1 and %d", MaxSideEffectHistoryV1)
+	}
+	if p.EvidenceTTLBlocks == 0 {
+		return errors.New("native evidence ttl must be positive")
+	}
+	if p.ReviewQuorumBps == 0 || p.ReviewQuorumBps > MaxBasisPoints {
+		return fmt.Errorf("native evidence review quorum must be within 1..%d bps", MaxBasisPoints)
+	}
+	if p.MinSlashFractionBps == 0 || p.MinSlashFractionBps > p.MaxSlashFractionBps || p.MaxSlashFractionBps > MaxBasisPoints {
+		return fmt.Errorf("native evidence slash bounds must be within 1..%d bps", MaxBasisPoints)
+	}
+	if p.CriticalFaultSlashFractionBps < p.MinSlashFractionBps || p.CriticalFaultSlashFractionBps > p.MaxSlashFractionBps {
+		return errors.New("native evidence critical slash fraction must be inside slash bounds")
 	}
 	return nil
 }

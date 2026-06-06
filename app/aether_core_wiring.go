@@ -29,6 +29,7 @@ import (
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
+	nativeevidencetypes "github.com/sovereign-l1/l1/x/evidence/types"
 	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
@@ -76,6 +77,7 @@ var aetherCorePrototypeModules = []string{
 var aetherCoreSystemModules = []string{
 	constitutiontypes.ModuleName,
 	systemregistrytypes.ModuleName,
+	nativeevidencetypes.ModuleName,
 	validatorelectiontypes.ModuleName,
 	validatorregistrytypes.ModuleName,
 	configtypes.ModuleName,
@@ -117,6 +119,7 @@ func AetherCoreSystemStoreKeys() []string {
 	return []string{
 		constitutiontypes.StoreKey,
 		systemregistrytypes.StoreKey,
+		nativeevidencetypes.StoreKey,
 		validatorelectiontypes.StoreKey,
 		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,
@@ -140,6 +143,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		epochstypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		nativeevidencetypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
@@ -171,6 +175,7 @@ func aetherCoreEndBlockerOrder() []string {
 		protocolpooltypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		nativeevidencetypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
@@ -212,6 +217,7 @@ func aetherCoreInitGenesisOrder() []string {
 		protocolpooltypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		nativeevidencetypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
@@ -257,6 +263,7 @@ func aetherCoreExportGenesisOrder() []string {
 		epochstypes.ModuleName,
 		constitutiontypes.ModuleName,
 		systemregistrytypes.ModuleName,
+		nativeevidencetypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,

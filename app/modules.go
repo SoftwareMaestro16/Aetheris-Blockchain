@@ -40,6 +40,7 @@ import (
 	constitutionmodule "github.com/sovereign-l1/l1/x/constitution"
 	crosschainregistrymodule "github.com/sovereign-l1/l1/x/cross-chain-registry"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
+	nativeevidencemodule "github.com/sovereign-l1/l1/x/evidence"
 	feecollectormodule "github.com/sovereign-l1/l1/x/fee-collector"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
 	identityrootmodule "github.com/sovereign-l1/l1/x/identity-root"
@@ -83,6 +84,7 @@ func (app *L1App) initModules(
 		protocolpool.NewAppModule(app.ProtocolPoolKeeper, app.AccountKeeper, app.BankKeeper),
 		constitutionmodule.NewAppModule(&app.ConstitutionKeeper),
 		systemregistrymodule.NewAppModule(&app.SystemRegistryKeeper),
+		nativeevidencemodule.NewAppModule(&app.NativeEvidenceKeeper),
 		validatorelectionmodule.NewAppModule(&app.ValidatorElectionKeeper),
 		validatorregistrymodule.NewAppModule(&app.ValidatorRegistryKeeper),
 		configmodule.NewAppModule(&app.ConfigKeeper),
