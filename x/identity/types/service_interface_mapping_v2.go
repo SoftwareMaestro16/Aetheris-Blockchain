@@ -43,6 +43,7 @@ type IdentityServiceDiscoveryRequestV2 struct {
 type IdentityServiceDiscoveryResultV2 struct {
 	Endpoint                                ServiceEndpointV2
 	FallbackEndpoints                       []ServiceEndpointV2
+	DisplayPolicy                           IdentityServiceEndpointDisplayPolicyV2
 	TypeRegistryMatched                     bool
 	MetadataHashVerified                    bool
 	ProofVerified                           bool
@@ -52,6 +53,18 @@ type IdentityServiceDiscoveryResultV2 struct {
 	FreshnessWarning                        bool
 	EndpointTTLRespected                    bool
 	EndpointAvailabilityConsensusGuaranteed bool
+}
+
+type IdentityServiceEndpointDisplayPolicyV2 struct {
+	DisplayEndpoint               bool
+	DisplayAsVerifiedService      bool
+	DisplayAsVerifiedOwnership    bool
+	DisplayMetadataAsOwnership    bool
+	MetadataHashVerified          bool
+	ProofVerified                 bool
+	EndpointAvailabilityAdvisory  bool
+	OwnershipVerificationSource   string
+	UserFacingVerificationWarning string
 }
 
 type IdentityInterfaceWalletPolicyV2 struct {
@@ -131,9 +144,11 @@ func BuildIdentityServiceDiscoveryV2(request IdentityServiceDiscoveryRequestV2) 
 		return IdentityServiceDiscoveryResultV2{}, err
 	}
 	fallbacks := append([]ServiceEndpointV2(nil), endpoints[1:]...)
+	displayPolicy := BuildIdentityServiceEndpointDisplayPolicyV2(proofVerified, metadataVerified)
 	return IdentityServiceDiscoveryResultV2{
 		Endpoint:                                selected,
 		FallbackEndpoints:                       fallbacks,
+		DisplayPolicy:                           displayPolicy,
 		TypeRegistryMatched:                     serviceEndpointMatchesRegistryV2(selected, DefaultIdentityServiceEndpointTypeRegistryV2()),
 		MetadataHashVerified:                    metadataVerified,
 		ProofVerified:                           proofVerified,
@@ -144,6 +159,33 @@ func BuildIdentityServiceDiscoveryV2(request IdentityServiceDiscoveryRequestV2) 
 		EndpointTTLRespected:                    endpointTTLRespectedV2(selected, request.CurrentHeight, proofHeight),
 		EndpointAvailabilityConsensusGuaranteed: false,
 	}, nil
+}
+
+func BuildIdentityServiceEndpointDisplayPolicyV2(proofVerified bool, metadataHashVerified bool) IdentityServiceEndpointDisplayPolicyV2 {
+	return IdentityServiceEndpointDisplayPolicyV2{
+		DisplayEndpoint:               true,
+		DisplayAsVerifiedService:      proofVerified,
+		DisplayAsVerifiedOwnership:    false,
+		DisplayMetadataAsOwnership:    false,
+		MetadataHashVerified:          metadataHashVerified,
+		ProofVerified:                 proofVerified,
+		EndpointAvailabilityAdvisory:  true,
+		OwnershipVerificationSource:   "registry_nft_binding",
+		UserFacingVerificationWarning: "service endpoint metadata is not verified ownership",
+	}
+}
+
+func ValidateIdentityServiceEndpointDisplayPolicyV2(policy IdentityServiceEndpointDisplayPolicyV2) error {
+	if policy.DisplayAsVerifiedOwnership {
+		return errors.New("identity v2 service endpoint metadata must not be displayed as verified ownership")
+	}
+	if policy.DisplayMetadataAsOwnership {
+		return errors.New("identity v2 service endpoint metadata cannot be used as ownership evidence")
+	}
+	if policy.OwnershipVerificationSource != "" && policy.OwnershipVerificationSource != "registry_nft_binding" {
+		return errors.New("identity v2 verified ownership display requires registry nft binding")
+	}
+	return nil
 }
 
 func BuildIdentityInterfaceSchemaMappingV2(request IdentityInterfaceSchemaRequestV2) (IdentityInterfaceSchemaResultV2, error) {
