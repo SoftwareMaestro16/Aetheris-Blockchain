@@ -176,6 +176,66 @@ func TestPoSModuleBoundariesRejectOverlapMissingAndUnknownReferences(t *testing.
 	require.ErrorContains(t, unknown.Validate(compatibility), "unknown module")
 }
 
+func TestKeeperIntegrationManifestCoversSDKKeepersHooksAndExportImport(t *testing.T) {
+	compatibility := DefaultCosmosSDKCompatibilityManifest()
+	boundaries := DefaultPoSModuleBoundaryManifest()
+	manifest := DefaultKeeperIntegrationManifest()
+	require.NoError(t, manifest.Validate(compatibility, boundaries))
+	require.Equal(t, ComputeKeeperIntegrationRoot(manifest), manifest.Root)
+
+	keepers := keeperInterfacesByName(manifest)
+	for _, keeperName := range []string{"staking", "slashing", "distribution", "mint", "bank", "gov"} {
+		require.Contains(t, keepers, keeperName)
+	}
+	require.Equal(t, "validator and delegation state", keepers["staking"].IntegrationPoint)
+	require.Equal(t, "jail tombstone and slash execution", keepers["slashing"].IntegrationPoint)
+	require.Equal(t, "reward allocation", keepers["distribution"].IntegrationPoint)
+	require.Equal(t, "epoch reward budget", keepers["mint"].IntegrationPoint)
+	require.Equal(t, "deposits reporter rewards and penalty routing", keepers["bank"].IntegrationPoint)
+	require.Equal(t, "parameter updates", keepers["gov"].IntegrationPoint)
+
+	require.Contains(t, keeperHookNames(manifest.StakingLifecycleHooks), "AfterDelegationModified")
+	require.Contains(t, keeperHookNames(manifest.StakingLifecycleHooks), "BeforeDelegationRemoved")
+	slashingHooks := keeperHookNames(manifest.SlashingHooks)
+	require.Contains(t, slashingHooks, "AfterValidatorSlashed")
+	require.Contains(t, slashingHooks, "AfterValidatorJailed")
+	require.Contains(t, slashingHooks, "AfterValidatorTombstoned")
+	require.Equal(t, "reward_multiplier_bps", manifest.RewardIntegrations[0].MultiplierField)
+	require.Equal(t, []string{"uptime", "latency", "correctness", "task completion"}, manifest.RewardIntegrations[0].RewardInputs)
+	require.Equal(t, RequiredPoSModuleNames(compatibility), migrationModuleNames(manifest.MigrationHandlers))
+	require.Equal(t, RequiredPoSModuleNames(compatibility), exportImportModuleNames(manifest.ExportImport))
+}
+
+func TestKeeperIntegrationManifestRejectsUnsafeHooksMigrationsAndRewards(t *testing.T) {
+	compatibility := DefaultCosmosSDKCompatibilityManifest()
+	boundaries := DefaultPoSModuleBoundaryManifest()
+	manifest := DefaultKeeperIntegrationManifest()
+
+	unsafeHook := manifest
+	unsafeHook.StakingLifecycleHooks = append([]KeeperHookSpec{}, manifest.StakingLifecycleHooks...)
+	unsafeHook.StakingLifecycleHooks[0].PreservesBaseState = false
+	unsafeHook.Root = ComputeKeeperIntegrationRoot(unsafeHook)
+	require.ErrorContains(t, unsafeHook.Validate(compatibility, boundaries), "preserve base sdk state")
+
+	badReward := manifest
+	badReward.RewardIntegrations = append([]RewardMultiplierIntegration{}, manifest.RewardIntegrations...)
+	badReward.RewardIntegrations[0].DistributionKeeper = "bank"
+	badReward.Root = ComputeKeeperIntegrationRoot(badReward)
+	require.ErrorContains(t, badReward.Validate(compatibility, boundaries), "performance to distribution and mint")
+
+	badMigration := manifest
+	badMigration.MigrationHandlers = append([]MigrationHandlerSpec{}, manifest.MigrationHandlers...)
+	badMigration.MigrationHandlers[1].PreservesExistingStakingState = false
+	badMigration.Root = ComputeKeeperIntegrationRoot(badMigration)
+	require.ErrorContains(t, badMigration.Validate(compatibility, boundaries), "preserve existing staking state")
+
+	badExport := manifest
+	badExport.ExportImport = append([]ModuleExportImportSpec{}, manifest.ExportImport...)
+	badExport.ExportImport[2].DeterministicEncoding = false
+	badExport.Root = ComputeKeeperIntegrationRoot(badExport)
+	require.ErrorContains(t, badExport.Validate(compatibility, boundaries), "deterministic")
+}
+
 func TestEpochDefinitionDefaultsMatchLifecycleParameters(t *testing.T) {
 	params := DefaultParams()
 
@@ -2125,6 +2185,38 @@ func posBoundaryModuleNames(manifest PosModuleBoundaryManifest) []string {
 	out := make([]string, len(manifest.Boundaries))
 	for i, boundary := range manifest.Boundaries {
 		out[i] = boundary.ModuleName
+	}
+	return out
+}
+
+func keeperInterfacesByName(manifest KeeperIntegrationManifest) map[string]KeeperInterfaceSpec {
+	out := make(map[string]KeeperInterfaceSpec, len(manifest.KeeperInterfaces))
+	for _, keeper := range manifest.KeeperInterfaces {
+		out[keeper.KeeperName] = keeper
+	}
+	return out
+}
+
+func keeperHookNames(hooks []KeeperHookSpec) []string {
+	out := make([]string, len(hooks))
+	for i, hook := range hooks {
+		out[i] = hook.HookName
+	}
+	return out
+}
+
+func migrationModuleNames(handlers []MigrationHandlerSpec) []string {
+	out := make([]string, len(handlers))
+	for i, handler := range handlers {
+		out[i] = handler.ModuleName
+	}
+	return out
+}
+
+func exportImportModuleNames(specs []ModuleExportImportSpec) []string {
+	out := make([]string, len(specs))
+	for i, spec := range specs {
+		out[i] = spec.ModuleName
 	}
 	return out
 }

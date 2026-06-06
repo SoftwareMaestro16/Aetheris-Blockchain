@@ -935,6 +935,58 @@ type PosModuleBoundaryManifest struct {
 	Root       string
 }
 
+type KeeperInterfaceSpec struct {
+	KeeperName       string
+	ModuleName       string
+	InterfaceName    string
+	IntegrationPoint string
+	Reads            []string
+	Writes           []string
+}
+
+type KeeperHookSpec struct {
+	SourceKeeper       string
+	HookName           string
+	Trigger            string
+	TargetModules      []string
+	PreservesBaseState bool
+	DeterministicOrder bool
+}
+
+type RewardMultiplierIntegration struct {
+	SourceModule       string
+	DistributionKeeper string
+	MintKeeper         string
+	MultiplierField    string
+	RewardInputs       []string
+}
+
+type MigrationHandlerSpec struct {
+	ModuleName                    string
+	FromVersion                   uint64
+	ToVersion                     uint64
+	PreservesExistingStakingState bool
+	ExportsGenesis                bool
+	ImportsGenesis                bool
+}
+
+type ModuleExportImportSpec struct {
+	ModuleName            string
+	ExportsGenesis        bool
+	ImportsGenesis        bool
+	DeterministicEncoding bool
+}
+
+type KeeperIntegrationManifest struct {
+	KeeperInterfaces      []KeeperInterfaceSpec
+	StakingLifecycleHooks []KeeperHookSpec
+	SlashingHooks         []KeeperHookSpec
+	RewardIntegrations    []RewardMultiplierIntegration
+	MigrationHandlers     []MigrationHandlerSpec
+	ExportImport          []ModuleExportImportSpec
+	Root                  string
+}
+
 func (p CentralizationControlParams) Validate() error {
 	checks := []struct {
 		name  string
@@ -1442,6 +1494,347 @@ func ComputePoSModuleBoundaryRoot(manifest PosModuleBoundaryManifest) string {
 			posWriteStringSlice(w, boundary.QueryEndpoints)
 		}
 	})
+}
+
+func DefaultKeeperIntegrationManifest() KeeperIntegrationManifest {
+	manifest := KeeperIntegrationManifest{
+		KeeperInterfaces: []KeeperInterfaceSpec{
+			{KeeperName: "staking", ModuleName: "staking", InterfaceName: "StakingKeeper", IntegrationPoint: "validator and delegation state", Reads: []string{"validators", "delegations", "redelegations", "unbonding delegations"}, Writes: []string{"staking hooks only"}},
+			{KeeperName: "slashing", ModuleName: "slashing", InterfaceName: "SlashingKeeper", IntegrationPoint: "jail tombstone and slash execution", Reads: []string{"validator signing info", "missed block bitmap"}, Writes: []string{"jail", "tombstone", "slash execution"}},
+			{KeeperName: "distribution", ModuleName: "distribution", InterfaceName: "DistributionKeeper", IntegrationPoint: "reward allocation", Reads: []string{"fee pool", "outstanding rewards"}, Writes: []string{"validator rewards", "delegator rewards", "reporter rewards"}},
+			{KeeperName: "mint", ModuleName: "mint", InterfaceName: "MintKeeper", IntegrationPoint: "epoch reward budget", Reads: []string{"minter", "mint params"}, Writes: []string{"epoch reward budget"}},
+			{KeeperName: "bank", ModuleName: "bank", InterfaceName: "BankKeeper", IntegrationPoint: "deposits reporter rewards and penalty routing", Reads: []string{"module balances", "account balances"}, Writes: []string{"evidence deposits", "reporter rewards", "penalty routing"}},
+			{KeeperName: "gov", ModuleName: "gov", InterfaceName: "GovernanceKeeper", IntegrationPoint: "parameter updates", Reads: []string{"governance authority", "parameter proposals"}, Writes: []string{"pos params", "economy params", "security params"}},
+		},
+		StakingLifecycleHooks: []KeeperHookSpec{
+			{SourceKeeper: "staking", HookName: "AfterValidatorCreated", Trigger: "validator registration", TargetModules: []string{"epoch", "validator_economy"}, PreservesBaseState: true, DeterministicOrder: true},
+			{SourceKeeper: "staking", HookName: "AfterValidatorBonded", Trigger: "validator bonded", TargetModules: []string{"epoch", "validator_economy", "taskgroups"}, PreservesBaseState: true, DeterministicOrder: true},
+			{SourceKeeper: "staking", HookName: "AfterDelegationModified", Trigger: "delegation modified", TargetModules: []string{"epoch", "validator_economy"}, PreservesBaseState: true, DeterministicOrder: true},
+			{SourceKeeper: "staking", HookName: "BeforeDelegationRemoved", Trigger: "delegation exit", TargetModules: []string{"epoch", "validator_economy"}, PreservesBaseState: true, DeterministicOrder: true},
+		},
+		SlashingHooks: []KeeperHookSpec{
+			{SourceKeeper: "slashing", HookName: "AfterValidatorSlashed", Trigger: "slash execution", TargetModules: []string{"performance", "validator_economy"}, PreservesBaseState: true, DeterministicOrder: true},
+			{SourceKeeper: "slashing", HookName: "AfterValidatorJailed", Trigger: "validator jail", TargetModules: []string{"performance", "validator_economy", "taskgroups"}, PreservesBaseState: true, DeterministicOrder: true},
+			{SourceKeeper: "slashing", HookName: "AfterValidatorTombstoned", Trigger: "validator tombstone", TargetModules: []string{"performance", "validator_economy", "taskgroups"}, PreservesBaseState: true, DeterministicOrder: true},
+		},
+		RewardIntegrations: []RewardMultiplierIntegration{
+			{SourceModule: "performance", DistributionKeeper: "distribution", MintKeeper: "mint", MultiplierField: "reward_multiplier_bps", RewardInputs: []string{"uptime", "latency", "correctness", "task completion"}},
+		},
+		MigrationHandlers: []MigrationHandlerSpec{
+			{ModuleName: "epoch", FromVersion: 1, ToVersion: 2, PreservesExistingStakingState: true, ExportsGenesis: true, ImportsGenesis: true},
+			{ModuleName: "validator_economy", FromVersion: 1, ToVersion: 2, PreservesExistingStakingState: true, ExportsGenesis: true, ImportsGenesis: true},
+			{ModuleName: "taskgroups", FromVersion: 1, ToVersion: 2, PreservesExistingStakingState: true, ExportsGenesis: true, ImportsGenesis: true},
+			{ModuleName: "evidence", FromVersion: 1, ToVersion: 2, PreservesExistingStakingState: true, ExportsGenesis: true, ImportsGenesis: true},
+			{ModuleName: "performance", FromVersion: 1, ToVersion: 2, PreservesExistingStakingState: true, ExportsGenesis: true, ImportsGenesis: true},
+		},
+		ExportImport: []ModuleExportImportSpec{
+			{ModuleName: "epoch", ExportsGenesis: true, ImportsGenesis: true, DeterministicEncoding: true},
+			{ModuleName: "validator_economy", ExportsGenesis: true, ImportsGenesis: true, DeterministicEncoding: true},
+			{ModuleName: "taskgroups", ExportsGenesis: true, ImportsGenesis: true, DeterministicEncoding: true},
+			{ModuleName: "evidence", ExportsGenesis: true, ImportsGenesis: true, DeterministicEncoding: true},
+			{ModuleName: "performance", ExportsGenesis: true, ImportsGenesis: true, DeterministicEncoding: true},
+		},
+	}
+	manifest.Root = ComputeKeeperIntegrationRoot(manifest)
+	return manifest
+}
+
+func (m KeeperIntegrationManifest) Validate(compatibility CosmosSDKCompatibilityManifest, boundaries PosModuleBoundaryManifest) error {
+	if err := compatibility.Validate(); err != nil {
+		return err
+	}
+	if err := boundaries.Validate(compatibility); err != nil {
+		return err
+	}
+	knownModules := knownKeeperIntegrationModules(compatibility)
+	if len(m.KeeperInterfaces) == 0 {
+		return errors.New("keeper interfaces are required")
+	}
+	keepers := make(map[string]KeeperInterfaceSpec, len(m.KeeperInterfaces))
+	for _, keeper := range m.KeeperInterfaces {
+		if err := keeper.Validate(knownModules); err != nil {
+			return err
+		}
+		if _, found := keepers[keeper.KeeperName]; found {
+			return fmt.Errorf("duplicate keeper interface %s", keeper.KeeperName)
+		}
+		keepers[keeper.KeeperName] = keeper
+	}
+	for _, required := range []string{"staking", "slashing", "distribution", "mint", "bank", "gov"} {
+		if _, found := keepers[required]; !found {
+			return fmt.Errorf("required keeper interface %s is missing", required)
+		}
+	}
+	if err := validateHookSet("staking lifecycle", m.StakingLifecycleHooks, "staking", knownModules); err != nil {
+		return err
+	}
+	if err := validateHookSet("slashing", m.SlashingHooks, "slashing", knownModules); err != nil {
+		return err
+	}
+	if len(m.RewardIntegrations) == 0 {
+		return errors.New("distribution reward multiplier integration is required")
+	}
+	for _, integration := range m.RewardIntegrations {
+		if err := integration.Validate(knownModules); err != nil {
+			return err
+		}
+	}
+	requiredPoS := RequiredPoSModuleNames(compatibility)
+	if err := validateMigrationHandlers(m.MigrationHandlers, requiredPoS, knownModules); err != nil {
+		return err
+	}
+	if err := validateExportImportSupport(m.ExportImport, requiredPoS, knownModules); err != nil {
+		return err
+	}
+	if err := validatePosHash("keeper integration root", m.Root); err != nil {
+		return err
+	}
+	if expected := ComputeKeeperIntegrationRoot(m); expected != m.Root {
+		return errors.New("keeper integration root mismatch")
+	}
+	return nil
+}
+
+func (s KeeperInterfaceSpec) Validate(knownModules map[string]struct{}) error {
+	if err := validatePosToken("keeper name", s.KeeperName); err != nil {
+		return err
+	}
+	if err := validatePosToken("keeper module name", s.ModuleName); err != nil {
+		return err
+	}
+	if _, found := knownModules[s.ModuleName]; !found {
+		return fmt.Errorf("keeper %s references unknown module %s", s.KeeperName, s.ModuleName)
+	}
+	if err := validatePosToken("keeper interface name", s.InterfaceName); err != nil {
+		return err
+	}
+	if err := validatePosResponsibility("keeper integration point", s.IntegrationPoint); err != nil {
+		return err
+	}
+	if len(s.Reads) == 0 && len(s.Writes) == 0 {
+		return fmt.Errorf("keeper %s must declare reads or writes", s.KeeperName)
+	}
+	for _, value := range append(append([]string{}, s.Reads...), s.Writes...) {
+		if err := validatePosResponsibility("keeper access", value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h KeeperHookSpec) Validate(expectedSource string, knownModules map[string]struct{}) error {
+	if h.SourceKeeper != expectedSource {
+		return fmt.Errorf("%s hook source must be %s", h.HookName, expectedSource)
+	}
+	if err := validatePosToken("keeper hook source", h.SourceKeeper); err != nil {
+		return err
+	}
+	if err := validatePosToken("keeper hook name", h.HookName); err != nil {
+		return err
+	}
+	if err := validatePosResponsibility("keeper hook trigger", h.Trigger); err != nil {
+		return err
+	}
+	if len(h.TargetModules) == 0 {
+		return fmt.Errorf("keeper hook %s must target at least one module", h.HookName)
+	}
+	for _, moduleName := range h.TargetModules {
+		if err := validatePosToken("keeper hook target module", moduleName); err != nil {
+			return err
+		}
+		if _, found := knownModules[moduleName]; !found {
+			return fmt.Errorf("keeper hook %s references unknown module %s", h.HookName, moduleName)
+		}
+	}
+	if !h.PreservesBaseState {
+		return fmt.Errorf("keeper hook %s must preserve base sdk state", h.HookName)
+	}
+	if !h.DeterministicOrder {
+		return fmt.Errorf("keeper hook %s must use deterministic order", h.HookName)
+	}
+	return nil
+}
+
+func (r RewardMultiplierIntegration) Validate(knownModules map[string]struct{}) error {
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{name: "reward source module", value: r.SourceModule},
+		{name: "reward distribution keeper", value: r.DistributionKeeper},
+		{name: "reward mint keeper", value: r.MintKeeper},
+		{name: "reward multiplier field", value: r.MultiplierField},
+	} {
+		if err := validatePosToken(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	for _, moduleName := range []string{r.SourceModule, r.DistributionKeeper, r.MintKeeper} {
+		if _, found := knownModules[moduleName]; !found {
+			return fmt.Errorf("reward integration references unknown module %s", moduleName)
+		}
+	}
+	if r.SourceModule != "performance" || r.DistributionKeeper != "distribution" || r.MintKeeper != "mint" {
+		return errors.New("reward multiplier integration must connect performance to distribution and mint")
+	}
+	if len(r.RewardInputs) == 0 {
+		return errors.New("reward multiplier integration inputs are required")
+	}
+	for _, input := range r.RewardInputs {
+		if err := validatePosResponsibility("reward multiplier input", input); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ComputeKeeperIntegrationRoot(manifest KeeperIntegrationManifest) string {
+	return posHashRoot("aetheris-pos-keeper-integration-v1", func(w posByteWriter) {
+		posWriteUint64(w, uint64(len(manifest.KeeperInterfaces)))
+		for _, keeper := range manifest.KeeperInterfaces {
+			posWritePart(w, keeper.KeeperName)
+			posWritePart(w, keeper.ModuleName)
+			posWritePart(w, keeper.InterfaceName)
+			posWritePart(w, keeper.IntegrationPoint)
+			posWriteStringSlice(w, keeper.Reads)
+			posWriteStringSlice(w, keeper.Writes)
+		}
+		posWriteHookSpecs(w, manifest.StakingLifecycleHooks)
+		posWriteHookSpecs(w, manifest.SlashingHooks)
+		posWriteUint64(w, uint64(len(manifest.RewardIntegrations)))
+		for _, integration := range manifest.RewardIntegrations {
+			posWritePart(w, integration.SourceModule)
+			posWritePart(w, integration.DistributionKeeper)
+			posWritePart(w, integration.MintKeeper)
+			posWritePart(w, integration.MultiplierField)
+			posWriteStringSlice(w, integration.RewardInputs)
+		}
+		posWriteUint64(w, uint64(len(manifest.MigrationHandlers)))
+		for _, migration := range manifest.MigrationHandlers {
+			posWritePart(w, migration.ModuleName)
+			posWriteUint64(w, migration.FromVersion)
+			posWriteUint64(w, migration.ToVersion)
+			posWriteUint64(w, boolAsUint64(migration.PreservesExistingStakingState))
+			posWriteUint64(w, boolAsUint64(migration.ExportsGenesis))
+			posWriteUint64(w, boolAsUint64(migration.ImportsGenesis))
+		}
+		posWriteUint64(w, uint64(len(manifest.ExportImport)))
+		for _, spec := range manifest.ExportImport {
+			posWritePart(w, spec.ModuleName)
+			posWriteUint64(w, boolAsUint64(spec.ExportsGenesis))
+			posWriteUint64(w, boolAsUint64(spec.ImportsGenesis))
+			posWriteUint64(w, boolAsUint64(spec.DeterministicEncoding))
+		}
+	})
+}
+
+func validateHookSet(label string, hooks []KeeperHookSpec, source string, knownModules map[string]struct{}) error {
+	if len(hooks) == 0 {
+		return fmt.Errorf("%s hooks are required", label)
+	}
+	seen := make(map[string]struct{}, len(hooks))
+	for _, hook := range hooks {
+		if err := hook.Validate(source, knownModules); err != nil {
+			return err
+		}
+		if _, found := seen[hook.HookName]; found {
+			return fmt.Errorf("duplicate %s hook %s", label, hook.HookName)
+		}
+		seen[hook.HookName] = struct{}{}
+	}
+	return nil
+}
+
+func validateMigrationHandlers(handlers []MigrationHandlerSpec, requiredModules []string, knownModules map[string]struct{}) error {
+	if len(handlers) == 0 {
+		return errors.New("migration handlers are required")
+	}
+	byModule := make(map[string]MigrationHandlerSpec, len(handlers))
+	for _, handler := range handlers {
+		if err := handler.Validate(knownModules); err != nil {
+			return err
+		}
+		if _, found := byModule[handler.ModuleName]; found {
+			return fmt.Errorf("duplicate migration handler %s", handler.ModuleName)
+		}
+		byModule[handler.ModuleName] = handler
+	}
+	for _, moduleName := range requiredModules {
+		if _, found := byModule[moduleName]; !found {
+			return fmt.Errorf("migration handler for %s is missing", moduleName)
+		}
+	}
+	return nil
+}
+
+func (m MigrationHandlerSpec) Validate(knownModules map[string]struct{}) error {
+	if err := validatePosToken("migration module name", m.ModuleName); err != nil {
+		return err
+	}
+	if _, found := knownModules[m.ModuleName]; !found {
+		return fmt.Errorf("migration references unknown module %s", m.ModuleName)
+	}
+	if m.FromVersion == 0 || m.ToVersion <= m.FromVersion {
+		return fmt.Errorf("migration %s must advance module version", m.ModuleName)
+	}
+	if !m.PreservesExistingStakingState {
+		return fmt.Errorf("migration %s must preserve existing staking state", m.ModuleName)
+	}
+	if !m.ExportsGenesis || !m.ImportsGenesis {
+		return fmt.Errorf("migration %s must preserve export and import support", m.ModuleName)
+	}
+	return nil
+}
+
+func validateExportImportSupport(specs []ModuleExportImportSpec, requiredModules []string, knownModules map[string]struct{}) error {
+	if len(specs) == 0 {
+		return errors.New("export import support is required")
+	}
+	byModule := make(map[string]ModuleExportImportSpec, len(specs))
+	for _, spec := range specs {
+		if err := spec.Validate(knownModules); err != nil {
+			return err
+		}
+		if _, found := byModule[spec.ModuleName]; found {
+			return fmt.Errorf("duplicate export import support %s", spec.ModuleName)
+		}
+		byModule[spec.ModuleName] = spec
+	}
+	for _, moduleName := range requiredModules {
+		if _, found := byModule[moduleName]; !found {
+			return fmt.Errorf("export import support for %s is missing", moduleName)
+		}
+	}
+	return nil
+}
+
+func (s ModuleExportImportSpec) Validate(knownModules map[string]struct{}) error {
+	if err := validatePosToken("export import module name", s.ModuleName); err != nil {
+		return err
+	}
+	if _, found := knownModules[s.ModuleName]; !found {
+		return fmt.Errorf("export import references unknown module %s", s.ModuleName)
+	}
+	if !s.ExportsGenesis || !s.ImportsGenesis {
+		return fmt.Errorf("module %s must support export and import", s.ModuleName)
+	}
+	if !s.DeterministicEncoding {
+		return fmt.Errorf("module %s export import encoding must be deterministic", s.ModuleName)
+	}
+	return nil
+}
+
+func knownKeeperIntegrationModules(compatibility CosmosSDKCompatibilityManifest) map[string]struct{} {
+	known := make(map[string]struct{})
+	for _, extension := range compatibility.Extensions {
+		known[extension.ModuleName] = struct{}{}
+	}
+	for _, module := range compatibility.Modules {
+		known[module.ModuleName] = struct{}{}
+	}
+	known["bank"] = struct{}{}
+	known["gov"] = struct{}{}
+	return known
 }
 
 func (a LayeredPosArchitecture) Validate() error {
@@ -6386,6 +6779,18 @@ func posWriteStringSlice(w posByteWriter, values []string) {
 	posWriteUint64(w, uint64(len(values)))
 	for _, value := range values {
 		posWritePart(w, value)
+	}
+}
+
+func posWriteHookSpecs(w posByteWriter, hooks []KeeperHookSpec) {
+	posWriteUint64(w, uint64(len(hooks)))
+	for _, hook := range hooks {
+		posWritePart(w, hook.SourceKeeper)
+		posWritePart(w, hook.HookName)
+		posWritePart(w, hook.Trigger)
+		posWriteStringSlice(w, hook.TargetModules)
+		posWriteUint64(w, boolAsUint64(hook.PreservesBaseState))
+		posWriteUint64(w, boolAsUint64(hook.DeterministicOrder))
 	}
 }
 
