@@ -83,11 +83,29 @@ func TestZoneExecutionMachineLifecycleMatchesZoneInterfaceSpec(t *testing.T) {
 
 	summary, err := EndZoneBlock(context.Background(), machine)
 	require.NoError(t, err)
+	require.Equal(t, uint64(1), summary.TxCount)
+	require.Equal(t, uint64(1), summary.InboundMessageCount)
+	require.Equal(t, uint64(0), summary.OutboundMessageCount)
+	require.Equal(t, uint64(10_000), summary.GasUsed)
+	require.Equal(t, uint64(2), summary.StateWrites)
+	require.Equal(t, uint64(1), summary.StateReads)
+	require.Equal(t, uint32(1), summary.ShardsTouched)
+	require.Equal(t, uint64(0), summary.FailedMessages)
+	require.Equal(t, summary.StateRoot, summary.ZoneStateRoot)
+	require.Equal(t, EmptyRootHash(), summary.EventRoot)
 	require.Equal(t, uint32(1), summary.TransactionsExecuted)
 	require.Equal(t, uint32(1), summary.InboundMessagesApplied)
 	require.Equal(t, uint32(2), summary.ReceiptsProduced)
 	require.Equal(t, uint64(10_000), summary.GasConsumed)
 	require.Equal(t, ComputeZoneExecutionSummaryHash(summary), summary.SummaryHash)
+
+	root, err := ComputeZoneRoot(context.Background(), machine)
+	require.NoError(t, err)
+	require.NoError(t, VerifyZoneExecutionSummaryOutputs(summary, root, machine.queues, machine.receipts))
+	badSummary := summary
+	badSummary.OutboundMessageCount = 9
+	badSummary.SummaryHash = ComputeZoneExecutionSummaryHash(badSummary)
+	require.ErrorContains(t, VerifyZoneExecutionSummaryOutputs(badSummary, root, machine.queues, machine.receipts), "counts")
 
 	stateRoot, err := StateRoot(context.Background(), machine)
 	require.NoError(t, err)
@@ -119,6 +137,28 @@ func TestZoneLocalGasQueuesAndProofValidation(t *testing.T) {
 	require.NoError(t, proof.ValidateFor(req))
 	proof.Path = append(proof.Path, "extra")
 	require.ErrorContains(t, proof.ValidateFor(req), "limit")
+}
+
+func TestZoneExportManifestRejectsNonReproducibleImport(t *testing.T) {
+	zone := testZone(ZoneIDIdentity, ZoneKindIdentity, VMPolicyNativeModule, 1)
+	runtime, err := NewZoneRuntimeState(zone, hash("identity-state"), nil, DefaultZoneExecutionBudget(), DefaultZoneGasPolicy(), DefaultZoneMessageFilter())
+	require.NoError(t, err)
+	queues, err := NewZoneMessageQueues(ZoneIDIdentity, []ZoneMessage{testZoneMessage(ZoneIDIdentity, "identity.lookup", 1, 100)}, nil)
+	require.NoError(t, err)
+	machine := &testZoneMachine{zoneID: ZoneIDIdentity, height: 44, runtime: runtime, queues: queues}
+
+	exported, err := ExportZone(context.Background(), machine)
+	require.NoError(t, err)
+	manifest, err := BuildZoneExportManifest(exported, hash("descriptor"), hash("layout"), hash("commitment"), hash("events"))
+	require.NoError(t, err)
+	exported.Manifest = manifest
+	require.NoError(t, exported.Validate())
+	require.NoError(t, ValidateZoneImportReproducible(exported, manifest))
+
+	badManifest := manifest
+	badManifest.StateRoot = hash("mutated-state")
+	badManifest.ExportHash = ComputeZoneExportManifestHash(badManifest)
+	require.ErrorContains(t, ValidateZoneImportReproducible(exported, badManifest), "reproduce")
 }
 
 type testZoneMachine struct {

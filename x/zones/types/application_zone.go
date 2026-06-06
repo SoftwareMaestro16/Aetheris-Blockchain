@@ -650,6 +650,7 @@ func BuildApplicationZoneRoot(roots ApplicationZoneRoots) (ZoneRoot, error) {
 		InboxRoot:           roots.InboxRoot,
 		OutboxRoot:          roots.OutboxRoot,
 		ReceiptRoot:         roots.ReceiptRoot,
+		EventRoot:           EmptyRootHash(),
 		ExecutionResultRoot: roots.ExecutionRoot,
 		ProofRoot:           roots.ProofRoot,
 	}

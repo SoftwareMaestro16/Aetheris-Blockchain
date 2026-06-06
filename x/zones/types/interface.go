@@ -66,6 +66,7 @@ type ZoneBatchResult struct {
 	OutboundMessages       []ZoneMessage
 	Receipts               []ZoneReceipt
 	ZoneRoot               ZoneRoot
+	ExecutionSummary       ZoneExecutionSummary
 }
 
 type ZoneRoot struct {
@@ -75,6 +76,7 @@ type ZoneRoot struct {
 	InboxRoot           string
 	OutboxRoot          string
 	ReceiptRoot         string
+	EventRoot           string
 	ExecutionResultRoot string
 	ProofRoot           string
 	RootHash            string
@@ -87,6 +89,22 @@ type ZoneExport struct {
 	Queues   ZoneMessageQueues
 	Receipts []ZoneReceipt
 	Proofs   []ZoneProof
+	Manifest ZoneExportManifest
+}
+
+type ZoneExportManifest struct {
+	ZoneID         ZoneID
+	Height         uint64
+	DescriptorRoot string
+	LayoutRoot     string
+	CommitmentRoot string
+	ProofRoot      string
+	StateRoot      string
+	InboxRoot      string
+	OutboxRoot     string
+	ReceiptRoot    string
+	EventRoot      string
+	ExportHash     string
 }
 
 type ZoneReceipt struct {
@@ -331,6 +349,24 @@ func (r ZoneBatchResult) Validate() error {
 			return errors.New("zone batch receipt route mismatch")
 		}
 	}
+	if r.ExecutionSummary.SummaryHash != "" {
+		if err := r.ExecutionSummary.Validate(); err != nil {
+			return err
+		}
+		if r.ExecutionSummary.ZoneID != r.ZoneID || r.ExecutionSummary.Height != r.Height {
+			return errors.New("zone batch execution summary route mismatch")
+		}
+		if r.ExecutionSummary.TxCount != uint64(r.TransactionsExecuted) ||
+			r.ExecutionSummary.InboundMessageCount != uint64(r.InboundMessagesApplied) ||
+			r.ExecutionSummary.OutboundMessageCount != uint64(len(r.OutboundMessages)) ||
+			r.ExecutionSummary.GasUsed != r.GasConsumed ||
+			r.ExecutionSummary.ZoneStateRoot != r.ZoneRoot.ZoneStateRoot ||
+			r.ExecutionSummary.OutboxRoot != r.ZoneRoot.OutboxRoot ||
+			r.ExecutionSummary.ReceiptRoot != r.ZoneRoot.ReceiptRoot ||
+			r.ExecutionSummary.EventRoot != r.ZoneRoot.EventRoot {
+			return errors.New("zone batch execution summary differs from committed outputs")
+		}
+	}
 	return nil
 }
 
@@ -354,6 +390,7 @@ func BuildZoneRoot(height uint64, runtime ZoneRuntimeState, queues ZoneMessageQu
 		InboxRoot:           ComputeZoneMessageRoot(queues.Inbox),
 		OutboxRoot:          ComputeZoneMessageRoot(queues.Outbox),
 		ReceiptRoot:         runtime.ReceiptRoot,
+		EventRoot:           EmptyRootHash(),
 		ExecutionResultRoot: runtime.ExecutionResultRoot,
 		ProofRoot:           runtime.ProofRoot,
 	}
@@ -362,6 +399,7 @@ func BuildZoneRoot(height uint64, runtime ZoneRuntimeState, queues ZoneMessageQu
 }
 
 func (r ZoneRoot) Validate() error {
+	r = canonicalZoneRoot(r)
 	if err := ValidateZoneID(r.ZoneID); err != nil {
 		return err
 	}
@@ -376,6 +414,7 @@ func (r ZoneRoot) Validate() error {
 		{name: "zone inbox root", value: r.InboxRoot},
 		{name: "zone outbox root", value: r.OutboxRoot},
 		{name: "zone receipt root", value: r.ReceiptRoot},
+		{name: "zone event root", value: r.EventRoot},
 		{name: "zone execution result root", value: r.ExecutionResultRoot},
 		{name: "zone proof root", value: r.ProofRoot},
 		{name: "zone root hash", value: r.RootHash},
@@ -424,6 +463,115 @@ func (e ZoneExport) Validate() error {
 		if proof.ZoneID != e.ZoneID {
 			return errors.New("zone export proof route mismatch")
 		}
+	}
+	if e.Manifest.ExportHash != "" {
+		if err := e.Manifest.Validate(); err != nil {
+			return err
+		}
+		if e.Manifest.ZoneID != e.ZoneID || e.Manifest.Height != e.Height {
+			return errors.New("zone export manifest route mismatch")
+		}
+		if e.Manifest.StateRoot != e.Runtime.StateRoot ||
+			e.Manifest.InboxRoot != e.Queues.InboxRoot() ||
+			e.Manifest.OutboxRoot != e.Queues.OutboxRoot() ||
+			e.Manifest.ReceiptRoot != ComputeZoneReceiptRoot(e.Receipts) ||
+			e.Manifest.ProofRoot != ComputeZoneProofCollectionRoot(e.Proofs) {
+			return errors.New("zone export manifest does not reproduce exported roots")
+		}
+	}
+	return nil
+}
+
+func NewZoneExportManifest(manifest ZoneExportManifest) (ZoneExportManifest, error) {
+	if manifest.ExportHash != "" {
+		return ZoneExportManifest{}, errors.New("zone export manifest hash must be empty before construction")
+	}
+	if manifest.EventRoot == "" {
+		manifest.EventRoot = EmptyRootHash()
+	}
+	if err := manifest.ValidateFormat(); err != nil {
+		return ZoneExportManifest{}, err
+	}
+	manifest.ExportHash = ComputeZoneExportManifestHash(manifest)
+	return manifest, manifest.Validate()
+}
+
+func BuildZoneExportManifest(exported ZoneExport, descriptorRoot string, layoutRoot string, commitmentRoot string, eventRoot string) (ZoneExportManifest, error) {
+	if eventRoot == "" {
+		eventRoot = EmptyRootHash()
+	}
+	return NewZoneExportManifest(ZoneExportManifest{
+		ZoneID:         exported.ZoneID,
+		Height:         exported.Height,
+		DescriptorRoot: descriptorRoot,
+		LayoutRoot:     layoutRoot,
+		CommitmentRoot: commitmentRoot,
+		ProofRoot:      ComputeZoneProofCollectionRoot(exported.Proofs),
+		StateRoot:      exported.Runtime.StateRoot,
+		InboxRoot:      exported.Queues.InboxRoot(),
+		OutboxRoot:     exported.Queues.OutboxRoot(),
+		ReceiptRoot:    ComputeZoneReceiptRoot(exported.Receipts),
+		EventRoot:      eventRoot,
+	})
+}
+
+func ValidateZoneImportReproducible(exported ZoneExport, expected ZoneExportManifest) error {
+	if err := exported.Validate(); err != nil {
+		return err
+	}
+	if err := expected.Validate(); err != nil {
+		return err
+	}
+	actual, err := BuildZoneExportManifest(exported, expected.DescriptorRoot, expected.LayoutRoot, expected.CommitmentRoot, expected.EventRoot)
+	if err != nil {
+		return err
+	}
+	if actual.ExportHash != expected.ExportHash {
+		return errors.New("zone import does not reproduce descriptor, layout, commitment, and proof roots")
+	}
+	return nil
+}
+
+func (m ZoneExportManifest) ValidateFormat() error {
+	if err := ValidateZoneID(m.ZoneID); err != nil {
+		return err
+	}
+	if m.Height == 0 {
+		return errors.New("zone export manifest height must be positive")
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{name: "zone export descriptor root", value: m.DescriptorRoot},
+		{name: "zone export layout root", value: m.LayoutRoot},
+		{name: "zone export commitment root", value: m.CommitmentRoot},
+		{name: "zone export proof root", value: m.ProofRoot},
+		{name: "zone export state root", value: m.StateRoot},
+		{name: "zone export inbox root", value: m.InboxRoot},
+		{name: "zone export outbox root", value: m.OutboxRoot},
+		{name: "zone export receipt root", value: m.ReceiptRoot},
+		{name: "zone export event root", value: m.EventRoot},
+	} {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if m.ExportHash != "" {
+		return ValidateHash("zone export manifest hash", m.ExportHash)
+	}
+	return nil
+}
+
+func (m ZoneExportManifest) Validate() error {
+	if err := m.ValidateFormat(); err != nil {
+		return err
+	}
+	if m.ExportHash == "" {
+		return errors.New("zone export manifest hash is required")
+	}
+	if m.ExportHash != ComputeZoneExportManifestHash(m) {
+		return errors.New("zone export manifest hash mismatch")
 	}
 	return nil
 }
@@ -698,6 +846,7 @@ func ZoneMempoolLane(zoneID ZoneID) string {
 }
 
 func ComputeZoneRootHash(root ZoneRoot) string {
+	root = canonicalZoneRoot(root)
 	return hashRuntimeParts(
 		"aetheris-zone-root-v1",
 		string(root.ZoneID),
@@ -706,8 +855,29 @@ func ComputeZoneRootHash(root ZoneRoot) string {
 		root.InboxRoot,
 		root.OutboxRoot,
 		root.ReceiptRoot,
+		root.EventRoot,
 		root.ExecutionResultRoot,
 		root.ProofRoot,
+	)
+}
+
+func ComputeZoneExportManifestHash(manifest ZoneExportManifest) string {
+	if manifest.EventRoot == "" {
+		manifest.EventRoot = EmptyRootHash()
+	}
+	return hashRuntimeParts(
+		"aetheris-zone-export-manifest-v1",
+		string(manifest.ZoneID),
+		fmt.Sprint(manifest.Height),
+		manifest.DescriptorRoot,
+		manifest.LayoutRoot,
+		manifest.CommitmentRoot,
+		manifest.ProofRoot,
+		manifest.StateRoot,
+		manifest.InboxRoot,
+		manifest.OutboxRoot,
+		manifest.ReceiptRoot,
+		manifest.EventRoot,
 	)
 }
 
@@ -757,6 +927,24 @@ func ComputeZoneMessageQueuesRoot(inbox []ZoneMessage, outbox []ZoneMessage) str
 	)
 }
 
+func ComputeZoneProofCollectionRoot(proofs []ZoneProof) string {
+	ordered := append([]ZoneProof(nil), proofs...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Kind != ordered[j].Kind {
+			return ordered[i].Kind < ordered[j].Kind
+		}
+		if ordered[i].Key != ordered[j].Key {
+			return ordered[i].Key < ordered[j].Key
+		}
+		return ordered[i].ProofHash < ordered[j].ProofHash
+	})
+	parts := []string{"aetheris-zone-proof-collection-root-v1", fmt.Sprint(len(ordered))}
+	for _, proof := range ordered {
+		parts = append(parts, proof.ProofHash)
+	}
+	return hashRuntimeParts(parts...)
+}
+
 func ComputeZoneProofHash(proof ZoneProof) string {
 	h := sha256.New()
 	writeRuntimePart(h, "aetheris-zone-proof-v1")
@@ -789,6 +977,13 @@ func IsZoneProofKind(kind ZoneProofKind) bool {
 	default:
 		return false
 	}
+}
+
+func canonicalZoneRoot(root ZoneRoot) ZoneRoot {
+	if root.EventRoot == "" {
+		root.EventRoot = EmptyRootHash()
+	}
+	return root
 }
 
 func validateZoneMessageList(fieldName string, zoneID ZoneID, messages []ZoneMessage) error {

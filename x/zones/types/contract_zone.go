@@ -678,6 +678,7 @@ func BuildContractZoneRoot(roots ContractZoneRoots) (ZoneRoot, error) {
 		InboxRoot:           roots.InboxRoot,
 		OutboxRoot:          roots.OutboxRoot,
 		ReceiptRoot:         roots.ReceiptRoot,
+		EventRoot:           roots.EventRoot,
 		ExecutionResultRoot: roots.ExecutionRoot,
 		ProofRoot:           roots.ProofRoot,
 	}
