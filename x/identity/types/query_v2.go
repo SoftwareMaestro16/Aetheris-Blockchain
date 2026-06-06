@@ -45,30 +45,31 @@ type IdentityQueryServiceV2 struct {
 }
 
 type IdentityQueryResponseV2 struct {
-	Code          IdentityQueryCodeV2
-	FailureCode   IdentityLightClientFailureCodeV2
-	Error         string
-	Height        uint64
-	RecordVersion uint64
-	Page          IdentityQueryPageResponseV2
-	Proof         *IdentityResolutionProof
-	AbsenceProof  *IdentityAbsenceProof
-	Domain        *DomainRecordV2
-	Domains       []DomainRecordV2
-	Binding       *DomainNFTBinding
-	Resolver      *UnifiedResolutionRecordV2
-	Address       sdk.AccAddress
-	Target        *NamedExecutionTarget
-	Service       *ServiceEndpointV2
-	Interface     *InterfaceDescriptorV2
-	Route         *RoutingMetadataV2
-	Reverse       *ReverseResolutionRecordV2
-	Subdomains    []SubdomainRecord
-	Delegations   []DelegationRecordV2
-	Auction       *AuctionRecordV2
-	ProofResult   *IdentityResolution
-	Lifecycle     DomainLifecycleStatus
-	Params        *IdentityParams
+	Code           IdentityQueryCodeV2
+	FailureCode    IdentityLightClientFailureCodeV2
+	Error          string
+	Height         uint64
+	RecordVersion  uint64
+	Page           IdentityQueryPageResponseV2
+	Proof          *IdentityResolutionProof
+	AbsenceProof   *IdentityAbsenceProof
+	Domain         *DomainRecordV2
+	Domains        []DomainRecordV2
+	Binding        *DomainNFTBinding
+	Resolver       *UnifiedResolutionRecordV2
+	Address        sdk.AccAddress
+	Target         *NamedExecutionTarget
+	ContractTarget *ContractTargetV2
+	Service        *ServiceEndpointV2
+	Interface      *InterfaceDescriptorV2
+	Route          *RoutingMetadataV2
+	Reverse        *ReverseResolutionRecordV2
+	Subdomains     []SubdomainRecord
+	Delegations    []DelegationRecordV2
+	Auction        *AuctionRecordV2
+	ProofResult    *IdentityResolution
+	Lifecycle      DomainLifecycleStatus
+	Params         *IdentityParams
 }
 
 func NewIdentityQueryServiceV2(ctx IdentityQueryContextV2) IdentityQueryServiceV2 {
@@ -201,6 +202,19 @@ func (q IdentityQueryServiceV2) QueryResolveTarget(name string, recordKey string
 	resp := q.ok()
 	resp.Target = &target
 	resp.Address = cloneSpecAddress(target.Address)
+	return resp
+}
+
+func (q IdentityQueryServiceV2) QueryResolveContractTarget(name string, targetID string) IdentityQueryResponseV2 {
+	record, target, err := ResolveIdentityContractTargetByNameV2(q.ctx.State, name, targetID, q.ctx.Height, q.ctx.DefaultTTL)
+	if err != nil {
+		return q.failure(queryCodeForResolutionErrorV2(err), err)
+	}
+	record.RecordVersion = q.resolverRecordVersionForName(name, record.RecordVersion)
+	resp := q.ok()
+	resp.ContractTarget = &target
+	resp.Address = cloneSpecAddress(contractTargetAddressV2(target))
+	resp.RecordVersion = record.RecordVersion
 	return resp
 }
 
