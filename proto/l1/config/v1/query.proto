@@ -11,22 +11,38 @@ message QueryParamsResponse {
   Params params = 1;
 }
 
-message QueryEntryRequest {
+message QueryConfigValueRequest {
   string key = 1;
 }
 
-message QueryEntryResponse {
+message QueryConfigValueResponse {
   ConfigEntry entry = 1;
 }
 
-message QueryEntriesRequest {}
+message QueryPendingConfigChangesRequest {}
 
-message QueryEntriesResponse {
-  repeated ConfigEntry entries = 1;
+message QueryPendingConfigChangesResponse {
+  repeated ConfigChange changes = 1;
+}
+
+message QueryConfigChangeRequest {
+  string change_id = 1;
+}
+
+message QueryConfigChangeResponse {
+  ConfigChange change = 1;
+}
+
+message QueryAuthorityRequest {}
+
+message QueryAuthorityResponse {
+  string authority = 1;
 }
 
 service Query {
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
-  rpc Entry(QueryEntryRequest) returns (QueryEntryResponse);
-  rpc Entries(QueryEntriesRequest) returns (QueryEntriesResponse);
+  rpc ConfigValue(QueryConfigValueRequest) returns (QueryConfigValueResponse);
+  rpc PendingConfigChanges(QueryPendingConfigChangesRequest) returns (QueryPendingConfigChangesResponse);
+  rpc ConfigChange(QueryConfigChangeRequest) returns (QueryConfigChangeResponse);
+  rpc Authority(QueryAuthorityRequest) returns (QueryAuthorityResponse);
 }

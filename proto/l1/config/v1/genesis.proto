@@ -14,12 +14,17 @@ message GenesisState {
 message Params {
   string authority = 1;
   uint32 max_entries = 2;
-  uint32 max_key_bytes = 3;
-  uint32 max_value_bytes = 4;
+  uint32 max_pending_changes = 3;
+  uint32 max_key_bytes = 4;
+  uint32 max_value_bytes = 5;
+  uint32 max_change_id_bytes = 6;
+  string base_denom = 7;
+  repeated string required_system_account_keys = 8;
 }
 
 message ConfigState {
   repeated ConfigEntry entries = 1 [(gogoproto.nullable) = false];
+  repeated ConfigChange pending_changes = 2 [(gogoproto.nullable) = false];
 }
 
 message ConfigEntry {
@@ -28,4 +33,23 @@ message ConfigEntry {
   string owner = 3;
   uint64 version = 4;
   int64 updated_height = 5;
+}
+
+message ConfigChange {
+  string id = 1;
+  string key = 2;
+  string value = 3;
+  string operation = 4;
+  string status = 5;
+  string submitted_by = 6;
+  string approved_by = 7;
+  string rejected_by = 8;
+  string cancelled_by = 9;
+  string executed_by = 10;
+  string reason = 11;
+  bool requires_constitutional_exception = 12;
+  int64 created_height = 13;
+  int64 updated_height = 14;
+  uint64 expected_previous_version = 15;
+  bool allow_missing_expected_previous_version = 16;
 }

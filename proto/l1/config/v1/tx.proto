@@ -5,24 +5,58 @@ import "l1/config/v1/genesis.proto";
 
 option go_package = "github.com/sovereign-l1/l1/x/config/types";
 
-message MsgUpdateParams {
+message MsgSubmitConfigChange {
   string authority = 1;
-  Params params = 2;
+  ConfigChange change = 2;
 }
 
-message MsgUpdateParamsResponse {}
-
-message MsgUpsertConfigEntry {
-  string authority = 1;
-  string key = 2;
-  string value = 3;
+message MsgSubmitConfigChangeResponse {
+  ConfigChange change = 1;
 }
 
-message MsgUpsertConfigEntryResponse {
+message MsgApproveConfigChange {
+  string authority = 1;
+  string change_id = 2;
+}
+
+message MsgApproveConfigChangeResponse {
+  ConfigChange change = 1;
+}
+
+message MsgRejectConfigChange {
+  string authority = 1;
+  string change_id = 2;
+  string reason = 3;
+}
+
+message MsgRejectConfigChangeResponse {
+  ConfigChange change = 1;
+}
+
+message MsgExecuteConfigChange {
+  string authority = 1;
+  string change_id = 2;
+}
+
+message MsgExecuteConfigChangeResponse {
   ConfigEntry entry = 1;
+  ConfigChange change = 2;
+}
+
+message MsgCancelConfigChange {
+  string authority = 1;
+  string change_id = 2;
+  string reason = 3;
+}
+
+message MsgCancelConfigChangeResponse {
+  ConfigChange change = 1;
 }
 
 service Msg {
-  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
-  rpc UpsertConfigEntry(MsgUpsertConfigEntry) returns (MsgUpsertConfigEntryResponse);
+  rpc SubmitConfigChange(MsgSubmitConfigChange) returns (MsgSubmitConfigChangeResponse);
+  rpc ApproveConfigChange(MsgApproveConfigChange) returns (MsgApproveConfigChangeResponse);
+  rpc RejectConfigChange(MsgRejectConfigChange) returns (MsgRejectConfigChangeResponse);
+  rpc ExecuteConfigChange(MsgExecuteConfigChange) returns (MsgExecuteConfigChangeResponse);
+  rpc CancelConfigChange(MsgCancelConfigChange) returns (MsgCancelConfigChangeResponse);
 }

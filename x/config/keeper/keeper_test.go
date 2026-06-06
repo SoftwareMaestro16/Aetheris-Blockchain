@@ -37,6 +37,17 @@ func TestGenesisRejectsMalformedAndNondeterministicState(t *testing.T) {
 		entry("runtime/a", "two", 1),
 	}
 	require.ErrorContains(t, keeper.InitGenesis(bad), "duplicated")
+
+	bad = DefaultGenesis()
+	bad.Params.MaxPendingChanges = 0
+	require.ErrorContains(t, keeper.InitGenesis(bad), "max pending")
+
+	bad = DefaultGenesis()
+	bad.State.PendingChanges = []types.ConfigChange{
+		change("z", "runtime/z", "1"),
+		change("a", "runtime/a", "1"),
+	}
+	require.ErrorContains(t, keeper.InitGenesis(bad), "pending changes must be sorted")
 }
 
 func TestUpsertRequiresAuthorityAndRejectsUnsafeFields(t *testing.T) {
@@ -95,15 +106,136 @@ func TestExportImportDeterministicAndMigration(t *testing.T) {
 	require.NoError(t, err)
 	_, err = source.UpsertEntry(prototype.DefaultAuthority, "runtime/a", "a", 1)
 	require.NoError(t, err)
+	_, err = source.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("change-b", "runtime/b", "b2"),
+	}, 3)
+	require.NoError(t, err)
+	_, err = source.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("change-a", "runtime/a", "a2"),
+	}, 4)
+	require.NoError(t, err)
 
 	exported := source.ExportGenesis()
 	require.NoError(t, exported.Validate())
 	require.Equal(t, []string{"runtime/a", "runtime/b"}, []string{exported.State.Entries[0].Key, exported.State.Entries[1].Key})
+	require.Equal(t, []string{"change-a", "change-b"}, []string{exported.State.PendingChanges[0].ID, exported.State.PendingChanges[1].ID})
 
 	target := NewKeeper()
 	require.NoError(t, target.InitGenesis(exported))
 	require.Equal(t, exported, target.ExportGenesis())
 	require.NoError(t, NewMigrator(&target).Migrate1to2())
+}
+
+func TestConfigChangeLifecycleRequiresAuthority(t *testing.T) {
+	keeper := NewKeeper()
+	_, err := keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: "4:0000000000000000000000000000000000000000000000000000000000000002",
+		Change:    change("change-1", "runtime/max_validators", "100"),
+	}, 1)
+	require.ErrorContains(t, err, "governance authority")
+
+	submitted, err := keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("change-1", "runtime/max_validators", "100"),
+	}, 1)
+	require.NoError(t, err)
+	require.Equal(t, types.ChangeStatusPending, submitted.Status)
+
+	_, _, err = keeper.ExecuteConfigChange(types.MsgExecuteConfigChange{Authority: prototype.DefaultAuthority, ChangeID: "change-1"}, 2)
+	require.ErrorContains(t, err, "approved")
+
+	approved, err := keeper.ApproveConfigChange(types.MsgApproveConfigChange{Authority: prototype.DefaultAuthority, ChangeID: "change-1"}, 2)
+	require.NoError(t, err)
+	require.Equal(t, types.ChangeStatusApproved, approved.Status)
+
+	entry, executed, err := keeper.ExecuteConfigChange(types.MsgExecuteConfigChange{Authority: prototype.DefaultAuthority, ChangeID: "change-1"}, 3)
+	require.NoError(t, err)
+	require.Equal(t, types.ChangeStatusExecuted, executed.Status)
+	require.Equal(t, "runtime/max_validators", entry.Key)
+	require.Equal(t, "100", entry.Value)
+
+	value, found, err := keeper.ConfigValue("runtime/max_validators")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "100", value)
+}
+
+func TestInvalidConfigChangeRejectedBeforeExecution(t *testing.T) {
+	keeper := NewKeeper()
+
+	_, err := keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("bad-gas", "avm/gas/contract_call", "0"),
+	}, 1)
+	require.ErrorContains(t, err, "positive")
+
+	_, err = keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("bad-denom", types.KeyFeeBaseDenom, "uatom"),
+	}, 1)
+	require.ErrorContains(t, err, "base denom")
+}
+
+func TestConfigCannotSetUnlimitedBlockGas(t *testing.T) {
+	keeper := NewKeeper()
+	_, err := keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("bad-block-gas", types.KeyConsensusMaxBlockGas, "1000000001"),
+	}, 1)
+	require.ErrorContains(t, err, "unlimited block gas")
+}
+
+func TestConfigCannotSetZeroStorageRentForNonEmptyStateWithoutConstitutionalRule(t *testing.T) {
+	keeper := NewKeeper()
+	_, err := keeper.UpsertEntry(prototype.DefaultAuthority, types.KeyStorageContractStateActive, "true", 1)
+	require.NoError(t, err)
+
+	_, err = keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    change("zero-rent", types.KeyStorageRentPerByteEpoch, "0"),
+	}, 2)
+	require.ErrorContains(t, err, "constitutional allowance")
+
+	_, err = keeper.UpsertEntry(prototype.DefaultAuthority, types.KeyConstitutionZeroRentAllow, "true", 2)
+	require.NoError(t, err)
+	allowed := change("zero-rent", types.KeyStorageRentPerByteEpoch, "0")
+	allowed.RequiresConstitutionalException = true
+	_, err = keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    allowed,
+	}, 3)
+	require.NoError(t, err)
+}
+
+func TestConfigCannotRemoveRequiredSystemAccountAddresses(t *testing.T) {
+	keeper := NewKeeper()
+	_, err := keeper.UpsertEntry(prototype.DefaultAuthority, "system/account/fee_collector", prototype.DefaultAuthority, 1)
+	require.NoError(t, err)
+
+	deleteChange := change("remove-fee-collector", "system/account/fee_collector", "")
+	deleteChange.Operation = types.OperationDelete
+	_, err = keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+		Authority: prototype.DefaultAuthority,
+		Change:    deleteChange,
+	}, 2)
+	require.ErrorContains(t, err, "required system account")
+}
+
+func TestPendingConfigChangesAreDeterministicallyOrdered(t *testing.T) {
+	keeper := NewKeeper()
+	for _, id := range []string{"change-z", "change-a", "change-m"} {
+		_, err := keeper.SubmitConfigChange(types.MsgSubmitConfigChange{
+			Authority: prototype.DefaultAuthority,
+			Change:    change(id, "runtime/"+id, "1"),
+		}, 1)
+		require.NoError(t, err)
+	}
+
+	pending, err := keeper.PendingConfigChanges()
+	require.NoError(t, err)
+	require.Equal(t, []string{"change-a", "change-m", "change-z"}, []string{pending[0].ID, pending[1].ID, pending[2].ID})
 }
 
 func entry(key string, value string, version uint64) types.ConfigEntry {
@@ -113,5 +245,19 @@ func entry(key string, value string, version uint64) types.ConfigEntry {
 		Owner:         prototype.DefaultAuthority,
 		Version:       version,
 		UpdatedHeight: 1,
+	}
+}
+
+func change(id string, key string, value string) types.ConfigChange {
+	return types.ConfigChange{
+		ID:                      id,
+		Key:                     key,
+		Value:                   value,
+		Operation:               types.OperationSet,
+		Status:                  types.ChangeStatusPending,
+		SubmittedBy:             prototype.DefaultAuthority,
+		CreatedHeight:           1,
+		UpdatedHeight:           1,
+		ExpectedPreviousVersion: 0,
 	}
 }
