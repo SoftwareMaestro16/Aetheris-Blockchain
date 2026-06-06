@@ -30,6 +30,7 @@ import (
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
+	schedulertypes "github.com/sovereign-l1/l1/x/scheduler/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
@@ -50,6 +51,7 @@ var aetherCorePrototypeModules = []string{
 	meshtypes.ModuleName,
 	networkingtypes.ModuleName,
 	paymentstypes.ModuleName,
+	schedulertypes.ModuleName,
 }
 
 var aetherCoreSystemModules = []string{
@@ -73,6 +75,7 @@ func AetherCorePrototypeStoreKeys() []string {
 		meshtypes.StoreKey,
 		networkingtypes.StoreKey,
 		paymentstypes.StoreKey,
+		schedulertypes.StoreKey,
 	}
 }
 
@@ -109,6 +112,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		schedulertypes.ModuleName,
 	}
 }
 
@@ -128,6 +132,7 @@ func aetherCoreEndBlockerOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		schedulertypes.ModuleName,
 	}
 }
 
@@ -157,6 +162,7 @@ func aetherCoreInitGenesisOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		schedulertypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,
@@ -189,6 +195,7 @@ func aetherCoreExportGenesisOrder() []string {
 		meshtypes.ModuleName,
 		networkingtypes.ModuleName,
 		paymentstypes.ModuleName,
+		schedulertypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,

@@ -1,0 +1,66 @@
+syntax = "proto3";
+package l1.scheduler.v1;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/scheduler/types";
+
+message GenesisState {
+  uint64 version = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+  SchedulerParams scheduler_params = 3 [(gogoproto.nullable) = false];
+  SchedulerState state = 4 [(gogoproto.nullable) = false];
+}
+
+message Params {
+  bool enabled = 1;
+  bool testnet_profile = 2;
+  string production_version_gate = 3;
+  string authority = 4;
+  uint64 default_query_limit = 5;
+  uint64 max_query_limit = 6;
+}
+
+message SchedulerParams {
+  uint32 max_jobs_per_block = 1;
+  uint64 max_scheduler_gas = 2;
+  uint64 max_gas_per_job = 3;
+  repeated string authorized_modules = 4;
+  uint32 history_retention = 5;
+}
+
+message SchedulerState {
+  repeated ScheduledJob jobs = 1 [(gogoproto.nullable) = false];
+  repeated JobHistoryRecord history = 2 [(gogoproto.nullable) = false];
+  uint64 last_execution_height = 3;
+}
+
+message RetryPolicy {
+  uint32 max_retries = 1;
+  uint64 backoff_interval = 2;
+}
+
+message ScheduledJob {
+  string id = 1;
+  string owner_module = 2;
+  string type = 3;
+  uint64 next_execution_height = 4;
+  uint64 interval = 5;
+  uint64 max_gas = 6;
+  RetryPolicy retry_policy = 7 [(gogoproto.nullable) = false];
+  uint32 failure_count = 8;
+  bool paused = 9;
+  bool cancelled = 10;
+  bytes payload = 11;
+  uint64 execution_count = 12;
+}
+
+message JobHistoryRecord {
+  string job_id = 1;
+  string owner_module = 2;
+  uint64 height = 3;
+  string status = 4;
+  uint64 gas_used = 5;
+  string error = 6;
+  uint32 attempt = 7;
+}

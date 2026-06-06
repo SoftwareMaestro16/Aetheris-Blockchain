@@ -153,6 +153,7 @@ type L1App struct {
 	MeshKeeper         meshkeeper.Keeper
 	NetworkingKeeper   networkingkeeper.Keeper
 	PaymentsKeeper     paymentskeeper.Keeper
+	SchedulerKeeper    schedulerkeeper.Keeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -263,6 +264,7 @@ func NewL1App(
 		meshtypes.StoreKey,
 		networkingtypes.StoreKey,
 		paymentstypes.StoreKey,
+		schedulertypes.StoreKey,
 	)
 
 	// register streaming services

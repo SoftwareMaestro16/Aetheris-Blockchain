@@ -64,6 +64,8 @@ import (
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
+	schedulerkeeper "github.com/sovereign-l1/l1/x/scheduler/keeper"
+	schedulertypes "github.com/sovereign-l1/l1/x/scheduler/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
 	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
@@ -251,5 +253,6 @@ func (app *L1App) initKeepers(
 	app.MeshKeeper = meshkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[meshtypes.StoreKey]))
 	app.NetworkingKeeper = networkingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[networkingtypes.StoreKey]))
 	app.PaymentsKeeper = paymentskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[paymentstypes.StoreKey]))
+	app.SchedulerKeeper = schedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[schedulertypes.StoreKey]))
 	return txConfig
 }
