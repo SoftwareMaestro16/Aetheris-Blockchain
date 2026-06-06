@@ -47,8 +47,8 @@ func TestApplicationSchedulerExecutesReadyTasksDeterministicallyWithBounds(t *te
 	}
 	queue, err := NewApplicationSchedulerQueue(9, 3, tasks)
 	require.NoError(t, err)
-	require.Equal(t, "high", queue.Tasks[0].TaskID)
-	require.Equal(t, "gas-left", queue.Tasks[1].TaskID)
+	require.Equal(t, "gas-left", queue.Tasks[0].TaskID)
+	require.Equal(t, "high", queue.Tasks[1].TaskID)
 
 	next, ready, err := ExecuteApplicationScheduledTasks(queue, 10, ApplicationWorkLimit{
 		MaxTasksPerBlock:    2,
@@ -115,6 +115,66 @@ func TestApplicationWorkflowReceiptsAndStateRoot(t *testing.T) {
 	require.NoError(t, next.Validate())
 }
 
+func TestApplicationRuntimeBoundaryAsyncOutputShardRoutesAndProofRoots(t *testing.T) {
+	boundary, err := DefaultApplicationRuntimeBoundary("native-app")
+	require.NoError(t, err)
+	require.NoError(t, boundary.ValidateHash())
+	require.Equal(t, "zone-messages-only", boundary.CrossZoneEffectMechanism)
+
+	appRoute, err := RouteApplicationAppShard("billing", 8, 2)
+	require.NoError(t, err)
+	appRouteAgain, err := RouteApplicationAppShard("billing", 8, 2)
+	require.NoError(t, err)
+	require.Equal(t, appRoute, appRouteAgain)
+	require.Equal(t, ApplicationRouteAppID, appRoute.RoutingMode)
+
+	workflowRoute, err := RouteApplicationWorkflowShard("workflow-1", 8, 2)
+	require.NoError(t, err)
+	require.Equal(t, ApplicationRouteWorkflowID, workflowRoute.RoutingMode)
+
+	schedulerRoute, err := RouteApplicationSchedulerShard("daily", 8, 2)
+	require.NoError(t, err)
+	require.Equal(t, ApplicationRouteSchedulerBucket, schedulerRoute.RoutingMode)
+
+	queues, err := NewApplicationMessageQueues(nil, nil)
+	require.NoError(t, err)
+	queues, receipt, err := EmitApplicationAsyncOutput(queues, ApplicationAsyncOutput{
+		AppID:           "billing",
+		WorkflowID:      "workflow-1",
+		DestinationZone: ZoneIDContract,
+		Destination:     "contract-1",
+		PayloadHash:     hash("async-payload"),
+		GasLimit:        500,
+		RetryNonce:      1,
+		CreatedHeight:   20,
+	})
+	require.NoError(t, err)
+	require.Len(t, queues.Outbox, 1)
+	require.Equal(t, "application.async_output", queues.Outbox[0].MessageType)
+	require.Equal(t, ApplicationTaskExecuted, receipt.Status)
+	require.Equal(t, uint32(1), receipt.OutboxMessages)
+
+	roots := ApplicationZoneRoots{
+		Height:         20,
+		AppRoot:        hash("app-root"),
+		WorkflowRoot:   hash("workflow-root"),
+		SchedulerRoot:  hash("scheduler-root"),
+		AutomationRoot: hash("automation-root"),
+		PermissionRoot: hash("permission-root"),
+		ReceiptRoot:    hash("receipt-root"),
+		QueueRoot:      queues.QueueRoot(),
+		InboxRoot:      queues.InboxRoot(),
+		OutboxRoot:     queues.OutboxRoot(),
+		ExecutionRoot:  hash("execution-root"),
+		ProofRoot:      hash("proof-root"),
+	}
+	exports, err := BuildApplicationProofRootExports(20, roots)
+	require.NoError(t, err)
+	require.Len(t, exports, 5)
+	require.True(t, hasApplicationProofRoot(exports, ApplicationProofRootQueue, roots.QueueRoot))
+	require.True(t, hasApplicationProofRoot(exports, ApplicationProofRootPermission, roots.PermissionRoot))
+}
+
 func TestApplicationMessagesReceiptsProofsAndRootValidate(t *testing.T) {
 	queues, err := NewApplicationMessageQueues(
 		[]ZoneMessage{testZoneMessage(ZoneIDApplication, "app.inbound", 2, 100), testZoneMessage(ZoneIDApplication, "app.inbound", 1, 100)},
@@ -161,6 +221,15 @@ func TestApplicationMessagesReceiptsProofsAndRootValidate(t *testing.T) {
 	req, err := ApplicationProofRequest(ApplicationProofWorkflow, "workflow-1", 77, root.RootHash, 4)
 	require.NoError(t, err)
 	require.Equal(t, "QueryWorkflow/workflow-1", req.Key)
+}
+
+func hasApplicationProofRoot(exports []ApplicationProofRootExport, rootType ApplicationProofRootType, rootHash string) bool {
+	for _, export := range exports {
+		if export.RootType == rootType && export.RootHash == rootHash {
+			return true
+		}
+	}
+	return false
 }
 
 func applicationTask(taskID, workflowID, appID, bucket string, height uint64, priority uint32, sequence uint64, gas uint64) ApplicationScheduledTask {

@@ -2,6 +2,8 @@ package types
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -15,6 +17,7 @@ const (
 	ApplicationAutomationPrefix  = ApplicationZonePrefix + "/automation"
 	ApplicationPermissionsPrefix = ApplicationZonePrefix + "/permissions"
 	ApplicationReceiptPrefix     = ApplicationZonePrefix + "/receipts"
+	ApplicationOutboxPrefix      = ApplicationZonePrefix + "/outbox"
 )
 
 type ApplicationRuntime interface {
@@ -34,6 +37,8 @@ type ApplicationTaskStatus string
 type ApplicationProofKind string
 type ApplicationMessageKind string
 type ApplicationPermissionScope string
+type ApplicationShardRoutingMode string
+type ApplicationProofRootType string
 
 const (
 	ApplicationWorkflowPending   ApplicationWorkflowStatus = "PENDING"
@@ -62,10 +67,22 @@ const (
 	ApplicationProofScheduledTask ApplicationProofKind = "QueryScheduledTask"
 	ApplicationProofAutomation    ApplicationProofKind = "QueryAutomation"
 	ApplicationProofAppReceipts   ApplicationProofKind = "QueryAppReceipts"
+	ApplicationProofAppQueue      ApplicationProofKind = "QueryAppQueue"
+	ApplicationProofPermissions   ApplicationProofKind = "QueryServicePermissions"
 
 	ApplicationPermissionAdmin    ApplicationPermissionScope = "admin"
 	ApplicationPermissionExecute  ApplicationPermissionScope = "execute"
 	ApplicationPermissionSchedule ApplicationPermissionScope = "schedule"
+
+	ApplicationRouteAppID           ApplicationShardRoutingMode = "app_id"
+	ApplicationRouteWorkflowID      ApplicationShardRoutingMode = "workflow_id"
+	ApplicationRouteSchedulerBucket ApplicationShardRoutingMode = "scheduler_bucket"
+
+	ApplicationProofRootApp        ApplicationProofRootType = "app"
+	ApplicationProofRootWorkflow   ApplicationProofRootType = "workflow"
+	ApplicationProofRootScheduler  ApplicationProofRootType = "scheduler"
+	ApplicationProofRootQueue      ApplicationProofRootType = "app_queue"
+	ApplicationProofRootPermission ApplicationProofRootType = "service_permission"
 )
 
 type ApplicationZoneBoundary struct {
@@ -140,6 +157,46 @@ type ApplicationWorkLimit struct {
 	MaxGasPerBlock      uint64
 }
 
+type ApplicationRuntimeBoundary struct {
+	ZoneID                   ZoneID
+	RuntimeID                string
+	AllowedStatePrefixes     []string
+	CrossZoneEffectMechanism string
+	BoundaryHash             string
+}
+
+type ApplicationShardRoute struct {
+	ZoneID      ZoneID
+	LayoutEpoch uint64
+	ShardCount  uint32
+	ShardID     uint32
+	RoutingMode ApplicationShardRoutingMode
+	RouteKey    string
+	StateKey    string
+	RouteHash   string
+}
+
+type ApplicationAsyncOutput struct {
+	OutputID        string
+	AppID           string
+	WorkflowID      string
+	DestinationZone ZoneID
+	Destination     string
+	PayloadHash     string
+	GasLimit        uint64
+	RetryNonce      uint64
+	CreatedHeight   uint64
+	MessageHash     string
+}
+
+type ApplicationProofRootExport struct {
+	ZoneID   ZoneID
+	Height   uint64
+	RootType ApplicationProofRootType
+	RootHash string
+	Source   string
+}
+
 type ApplicationExecutionReceipt struct {
 	ZoneID         ZoneID
 	Height         uint64
@@ -173,6 +230,7 @@ type ApplicationZoneRoots struct {
 	AutomationRoot string
 	PermissionRoot string
 	ReceiptRoot    string
+	QueueRoot      string
 	InboxRoot      string
 	OutboxRoot     string
 	ExecutionRoot  string
@@ -186,6 +244,7 @@ func DefaultApplicationZoneBoundary() ApplicationZoneBoundary {
 		OwnsPrefixes: []string{
 			ApplicationAppPrefix,
 			ApplicationAutomationPrefix,
+			ApplicationOutboxPrefix,
 			ApplicationPermissionsPrefix,
 			ApplicationReceiptPrefix,
 			ApplicationSchedulerPrefix,
@@ -206,6 +265,8 @@ func DefaultApplicationZoneBoundary() ApplicationZoneBoundary {
 			ApplicationProofScheduledTask,
 			ApplicationProofAutomation,
 			ApplicationProofAppReceipts,
+			ApplicationProofAppQueue,
+			ApplicationProofPermissions,
 		},
 	}
 }
@@ -291,6 +352,47 @@ func ApplicationReceiptKey(executionID string) (string, error) {
 	return ApplicationReceiptPrefix + "/" + executionID, nil
 }
 
+func ApplicationOutboxKey(outputID string) (string, error) {
+	if err := validateRuntimeToken("application async output id", outputID, MaxZoneEndpointLength); err != nil {
+		return "", err
+	}
+	return ApplicationOutboxPrefix + "/" + outputID, nil
+}
+
+func DefaultApplicationRuntimeBoundary(runtimeID string) (ApplicationRuntimeBoundary, error) {
+	boundary := ApplicationRuntimeBoundary{
+		ZoneID:                   ZoneIDApplication,
+		RuntimeID:                runtimeID,
+		AllowedStatePrefixes:     DefaultApplicationZoneBoundary().OwnsPrefixes,
+		CrossZoneEffectMechanism: "zone-messages-only",
+	}
+	boundary.BoundaryHash = ComputeApplicationRuntimeBoundaryHash(boundary)
+	return boundary, boundary.ValidateHash()
+}
+
+func RouteApplicationAppShard(appID string, shardCount uint32, layoutEpoch uint64) (ApplicationShardRoute, error) {
+	key, err := ApplicationAppKey(appID)
+	if err != nil {
+		return ApplicationShardRoute{}, err
+	}
+	return routeApplicationStateKey(ApplicationRouteAppID, appID, key, shardCount, layoutEpoch)
+}
+
+func RouteApplicationWorkflowShard(workflowID string, shardCount uint32, layoutEpoch uint64) (ApplicationShardRoute, error) {
+	key, err := ApplicationWorkflowKey(workflowID)
+	if err != nil {
+		return ApplicationShardRoute{}, err
+	}
+	return routeApplicationStateKey(ApplicationRouteWorkflowID, workflowID, key, shardCount, layoutEpoch)
+}
+
+func RouteApplicationSchedulerShard(bucket string, shardCount uint32, layoutEpoch uint64) (ApplicationShardRoute, error) {
+	if err := validateRuntimeToken("application scheduler bucket", bucket, MaxZoneEndpointLength); err != nil {
+		return ApplicationShardRoute{}, err
+	}
+	return routeApplicationStateKey(ApplicationRouteSchedulerBucket, bucket, ApplicationSchedulerPrefix+"/"+bucket, shardCount, layoutEpoch)
+}
+
 func NewApplicationSchedulerQueue(height uint64, maxWorkPerBlock uint32, tasks []ApplicationScheduledTask) (ApplicationSchedulerQueue, error) {
 	queue := ApplicationSchedulerQueue{
 		ZoneID:          ZoneIDApplication,
@@ -299,6 +401,50 @@ func NewApplicationSchedulerQueue(height uint64, maxWorkPerBlock uint32, tasks [
 		Tasks:           cloneApplicationScheduledTasks(tasks),
 	}
 	return queue, queue.Validate()
+}
+
+func EmitApplicationAsyncOutput(queues ZoneMessageQueues, output ApplicationAsyncOutput) (ZoneMessageQueues, ApplicationExecutionReceipt, error) {
+	if err := output.ValidateFormat(); err != nil {
+		return ZoneMessageQueues{}, ApplicationExecutionReceipt{}, err
+	}
+	if queues.ZoneID != ZoneIDApplication {
+		return ZoneMessageQueues{}, ApplicationExecutionReceipt{}, errors.New("application async output queue route mismatch")
+	}
+	output.OutputID = ComputeApplicationAsyncOutputID(output)
+	output.MessageHash = ComputeApplicationAsyncOutputHash(output)
+	if err := output.ValidateHash(); err != nil {
+		return ZoneMessageQueues{}, ApplicationExecutionReceipt{}, err
+	}
+	msg := ZoneMessage{
+		ZoneID:      ZoneIDApplication,
+		MessageType: "application.async_output",
+		Source:      ApplicationOutboxPrefix,
+		Destination: string(output.DestinationZone) + ":" + output.Destination,
+		GasLimit:    output.GasLimit,
+		PayloadHash: output.MessageHash,
+		Sequence:    output.RetryNonce,
+	}
+	next, err := queues.EnqueueOutbox(msg)
+	if err != nil {
+		return ZoneMessageQueues{}, ApplicationExecutionReceipt{}, err
+	}
+	receipt, err := NewApplicationExecutionReceipt(ApplicationExecutionReceipt{
+		ZoneID:         ZoneIDApplication,
+		Height:         output.CreatedHeight,
+		ExecutionID:    output.OutputID,
+		TaskID:         "async-output",
+		WorkflowID:     output.WorkflowID,
+		AppID:          output.AppID,
+		Status:         ApplicationTaskExecuted,
+		GasUsed:        output.GasLimit,
+		OutputHash:     output.MessageHash,
+		OutboxMessages: 1,
+		Sequence:       output.RetryNonce,
+	})
+	if err != nil {
+		return ZoneMessageQueues{}, ApplicationExecutionReceipt{}, err
+	}
+	return next, receipt, nil
 }
 
 func ExecuteApplicationScheduledTasks(queue ApplicationSchedulerQueue, height uint64, limit ApplicationWorkLimit) (ApplicationSchedulerQueue, []ApplicationScheduledTask, error) {
@@ -533,6 +679,7 @@ func BuildApplicationZoneRootFromState(height uint64, state ApplicationZoneState
 		ProofRoot:      proofRoot,
 		StateRoot:      ComputeApplicationZoneStateRoot(normalized),
 	}
+	roots.QueueRoot = ComputeApplicationQueueRoot(queues)
 	return BuildApplicationZoneRoot(roots)
 }
 
@@ -794,6 +941,125 @@ func (r ApplicationExecutionReceipt) ZoneReceipt() (ZoneReceipt, error) {
 	})
 }
 
+func (b ApplicationRuntimeBoundary) ValidateHash() error {
+	if b.ZoneID != ZoneIDApplication {
+		return errors.New("application runtime boundary must use APPLICATION_ZONE")
+	}
+	if err := validateRuntimeToken("application runtime id", b.RuntimeID, MaxZoneEndpointLength); err != nil {
+		return err
+	}
+	if b.CrossZoneEffectMechanism != "zone-messages-only" {
+		return errors.New("application runtime boundary must use zone messages for cross-zone effects")
+	}
+	if len(b.AllowedStatePrefixes) == 0 {
+		return errors.New("application runtime boundary requires state prefixes")
+	}
+	var previous string
+	for i, prefix := range b.AllowedStatePrefixes {
+		if err := validateRuntimeToken("application runtime boundary prefix", prefix, MaxZoneNamespaceLength); err != nil {
+			return err
+		}
+		if i > 0 && previous >= prefix {
+			return errors.New("application runtime boundary prefixes must be sorted canonically")
+		}
+		previous = prefix
+	}
+	if err := ValidateHash("application runtime boundary hash", b.BoundaryHash); err != nil {
+		return err
+	}
+	if b.BoundaryHash != ComputeApplicationRuntimeBoundaryHash(b) {
+		return errors.New("application runtime boundary hash mismatch")
+	}
+	return nil
+}
+
+func (r ApplicationShardRoute) ValidateHash() error {
+	if r.ZoneID != ZoneIDApplication {
+		return errors.New("application shard route must use APPLICATION_ZONE")
+	}
+	if r.LayoutEpoch == 0 || r.ShardCount == 0 {
+		return errors.New("application shard route requires layout epoch and shard count")
+	}
+	if r.ShardID >= r.ShardCount {
+		return errors.New("application shard route shard id out of range")
+	}
+	if !IsApplicationShardRoutingMode(r.RoutingMode) {
+		return fmt.Errorf("unknown application shard routing mode %q", r.RoutingMode)
+	}
+	if err := validateRuntimeToken("application shard route key", r.RouteKey, MaxZoneEndpointLength); err != nil {
+		return err
+	}
+	if err := validateRuntimeToken("application shard state key", r.StateKey, MaxZoneNamespaceLength); err != nil {
+		return err
+	}
+	if err := ValidateHash("application shard route hash", r.RouteHash); err != nil {
+		return err
+	}
+	if r.RouteHash != ComputeApplicationShardRouteHash(r) {
+		return errors.New("application shard route hash mismatch")
+	}
+	return nil
+}
+
+func (o ApplicationAsyncOutput) ValidateFormat() error {
+	if o.OutputID != "" {
+		if _, err := ApplicationOutboxKey(o.OutputID); err != nil {
+			return err
+		}
+	}
+	if _, err := ApplicationAppKey(o.AppID); err != nil {
+		return err
+	}
+	if _, err := ApplicationWorkflowKey(o.WorkflowID); err != nil {
+		return err
+	}
+	if err := ValidateZoneID(o.DestinationZone); err != nil {
+		return err
+	}
+	if err := validateRuntimeToken("application async output destination", o.Destination, MaxZoneEndpointLength); err != nil {
+		return err
+	}
+	if err := ValidateHash("application async output payload hash", o.PayloadHash); err != nil {
+		return err
+	}
+	if o.GasLimit == 0 || o.RetryNonce == 0 || o.CreatedHeight == 0 {
+		return errors.New("application async output gas, retry nonce, and height must be positive")
+	}
+	if o.MessageHash != "" {
+		return ValidateHash("application async output hash", o.MessageHash)
+	}
+	return nil
+}
+
+func (o ApplicationAsyncOutput) ValidateHash() error {
+	if err := o.ValidateFormat(); err != nil {
+		return err
+	}
+	if o.OutputID != ComputeApplicationAsyncOutputID(o) {
+		return errors.New("application async output id mismatch")
+	}
+	if o.MessageHash != ComputeApplicationAsyncOutputHash(o) {
+		return errors.New("application async output hash mismatch")
+	}
+	return nil
+}
+
+func (p ApplicationProofRootExport) Validate() error {
+	if p.ZoneID != ZoneIDApplication {
+		return errors.New("application proof root export must use APPLICATION_ZONE")
+	}
+	if p.Height == 0 {
+		return errors.New("application proof root export height must be positive")
+	}
+	if !IsApplicationProofRootType(p.RootType) {
+		return fmt.Errorf("unknown application proof root type %q", p.RootType)
+	}
+	if err := ValidateHash("application proof root export hash", p.RootHash); err != nil {
+		return err
+	}
+	return validateRuntimeToken("application proof root export source", p.Source, MaxZoneNamespaceLength)
+}
+
 func (r ApplicationZoneRoots) Validate() error {
 	if r.Height == 0 {
 		return errors.New("application zone root height must be positive")
@@ -808,6 +1074,7 @@ func (r ApplicationZoneRoots) Validate() error {
 		{name: "application automation root", value: r.AutomationRoot},
 		{name: "application permission root", value: r.PermissionRoot},
 		{name: "application receipt root", value: r.ReceiptRoot},
+		{name: "application queue root", value: r.QueueRoot},
 		{name: "application inbox root", value: r.InboxRoot},
 		{name: "application outbox root", value: r.OutboxRoot},
 		{name: "application execution root", value: r.ExecutionRoot},
@@ -821,6 +1088,39 @@ func (r ApplicationZoneRoots) Validate() error {
 		return ValidateHash("application state root", r.StateRoot)
 	}
 	return nil
+}
+
+func ComputeApplicationRuntimeBoundaryHash(boundary ApplicationRuntimeBoundary) string {
+	prefixes := append([]string(nil), boundary.AllowedStatePrefixes...)
+	sort.Strings(prefixes)
+	parts := []string{"aetheris-application-runtime-boundary-v1", string(boundary.ZoneID), boundary.RuntimeID, boundary.CrossZoneEffectMechanism, fmt.Sprint(len(prefixes))}
+	parts = append(parts, prefixes...)
+	return hashRuntimeParts(parts...)
+}
+
+func ComputeApplicationShardRouteHash(route ApplicationShardRoute) string {
+	return hashRuntimeParts(
+		"aetheris-application-shard-route-v1",
+		string(route.ZoneID),
+		fmt.Sprint(route.LayoutEpoch),
+		fmt.Sprint(route.ShardCount),
+		fmt.Sprint(route.ShardID),
+		string(route.RoutingMode),
+		route.RouteKey,
+		route.StateKey,
+	)
+}
+
+func ComputeApplicationAsyncOutputID(output ApplicationAsyncOutput) string {
+	return hashRuntimeParts("aetheris-application-async-output-id-v1", output.AppID, output.WorkflowID, string(output.DestinationZone), output.Destination, fmt.Sprint(output.CreatedHeight), fmt.Sprint(output.RetryNonce))
+}
+
+func ComputeApplicationAsyncOutputHash(output ApplicationAsyncOutput) string {
+	outputID := output.OutputID
+	if outputID == "" {
+		outputID = ComputeApplicationAsyncOutputID(output)
+	}
+	return hashRuntimeParts("aetheris-application-async-output-v1", outputID, output.AppID, output.WorkflowID, string(output.DestinationZone), output.Destination, output.PayloadHash, fmt.Sprint(output.GasLimit), fmt.Sprint(output.RetryNonce), fmt.Sprint(output.CreatedHeight))
 }
 
 func ComputeApplicationReceiptHash(receipt ApplicationExecutionReceipt) string {
@@ -851,6 +1151,33 @@ func ComputeApplicationZoneStateRoot(state ApplicationZoneState) string {
 		ComputeApplicationPermissionRoot(normalized.Permissions),
 		ComputeApplicationReceiptRoot(normalized.Receipts),
 	)
+}
+
+func ComputeApplicationQueueRoot(queues ZoneMessageQueues) string {
+	return queues.QueueRoot()
+}
+
+func BuildApplicationProofRootExports(height uint64, roots ApplicationZoneRoots) ([]ApplicationProofRootExport, error) {
+	if roots.Height != height {
+		return nil, errors.New("application proof root export height mismatch")
+	}
+	if err := roots.Validate(); err != nil {
+		return nil, err
+	}
+	exports := []ApplicationProofRootExport{
+		{ZoneID: ZoneIDApplication, Height: height, RootType: ApplicationProofRootApp, RootHash: roots.AppRoot, Source: "application.zone.app"},
+		{ZoneID: ZoneIDApplication, Height: height, RootType: ApplicationProofRootWorkflow, RootHash: roots.WorkflowRoot, Source: "application.zone.workflow"},
+		{ZoneID: ZoneIDApplication, Height: height, RootType: ApplicationProofRootScheduler, RootHash: roots.SchedulerRoot, Source: "application.zone.scheduler"},
+		{ZoneID: ZoneIDApplication, Height: height, RootType: ApplicationProofRootQueue, RootHash: roots.QueueRoot, Source: "application.zone.queue"},
+		{ZoneID: ZoneIDApplication, Height: height, RootType: ApplicationProofRootPermission, RootHash: roots.PermissionRoot, Source: "application.zone.permission"},
+	}
+	sort.SliceStable(exports, func(i, j int) bool { return exports[i].RootType < exports[j].RootType })
+	for _, export := range exports {
+		if err := export.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	return exports, nil
 }
 
 func ComputeApplicationAppRoot(apps []ApplicationRecord) string {
@@ -971,7 +1298,25 @@ func IsApplicationMessageKind(kind ApplicationMessageKind) bool {
 
 func IsApplicationProofKind(kind ApplicationProofKind) bool {
 	switch kind {
-	case ApplicationProofApp, ApplicationProofWorkflow, ApplicationProofScheduledTask, ApplicationProofAutomation, ApplicationProofAppReceipts:
+	case ApplicationProofApp, ApplicationProofWorkflow, ApplicationProofScheduledTask, ApplicationProofAutomation, ApplicationProofAppReceipts, ApplicationProofAppQueue, ApplicationProofPermissions:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsApplicationShardRoutingMode(mode ApplicationShardRoutingMode) bool {
+	switch mode {
+	case ApplicationRouteAppID, ApplicationRouteWorkflowID, ApplicationRouteSchedulerBucket:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsApplicationProofRootType(rootType ApplicationProofRootType) bool {
+	switch rootType {
+	case ApplicationProofRootApp, ApplicationProofRootWorkflow, ApplicationProofRootScheduler, ApplicationProofRootQueue, ApplicationProofRootPermission:
 		return true
 	default:
 		return false
@@ -1051,6 +1396,12 @@ func upsertApplicationWorkflow(workflows []ApplicationWorkflowState, workflow Ap
 }
 
 func compareApplicationScheduledTasks(left, right ApplicationScheduledTask) int {
+	if left.Bucket < right.Bucket {
+		return -1
+	}
+	if left.Bucket > right.Bucket {
+		return 1
+	}
 	if left.ScheduledHeight < right.ScheduledHeight {
 		return -1
 	}
@@ -1063,10 +1414,10 @@ func compareApplicationScheduledTasks(left, right ApplicationScheduledTask) int 
 	if left.Priority < right.Priority {
 		return 1
 	}
-	if left.Bucket < right.Bucket {
+	if left.TaskID < right.TaskID {
 		return -1
 	}
-	if left.Bucket > right.Bucket {
+	if left.TaskID > right.TaskID {
 		return 1
 	}
 	if left.WorkflowID < right.WorkflowID {
@@ -1081,12 +1432,6 @@ func compareApplicationScheduledTasks(left, right ApplicationScheduledTask) int 
 	if left.AppID > right.AppID {
 		return 1
 	}
-	if left.TaskID < right.TaskID {
-		return -1
-	}
-	if left.TaskID > right.TaskID {
-		return 1
-	}
 	if left.Sequence < right.Sequence {
 		return -1
 	}
@@ -1094,4 +1439,35 @@ func compareApplicationScheduledTasks(left, right ApplicationScheduledTask) int 
 		return 1
 	}
 	return 0
+}
+
+func routeApplicationStateKey(mode ApplicationShardRoutingMode, routeKey string, stateKey string, shardCount uint32, layoutEpoch uint64) (ApplicationShardRoute, error) {
+	if shardCount == 0 {
+		return ApplicationShardRoute{}, errors.New("application shard count must be positive")
+	}
+	if layoutEpoch == 0 {
+		return ApplicationShardRoute{}, errors.New("application shard layout epoch must be positive")
+	}
+	if err := validateRuntimeToken("application shard route key", routeKey, MaxZoneEndpointLength); err != nil {
+		return ApplicationShardRoute{}, err
+	}
+	if err := validateRuntimeToken("application shard state key", stateKey, MaxZoneNamespaceLength); err != nil {
+		return ApplicationShardRoute{}, err
+	}
+	hash := hashRuntimeParts("aetheris-application-route-key-v1", string(mode), routeKey, fmt.Sprint(layoutEpoch))
+	bytes, err := hex.DecodeString(hash[:16])
+	if err != nil {
+		return ApplicationShardRoute{}, err
+	}
+	route := ApplicationShardRoute{
+		ZoneID:      ZoneIDApplication,
+		LayoutEpoch: layoutEpoch,
+		ShardCount:  shardCount,
+		ShardID:     uint32(binary.BigEndian.Uint64(bytes) % uint64(shardCount)),
+		RoutingMode: mode,
+		RouteKey:    routeKey,
+		StateKey:    stateKey,
+	}
+	route.RouteHash = ComputeApplicationShardRouteHash(route)
+	return route, route.ValidateHash()
 }
