@@ -9,6 +9,7 @@ import (
 const (
 	DefaultStreamParallelism = uint32(1)
 	MaxStreamParallelism     = uint32(64)
+	MinStreamChunkBytes      = uint64(256)
 )
 
 type StreamingPayloadType string
@@ -32,6 +33,16 @@ const (
 	StreamStateDraining StreamSessionState = "draining"
 	StreamStateClosed   StreamSessionState = "closed"
 	StreamStateFailed   StreamSessionState = "failed"
+)
+
+type StreamBackpressureSignal string
+
+const (
+	StreamSignalWindowUpdate StreamBackpressureSignal = "window_update"
+	StreamSignalPause        StreamBackpressureSignal = "pause"
+	StreamSignalResume       StreamBackpressureSignal = "resume"
+	StreamSignalSlowDown     StreamBackpressureSignal = "slow_down"
+	StreamSignalCancel       StreamBackpressureSignal = "cancel"
 )
 
 type StreamSession struct {
@@ -62,6 +73,56 @@ type StreamChunkPlan struct {
 	MaxInFlightChunks uint32
 	Parallelism       uint32
 	Backpressure      bool
+}
+
+type StreamBackpressureFrame struct {
+	StreamID              string
+	Signal                StreamBackpressureSignal
+	FlowControlWindow     uint64
+	CumulativeAcknowledge uint64
+	SuggestedChunkSize    uint64
+	Reason                string
+}
+
+type StreamAdaptiveChunkInputs struct {
+	ObservedThroughputBps uint64
+	LossRateBps           uint32
+	PeerScoreBps          uint32
+	PayloadPriority       uint32
+	StreamClass           QoSClass
+}
+
+type StreamFetchRequest struct {
+	StreamID     string
+	ChunkIndex   uint32
+	RangeStart   uint64
+	RangeEnd     uint64
+	ChunkSize    uint64
+	AssignedPeer string
+}
+
+type StreamParallelFetchPlan struct {
+	StreamID       string
+	ChunkSize      uint64
+	PayloadBytes   uint64
+	TotalChunks    uint32
+	Requests       []StreamFetchRequest
+	RecoveryResume bool
+}
+
+type StreamMetrics struct {
+	StreamID           string
+	PayloadType        StreamingPayloadType
+	State              StreamSessionState
+	BytesSent          uint64
+	BytesAcknowledged  uint64
+	InFlightBytes      uint64
+	AvailableWindow    uint64
+	ThroughputBytesBps uint64
+	StallCount         uint64
+	BackpressureEvents uint64
+	BackpressureActive bool
+	CompletionBps      uint32
 }
 
 func NewStreamSession(stream StreamSession) (StreamSession, error) {
@@ -174,9 +235,6 @@ func ComputeStreamSessionID(stream StreamSession) string {
 		stream.SessionID,
 		string(stream.PayloadType),
 		fmt.Sprintf("%d", stream.Priority),
-		fmt.Sprintf("%d", stream.FlowControlWindow),
-		fmt.Sprintf("%d", stream.ChunkSize),
-		fmt.Sprintf("%d", stream.Parallelism),
 	)
 }
 
@@ -274,6 +332,75 @@ func AcknowledgeStreamBytes(stream StreamSession, acknowledged uint64) (StreamSe
 	return stream, StreamWindow(stream), nil
 }
 
+func ApplyStreamBackpressure(stream StreamSession, frame StreamBackpressureFrame) (StreamSession, StreamWindowUpdate, error) {
+	stream = stream.Normalize()
+	frame.StreamID = normalizeHashText(frame.StreamID)
+	if err := stream.Validate(); err != nil {
+		return StreamSession{}, StreamWindowUpdate{}, err
+	}
+	if frame.StreamID != stream.StreamID {
+		return StreamSession{}, StreamWindowUpdate{}, errors.New("networking stream backpressure frame id mismatch")
+	}
+	if frame.CumulativeAcknowledge > 0 || frame.Signal == StreamSignalWindowUpdate {
+		var err error
+		stream, _, err = AcknowledgeStreamBytes(stream, frame.CumulativeAcknowledge)
+		if err != nil {
+			return StreamSession{}, StreamWindowUpdate{}, err
+		}
+	}
+	switch frame.Signal {
+	case StreamSignalWindowUpdate:
+		if frame.FlowControlWindow == 0 || frame.FlowControlWindow > MaxStreamMessageBytes*2 {
+			return StreamSession{}, StreamWindowUpdate{}, errors.New("networking stream window update out of bounds")
+		}
+		if frame.FlowControlWindow < stream.ChunkSize {
+			return StreamSession{}, StreamWindowUpdate{}, errors.New("networking stream window update cannot be smaller than chunk size")
+		}
+		inFlight := stream.BytesSent - stream.BytesAcknowledged
+		if frame.FlowControlWindow < inFlight {
+			return StreamSession{}, StreamWindowUpdate{}, errors.New("networking stream window update below in-flight bytes")
+		}
+		stream.FlowControlWindow = frame.FlowControlWindow
+	case StreamSignalPause:
+		var err error
+		stream, err = PauseStreamSession(stream)
+		if err != nil {
+			return StreamSession{}, StreamWindowUpdate{}, err
+		}
+	case StreamSignalResume:
+		var err error
+		stream, err = ResumeStreamSession(stream)
+		if err != nil {
+			return StreamSession{}, StreamWindowUpdate{}, err
+		}
+	case StreamSignalSlowDown:
+		next := frame.SuggestedChunkSize
+		if next == 0 || next >= stream.ChunkSize {
+			next = stream.ChunkSize / 2
+		}
+		if next < MinStreamChunkBytes {
+			next = MinStreamChunkBytes
+		}
+		var err error
+		stream, err = ApplyStreamChunkSize(stream, next)
+		if err != nil {
+			return StreamSession{}, StreamWindowUpdate{}, err
+		}
+	case StreamSignalCancel:
+		var err error
+		stream, err = FailStreamSession(stream)
+		if err != nil {
+			return StreamSession{}, StreamWindowUpdate{}, err
+		}
+	default:
+		return StreamSession{}, StreamWindowUpdate{}, fmt.Errorf("unknown networking stream backpressure signal %q", frame.Signal)
+	}
+	if err := stream.Validate(); err != nil {
+		return StreamSession{}, StreamWindowUpdate{}, err
+	}
+	return stream, StreamWindow(stream), nil
+}
+
 func StreamWindow(stream StreamSession) StreamWindowUpdate {
 	stream = stream.Normalize()
 	available := StreamAvailableWindow(stream)
@@ -282,7 +409,7 @@ func StreamWindow(stream StreamSession) StreamWindowUpdate {
 		BytesSent:         stream.BytesSent,
 		BytesAcknowledged: stream.BytesAcknowledged,
 		AvailableWindow:   available,
-		Backpressure:      available == 0,
+		Backpressure:      available == 0 || stream.State == StreamStatePaused,
 	}
 }
 
@@ -337,6 +464,172 @@ func PlanStreamChunks(stream StreamSession, remainingBytes uint64) (StreamChunkP
 		Parallelism:       stream.Parallelism,
 		Backpressure:      false,
 	}, nil
+}
+
+func RecommendStreamChunkSize(stream StreamSession, inputs StreamAdaptiveChunkInputs) (uint64, error) {
+	stream = stream.Normalize()
+	if err := stream.Validate(); err != nil {
+		return 0, err
+	}
+	if inputs.PeerScoreBps > BasisPoints || inputs.LossRateBps > BasisPoints {
+		return 0, errors.New("networking stream adaptive bps inputs out of bounds")
+	}
+	if inputs.PayloadPriority > MaxRL2Priority {
+		return 0, fmt.Errorf("networking stream adaptive payload priority must be <= %d", MaxRL2Priority)
+	}
+	if inputs.StreamClass != "" {
+		if _, found := findQoSClassPolicy(DefaultQoSClassPolicies(), inputs.StreamClass); !found {
+			return 0, fmt.Errorf("unknown networking stream adaptive class %q", inputs.StreamClass)
+		}
+	}
+	next := stream.ChunkSize
+	switch {
+	case inputs.LossRateBps >= 500 || inputs.PeerScoreBps < 5_000:
+		next = stream.ChunkSize / 2
+	case inputs.ObservedThroughputBps >= 16<<20 && inputs.LossRateBps <= 100 && inputs.PeerScoreBps >= 8_000:
+		next = stream.ChunkSize * 2
+	case inputs.PayloadPriority <= PriorityForChannel(ChannelExecution) && inputs.LossRateBps <= 250 && inputs.PeerScoreBps >= 7_000:
+		next = stream.ChunkSize + stream.ChunkSize/2
+	}
+	if inputs.StreamClass == QoSClassBulkData && inputs.LossRateBps > 0 {
+		next = minStreamingUint64(next, stream.ChunkSize)
+	}
+	if next < MinStreamChunkBytes {
+		next = MinStreamChunkBytes
+	}
+	limit := minStreamingUint64(MaxChunkBytes, stream.FlowControlWindow)
+	if next > limit {
+		next = limit
+	}
+	return next, nil
+}
+
+func ApplyStreamChunkSize(stream StreamSession, chunkSize uint64) (StreamSession, error) {
+	stream = stream.Normalize()
+	if err := stream.Validate(); err != nil {
+		return StreamSession{}, err
+	}
+	if stream.BytesSent != stream.BytesAcknowledged {
+		return StreamSession{}, errors.New("networking stream chunk size can change only at chunk boundary")
+	}
+	if chunkSize < MinStreamChunkBytes || chunkSize > MaxChunkBytes {
+		return StreamSession{}, fmt.Errorf("networking stream chunk size must be between %d and %d", MinStreamChunkBytes, uint64(MaxChunkBytes))
+	}
+	if chunkSize > stream.FlowControlWindow {
+		return StreamSession{}, errors.New("networking stream chunk size exceeds flow control window")
+	}
+	stream.ChunkSize = chunkSize
+	return stream, stream.Validate()
+}
+
+func PlanParallelStreamFetch(stream StreamSession, payloadBytes uint64, verifiedBitmap []bool, peers []string) (StreamParallelFetchPlan, error) {
+	stream = stream.Normalize()
+	if err := stream.Validate(); err != nil {
+		return StreamParallelFetchPlan{}, err
+	}
+	if stream.State != StreamStateActive && stream.State != StreamStateDraining {
+		return StreamParallelFetchPlan{}, errors.New("networking stream session must be active or draining to fetch chunks")
+	}
+	if payloadBytes == 0 {
+		return StreamParallelFetchPlan{}, errors.New("networking stream fetch payload bytes are required")
+	}
+	if len(peers) == 0 {
+		return StreamParallelFetchPlan{}, errors.New("networking stream fetch peers are required")
+	}
+	totalChunks64 := (payloadBytes + stream.ChunkSize - 1) / stream.ChunkSize
+	if totalChunks64 == 0 || totalChunks64 > MaxPayloadChunks {
+		return StreamParallelFetchPlan{}, fmt.Errorf("networking stream fetch chunks must be between 1 and %d", MaxPayloadChunks)
+	}
+	totalChunks := uint32(totalChunks64)
+	if len(verifiedBitmap) > int(totalChunks) {
+		return StreamParallelFetchPlan{}, errors.New("networking stream verified bitmap exceeds chunk count")
+	}
+	requests := make([]StreamFetchRequest, 0, stream.Parallelism)
+	limit := int(stream.Parallelism)
+	for index := uint32(0); index < totalChunks && len(requests) < limit; index++ {
+		if int(index) < len(verifiedBitmap) && verifiedBitmap[index] {
+			continue
+		}
+		start := uint64(index) * stream.ChunkSize
+		end := start + stream.ChunkSize
+		if end > payloadBytes {
+			end = payloadBytes
+		}
+		requests = append(requests, StreamFetchRequest{
+			StreamID:     stream.StreamID,
+			ChunkIndex:   index,
+			RangeStart:   start,
+			RangeEnd:     end,
+			ChunkSize:    end - start,
+			AssignedPeer: peers[len(requests)%len(peers)],
+		})
+	}
+	return StreamParallelFetchPlan{
+		StreamID:       stream.StreamID,
+		ChunkSize:      stream.ChunkSize,
+		PayloadBytes:   payloadBytes,
+		TotalChunks:    totalChunks,
+		Requests:       requests,
+		RecoveryResume: len(verifiedBitmap) > 0,
+	}, nil
+}
+
+func SortStreamPriorityLanes(streams []StreamSession) ([]StreamSession, error) {
+	out := make([]StreamSession, len(streams))
+	for i, stream := range streams {
+		stream = stream.Normalize()
+		if err := stream.Validate(); err != nil {
+			return nil, err
+		}
+		out[i] = stream
+	}
+	sortStreamingSessions(out)
+	return out, nil
+}
+
+func ComputeStreamMetrics(stream StreamSession, elapsedMillis, stallCount, backpressureEvents uint64) (StreamMetrics, error) {
+	stream = stream.Normalize()
+	if err := stream.Validate(); err != nil {
+		return StreamMetrics{}, err
+	}
+	inFlight := stream.BytesSent - stream.BytesAcknowledged
+	throughput := uint64(0)
+	if elapsedMillis > 0 {
+		throughput = stream.BytesAcknowledged * 1_000 / elapsedMillis
+	}
+	completion := uint32(0)
+	if stream.BytesSent > 0 {
+		completion = uint32(stream.BytesAcknowledged * uint64(BasisPoints) / stream.BytesSent)
+	}
+	window := StreamWindow(stream)
+	return StreamMetrics{
+		StreamID:           stream.StreamID,
+		PayloadType:        stream.PayloadType,
+		State:              stream.State,
+		BytesSent:          stream.BytesSent,
+		BytesAcknowledged:  stream.BytesAcknowledged,
+		InFlightBytes:      inFlight,
+		AvailableWindow:    window.AvailableWindow,
+		ThroughputBytesBps: throughput,
+		StallCount:         stallCount,
+		BackpressureEvents: backpressureEvents,
+		BackpressureActive: window.Backpressure || stream.State == StreamStatePaused,
+		CompletionBps:      completion,
+	}, nil
+}
+
+func StreamReassemblyRoot(payload []byte) (string, error) {
+	if len(payload) == 0 {
+		return "", errors.New("networking stream reassembly payload is required")
+	}
+	return hashBytes("aetheris-networking-payload-v1", payload), nil
+}
+
+func VerifyStreamChunkHash(chunk PayloadChunk) error {
+	if chunk.ChunkHash != ComputeChunkHash(chunk) {
+		return errors.New("networking stream chunk hash mismatch")
+	}
+	return nil
 }
 
 func IsStreamingPayloadType(payloadType StreamingPayloadType) bool {
@@ -407,6 +700,41 @@ func StreamingPayloadChannel(payloadType StreamingPayloadType) (ChannelClass, er
 
 func normalizeStreamingState(state StreamSessionState) StreamSessionState {
 	return StreamSessionState(strings.ToLower(strings.TrimSpace(string(state))))
+}
+
+func streamPayloadOrder(payloadType StreamingPayloadType) uint32 {
+	channel, err := StreamingPayloadChannel(payloadType)
+	if err != nil {
+		return MaxRL2Priority + 1
+	}
+	return PriorityForChannel(channel)
+}
+
+func sortStreamingSessions(streams []StreamSession) {
+	for i := 1; i < len(streams); i++ {
+		current := streams[i]
+		j := i - 1
+		for j >= 0 && streamLess(current, streams[j]) {
+			streams[j+1] = streams[j]
+			j--
+		}
+		streams[j+1] = current
+	}
+}
+
+func streamLess(left, right StreamSession) bool {
+	leftOrder := streamPayloadOrder(left.PayloadType)
+	rightOrder := streamPayloadOrder(right.PayloadType)
+	if leftOrder != rightOrder {
+		return leftOrder < rightOrder
+	}
+	if left.Priority != right.Priority {
+		return left.Priority < right.Priority
+	}
+	if left.BytesSent-left.BytesAcknowledged != right.BytesSent-right.BytesAcknowledged {
+		return left.BytesSent-left.BytesAcknowledged < right.BytesSent-right.BytesAcknowledged
+	}
+	return left.StreamID < right.StreamID
 }
 
 func minStreamingUint64(left, right uint64) uint64 {

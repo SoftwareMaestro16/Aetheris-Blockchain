@@ -2748,6 +2748,180 @@ func TestStreamPayloadTypeMapsToRL2AndRejectsInvalidBounds(t *testing.T) {
 	require.ErrorContains(t, err, "opening")
 }
 
+func TestStreamBackpressureSignalsControlWindowAndState(t *testing.T) {
+	stream, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("backpressure-parent"),
+		PayloadType:       StreamingPayloadExecutionReceipts,
+		Priority:          PriorityForChannel(ChannelExecution),
+		FlowControlWindow: 2048,
+		ChunkSize:         512,
+		Parallelism:       2,
+	})
+	require.NoError(t, err)
+	stream, err = OpenStreamSession(stream)
+	require.NoError(t, err)
+	stream, _, err = RecordStreamBytesSent(stream, 1024)
+	require.NoError(t, err)
+
+	_, _, err = ApplyStreamBackpressure(stream, StreamBackpressureFrame{
+		StreamID:          stream.StreamID,
+		Signal:            StreamSignalWindowUpdate,
+		FlowControlWindow: 512,
+	})
+	require.ErrorContains(t, err, "below in-flight")
+
+	stream, window, err := ApplyStreamBackpressure(stream, StreamBackpressureFrame{
+		StreamID:              stream.StreamID,
+		Signal:                StreamSignalWindowUpdate,
+		FlowControlWindow:     1536,
+		CumulativeAcknowledge: 512,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1024), window.AvailableWindow)
+	require.Equal(t, uint64(512), stream.BytesAcknowledged)
+
+	stream, window, err = ApplyStreamBackpressure(stream, StreamBackpressureFrame{
+		StreamID: stream.StreamID,
+		Signal:   StreamSignalPause,
+	})
+	require.NoError(t, err)
+	require.Equal(t, StreamStatePaused, stream.State)
+	require.True(t, window.Backpressure)
+
+	ordered, err := SortStreamPriorityLanes([]StreamSession{
+		mustTestStreamSession(t, StreamingPayloadStorageObject, PriorityForChannel(ChannelData)),
+		stream,
+		mustTestStreamSession(t, StreamingPayloadBlockPropagation, PriorityForChannel(ChannelBlock)),
+	})
+	require.NoError(t, err)
+	require.Equal(t, StreamingPayloadBlockPropagation, ordered[0].PayloadType)
+	require.Equal(t, StreamingPayloadExecutionReceipts, ordered[1].PayloadType)
+	require.Equal(t, StreamingPayloadStorageObject, ordered[2].PayloadType)
+
+	stream, _, err = ApplyStreamBackpressure(stream, StreamBackpressureFrame{
+		StreamID: stream.StreamID,
+		Signal:   StreamSignalResume,
+	})
+	require.NoError(t, err)
+	require.Equal(t, StreamStateActive, stream.State)
+
+	stream, _, err = AcknowledgeStreamBytes(stream, stream.BytesSent)
+	require.NoError(t, err)
+	stream, window, err = ApplyStreamBackpressure(stream, StreamBackpressureFrame{
+		StreamID:           stream.StreamID,
+		Signal:             StreamSignalSlowDown,
+		SuggestedChunkSize: 256,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(256), stream.ChunkSize)
+	require.False(t, window.Backpressure)
+
+	stream, _, err = ApplyStreamBackpressure(stream, StreamBackpressureFrame{
+		StreamID: stream.StreamID,
+		Signal:   StreamSignalCancel,
+	})
+	require.NoError(t, err)
+	require.Equal(t, StreamStateFailed, stream.State)
+}
+
+func TestStreamAdaptiveChunkingAndMetricsRespectBoundaries(t *testing.T) {
+	stream, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("adaptive-stream-parent"),
+		PayloadType:       StreamingPayloadStateSync,
+		Priority:          PriorityForChannel(ChannelStateSync),
+		FlowControlWindow: 4096,
+		ChunkSize:         512,
+		Parallelism:       4,
+	})
+	require.NoError(t, err)
+	stream, err = OpenStreamSession(stream)
+	require.NoError(t, err)
+
+	next, err := RecommendStreamChunkSize(stream, StreamAdaptiveChunkInputs{
+		ObservedThroughputBps: 32 << 20,
+		LossRateBps:           50,
+		PeerScoreBps:          9_000,
+		PayloadPriority:       stream.Priority,
+		StreamClass:           QoSClassStateSync,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1024), next)
+	stream, err = ApplyStreamChunkSize(stream, next)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1024), stream.ChunkSize)
+
+	stream, _, err = RecordStreamBytesSent(stream, 1024)
+	require.NoError(t, err)
+	stream, _, err = AcknowledgeStreamBytes(stream, 512)
+	require.NoError(t, err)
+	_, err = ApplyStreamChunkSize(stream, 512)
+	require.ErrorContains(t, err, "chunk boundary")
+
+	metrics, err := ComputeStreamMetrics(stream, 2_000, 3, 1)
+	require.NoError(t, err)
+	require.Equal(t, uint64(256), metrics.ThroughputBytesBps)
+	require.Equal(t, uint32(5_000), metrics.CompletionBps)
+	require.Equal(t, uint64(512), metrics.InFlightBytes)
+	require.Equal(t, uint64(3), metrics.StallCount)
+
+	stream, _, err = AcknowledgeStreamBytes(stream, stream.BytesSent)
+	require.NoError(t, err)
+	next, err = RecommendStreamChunkSize(stream, StreamAdaptiveChunkInputs{
+		ObservedThroughputBps: 1 << 20,
+		LossRateBps:           800,
+		PeerScoreBps:          4_500,
+		PayloadPriority:       stream.Priority,
+		StreamClass:           QoSClassStateSync,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(512), next)
+}
+
+func TestStreamPartialRecoveryFetchAndStableReassemblyRoot(t *testing.T) {
+	payload := bytes.Repeat([]byte("stream-payload"), 128)
+	rootA, err := StreamReassemblyRoot(payload)
+	require.NoError(t, err)
+	chunksA, err := ChunkPayload(payload, 256)
+	require.NoError(t, err)
+	chunksB, err := ChunkPayload(payload, 512)
+	require.NoError(t, err)
+	rootB, err := StreamReassemblyRoot(payload)
+	require.NoError(t, err)
+	require.Equal(t, rootA, rootB)
+	require.Equal(t, chunksA[0].PayloadHash, chunksB[0].PayloadHash)
+	require.NoError(t, VerifyStreamChunkHash(chunksA[0]))
+
+	corrupt := chunksA[0]
+	corrupt.Bytes = cloneBytes(corrupt.Bytes)
+	corrupt.Bytes[0] ^= 0xff
+	require.ErrorContains(t, VerifyStreamChunkHash(corrupt), "chunk hash")
+
+	stream, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("partial-recovery-parent"),
+		PayloadType:       StreamingPayloadStorageObject,
+		Priority:          PriorityForChannel(ChannelData),
+		FlowControlWindow: 2048,
+		ChunkSize:         256,
+		Parallelism:       3,
+	})
+	require.NoError(t, err)
+	stream, err = OpenStreamSession(stream)
+	require.NoError(t, err)
+
+	verified := []bool{true, false, true, false, false, false, false}
+	plan, err := PlanParallelStreamFetch(stream, uint64(len(payload)), verified, []string{"peer-a", "peer-b"})
+	require.NoError(t, err)
+	require.True(t, plan.RecoveryResume)
+	require.Equal(t, uint32(7), plan.TotalChunks)
+	require.Len(t, plan.Requests, 3)
+	require.Equal(t, uint32(1), plan.Requests[0].ChunkIndex)
+	require.Equal(t, "peer-a", plan.Requests[0].AssignedPeer)
+	require.Equal(t, uint32(3), plan.Requests[1].ChunkIndex)
+	require.Equal(t, "peer-b", plan.Requests[1].AssignedPeer)
+	require.Equal(t, uint32(4), plan.Requests[2].ChunkIndex)
+	require.Equal(t, "peer-a", plan.Requests[2].AssignedPeer)
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
@@ -3081,6 +3255,23 @@ func testSessionRequest(local, remote NodeRecord, openedHeight, expiresHeight ui
 		ExpiresHeight:               expiresHeight,
 		Nonce:                       []byte(nonce),
 	}
+}
+
+func mustTestStreamSession(t *testing.T, payloadType StreamingPayloadType, priority uint32) StreamSession {
+	t.Helper()
+
+	stream, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("priority-stream", string(payloadType)),
+		PayloadType:       payloadType,
+		Priority:          priority,
+		FlowControlWindow: 2048,
+		ChunkSize:         512,
+		Parallelism:       1,
+	})
+	require.NoError(t, err)
+	stream, err = OpenStreamSession(stream)
+	require.NoError(t, err)
+	return stream
 }
 
 func signedNodeRecord(t *testing.T, seed byte, salt []byte, expiresHeight uint64, roles ...NodeRole) NodeRecord {
