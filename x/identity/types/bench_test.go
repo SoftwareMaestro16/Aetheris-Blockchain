@@ -109,6 +109,140 @@ func BenchmarkIdentityBlockSTMBatchResolverUpdates(b *testing.B) {
 	}
 }
 
+func BenchmarkIdentityResolverUpdateWritePath(b *testing.B) {
+	state := benchmarkIdentityState(b, benchmarkIdentityDomainCount)
+	name := benchmarkIdentityName(0)
+	nameHash, err := DomainRecordV2NameHash(name)
+	if err != nil {
+		b.Fatal(err)
+	}
+	resolver, found := findResolver(state, name)
+	if !found {
+		b.Fatal("benchmark resolver missing")
+	}
+	msg := MsgBatchUpdateResolversV2{
+		Auth: benchmarkIdentityTxAuth(IdentitySignerScopeBatchAdmin, 1),
+		Updates: []ResolverBatchUpdateV2{{
+			Name:                  name,
+			NameHash:              nameHash,
+			Patch:                 ResolverPatch{Primary: benchmarkIdentityAddress(60_000)},
+			ExpectedRecordVersion: ResolverRecordVersionV2(resolver),
+			RecordTTL:             30,
+		}},
+	}
+	msg.Auth.Signer = benchmarkIdentityAddress(1)
+	options := IdentityBatchResolverUpdateOptionsV2{
+		Mode:         IdentityBatchFailureAtomicV2,
+		Height:       benchmarkIdentityResolveHeight + 1,
+		GasPerUpdate: MinIdentityBatchResolverUpdateGasV2,
+		GasLimit:     MinIdentityBatchResolverUpdateGasV2,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		next, response, err := ExecuteBatchResolverUpdatesV2(state, msg, options)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if response.Successes != 1 || len(next.Resolvers) != len(state.Resolvers) {
+			b.Fatal("resolver update write path failed")
+		}
+	}
+}
+
+func BenchmarkIdentityBlockSTMBatchRenewalsPerBlock(b *testing.B) {
+	msg := benchmarkBatchRenewDomainsMsg(b, MaxIdentityTxBatchRenewDomainsV2)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plan, err := IdentityBlockSTMAccessSetV2(msg, benchmarkIdentityResolveHeight)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(plan.NameHashes) != len(msg.Renewals) || len(plan.AccessSet.Writes) != len(msg.Renewals) {
+			b.Fatal("batch renewal access set is not disjoint")
+		}
+	}
+}
+
+func BenchmarkIdentityBlockSTMMixedConflictClassification(b *testing.B) {
+	aliceHash, err := DomainRecordV2NameHash("alice.aet")
+	if err != nil {
+		b.Fatal(err)
+	}
+	bobHash, err := DomainRecordV2NameHash("bob.aet")
+	if err != nil {
+		b.Fatal(err)
+	}
+	plans := []IdentityBlockSTMPlanV2{
+		benchmarkBlockSTMPlan(b, MsgUpdateResolverRecordV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeResolverUpdate, 1), Name: "alice.aet", NameHash: aliceHash, Patch: ResolverPatch{Primary: benchmarkIdentityAddress(1)}, ExpectedRecordVersion: 1, RecordTTL: 10}),
+		benchmarkBlockSTMPlan(b, MsgTransferDomainV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeOwner, 2), Name: "alice.aet", NameHash: aliceHash, NewOwner: benchmarkIdentityAddress(2), ExpectedRecordVersion: 1}),
+		benchmarkBlockSTMPlan(b, MsgRenewDomainV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeOwner, 3), Name: "bob.aet", NameHash: bobHash, ExpectedRecordVersion: 1}),
+		benchmarkBlockSTMPlan(b, MsgRevealBidV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeAuctionBidder, 4), AuctionID: identityHash("auction"), NameHash: aliceHash, Bid: 100, Salt: "salt", CommitmentHash: identityHash("commit")}),
+		benchmarkBlockSTMPlan(b, MsgFinalizeAuctionV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeAuctionAdmin, 5), AuctionID: identityHash("auction"), NameHash: aliceHash, ExpectedAuctionVersion: 1}),
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		class := IdentityBlockSTMConflictClassifyV2(plans[i%len(plans)], plans[(i+1)%len(plans)])
+		if class == "" {
+			b.Fatal("empty BlockSTM conflict class")
+		}
+	}
+}
+
+func BenchmarkIdentityRegistrationsPerBlock(b *testing.B) {
+	names := benchmarkIdentityNames(MaxIdentityTxBatchRenewDomainsV2)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		name := names[i%len(names)]
+		nameHash, err := DomainRecordV2NameHash(name)
+		if err != nil {
+			b.Fatal(err)
+		}
+		msg := MsgRegisterDirectV2{
+			Auth:                  benchmarkIdentityTxAuth(IdentitySignerScopeRegistration, uint64(i+1)),
+			Name:                  name,
+			NameHash:              nameHash,
+			Owner:                 benchmarkIdentityAddress(i + 50_000),
+			ExpectedRecordVersion: 1,
+		}
+		plan, err := IdentityBlockSTMAccessSetV2(msg, benchmarkIdentityResolveHeight)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(plan.AccessSet.Writes) == 0 || len(plan.NameHashes) != 1 {
+			b.Fatal("registration access set is empty")
+		}
+	}
+}
+
+func BenchmarkIdentityAdaptiveSyncRecoveryLargeState(b *testing.B) {
+	state := benchmarkIdentityState(b, benchmarkIdentityDomainCount)
+	snapshot, err := BuildIdentityAdaptiveSyncSnapshotV2(state, nil, benchmarkIdentityResolveHeight)
+	if err != nil {
+		b.Fatal(err)
+	}
+	probes := []string{benchmarkIdentityName(0), benchmarkIdentityName(benchmarkIdentityDomainCount - 1)}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		restored, err := RestoreIdentityAdaptiveSyncSnapshotV2(snapshot, probes)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(restored.State.Domains) != benchmarkIdentityDomainCount {
+			b.Fatal("adaptive sync recovery changed domain count")
+		}
+	}
+}
+
 func BenchmarkIdentityResolverUpdateSpamGasCostModelV2(b *testing.B) {
 	params := DefaultIdentitySpamCostParamsV2()
 	request := IdentitySpamCostRequestV2{
@@ -208,6 +342,33 @@ func benchmarkBatchResolverUpdateMsg(b *testing.B, count int) MsgBatchUpdateReso
 		}
 	}
 	return MsgBatchUpdateResolversV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeBatchAdmin, 1), Updates: updates}
+}
+
+func benchmarkBatchRenewDomainsMsg(b *testing.B, count int) MsgBatchRenewDomainsV2 {
+	b.Helper()
+	renewals := make([]RenewDomainBatchItemV2, count)
+	for i := range renewals {
+		name := benchmarkIdentityName(i)
+		nameHash, err := DomainRecordV2NameHash(name)
+		if err != nil {
+			b.Fatal(err)
+		}
+		renewals[i] = RenewDomainBatchItemV2{
+			Name:                  name,
+			NameHash:              nameHash,
+			ExpectedRecordVersion: 1,
+		}
+	}
+	return MsgBatchRenewDomainsV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeBatchAdmin, 2), Renewals: renewals}
+}
+
+func benchmarkBlockSTMPlan(b *testing.B, msg IdentityMsgV2) IdentityBlockSTMPlanV2 {
+	b.Helper()
+	plan, err := IdentityBlockSTMAccessSetV2(msg, benchmarkIdentityResolveHeight)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return plan
 }
 
 func benchmarkIdentityTxAuth(scope IdentitySignerScopeV2, nonce uint64) IdentityTxAuthV2 {

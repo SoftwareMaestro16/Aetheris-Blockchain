@@ -491,7 +491,7 @@ func validateIdentityCoverageTestReferencesV2(kind string, area string, tests []
 	sorted := append([]string(nil), tests...)
 	sort.Strings(sorted)
 	for i, test := range sorted {
-		if test == "" || !strings.Contains(test, "_test.go:Test") {
+		if test == "" || !identityCoverageReferenceHasSupportedFunctionV2(test) {
 			return fmt.Errorf("identity v2 %s test coverage invalid test reference %q", kind, test)
 		}
 		if test != tests[i] {
@@ -499,6 +499,281 @@ func validateIdentityCoverageTestReferencesV2(kind string, area string, tests []
 		}
 		if i > 0 && sorted[i-1] == test {
 			return fmt.Errorf("duplicate identity v2 %s test coverage reference %q", kind, test)
+		}
+	}
+	return nil
+}
+
+func identityCoverageReferenceHasSupportedFunctionV2(ref string) bool {
+	return strings.Contains(ref, "_test.go:Test") ||
+		strings.Contains(ref, "_test.go:Fuzz") ||
+		strings.Contains(ref, "_test.go:Benchmark")
+}
+
+type IdentityFuzzTestCoverageAreaV2 string
+
+const (
+	IdentityFuzzMalformedNamesV2              IdentityFuzzTestCoverageAreaV2 = "malformed_names"
+	IdentityFuzzBoundaryLengthNamesV2         IdentityFuzzTestCoverageAreaV2 = "boundary_length_names"
+	IdentityFuzzSpoofingPatternCandidatesV2   IdentityFuzzTestCoverageAreaV2 = "spoofing_pattern_candidates"
+	IdentityFuzzCommitmentPreimagesV2         IdentityFuzzTestCoverageAreaV2 = "commitment_preimages"
+	IdentityFuzzAuctionBidRevealOrderingV2    IdentityFuzzTestCoverageAreaV2 = "auction_bid_reveal_ordering"
+	IdentityFuzzResolverPayloadsV2            IdentityFuzzTestCoverageAreaV2 = "resolver_payloads"
+	IdentityFuzzInterfaceDescriptorSchemasV2  IdentityFuzzTestCoverageAreaV2 = "interface_descriptor_schemas"
+	IdentityFuzzDelegationPermissionCombosV2  IdentityFuzzTestCoverageAreaV2 = "delegation_permission_combinations"
+	IdentityFuzzRecursiveProofPathsV2         IdentityFuzzTestCoverageAreaV2 = "recursive_proof_paths"
+	IdentityFuzzReverseResolutionMismatchesV2 IdentityFuzzTestCoverageAreaV2 = "reverse_resolution_mismatches"
+	IdentityFuzzBatchUpdateOrderingV2         IdentityFuzzTestCoverageAreaV2 = "batch_update_ordering"
+)
+
+type IdentityRequiredFuzzTestCoverageV2 struct {
+	RequiredAreas []IdentityFuzzTestCoverageAreaV2
+	ExistingTests map[IdentityFuzzTestCoverageAreaV2][]string
+	CoverageHash  string
+}
+
+func DefaultIdentityRequiredFuzzTestCoverageV2() IdentityRequiredFuzzTestCoverageV2 {
+	coverage := IdentityRequiredFuzzTestCoverageV2{
+		RequiredAreas: IdentityRequiredFuzzTestCoverageAreasV2(),
+		ExistingTests: map[IdentityFuzzTestCoverageAreaV2][]string{
+			IdentityFuzzMalformedNamesV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzIdentityMalformedNamesV2",
+			},
+			IdentityFuzzBoundaryLengthNamesV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzIdentityBoundaryLengthNamesV2",
+			},
+			IdentityFuzzSpoofingPatternCandidatesV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzIdentitySpoofingPatternCandidatesV2",
+			},
+			IdentityFuzzCommitmentPreimagesV2: {
+				"x/identity/types/commitment_v2_test.go:FuzzDomainCommitmentV2RevealReplayProtection",
+			},
+			IdentityFuzzAuctionBidRevealOrderingV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzAuctionBidRevealOrderingV2",
+			},
+			IdentityFuzzResolverPayloadsV2: {
+				"x/identity/types/reverse_payload_safety_v2_test.go:FuzzUnifiedResolverPayloadSafetyV2",
+			},
+			IdentityFuzzInterfaceDescriptorSchemasV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzInterfaceDescriptorSchemasV2",
+			},
+			IdentityFuzzDelegationPermissionCombosV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzDelegationPermissionCombinationsV2",
+			},
+			IdentityFuzzRecursiveProofPathsV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzRecursiveProofPathsV2",
+			},
+			IdentityFuzzReverseResolutionMismatchesV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzReverseResolutionMismatchesV2",
+			},
+			IdentityFuzzBatchUpdateOrderingV2: {
+				"x/identity/types/fuzz_dns_v2_test.go:FuzzBatchUpdateOrderingV2",
+			},
+		},
+	}
+	coverage.CoverageHash = ComputeIdentityRequiredFuzzTestCoverageHashV2(coverage)
+	return coverage
+}
+
+func IdentityRequiredFuzzTestCoverageAreasV2() []IdentityFuzzTestCoverageAreaV2 {
+	return []IdentityFuzzTestCoverageAreaV2{
+		IdentityFuzzAuctionBidRevealOrderingV2,
+		IdentityFuzzBatchUpdateOrderingV2,
+		IdentityFuzzBoundaryLengthNamesV2,
+		IdentityFuzzCommitmentPreimagesV2,
+		IdentityFuzzDelegationPermissionCombosV2,
+		IdentityFuzzInterfaceDescriptorSchemasV2,
+		IdentityFuzzMalformedNamesV2,
+		IdentityFuzzRecursiveProofPathsV2,
+		IdentityFuzzResolverPayloadsV2,
+		IdentityFuzzReverseResolutionMismatchesV2,
+		IdentityFuzzSpoofingPatternCandidatesV2,
+	}
+}
+
+func ValidateIdentityRequiredFuzzTestCoverageV2(coverage IdentityRequiredFuzzTestCoverageV2) error {
+	required := IdentityRequiredFuzzTestCoverageAreasV2()
+	if len(coverage.RequiredAreas) != len(required) {
+		return fmt.Errorf("identity v2 fuzz test coverage must define %d required areas", len(required))
+	}
+	if !identityFuzzCoverageAreasEqualV2(coverage.RequiredAreas, required) {
+		return errors.New("identity v2 fuzz test coverage required areas mismatch")
+	}
+	if err := validateIdentityFuzzCoverageReferencesV2(required, coverage.ExistingTests); err != nil {
+		return err
+	}
+	if coverage.CoverageHash == "" || coverage.CoverageHash != ComputeIdentityRequiredFuzzTestCoverageHashV2(coverage) {
+		return errors.New("identity v2 fuzz test coverage hash mismatch")
+	}
+	return nil
+}
+
+func ComputeIdentityRequiredFuzzTestCoverageHashV2(coverage IdentityRequiredFuzzTestCoverageV2) string {
+	parts := []string{"identity-required-fuzz-test-coverage-v2"}
+	areas := append([]IdentityFuzzTestCoverageAreaV2(nil), coverage.RequiredAreas...)
+	sort.Slice(areas, func(i, j int) bool { return areas[i] < areas[j] })
+	for _, area := range areas {
+		parts = append(parts, string(area))
+		parts = append(parts, sortedBreakdownStringsV2(coverage.ExistingTests[area])...)
+	}
+	return identityHash(parts...)
+}
+
+type IdentityPerformanceTestCoverageAreaV2 string
+
+const (
+	IdentityPerformanceDirectResolutionReadLatencyV2   IdentityPerformanceTestCoverageAreaV2 = "direct_resolution_read_latency"
+	IdentityPerformanceRecursiveReadLatencyByDepthV2   IdentityPerformanceTestCoverageAreaV2 = "recursive_resolution_read_latency_by_depth"
+	IdentityPerformanceResolverUpdateWriteLatencyV2    IdentityPerformanceTestCoverageAreaV2 = "resolver_update_write_latency"
+	IdentityPerformanceBatchResolverUpdatesPerBlockV2  IdentityPerformanceTestCoverageAreaV2 = "batch_resolver_updates_per_block"
+	IdentityPerformanceBatchRenewalsPerBlockV2         IdentityPerformanceTestCoverageAreaV2 = "batch_renewals_per_block"
+	IdentityPerformanceDomainRegistrationsPerBlockV2   IdentityPerformanceTestCoverageAreaV2 = "domain_registrations_per_block"
+	IdentityPerformanceBlockSTMMixedConflictRateV2     IdentityPerformanceTestCoverageAreaV2 = "blockstm_conflict_rate_under_mixed_identity_workload"
+	IdentityPerformanceStoreV2ProofGenerationLatencyV2 IdentityPerformanceTestCoverageAreaV2 = "store_v2_proof_generation_latency"
+	IdentityPerformanceAdaptiveSyncLargeRecoveryTimeV2 IdentityPerformanceTestCoverageAreaV2 = "adaptive_sync_recovery_time_with_large_identity_state"
+	IdentityPerformanceExportImportIdentityStateTimeV2 IdentityPerformanceTestCoverageAreaV2 = "export_import_time_for_identity_state"
+)
+
+type IdentityRequiredPerformanceTestCoverageV2 struct {
+	RequiredAreas []IdentityPerformanceTestCoverageAreaV2
+	ExistingTests map[IdentityPerformanceTestCoverageAreaV2][]string
+	CoverageHash  string
+}
+
+func DefaultIdentityRequiredPerformanceTestCoverageV2() IdentityRequiredPerformanceTestCoverageV2 {
+	coverage := IdentityRequiredPerformanceTestCoverageV2{
+		RequiredAreas: IdentityRequiredPerformanceTestCoverageAreasV2(),
+		ExistingTests: map[IdentityPerformanceTestCoverageAreaV2][]string{
+			IdentityPerformanceDirectResolutionReadLatencyV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityStoreV2DirectResolutionReadPath",
+			},
+			IdentityPerformanceRecursiveReadLatencyByDepthV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityStoreV2RecursiveResolutionReadPath",
+			},
+			IdentityPerformanceResolverUpdateWriteLatencyV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityResolverUpdateWritePath",
+			},
+			IdentityPerformanceBatchResolverUpdatesPerBlockV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityBlockSTMBatchResolverUpdates",
+			},
+			IdentityPerformanceBatchRenewalsPerBlockV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityBlockSTMBatchRenewalsPerBlock",
+			},
+			IdentityPerformanceDomainRegistrationsPerBlockV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityRegistrationsPerBlock",
+			},
+			IdentityPerformanceBlockSTMMixedConflictRateV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityBlockSTMMixedConflictClassification",
+			},
+			IdentityPerformanceStoreV2ProofGenerationLatencyV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityProofQuery",
+			},
+			IdentityPerformanceAdaptiveSyncLargeRecoveryTimeV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityAdaptiveSyncRecoveryLargeState",
+			},
+			IdentityPerformanceExportImportIdentityStateTimeV2: {
+				"x/identity/types/bench_test.go:BenchmarkIdentityExportImportLargeState",
+			},
+		},
+	}
+	coverage.CoverageHash = ComputeIdentityRequiredPerformanceTestCoverageHashV2(coverage)
+	return coverage
+}
+
+func IdentityRequiredPerformanceTestCoverageAreasV2() []IdentityPerformanceTestCoverageAreaV2 {
+	return []IdentityPerformanceTestCoverageAreaV2{
+		IdentityPerformanceAdaptiveSyncLargeRecoveryTimeV2,
+		IdentityPerformanceBatchRenewalsPerBlockV2,
+		IdentityPerformanceBatchResolverUpdatesPerBlockV2,
+		IdentityPerformanceBlockSTMMixedConflictRateV2,
+		IdentityPerformanceDirectResolutionReadLatencyV2,
+		IdentityPerformanceDomainRegistrationsPerBlockV2,
+		IdentityPerformanceExportImportIdentityStateTimeV2,
+		IdentityPerformanceRecursiveReadLatencyByDepthV2,
+		IdentityPerformanceResolverUpdateWriteLatencyV2,
+		IdentityPerformanceStoreV2ProofGenerationLatencyV2,
+	}
+}
+
+func ValidateIdentityRequiredPerformanceTestCoverageV2(coverage IdentityRequiredPerformanceTestCoverageV2) error {
+	required := IdentityRequiredPerformanceTestCoverageAreasV2()
+	if len(coverage.RequiredAreas) != len(required) {
+		return fmt.Errorf("identity v2 performance test coverage must define %d required areas", len(required))
+	}
+	if !identityPerformanceCoverageAreasEqualV2(coverage.RequiredAreas, required) {
+		return errors.New("identity v2 performance test coverage required areas mismatch")
+	}
+	if err := validateIdentityPerformanceCoverageReferencesV2(required, coverage.ExistingTests); err != nil {
+		return err
+	}
+	if coverage.CoverageHash == "" || coverage.CoverageHash != ComputeIdentityRequiredPerformanceTestCoverageHashV2(coverage) {
+		return errors.New("identity v2 performance test coverage hash mismatch")
+	}
+	return nil
+}
+
+func ComputeIdentityRequiredPerformanceTestCoverageHashV2(coverage IdentityRequiredPerformanceTestCoverageV2) string {
+	parts := []string{"identity-required-performance-test-coverage-v2"}
+	areas := append([]IdentityPerformanceTestCoverageAreaV2(nil), coverage.RequiredAreas...)
+	sort.Slice(areas, func(i, j int) bool { return areas[i] < areas[j] })
+	for _, area := range areas {
+		parts = append(parts, string(area))
+		parts = append(parts, sortedBreakdownStringsV2(coverage.ExistingTests[area])...)
+	}
+	return identityHash(parts...)
+}
+
+func identityFuzzCoverageAreasEqualV2(got []IdentityFuzzTestCoverageAreaV2, want []IdentityFuzzTestCoverageAreaV2) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func identityPerformanceCoverageAreasEqualV2(got []IdentityPerformanceTestCoverageAreaV2, want []IdentityPerformanceTestCoverageAreaV2) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func validateIdentityFuzzCoverageReferencesV2(required []IdentityFuzzTestCoverageAreaV2, existing map[IdentityFuzzTestCoverageAreaV2][]string) error {
+	known := map[IdentityFuzzTestCoverageAreaV2]bool{}
+	for _, area := range required {
+		known[area] = true
+		if err := validateIdentityCoverageTestReferencesV2("fuzz", string(area), existing[area]); err != nil {
+			return err
+		}
+	}
+	for area := range existing {
+		if !known[area] {
+			return fmt.Errorf("identity v2 fuzz test coverage unknown area %s", area)
+		}
+	}
+	return nil
+}
+
+func validateIdentityPerformanceCoverageReferencesV2(required []IdentityPerformanceTestCoverageAreaV2, existing map[IdentityPerformanceTestCoverageAreaV2][]string) error {
+	known := map[IdentityPerformanceTestCoverageAreaV2]bool{}
+	for _, area := range required {
+		known[area] = true
+		if err := validateIdentityCoverageTestReferencesV2("performance", string(area), existing[area]); err != nil {
+			return err
+		}
+	}
+	for area := range existing {
+		if !known[area] {
+			return fmt.Errorf("identity v2 performance test coverage unknown area %s", area)
 		}
 	}
 	return nil

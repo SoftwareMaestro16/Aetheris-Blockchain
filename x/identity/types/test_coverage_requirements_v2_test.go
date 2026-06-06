@@ -142,8 +142,104 @@ func TestIdentityRequiredIntegrationAndInvariantCoverageV2RejectBadReferenceAndH
 	require.ErrorContains(t, ValidateIdentityRequiredInvariantTestCoverageV2(tamperedInvariant), "hash mismatch")
 }
 
+func TestIdentityRequiredFuzzTestCoverageV2CoversSection174(t *testing.T) {
+	coverage := DefaultIdentityRequiredFuzzTestCoverageV2()
+	require.NoError(t, ValidateIdentityRequiredFuzzTestCoverageV2(coverage))
+	require.Len(t, coverage.RequiredAreas, 11)
+	require.NotEmpty(t, coverage.CoverageHash)
+
+	for _, area := range []IdentityFuzzTestCoverageAreaV2{
+		IdentityFuzzMalformedNamesV2,
+		IdentityFuzzBoundaryLengthNamesV2,
+		IdentityFuzzSpoofingPatternCandidatesV2,
+		IdentityFuzzCommitmentPreimagesV2,
+		IdentityFuzzAuctionBidRevealOrderingV2,
+		IdentityFuzzResolverPayloadsV2,
+		IdentityFuzzInterfaceDescriptorSchemasV2,
+		IdentityFuzzDelegationPermissionCombosV2,
+		IdentityFuzzRecursiveProofPathsV2,
+		IdentityFuzzReverseResolutionMismatchesV2,
+		IdentityFuzzBatchUpdateOrderingV2,
+	} {
+		require.Contains(t, coverage.RequiredAreas, area)
+		require.NotEmpty(t, coverage.ExistingTests[area])
+	}
+
+	require.Contains(t, coverage.ExistingTests[IdentityFuzzMalformedNamesV2], "x/identity/types/fuzz_dns_v2_test.go:FuzzIdentityMalformedNamesV2")
+	require.Contains(t, coverage.ExistingTests[IdentityFuzzCommitmentPreimagesV2], "x/identity/types/commitment_v2_test.go:FuzzDomainCommitmentV2RevealReplayProtection")
+	requireCoverageReferencesExistV2(t, identityFuzzCoverageReferencesV2(coverage))
+}
+
+func TestIdentityRequiredPerformanceTestCoverageV2CoversSection175(t *testing.T) {
+	coverage := DefaultIdentityRequiredPerformanceTestCoverageV2()
+	require.NoError(t, ValidateIdentityRequiredPerformanceTestCoverageV2(coverage))
+	require.Len(t, coverage.RequiredAreas, 10)
+	require.NotEmpty(t, coverage.CoverageHash)
+
+	for _, area := range []IdentityPerformanceTestCoverageAreaV2{
+		IdentityPerformanceDirectResolutionReadLatencyV2,
+		IdentityPerformanceRecursiveReadLatencyByDepthV2,
+		IdentityPerformanceResolverUpdateWriteLatencyV2,
+		IdentityPerformanceBatchResolverUpdatesPerBlockV2,
+		IdentityPerformanceBatchRenewalsPerBlockV2,
+		IdentityPerformanceDomainRegistrationsPerBlockV2,
+		IdentityPerformanceBlockSTMMixedConflictRateV2,
+		IdentityPerformanceStoreV2ProofGenerationLatencyV2,
+		IdentityPerformanceAdaptiveSyncLargeRecoveryTimeV2,
+		IdentityPerformanceExportImportIdentityStateTimeV2,
+	} {
+		require.Contains(t, coverage.RequiredAreas, area)
+		require.NotEmpty(t, coverage.ExistingTests[area])
+	}
+
+	require.Contains(t, coverage.ExistingTests[IdentityPerformanceDirectResolutionReadLatencyV2], "x/identity/types/bench_test.go:BenchmarkIdentityStoreV2DirectResolutionReadPath")
+	require.Contains(t, coverage.ExistingTests[IdentityPerformanceAdaptiveSyncLargeRecoveryTimeV2], "x/identity/types/bench_test.go:BenchmarkIdentityAdaptiveSyncRecoveryLargeState")
+	requireCoverageReferencesExistV2(t, identityPerformanceCoverageReferencesV2(coverage))
+}
+
+func TestIdentityRequiredFuzzAndPerformanceCoverageV2RejectBadReferenceAndHashMismatch(t *testing.T) {
+	fuzzCoverage := DefaultIdentityRequiredFuzzTestCoverageV2()
+	badFuzz := fuzzCoverage
+	badFuzz.ExistingTests = copyIdentityRequiredFuzzTestCoverageMapV2(fuzzCoverage.ExistingTests)
+	badFuzz.ExistingTests[IdentityFuzzMalformedNamesV2] = []string{"x/identity/types/fuzz_dns_v2_test.go:not_a_fuzz"}
+	badFuzz.CoverageHash = ComputeIdentityRequiredFuzzTestCoverageHashV2(badFuzz)
+	require.ErrorContains(t, ValidateIdentityRequiredFuzzTestCoverageV2(badFuzz), "invalid test reference")
+
+	tamperedFuzz := fuzzCoverage
+	tamperedFuzz.ExistingTests = copyIdentityRequiredFuzzTestCoverageMapV2(fuzzCoverage.ExistingTests)
+	tamperedFuzz.ExistingTests[IdentityFuzzBatchUpdateOrderingV2][0] = "x/identity/types/fuzz_dns_v2_test.go:FuzzABatchTamper"
+	require.ErrorContains(t, ValidateIdentityRequiredFuzzTestCoverageV2(tamperedFuzz), "hash mismatch")
+
+	performanceCoverage := DefaultIdentityRequiredPerformanceTestCoverageV2()
+	missingPerformance := performanceCoverage
+	missingPerformance.RequiredAreas = missingPerformance.RequiredAreas[:len(missingPerformance.RequiredAreas)-1]
+	missingPerformance.CoverageHash = ComputeIdentityRequiredPerformanceTestCoverageHashV2(missingPerformance)
+	require.ErrorContains(t, ValidateIdentityRequiredPerformanceTestCoverageV2(missingPerformance), "required areas")
+
+	tamperedPerformance := performanceCoverage
+	tamperedPerformance.ExistingTests = copyIdentityRequiredPerformanceTestCoverageMapV2(performanceCoverage.ExistingTests)
+	tamperedPerformance.ExistingTests[IdentityPerformanceDirectResolutionReadLatencyV2][0] = "x/identity/types/bench_test.go:BenchmarkAReadLatencyTamper"
+	require.ErrorContains(t, ValidateIdentityRequiredPerformanceTestCoverageV2(tamperedPerformance), "hash mismatch")
+}
+
 func copyIdentityRequiredUnitTestCoverageMapV2(in map[IdentityUnitTestCoverageAreaV2][]string) map[IdentityUnitTestCoverageAreaV2][]string {
 	out := make(map[IdentityUnitTestCoverageAreaV2][]string, len(in))
+	for area, tests := range in {
+		out[area] = append([]string(nil), tests...)
+	}
+	return out
+}
+
+func copyIdentityRequiredFuzzTestCoverageMapV2(in map[IdentityFuzzTestCoverageAreaV2][]string) map[IdentityFuzzTestCoverageAreaV2][]string {
+	out := make(map[IdentityFuzzTestCoverageAreaV2][]string, len(in))
+	for area, tests := range in {
+		out[area] = append([]string(nil), tests...)
+	}
+	return out
+}
+
+func copyIdentityRequiredPerformanceTestCoverageMapV2(in map[IdentityPerformanceTestCoverageAreaV2][]string) map[IdentityPerformanceTestCoverageAreaV2][]string {
+	out := make(map[IdentityPerformanceTestCoverageAreaV2][]string, len(in))
 	for area, tests := range in {
 		out[area] = append([]string(nil), tests...)
 	}
@@ -183,6 +279,22 @@ func identityIntegrationCoverageReferencesV2(coverage IdentityRequiredIntegratio
 }
 
 func identityInvariantCoverageReferencesV2(coverage IdentityRequiredInvariantTestCoverageV2) []string {
+	refs := make([]string, 0)
+	for _, area := range coverage.RequiredAreas {
+		refs = append(refs, coverage.ExistingTests[area]...)
+	}
+	return refs
+}
+
+func identityFuzzCoverageReferencesV2(coverage IdentityRequiredFuzzTestCoverageV2) []string {
+	refs := make([]string, 0)
+	for _, area := range coverage.RequiredAreas {
+		refs = append(refs, coverage.ExistingTests[area]...)
+	}
+	return refs
+}
+
+func identityPerformanceCoverageReferencesV2(coverage IdentityRequiredPerformanceTestCoverageV2) []string {
 	refs := make([]string, 0)
 	for _, area := range coverage.RequiredAreas {
 		refs = append(refs, coverage.ExistingTests[area]...)
