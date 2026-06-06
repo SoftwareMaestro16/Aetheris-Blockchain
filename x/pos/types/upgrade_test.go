@@ -729,6 +729,151 @@ func TestStructuredEvidenceTypesMapToSlashPolicies(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported structured evidence type")
 }
 
+func TestEvidenceRecordMatchesDesignFieldsAndStatusValues(t *testing.T) {
+	require.Equal(t, []string{
+		"evidence_id",
+		"evidence_type",
+		"accused_validator",
+		"reporter",
+		"epoch_id",
+		"task_group_id_optional",
+		"object_hash",
+		"proof_payload_hash",
+		"submitted_height",
+		"status",
+		"verification_group_id",
+		"decision_height",
+		"penalty_id_optional",
+	}, EvidenceRecordFieldNames())
+	require.Equal(t, []string{
+		EvidenceStatusSubmitted,
+		EvidenceStatusInVerification,
+		EvidenceStatusAccepted,
+		EvidenceStatusRejected,
+		EvidenceStatusExpired,
+		EvidenceStatusSlashed,
+	}, EvidenceRecordStatusValues())
+
+	record, err := NewEvidenceRecord(EvidenceRecord{
+		EvidenceID:          "evidence-record-1",
+		EvidenceType:        EvidenceTypeInvalidProofAcceptance,
+		AccusedValidator:    "val-000",
+		Reporter:            "val-001",
+		EpochID:             7,
+		TaskGroupIDOptional: "task-group-1",
+		ObjectHash:          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ProofPayloadHash:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		SubmittedHeight:     70,
+	})
+	require.NoError(t, err)
+	require.Equal(t, EvidenceStatusSubmitted, record.Status)
+	require.Len(t, computeEvidenceRecordHash(record), PosHashHexLength)
+
+	_, err = AdvanceEvidenceRecordStatus(record, EvidenceStatusAccepted, 71, "")
+	require.ErrorContains(t, err, "invalid evidence record status transition")
+}
+
+func TestEvidenceVerificationGroupSelectionIsDeterministicAndExcludesParties(t *testing.T) {
+	params := DefaultParams()
+	validators := scoredCandidates(t, params, makeCandidates(6, 1_000_000_000))
+	epoch, err := NewEpochRecord(params, 7, 70, 90, EpochPhaseAssignment, "", validators)
+	require.NoError(t, err)
+	record, err := NewEvidenceRecord(EvidenceRecord{
+		EvidenceID:       "evidence-record-2",
+		EvidenceType:     EvidenceTypeFalseCapacityDeclaration,
+		AccusedValidator: "val-000",
+		Reporter:         "val-001",
+		EpochID:          epoch.EpochID,
+		ObjectHash:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ProofPayloadHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		SubmittedHeight:  72,
+	})
+	require.NoError(t, err)
+
+	left, err := SelectEvidenceVerificationGroup(EvidenceVerificationGroupInput{
+		Params:               params,
+		Epoch:                epoch,
+		ActiveValidators:     validators,
+		Evidence:             record,
+		MinimumGroupSize:     3,
+		DecisionThresholdBps: 7_000,
+	})
+	require.NoError(t, err)
+	require.Len(t, left.Members, 3)
+	require.NotContains(t, left.Members, "val-000")
+	require.NotContains(t, left.Members, "val-001")
+	require.Equal(t, []string{"val-000", "val-001"}, left.ExcludedValidators)
+	require.Equal(t, uint32(7_000), left.DecisionThresholdBps)
+	require.Len(t, left.AssignmentSeed, PosHashHexLength)
+	require.Len(t, left.VerificationGroupID, PosHashHexLength)
+	require.Len(t, left.GroupHash, PosHashHexLength)
+
+	reversed := append([]ScoredValidator(nil), validators...)
+	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
+		reversed[i], reversed[j] = reversed[j], reversed[i]
+	}
+	right, err := SelectEvidenceVerificationGroup(EvidenceVerificationGroupInput{
+		Params:               params,
+		Epoch:                epoch,
+		ActiveValidators:     reversed,
+		Evidence:             record,
+		MinimumGroupSize:     3,
+		DecisionThresholdBps: 7_000,
+	})
+	require.NoError(t, err)
+	require.Equal(t, left, right)
+
+	inVerification, err := AssignEvidenceVerificationGroup(record, left)
+	require.NoError(t, err)
+	require.Equal(t, EvidenceStatusInVerification, inVerification.Status)
+	require.Equal(t, left.VerificationGroupID, inVerification.VerificationGroupID)
+
+	accepted, err := AdvanceEvidenceRecordStatus(inVerification, EvidenceStatusAccepted, 80, "")
+	require.NoError(t, err)
+	require.Equal(t, int64(80), accepted.DecisionHeight)
+	slashed, err := AdvanceEvidenceRecordStatus(accepted, EvidenceStatusSlashed, 81, "penalty-1")
+	require.NoError(t, err)
+	require.Equal(t, EvidenceStatusSlashed, slashed.Status)
+	require.Equal(t, "penalty-1", slashed.PenaltyIDOptional)
+}
+
+func TestEvidenceVerificationGroupRejectsInsufficientEligibleValidators(t *testing.T) {
+	params := DefaultParams()
+	validators := scoredCandidates(t, params, makeCandidates(4, 1_000_000_000))
+	epoch, err := NewEpochRecord(params, 8, 80, 100, EpochPhaseAssignment, "", validators)
+	require.NoError(t, err)
+	record, err := NewEvidenceRecord(EvidenceRecord{
+		EvidenceID:       "evidence-record-3",
+		EvidenceType:     EvidenceTypeDowntimeProof,
+		AccusedValidator: "val-000",
+		Reporter:         "val-001",
+		EpochID:          epoch.EpochID,
+		ObjectHash:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ProofPayloadHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		SubmittedHeight:  82,
+	})
+	require.NoError(t, err)
+
+	_, err = SelectEvidenceVerificationGroup(EvidenceVerificationGroupInput{
+		Params:           params,
+		Epoch:            epoch,
+		ActiveValidators: validators,
+		Evidence:         record,
+		MinimumGroupSize: 3,
+	})
+	require.ErrorContains(t, err, "insufficient eligible validators")
+
+	_, err = SelectEvidenceVerificationGroup(EvidenceVerificationGroupInput{
+		Params:               params,
+		Epoch:                epoch,
+		ActiveValidators:     validators,
+		Evidence:             record,
+		MinimumGroupSize:     2,
+		DecisionThresholdBps: BasisPoints + 1,
+	})
+	require.ErrorContains(t, err, "decision threshold")
+}
+
 func TestStructuredEvidenceLifecycleFinalizesAndExecutesSlash(t *testing.T) {
 	params := DefaultParams()
 	params.ReporterRewardBps = 500

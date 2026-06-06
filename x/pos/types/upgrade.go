@@ -190,8 +190,11 @@ const (
 	EvidenceTypeFalseCapacityDeclaration     = "false_capacity_declaration"
 	EvidenceTypeInvalidEvidenceSubmission    = "invalid_evidence_submission"
 	EvidenceStatusSubmitted                  = "submitted"
+	EvidenceStatusInVerification             = "in_verification"
+	EvidenceStatusAccepted                   = "accepted"
 	EvidenceStatusVerified                   = "verified"
 	EvidenceStatusRejected                   = "rejected"
+	EvidenceStatusExpired                    = "expired"
 	EvidenceStatusFinalized                  = "finalized"
 	EvidenceStatusSlashed                    = "slashed"
 	DefaultEvidenceVerificationQuorumBps     = uint32(6_700)
@@ -205,6 +208,43 @@ const (
 	DefaultFalseCapacityDeclarationSlashBps  = uint32(500)
 	DefaultInvalidEvidenceSubmissionSlashBps = uint32(250)
 )
+
+type EvidenceRecord struct {
+	EvidenceID          string
+	EvidenceType        string
+	AccusedValidator    string
+	Reporter            string
+	EpochID             uint64
+	TaskGroupIDOptional string
+	ObjectHash          string
+	ProofPayloadHash    string
+	SubmittedHeight     int64
+	Status              string
+	VerificationGroupID string
+	DecisionHeight      int64
+	PenaltyIDOptional   string
+}
+
+type EvidenceVerificationGroupInput struct {
+	Params               Params
+	Epoch                EpochRecord
+	ActiveValidators     []ScoredValidator
+	Evidence             EvidenceRecord
+	MinimumGroupSize     uint32
+	DecisionThresholdBps uint32
+}
+
+type EvidenceVerificationGroup struct {
+	EvidenceID           string
+	EpochID              uint64
+	VerificationGroupID  string
+	Members              []string
+	ExcludedValidators   []string
+	MinimumGroupSize     uint32
+	DecisionThresholdBps uint32
+	AssignmentSeed       string
+	GroupHash            string
+}
 
 type StructuredEvidenceRecord struct {
 	EvidenceID           string
@@ -1373,6 +1413,263 @@ func IsSlashableCapacityFault(evidence CapacityFaultEvidence) (bool, error) {
 		return false, err
 	}
 	return evidence.Finalized && evidence.UsedForAssignment, nil
+}
+
+func NewEvidenceRecord(record EvidenceRecord) (EvidenceRecord, error) {
+	record.EvidenceID = strings.TrimSpace(record.EvidenceID)
+	record.EvidenceType = strings.TrimSpace(record.EvidenceType)
+	record.AccusedValidator = strings.TrimSpace(record.AccusedValidator)
+	record.Reporter = strings.TrimSpace(record.Reporter)
+	record.TaskGroupIDOptional = strings.TrimSpace(record.TaskGroupIDOptional)
+	record.ObjectHash = strings.TrimSpace(record.ObjectHash)
+	record.ProofPayloadHash = strings.TrimSpace(record.ProofPayloadHash)
+	record.VerificationGroupID = strings.TrimSpace(record.VerificationGroupID)
+	record.PenaltyIDOptional = strings.TrimSpace(record.PenaltyIDOptional)
+	if record.Status == "" {
+		record.Status = EvidenceStatusSubmitted
+	}
+	return record, record.Validate()
+}
+
+func EvidenceRecordFieldNames() []string {
+	return []string{
+		"evidence_id",
+		"evidence_type",
+		"accused_validator",
+		"reporter",
+		"epoch_id",
+		"task_group_id_optional",
+		"object_hash",
+		"proof_payload_hash",
+		"submitted_height",
+		"status",
+		"verification_group_id",
+		"decision_height",
+		"penalty_id_optional",
+	}
+}
+
+func EvidenceRecordStatusValues() []string {
+	return []string{
+		EvidenceStatusSubmitted,
+		EvidenceStatusInVerification,
+		EvidenceStatusAccepted,
+		EvidenceStatusRejected,
+		EvidenceStatusExpired,
+		EvidenceStatusSlashed,
+	}
+}
+
+func (e EvidenceRecord) Validate() error {
+	if err := validatePosToken("evidence record id", e.EvidenceID); err != nil {
+		return err
+	}
+	if !IsStructuredEvidenceType(e.EvidenceType) {
+		return fmt.Errorf("unsupported evidence record type %q", e.EvidenceType)
+	}
+	if err := validatePosToken("evidence record accused validator", e.AccusedValidator); err != nil {
+		return err
+	}
+	if err := validatePosToken("evidence record reporter", e.Reporter); err != nil {
+		return err
+	}
+	if e.EpochID == 0 {
+		return errors.New("evidence record epoch id is required")
+	}
+	if e.TaskGroupIDOptional != "" {
+		if err := validatePosToken("evidence record task group id", e.TaskGroupIDOptional); err != nil {
+			return err
+		}
+	}
+	if err := validatePosHash("evidence record object hash", e.ObjectHash); err != nil {
+		return err
+	}
+	if err := validatePosHash("evidence record proof payload hash", e.ProofPayloadHash); err != nil {
+		return err
+	}
+	if e.SubmittedHeight < 0 {
+		return errors.New("evidence record submitted height cannot be negative")
+	}
+	if !isEvidenceRecordStatus(e.Status) {
+		return fmt.Errorf("unsupported evidence record status %q", e.Status)
+	}
+	if e.VerificationGroupID != "" {
+		if err := validatePosToken("evidence record verification group id", e.VerificationGroupID); err != nil {
+			return err
+		}
+	}
+	if (e.Status == EvidenceStatusInVerification || e.Status == EvidenceStatusAccepted || e.Status == EvidenceStatusRejected || e.Status == EvidenceStatusSlashed) && e.VerificationGroupID == "" {
+		return errors.New("evidence record status requires verification group id")
+	}
+	if e.DecisionHeight < 0 {
+		return errors.New("evidence record decision height cannot be negative")
+	}
+	if e.PenaltyIDOptional != "" {
+		if err := validatePosToken("evidence record penalty id", e.PenaltyIDOptional); err != nil {
+			return err
+		}
+	}
+	if e.Status == EvidenceStatusSlashed && e.PenaltyIDOptional == "" {
+		return errors.New("slashed evidence record requires penalty id")
+	}
+	if (e.Status == EvidenceStatusAccepted || e.Status == EvidenceStatusRejected || e.Status == EvidenceStatusExpired || e.Status == EvidenceStatusSlashed) && e.DecisionHeight == 0 {
+		return errors.New("decided evidence record requires decision height")
+	}
+	return nil
+}
+
+func AssignEvidenceVerificationGroup(record EvidenceRecord, group EvidenceVerificationGroup) (EvidenceRecord, error) {
+	if err := record.Validate(); err != nil {
+		return EvidenceRecord{}, err
+	}
+	if err := group.Validate(); err != nil {
+		return EvidenceRecord{}, err
+	}
+	if record.EvidenceID != group.EvidenceID {
+		return EvidenceRecord{}, errors.New("evidence verification group record id mismatch")
+	}
+	if record.EpochID != group.EpochID {
+		return EvidenceRecord{}, errors.New("evidence verification group record epoch mismatch")
+	}
+	next := record
+	next.VerificationGroupID = group.VerificationGroupID
+	next.Status = EvidenceStatusInVerification
+	next.DecisionHeight = 0
+	next.PenaltyIDOptional = ""
+	return next, next.Validate()
+}
+
+func AdvanceEvidenceRecordStatus(record EvidenceRecord, status string, decisionHeight int64, penaltyIDOptional string) (EvidenceRecord, error) {
+	if err := record.Validate(); err != nil {
+		return EvidenceRecord{}, err
+	}
+	if !isEvidenceRecordStatus(status) {
+		return EvidenceRecord{}, fmt.Errorf("unsupported evidence record status %q", status)
+	}
+	if !isAllowedEvidenceRecordTransition(record.Status, status) {
+		return EvidenceRecord{}, fmt.Errorf("invalid evidence record status transition %s -> %s", record.Status, status)
+	}
+	next := record
+	next.Status = status
+	next.DecisionHeight = decisionHeight
+	next.PenaltyIDOptional = strings.TrimSpace(penaltyIDOptional)
+	return next, next.Validate()
+}
+
+func SelectEvidenceVerificationGroup(input EvidenceVerificationGroupInput) (EvidenceVerificationGroup, error) {
+	if err := input.Params.Validate(); err != nil {
+		return EvidenceVerificationGroup{}, err
+	}
+	if err := input.Epoch.Validate(); err != nil {
+		return EvidenceVerificationGroup{}, err
+	}
+	if err := input.Evidence.Validate(); err != nil {
+		return EvidenceVerificationGroup{}, err
+	}
+	if input.Evidence.EpochID != input.Epoch.EpochID {
+		return EvidenceVerificationGroup{}, errors.New("evidence record epoch does not match verification epoch")
+	}
+	minimum := input.MinimumGroupSize
+	if minimum == 0 {
+		minimum = input.Params.MinTaskGroupValidators
+	}
+	if minimum == 0 {
+		return EvidenceVerificationGroup{}, errors.New("evidence verification group minimum size is required")
+	}
+	threshold := input.DecisionThresholdBps
+	if threshold == 0 {
+		threshold = DefaultEvidenceVerificationQuorumBps
+	}
+	if threshold > BasisPoints {
+		return EvidenceVerificationGroup{}, fmt.Errorf("evidence decision threshold must be <= %d bps", BasisPoints)
+	}
+	excluded := evidenceVerificationExclusions(input.Evidence, input.ActiveValidators)
+	eligible := make([]string, 0, len(input.ActiveValidators))
+	seen := make(map[string]struct{}, len(input.ActiveValidators))
+	for _, validator := range input.ActiveValidators {
+		validatorID := strings.TrimSpace(validator.ValidatorID)
+		if validatorID == "" {
+			return EvidenceVerificationGroup{}, errors.New("active validator id is required")
+		}
+		if _, duplicate := seen[validatorID]; duplicate {
+			return EvidenceVerificationGroup{}, fmt.Errorf("duplicate active validator %q", validatorID)
+		}
+		seen[validatorID] = struct{}{}
+		if isExcludedValidator(validatorID, excluded) {
+			continue
+		}
+		eligible = append(eligible, validatorID)
+	}
+	if uint32(len(eligible)) < minimum {
+		return EvidenceVerificationGroup{}, fmt.Errorf("insufficient eligible validators for evidence verification group: need %d got %d", minimum, len(eligible))
+	}
+	sort.SliceStable(eligible, func(i, j int) bool {
+		left := computeEvidenceVerifierSelectionHash(input.Epoch.Seed, input.Evidence.EvidenceID, eligible[i])
+		right := computeEvidenceVerifierSelectionHash(input.Epoch.Seed, input.Evidence.EvidenceID, eligible[j])
+		if left != right {
+			return left < right
+		}
+		return eligible[i] < eligible[j]
+	})
+	members := cloneStringSlice(eligible[:minimum])
+	sort.Strings(members)
+	sort.Strings(excluded)
+	group := EvidenceVerificationGroup{
+		EvidenceID:           input.Evidence.EvidenceID,
+		EpochID:              input.Evidence.EpochID,
+		Members:              members,
+		ExcludedValidators:   excluded,
+		MinimumGroupSize:     minimum,
+		DecisionThresholdBps: threshold,
+		AssignmentSeed:       computeEvidenceVerificationAssignmentSeed(input.Epoch.Seed, input.Evidence.EvidenceID),
+	}
+	group.VerificationGroupID = computeEvidenceVerificationGroupID(group)
+	group.GroupHash = computeEvidenceVerificationGroupHash(group)
+	return group, group.Validate()
+}
+
+func (g EvidenceVerificationGroup) Validate() error {
+	if err := validatePosToken("evidence verification group evidence id", g.EvidenceID); err != nil {
+		return err
+	}
+	if g.EpochID == 0 {
+		return errors.New("evidence verification group epoch id is required")
+	}
+	if err := validatePosToken("evidence verification group id", g.VerificationGroupID); err != nil {
+		return err
+	}
+	if len(g.Members) == 0 {
+		return errors.New("evidence verification group members are required")
+	}
+	if g.MinimumGroupSize == 0 || uint32(len(g.Members)) < g.MinimumGroupSize {
+		return errors.New("evidence verification group minimum size is not met")
+	}
+	if g.DecisionThresholdBps == 0 || g.DecisionThresholdBps > BasisPoints {
+		return fmt.Errorf("evidence verification decision threshold must be within 1..%d bps", BasisPoints)
+	}
+	if err := validateSortedUniqueTokens("evidence verification group member", g.Members); err != nil {
+		return err
+	}
+	if err := validateSortedUniqueTokens("evidence verification group exclusion", g.ExcludedValidators); err != nil {
+		return err
+	}
+	for _, member := range g.Members {
+		if isExcludedValidator(member, g.ExcludedValidators) {
+			return fmt.Errorf("evidence verification group member %q is excluded", member)
+		}
+	}
+	if err := validatePosHash("evidence verification group assignment seed", g.AssignmentSeed); err != nil {
+		return err
+	}
+	expectedID := computeEvidenceVerificationGroupID(g)
+	if g.VerificationGroupID != expectedID {
+		return errors.New("evidence verification group id mismatch")
+	}
+	expectedHash := computeEvidenceVerificationGroupHash(g)
+	if g.GroupHash != expectedHash {
+		return errors.New("evidence verification group hash mismatch")
+	}
+	return nil
 }
 
 func StructuredEvidenceTypes() []string {
@@ -2658,6 +2955,68 @@ func computeStructuredEvidenceHash(evidence StructuredEvidenceRecord) string {
 	})
 }
 
+func computeEvidenceRecordHash(record EvidenceRecord) string {
+	return posHashRoot("aetheris-pos-evidence-record-v1", func(w posByteWriter) {
+		posWritePart(w, record.EvidenceID)
+		posWritePart(w, record.EvidenceType)
+		posWritePart(w, record.AccusedValidator)
+		posWritePart(w, record.Reporter)
+		posWriteUint64(w, record.EpochID)
+		posWritePart(w, record.TaskGroupIDOptional)
+		posWritePart(w, record.ObjectHash)
+		posWritePart(w, record.ProofPayloadHash)
+		posWritePart(w, fmt.Sprintf("%d", record.SubmittedHeight))
+		posWritePart(w, record.Status)
+		posWritePart(w, record.VerificationGroupID)
+		posWritePart(w, fmt.Sprintf("%d", record.DecisionHeight))
+		posWritePart(w, record.PenaltyIDOptional)
+	})
+}
+
+func computeEvidenceVerificationAssignmentSeed(epochSeed string, evidenceID string) string {
+	return posHashRoot("aetheris-pos-evidence-verification-seed-v1", func(w posByteWriter) {
+		posWritePart(w, epochSeed)
+		posWritePart(w, evidenceID)
+	})
+}
+
+func computeEvidenceVerifierSelectionHash(epochSeed string, evidenceID string, validatorID string) string {
+	return posHashRoot("aetheris-pos-evidence-verifier-rank-v1", func(w posByteWriter) {
+		posWritePart(w, epochSeed)
+		posWritePart(w, evidenceID)
+		posWritePart(w, validatorID)
+	})
+}
+
+func computeEvidenceVerificationGroupID(group EvidenceVerificationGroup) string {
+	return posHashRoot("aetheris-pos-evidence-verification-group-id-v1", func(w posByteWriter) {
+		posWritePart(w, group.EvidenceID)
+		posWriteUint64(w, group.EpochID)
+		posWritePart(w, group.AssignmentSeed)
+		posWriteUint64(w, uint64(group.MinimumGroupSize))
+		posWriteUint64(w, uint64(group.DecisionThresholdBps))
+	})
+}
+
+func computeEvidenceVerificationGroupHash(group EvidenceVerificationGroup) string {
+	return posHashRoot("aetheris-pos-evidence-verification-group-v1", func(w posByteWriter) {
+		posWritePart(w, group.EvidenceID)
+		posWriteUint64(w, group.EpochID)
+		posWritePart(w, group.VerificationGroupID)
+		posWriteUint64(w, uint64(group.MinimumGroupSize))
+		posWriteUint64(w, uint64(group.DecisionThresholdBps))
+		posWritePart(w, group.AssignmentSeed)
+		posWriteUint64(w, uint64(len(group.Members)))
+		for _, member := range group.Members {
+			posWritePart(w, member)
+		}
+		posWriteUint64(w, uint64(len(group.ExcludedValidators)))
+		for _, excluded := range group.ExcludedValidators {
+			posWritePart(w, excluded)
+		}
+	})
+}
+
 func computeEvidenceVerificationRoot(evidenceID string, votes []EvidenceVerificationVote) string {
 	ordered := make([]EvidenceVerificationVote, len(votes))
 	copy(ordered, votes)
@@ -2739,11 +3098,84 @@ func validateRoleRewardWeights(weights []RoleRewardWeight) error {
 
 func isEvidenceStatus(status string) bool {
 	switch status {
-	case EvidenceStatusSubmitted, EvidenceStatusVerified, EvidenceStatusRejected, EvidenceStatusFinalized, EvidenceStatusSlashed:
+	case EvidenceStatusSubmitted,
+		EvidenceStatusInVerification,
+		EvidenceStatusAccepted,
+		EvidenceStatusVerified,
+		EvidenceStatusRejected,
+		EvidenceStatusExpired,
+		EvidenceStatusFinalized,
+		EvidenceStatusSlashed:
 		return true
 	default:
 		return false
 	}
+}
+
+func isEvidenceRecordStatus(status string) bool {
+	switch status {
+	case EvidenceStatusSubmitted, EvidenceStatusInVerification, EvidenceStatusAccepted, EvidenceStatusRejected, EvidenceStatusExpired, EvidenceStatusSlashed:
+		return true
+	default:
+		return false
+	}
+}
+
+func isAllowedEvidenceRecordTransition(current string, next string) bool {
+	if current == next {
+		return true
+	}
+	switch current {
+	case EvidenceStatusSubmitted:
+		return next == EvidenceStatusInVerification || next == EvidenceStatusExpired
+	case EvidenceStatusInVerification:
+		return next == EvidenceStatusAccepted || next == EvidenceStatusRejected || next == EvidenceStatusExpired
+	case EvidenceStatusAccepted:
+		return next == EvidenceStatusSlashed
+	default:
+		return false
+	}
+}
+
+func evidenceVerificationExclusions(evidence EvidenceRecord, validators []ScoredValidator) []string {
+	validatorIDs := make(map[string]struct{}, len(validators))
+	for _, validator := range validators {
+		validatorIDs[validator.ValidatorID] = struct{}{}
+	}
+	excluded := make([]string, 0, 2)
+	if _, found := validatorIDs[evidence.AccusedValidator]; found {
+		excluded = append(excluded, evidence.AccusedValidator)
+	}
+	if _, found := validatorIDs[evidence.Reporter]; found && evidence.Reporter != evidence.AccusedValidator {
+		excluded = append(excluded, evidence.Reporter)
+	}
+	sort.Strings(excluded)
+	return excluded
+}
+
+func validateSortedUniqueTokens(fieldName string, values []string) error {
+	seen := make(map[string]struct{}, len(values))
+	var previous string
+	for i, value := range values {
+		if err := validatePosToken(fieldName, value); err != nil {
+			return err
+		}
+		if _, found := seen[value]; found {
+			return fmt.Errorf("duplicate %s %q", fieldName, value)
+		}
+		seen[value] = struct{}{}
+		if i > 0 && previous >= value {
+			return fmt.Errorf("%s values must be sorted canonically", fieldName)
+		}
+		previous = value
+	}
+	return nil
+}
+
+func cloneStringSlice(values []string) []string {
+	out := make([]string, len(values))
+	copy(out, values)
+	return out
 }
 
 func validateEvidenceReviewers(reviewers []string) (map[string]struct{}, error) {
