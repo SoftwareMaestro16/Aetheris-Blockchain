@@ -106,6 +106,14 @@ func RecordValidatorEconomics(validatorIncentivesHealthy bool, validatorIncentiv
 	SetGauge(MetricStakingCentralizationRisks, nil, float64(stakingCentralizationRiskCount))
 }
 
+func RecordFeeModelEfficiency(healthy bool, riskCount int) {
+	if riskCount < 0 {
+		riskCount = 0
+	}
+	SetGauge(MetricFeeModelEfficiencyHealthy, nil, boolFloat(healthy))
+	SetGauge(MetricFeeModelEfficiencyRisks, nil, float64(riskCount))
+}
+
 func (r *Registry) collectRuntime() {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)

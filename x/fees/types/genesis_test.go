@@ -316,3 +316,131 @@ func TestGenesisValidateIncludesProtocolFeeState(t *testing.T) {
 		t.Fatal("expected malformed protocol fee state to fail")
 	}
 }
+
+func TestFeeModelEfficiencyAcceptsBoundedIntegratedFees(t *testing.T) {
+	params := DefaultParams()
+	params.ValidatorRewardsRatio = "0.85"
+	params.CommunityPoolRatio = "0.15"
+
+	report, err := EvaluateFeeModelEfficiency(FeeModelEfficiencyInput{
+		Params:                        params,
+		SimulationLoadsBps:            []uint32{0, 5_000, 8_000, 10_000},
+		CurrentBlockLoadBps:           7_000,
+		ValidatorRewardCoverageBps:    appparams.MinValidatorRewardCoverageBps,
+		MaintenanceFundingCoverageBps: appparams.BasisPoints,
+		NativeLiquidityDepthNaet:      sdkmath.NewInt(100_000),
+		DailyFeePressureNaet:          sdkmath.NewInt(100),
+		AntiSpamMultiplierBps:         appparams.MinSpamCostMultiplierBps,
+		BurnIntegratedWithIssuance:    true,
+		FeeBurnRatioBps:               appparams.NormalBurnRatioBps,
+		BlockTxFeeNaet:                sdkmath.NewInt(1_000),
+		StorageFeeNaet:                sdkmath.NewInt(60),
+		ExecutionFeeNaet:              sdkmath.NewInt(40),
+		ExpectedBlockProcessingMs:     1_000,
+		ObservedBlockProcessingMs:     500,
+		ExpectedValidatorMemoryMB:     1_000,
+		ObservedValidatorMemoryMB:     600,
+	})
+	if err != nil {
+		t.Fatalf("fee model efficiency should evaluate: %v", err)
+	}
+	if !report.Healthy {
+		t.Fatalf("expected healthy fee model, got risks: %v", report.Risks)
+	}
+	if report.ValidatorFeeShareBps != 8_500 || report.CommunityFeeShareBps != 1_500 {
+		t.Fatalf("unexpected fee split bps: %+v", report)
+	}
+	if report.StorageExecutionFeeBps != 1_000 {
+		t.Fatalf("expected normalized storage/execution bps, got %d", report.StorageExecutionFeeBps)
+	}
+	if report.SimulationSampleCount != 4 {
+		t.Fatalf("expected 4 simulation samples, got %d", report.SimulationSampleCount)
+	}
+}
+
+func TestFeeModelEfficiencyReportsSectionRisks(t *testing.T) {
+	report, err := EvaluateFeeModelEfficiency(FeeModelEfficiencyInput{
+		Params:                        DefaultParams(),
+		SimulationLoadsBps:            []uint32{0, 10_000},
+		CurrentBlockLoadBps:           9_000,
+		ValidatorRewardCoverageBps:    appparams.MinValidatorRewardCoverageBps,
+		MaintenanceFundingCoverageBps: appparams.BasisPoints - 1,
+		NativeLiquidityDepthNaet:      sdkmath.NewInt(10_000),
+		DailyFeePressureNaet:          sdkmath.NewInt(2_000),
+		AntiSpamMultiplierBps:         appparams.MinSpamCostMultiplierBps - 1,
+		BurnIntegratedWithIssuance:    false,
+		FeeBurnRatioBps:               0,
+		BlockTxFeeNaet:                sdkmath.NewInt(1_000),
+		StorageFeeNaet:                sdkmath.NewInt(1),
+		ExecutionFeeNaet:              sdkmath.ZeroInt(),
+		ExpectedBlockProcessingMs:     100,
+		ObservedBlockProcessingMs:     90,
+		ExpectedValidatorMemoryMB:     1_000,
+		ObservedValidatorMemoryMB:     900,
+	})
+	if err != nil {
+		t.Fatalf("fee model efficiency should evaluate: %v", err)
+	}
+	if report.Healthy {
+		t.Fatal("expected inefficient fee model to report risks")
+	}
+	requireElementsMatch(t, []string{
+		"static_fee_split_overpays_validators_underfunds_maintenance",
+		"fee_simulation_coverage_too_low",
+		"native_denom_fee_pressure_concentrated",
+		"anti_spam_multiplier_too_weak",
+		"fee_burn_not_integrated_with_issuance",
+		"storage_execution_fees_not_normalized_to_block_fees",
+		"gas_limits_exceed_validator_hardware_budget",
+	}, report.Risks)
+	if report.NativeFeePressureBps != 2_000 {
+		t.Fatalf("expected native fee pressure bps 2000, got %d", report.NativeFeePressureBps)
+	}
+}
+
+func TestFeeModelEfficiencyReportsMissingHardwareCalibration(t *testing.T) {
+	report, err := EvaluateFeeModelEfficiency(FeeModelEfficiencyInput{
+		Params:                        DefaultParams(),
+		SimulationLoadsBps:            []uint32{0, 5_000, 8_000, 10_000},
+		CurrentBlockLoadBps:           7_000,
+		ValidatorRewardCoverageBps:    appparams.MinValidatorRewardCoverageBps,
+		MaintenanceFundingCoverageBps: appparams.BasisPoints,
+		NativeLiquidityDepthNaet:      sdkmath.NewInt(100_000),
+		DailyFeePressureNaet:          sdkmath.NewInt(100),
+		AntiSpamMultiplierBps:         appparams.MinSpamCostMultiplierBps,
+		BurnIntegratedWithIssuance:    true,
+		FeeBurnRatioBps:               appparams.NormalBurnRatioBps,
+		BlockTxFeeNaet:                sdkmath.NewInt(1_000),
+		StorageFeeNaet:                sdkmath.NewInt(100),
+	})
+	if err != nil {
+		t.Fatalf("fee model efficiency should evaluate: %v", err)
+	}
+	requireElementsMatch(t, []string{"validator_hardware_calibration_missing"}, report.Risks)
+}
+
+func TestSimulateFeeModelRejectsOutOfRangeLoad(t *testing.T) {
+	_, err := SimulateFeeModel(DefaultParams(), []uint32{0, 10_001}, DefaultMinSimulationSampleCount)
+	if err == nil {
+		t.Fatal("expected out-of-range simulation load to fail")
+	}
+}
+
+func requireElementsMatch(t *testing.T, expected, actual []string) {
+	t.Helper()
+	if len(expected) != len(actual) {
+		t.Fatalf("expected %v, got %v", expected, actual)
+	}
+	counts := make(map[string]int, len(expected))
+	for _, item := range expected {
+		counts[item]++
+	}
+	for _, item := range actual {
+		counts[item]--
+	}
+	for item, count := range counts {
+		if count != 0 {
+			t.Fatalf("expected %v, got %v; mismatch on %s", expected, actual, item)
+		}
+	}
+}

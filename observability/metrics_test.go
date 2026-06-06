@@ -51,6 +51,8 @@ func TestMetricNamesSnapshot(t *testing.T) {
 		MetricValidatorIncentiveFindings,
 		MetricStakingCentralizationHealthy,
 		MetricStakingCentralizationRisks,
+		MetricFeeModelEfficiencyHealthy,
+		MetricFeeModelEfficiencyRisks,
 		MetricLocalnetHealth,
 		MetricProcessUptimeSeconds,
 		MetricProcessMemoryBytes,
@@ -152,6 +154,8 @@ func (r *Registry) RecordTestSamples() {
 	r.SetGauge(MetricValidatorIncentiveFindings, nil, 0)
 	r.SetGauge(MetricStakingCentralizationHealthy, nil, 1)
 	r.SetGauge(MetricStakingCentralizationRisks, nil, 0)
+	r.SetGauge(MetricFeeModelEfficiencyHealthy, nil, 1)
+	r.SetGauge(MetricFeeModelEfficiencyRisks, nil, 0)
 }
 
 func renderRegistry(t *testing.T, reg *Registry) string {
