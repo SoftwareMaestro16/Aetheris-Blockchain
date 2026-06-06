@@ -14,6 +14,8 @@ const (
 	DefaultMaxDelayedBlockHeights     = uint64(2)
 	DefaultMinPeerDiversityBps        = uint32(4_000)
 	DefaultSybilScoreThresholdBps     = uint32(2_500)
+	DefaultMaxPeersPerIdentityCluster = uint32(2)
+	DefaultReputationDecayBps         = uint32(500)
 )
 
 type NetworkThreat string
@@ -124,6 +126,61 @@ type PeerDiversityReport struct {
 	SybilRisk           bool
 }
 
+type PeerReputationInput struct {
+	PeerNodeID                string
+	ValidMessages             uint64
+	InvalidMessages           uint64
+	LatencyMillis             uint64
+	ThroughputBytesPerSec     uint64
+	CorrectChunks             uint64
+	CorruptChunks             uint64
+	ValidDiscoveryResponses   uint64
+	InvalidDiscoveryResponses uint64
+	ValidServiceResponses     uint64
+	InvalidServiceResponses   uint64
+	Timeouts                  uint64
+	DuplicateBroadcasts       uint64
+	ConflictingBroadcasts     uint64
+	EvidenceHash              string
+	EvidenceHeight            uint64
+	CommittedEvidence         bool
+	UsedForConsensus          bool
+	ElapsedEpochs             uint64
+	DecayPolicy               PeerScoreDecayPolicy
+}
+
+type PeerReputationDecision struct {
+	PeerNodeID        string
+	Score             PeerScore
+	LocalAdvisory     bool
+	ConsensusEligible bool
+	PenaltyBps        uint32
+	DecayAppliedBps   uint32
+	EvidenceHash      string
+	Reason            string
+}
+
+type EclipseResistancePolicy struct {
+	MinRandomPeers             uint32
+	MinValidatorPeers          uint32
+	MinZonePeers               uint32
+	MaxPeersPerIdentityCluster uint32
+	PreferProofBackedRecords   bool
+	RotateDiscoverySources     bool
+}
+
+type EclipseResistancePlan struct {
+	RandomSetMaintained      bool
+	ValidatorDiversity       bool
+	ZoneDiversity            bool
+	DiscoverySourcesRotated  bool
+	IdentityClusterLimited   bool
+	ProofBackedCriticalRoute bool
+	PeersToDrop              []string
+	DiscoverySources         []string
+	CriticalRoutingPeers     []string
+}
+
 func DefaultNetworkSecurityPolicy() NetworkSecurityPolicy {
 	return NetworkSecurityPolicy{
 		ReplayHorizon:            DefaultSecurityReplayHorizon,
@@ -135,6 +192,17 @@ func DefaultNetworkSecurityPolicy() NetworkSecurityPolicy {
 		ChannelRateLimits:        DefaultChannelRateLimits(),
 		RequiredControls:         DefaultSecurityControls(),
 		ConsensusChannelRequired: true,
+	}
+}
+
+func DefaultEclipseResistancePolicy() EclipseResistancePolicy {
+	return EclipseResistancePolicy{
+		MinRandomPeers:             DefaultRandomDiversityBucket,
+		MinValidatorPeers:          2,
+		MinZonePeers:               2,
+		MaxPeersPerIdentityCluster: DefaultMaxPeersPerIdentityCluster,
+		PreferProofBackedRecords:   true,
+		RotateDiscoverySources:     true,
 	}
 }
 
@@ -343,6 +411,119 @@ func ApplySecurityReputation(score PeerScore, observation PeerSecurityObservatio
 	return out
 }
 
+func ComputePeerReputation(input PeerReputationInput) (PeerReputationDecision, error) {
+	input.PeerNodeID = normalizeHashText(input.PeerNodeID)
+	if err := ValidateHash("networking reputation peer node id", input.PeerNodeID); err != nil {
+		return PeerReputationDecision{}, err
+	}
+	if input.UsedForConsensus {
+		input.EvidenceHash = normalizeHashText(input.EvidenceHash)
+		if !input.CommittedEvidence {
+			return PeerReputationDecision{}, errors.New("networking reputation used for consensus requires committed evidence")
+		}
+		if err := ValidateHash("networking reputation evidence hash", input.EvidenceHash); err != nil {
+			return PeerReputationDecision{}, err
+		}
+		if input.EvidenceHeight == 0 {
+			return PeerReputationDecision{}, errors.New("networking reputation evidence height is required")
+		}
+	}
+	if input.DecayPolicy.MaxDecayBpsPerEpoch == 0 {
+		input.DecayPolicy = PeerScoreDecayPolicy{
+			MaxDecayBpsPerEpoch: DefaultReputationDecayBps,
+			MinScoreBps:         DefaultPeerScoreDecayFloor,
+		}
+	}
+	if err := input.DecayPolicy.Validate(); err != nil {
+		return PeerReputationDecision{}, err
+	}
+	totalMessages := input.ValidMessages + input.InvalidMessages
+	validRate := uint32(BasisPoints)
+	if totalMessages > 0 {
+		validRate = uint32(input.ValidMessages * uint64(BasisPoints) / totalMessages)
+	}
+	chunkTotal := input.CorrectChunks + input.CorruptChunks
+	chunkCorrectness := uint32(BasisPoints)
+	if chunkTotal > 0 {
+		chunkCorrectness = uint32(input.CorrectChunks * uint64(BasisPoints) / chunkTotal)
+	}
+	discoveryTotal := input.ValidDiscoveryResponses + input.InvalidDiscoveryResponses
+	discoveryValidity := uint32(BasisPoints)
+	if discoveryTotal > 0 {
+		discoveryValidity = uint32(input.ValidDiscoveryResponses * uint64(BasisPoints) / discoveryTotal)
+	}
+	serviceTotal := input.ValidServiceResponses + input.InvalidServiceResponses
+	serviceValidity := uint32(BasisPoints)
+	if serviceTotal > 0 {
+		serviceValidity = uint32(input.ValidServiceResponses * uint64(BasisPoints) / serviceTotal)
+	}
+	latencyBps := uint32(BasisPoints)
+	if input.LatencyMillis > 0 {
+		if input.LatencyMillis >= 1_000 {
+			latencyBps = 1_000
+		} else {
+			latencyBps = uint32(uint64(BasisPoints) - input.LatencyMillis*9)
+		}
+	}
+	throughputBps := uint32(0)
+	if input.ThroughputBytesPerSec >= 64<<20 {
+		throughputBps = BasisPoints
+	} else {
+		throughputBps = uint32(input.ThroughputBytesPerSec * uint64(BasisPoints) / uint64(64<<20))
+	}
+	timeoutPenalty := minSecurityUint64(input.Timeouts*400, uint64(BasisPoints))
+	duplicatePenalty := minSecurityUint64(input.DuplicateBroadcasts*150, uint64(BasisPoints))
+	conflictPenalty := minSecurityUint64(input.ConflictingBroadcasts*1_500, uint64(BasisPoints))
+	invalidPenalty := minSecurityUint64(input.InvalidMessages*250, uint64(BasisPoints))
+	scoreBps := weightedReputationScore(validRate, latencyBps, throughputBps, chunkCorrectness, discoveryValidity, serviceValidity)
+	penalty := timeoutPenalty + duplicatePenalty + conflictPenalty + invalidPenalty
+	if penalty > uint64(BasisPoints) {
+		penalty = uint64(BasisPoints)
+	}
+	if uint64(scoreBps) > penalty {
+		scoreBps -= uint32(penalty)
+	} else {
+		scoreBps = 0
+	}
+	score := PeerScore{
+		ScoreBps:       scoreBps,
+		LatencyBps:     latencyBps,
+		ReliabilityBps: validRate,
+		ThroughputBps:  throughputBps,
+		PenaltyBps:     uint32(penalty),
+	}
+	decayed, err := DecayPeerScore(score, input.ElapsedEpochs, input.DecayPolicy)
+	if err != nil {
+		return PeerReputationDecision{}, err
+	}
+	decayApplied := uint32(0)
+	if score.ScoreBps > decayed.ScoreBps {
+		decayApplied = score.ScoreBps - decayed.ScoreBps
+	}
+	return PeerReputationDecision{
+		PeerNodeID:        input.PeerNodeID,
+		Score:             decayed,
+		LocalAdvisory:     !input.UsedForConsensus,
+		ConsensusEligible: input.UsedForConsensus && input.CommittedEvidence,
+		PenaltyBps:        uint32(penalty),
+		DecayAppliedBps:   decayApplied,
+		EvidenceHash:      input.EvidenceHash,
+	}, nil
+}
+
+func ValidateReputationConsensusUse(decision PeerReputationDecision, usedForConsensus bool) error {
+	if !usedForConsensus {
+		return nil
+	}
+	if !decision.ConsensusEligible {
+		return errors.New("networking reputation is advisory until committed evidence exists")
+	}
+	if err := ValidateHash("networking reputation decision evidence hash", decision.EvidenceHash); err != nil {
+		return err
+	}
+	return nil
+}
+
 func NewReplayProtectionCache(horizon uint64) ReplayProtectionCache {
 	if horizon == 0 {
 		horizon = DefaultSecurityReplayHorizon
@@ -533,6 +714,72 @@ func EvaluatePeerDiversity(peers []NodeRecord, policy NetworkSecurityPolicy) (Pe
 	return report, nil
 }
 
+func BuildEclipseResistancePlan(graph AdaptiveOverlayGraph, records []DiscoveryRecord, policy EclipseResistancePolicy, routingEpoch uint64) (EclipseResistancePlan, error) {
+	graph = NormalizeAdaptiveOverlayGraph(graph)
+	if err := ValidateHash("networking eclipse graph local node id", graph.LocalNodeID); err != nil {
+		return EclipseResistancePlan{}, err
+	}
+	if policy.MaxPeersPerIdentityCluster == 0 {
+		policy = DefaultEclipseResistancePolicy()
+	}
+	if routingEpoch == 0 {
+		return EclipseResistancePlan{}, errors.New("networking eclipse routing epoch is required")
+	}
+	allPeers := uniqueAdaptivePeers(graph.FastSet, graph.StableSet, graph.RandomSet, graph.ZoneSet, graph.ServiceSet, graph.FallbackSet)
+	if len(allPeers) == 0 {
+		return EclipseResistancePlan{}, errors.New("networking eclipse peers are required")
+	}
+	clusterCounts := make(map[string]uint32, len(allPeers))
+	peersToDrop := make([]string, 0)
+	for _, peer := range allPeers {
+		cluster := peerIdentityCluster(peer)
+		clusterCounts[cluster]++
+		if clusterCounts[cluster] > policy.MaxPeersPerIdentityCluster {
+			peersToDrop = append(peersToDrop, peer.NodeID)
+		}
+	}
+	randomSet := sortAdaptivePeersBySeed(graph.RandomSet, HashParts("eclipse-random", graph.OverlayID, fmt.Sprintf("%d", routingEpoch)))
+	discoverySources := adaptivePeerIDsForSecurity(sortAdaptivePeersBySeed(allPeers, HashParts("eclipse-discovery", graph.OverlayID, fmt.Sprintf("%d", routingEpoch))))
+	criticalPeers := proofBackedCriticalRoutingPeers(records, policy.PreferProofBackedRecords)
+	if len(criticalPeers) == 0 && !policy.PreferProofBackedRecords {
+		criticalPeers = discoverySources
+	}
+	sortStrings(peersToDrop)
+	return EclipseResistancePlan{
+		RandomSetMaintained:      uint32(len(randomSet)) >= policy.MinRandomPeers && distinctAdaptivePeerBuckets(randomSet) >= minUint32(policy.MinRandomPeers, uint32(len(randomSet))),
+		ValidatorDiversity:       countAdaptivePeersWithRole(allPeers, NodeRoleValidator) >= policy.MinValidatorPeers,
+		ZoneDiversity:            distinctAdaptiveZones(allPeers) >= policy.MinZonePeers,
+		DiscoverySourcesRotated:  policy.RotateDiscoverySources && len(discoverySources) > 0,
+		IdentityClusterLimited:   len(peersToDrop) == 0,
+		ProofBackedCriticalRoute: !policy.PreferProofBackedRecords || len(criticalPeers) > 0,
+		PeersToDrop:              peersToDrop,
+		DiscoverySources:         discoverySources,
+		CriticalRoutingPeers:     criticalPeers,
+	}, nil
+}
+
+func ValidateEclipseResistancePlan(plan EclipseResistancePlan) error {
+	if !plan.RandomSetMaintained {
+		return errors.New("networking eclipse resistance requires maintained random peer set")
+	}
+	if !plan.ValidatorDiversity {
+		return errors.New("networking eclipse resistance requires validator peer diversity")
+	}
+	if !plan.ZoneDiversity {
+		return errors.New("networking eclipse resistance requires zone peer diversity")
+	}
+	if !plan.DiscoverySourcesRotated {
+		return errors.New("networking eclipse resistance requires rotated discovery sources")
+	}
+	if !plan.IdentityClusterLimited {
+		return errors.New("networking eclipse resistance requires identity cluster limits")
+	}
+	if !plan.ProofBackedCriticalRoute {
+		return errors.New("networking eclipse resistance requires proof backed critical routing")
+	}
+	return nil
+}
+
 func ValidateSecurityQoSIsolation(policies []QoSClassPolicy) error {
 	if err := ValidateQoSClassPolicies(policies); err != nil {
 		return err
@@ -623,4 +870,87 @@ func minSecurityUint64(left, right uint64) uint64 {
 		return left
 	}
 	return right
+}
+
+func weightedReputationScore(validRate, latencyBps, throughputBps, chunkCorrectness, discoveryValidity, serviceValidity uint32) uint32 {
+	total := uint64(validRate)*3_000 +
+		uint64(chunkCorrectness)*2_000 +
+		uint64(discoveryValidity)*1_250 +
+		uint64(serviceValidity)*1_250 +
+		uint64(latencyBps)*1_250 +
+		uint64(throughputBps)*1_250
+	return uint32(total / uint64(BasisPoints))
+}
+
+func peerIdentityCluster(peer AdaptivePeer) string {
+	roles := make([]string, len(peer.Roles))
+	for i, role := range peer.Roles {
+		roles[i] = string(role)
+	}
+	sortStrings(roles)
+	zones := append([]string(nil), peer.ZonesSupported...)
+	sortStrings(zones)
+	return HashParts("peer-identity-cluster", strings.Join(roles, ","), strings.Join(zones, ","))
+}
+
+func countAdaptivePeersWithRole(peers []AdaptivePeer, role NodeRole) uint32 {
+	count := uint32(0)
+	for _, peer := range peers {
+		if hasRole(peer.Roles, role) {
+			count++
+		}
+	}
+	return count
+}
+
+func distinctAdaptiveZones(peers []AdaptivePeer) uint32 {
+	seen := make(map[string]struct{})
+	for _, peer := range peers {
+		for _, zone := range peer.ZonesSupported {
+			zone = strings.TrimSpace(zone)
+			if zone != "" {
+				seen[zone] = struct{}{}
+			}
+		}
+	}
+	return uint32(len(seen))
+}
+
+func proofBackedCriticalRoutingPeers(records []DiscoveryRecord, proofRequired bool) []string {
+	out := make([]string, 0, len(records))
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		record = NormalizeDiscoveryRecord(record)
+		if proofRequired && (record.ProofHash == "" || record.ProofHeight == 0) {
+			continue
+		}
+		if record.RecordType != DRTObjectRoutingEntryPoint && record.RecordType != DRTObjectOverlayMembershipRecord && record.RecordType != DRTObjectNode {
+			continue
+		}
+		if _, found := seen[record.OwnerNodeID]; found {
+			continue
+		}
+		seen[record.OwnerNodeID] = struct{}{}
+		out = append(out, record.OwnerNodeID)
+	}
+	sortStrings(out)
+	return out
+}
+
+func adaptivePeerIDsForSecurity(peers []AdaptivePeer) []string {
+	out := make([]string, 0, len(peers))
+	seen := make(map[string]struct{}, len(peers))
+	for _, peer := range peers {
+		nodeID := normalizeHashText(peer.NodeID)
+		if nodeID == "" {
+			continue
+		}
+		if _, found := seen[nodeID]; found {
+			continue
+		}
+		seen[nodeID] = struct{}{}
+		out = append(out, nodeID)
+	}
+	sortStrings(out)
+	return out
 }

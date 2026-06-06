@@ -3089,6 +3089,114 @@ func TestNetworkSecurityPeerDiversityAndWithheldBlockChunks(t *testing.T) {
 	require.True(t, withheld)
 }
 
+func TestPeerReputationIsAdvisoryUntilEvidenceCommittedAndDecayBounded(t *testing.T) {
+	input := PeerReputationInput{
+		PeerNodeID:                HashParts("reputation-peer"),
+		ValidMessages:             95,
+		InvalidMessages:           5,
+		LatencyMillis:             50,
+		ThroughputBytesPerSec:     32 << 20,
+		CorrectChunks:             20,
+		CorruptChunks:             1,
+		ValidDiscoveryResponses:   9,
+		InvalidDiscoveryResponses: 1,
+		ValidServiceResponses:     8,
+		InvalidServiceResponses:   2,
+		Timeouts:                  1,
+		DuplicateBroadcasts:       2,
+		ConflictingBroadcasts:     0,
+		ElapsedEpochs:             2,
+		DecayPolicy: PeerScoreDecayPolicy{
+			MaxDecayBpsPerEpoch: 300,
+			MinScoreBps:         4_000,
+		},
+	}
+	decision, err := ComputePeerReputation(input)
+	require.NoError(t, err)
+	require.True(t, decision.LocalAdvisory)
+	require.False(t, decision.ConsensusEligible)
+	require.Greater(t, decision.PenaltyBps, uint32(0))
+	require.Equal(t, uint32(600), decision.DecayAppliedBps)
+	require.NoError(t, ValidateReputationConsensusUse(decision, false))
+	require.ErrorContains(t, ValidateReputationConsensusUse(decision, true), "advisory")
+
+	input.UsedForConsensus = true
+	_, err = ComputePeerReputation(input)
+	require.ErrorContains(t, err, "committed evidence")
+
+	input.CommittedEvidence = true
+	input.EvidenceHash = HashParts("reputation-evidence", input.PeerNodeID)
+	input.EvidenceHeight = 55
+	committed, err := ComputePeerReputation(input)
+	require.NoError(t, err)
+	require.False(t, committed.LocalAdvisory)
+	require.True(t, committed.ConsensusEligible)
+	require.NoError(t, ValidateReputationConsensusUse(committed, true))
+
+	input.ElapsedEpochs = 100
+	bounded, err := ComputePeerReputation(input)
+	require.NoError(t, err)
+	require.Equal(t, uint32(4_000), bounded.Score.ScoreBps)
+}
+
+func TestEclipseResistancePlanMaintainsDiversityAndProofBackedRouting(t *testing.T) {
+	graph := AdaptiveOverlayGraph{
+		OverlayID:    HashParts("eclipse-overlay"),
+		LocalNodeID:  HashParts("eclipse-local"),
+		RoutingEpoch: 7,
+		PolicyHash:   HashParts("eclipse-policy"),
+		RandomSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("random-a", []NodeRole{NodeRoleFull}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("random-b", []NodeRole{NodeRoleFull}, []string{"zone-b"}),
+		},
+		FallbackSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("fallback-a", []NodeRole{NodeRoleFull}, []string{"zone-c"}),
+		},
+		StableSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("validator-a", []NodeRole{NodeRoleValidator}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("validator-b", []NodeRole{NodeRoleValidator}, []string{"zone-b"}),
+		},
+		ZoneSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("zone-a", []NodeRole{NodeRoleZoneExecution}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("zone-b", []NodeRole{NodeRoleZoneExecution}, []string{"zone-b"}),
+		},
+	}
+	records := []DiscoveryRecord{
+		{
+			RecordType:  DRTObjectRoutingEntryPoint,
+			OwnerNodeID: graph.StableSet[0].NodeID,
+			ProofHash:   HashParts("proof-backed-routing", "a"),
+			ProofHeight: 7,
+		},
+		{
+			RecordType:  DRTObjectRoutingEntryPoint,
+			OwnerNodeID: graph.StableSet[1].NodeID,
+		},
+	}
+	plan, err := BuildEclipseResistancePlan(graph, records, DefaultEclipseResistancePolicy(), 7)
+	require.NoError(t, err)
+	require.True(t, plan.RandomSetMaintained)
+	require.True(t, plan.ValidatorDiversity)
+	require.True(t, plan.ZoneDiversity)
+	require.True(t, plan.DiscoverySourcesRotated)
+	require.True(t, plan.IdentityClusterLimited)
+	require.True(t, plan.ProofBackedCriticalRoute)
+	require.Equal(t, []string{graph.StableSet[0].NodeID}, plan.CriticalRoutingPeers)
+	require.NoError(t, ValidateEclipseResistancePlan(plan))
+
+	clustered := graph
+	clustered.FastSet = []AdaptivePeer{
+		testSecurityAdaptivePeer("cluster-a", []NodeRole{NodeRoleFull}, []string{"cluster-zone"}),
+		testSecurityAdaptivePeer("cluster-b", []NodeRole{NodeRoleFull}, []string{"cluster-zone"}),
+		testSecurityAdaptivePeer("cluster-c", []NodeRole{NodeRoleFull}, []string{"cluster-zone"}),
+	}
+	badPlan, err := BuildEclipseResistancePlan(clustered, nil, DefaultEclipseResistancePolicy(), 8)
+	require.NoError(t, err)
+	require.False(t, badPlan.IdentityClusterLimited)
+	require.NotEmpty(t, badPlan.PeersToDrop)
+	require.ErrorContains(t, ValidateEclipseResistancePlan(badPlan), "identity cluster")
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
@@ -3398,6 +3506,19 @@ func testGlobalAdaptivePeer(t *testing.T, record NodeRecord, scoreBps uint32, la
 	peer.ZonesSupported = nil
 	peer.Services = nil
 	return peer
+}
+
+func testSecurityAdaptivePeer(label string, roles []NodeRole, zones []string) AdaptivePeer {
+	return AdaptivePeer{
+		NodeID:          HashParts("security-adaptive-peer", label),
+		ScoreBps:        8_000,
+		LatencyMillis:   25,
+		ReliabilityBps:  8_500,
+		Roles:           roles,
+		ZonesSupported:  zones,
+		LastSeenHeight:  7,
+		LastScoreHeight: 7,
+	}
 }
 
 func adaptivePeerIDs(peers []AdaptivePeer) []string {
