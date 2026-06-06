@@ -148,8 +148,10 @@ func TestZoneDescriptorCoversKernelSpecificationFields(t *testing.T) {
 		GasPolicyID:           DefaultGasPolicy,
 		MessagePolicyID:       DefaultMessagePolicy,
 		RootPrefix:            "zone/APPLICATION_ZONE",
+		ShardLayoutEpoch:      3,
 		UpgradeHeightOptional: 100,
-		Capabilities:          []string{"receipt", "state", "async-outbox", "async-inbox"},
+		MessageCapabilities:   []string{"async-outbox", "async-inbox"},
+		ProofCapabilities:     []string{"state", "receipt"},
 		MaxShards:             4,
 	}
 	descriptor = CanonicalZoneDescriptor(descriptor)
@@ -157,6 +159,21 @@ func TestZoneDescriptorCoversKernelSpecificationFields(t *testing.T) {
 	require.Equal(t, uint64(2), descriptor.StateMachineVersion)
 	require.Equal(t, []string{"async-inbox", "async-outbox", "receipt", "state"}, descriptor.Capabilities)
 	require.NoError(t, descriptor.Validate(TestnetParams()))
+	spec, err := NewZoneDescriptorSpec(descriptor)
+	require.NoError(t, err)
+	require.NoError(t, spec.Validate())
+	require.Equal(t, ZoneID(ZoneIDApplication), spec.ZoneID)
+	require.Equal(t, ZoneTypeApplication, spec.ZoneType)
+	require.Equal(t, "application", spec.ModuleName)
+	require.True(t, spec.Enabled)
+	require.Equal(t, uint64(2), spec.StateMachineVersion)
+	require.Equal(t, DefaultMempoolPolicy, spec.MempoolPolicyID)
+	require.Equal(t, NativeFeePolicyID, spec.FeePolicyID)
+	require.Equal(t, uint64(3), spec.ShardLayoutEpoch)
+	require.Equal(t, uint32(4), spec.MaxShards)
+	require.Equal(t, []string{"async-inbox", "async-outbox"}, spec.MessageCapabilities)
+	require.Equal(t, []string{"receipt", "state"}, spec.ProofCapabilities)
+	require.Equal(t, uint64(100), spec.UpgradeHeightOptional)
 
 	mutated := descriptor
 	mutated.Capabilities = []string{"state", "receipt", "async-outbox", "async-inbox"}
@@ -181,10 +198,41 @@ func TestZoneCommitmentCoversKernelSpecificationFields(t *testing.T) {
 	require.NotEmpty(t, commitment.ParamsHash)
 	require.NotEmpty(t, commitment.ExecutionSummaryHash)
 	require.NoError(t, commitment.ValidateHash())
+	spec, err := NewZoneCommitmentSpec(commitment)
+	require.NoError(t, err)
+	require.NoError(t, spec.Validate())
+	require.Equal(t, commitment.Height, spec.Height)
+	require.Equal(t, commitment.ZoneID, spec.ZoneID)
+	require.Equal(t, commitment.StateRoot, spec.ZoneStateRoot)
+	require.Equal(t, commitment.OutboxRoot, spec.ZoneMessageOutboxRoot)
+	require.Equal(t, commitment.InboxRoot, spec.ZoneMessageInboxRoot)
+	require.Equal(t, commitment.ReceiptsRoot, spec.ZoneReceiptRoot)
+	require.Equal(t, commitment.EventsRoot, spec.ZoneEventRoot)
+	require.Equal(t, commitment.ShardRootsRoot, spec.ShardRootsRoot)
+	require.Equal(t, commitment.ExecutionSummaryHash, spec.ExecutionSummaryHash)
 
 	mutated := commitment
 	mutated.ShardRootsRoot = testHash("mutated/shards")
 	require.ErrorContains(t, mutated.ValidateHash(), "commitment hash mismatch")
+}
+
+func TestCoreExecutionPipelineSpecMatchesABCIPhases(t *testing.T) {
+	pipeline, err := DefaultCoreExecutionPipelineSpec()
+	require.NoError(t, err)
+	require.NoError(t, pipeline.ValidateHash())
+	require.Len(t, pipeline.Phases, 4)
+	require.Equal(t, KernelPhasePrepareProposal, pipeline.Phases[0].Phase)
+	require.Equal(t, KernelPhaseProcessProposal, pipeline.Phases[1].Phase)
+	require.Equal(t, KernelPhaseFinalizeBlock, pipeline.Phases[2].Phase)
+	require.Equal(t, KernelPhaseCommit, pipeline.Phases[3].Phase)
+	require.Contains(t, pipeline.Phases[0].DeterministicWork, "group-transactions-by-zone-and-shard")
+	require.Contains(t, pipeline.Phases[1].RejectionChecks, "wrong-message-delivery-order")
+	require.Contains(t, pipeline.Phases[2].CommittedOutput, "global-message-root")
+	require.Contains(t, pipeline.Phases[3].CommittedOutput, "delivery-eligibility")
+
+	mutated := pipeline
+	mutated.Phases[0], mutated.Phases[1] = mutated.Phases[1], mutated.Phases[0]
+	require.ErrorContains(t, mutated.ValidateHash(), "phase order mismatch")
 }
 
 func TestRootReplayIdenticalAcrossNodes(t *testing.T) {
