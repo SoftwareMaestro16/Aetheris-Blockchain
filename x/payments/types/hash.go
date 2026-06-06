@@ -43,7 +43,18 @@ func ComputeStateHash(state ChannelState) string {
 	writeInt64(h, state.TimeoutTimestamp)
 	writeUint64(h, state.CloseDelay)
 	writeString(h, state.FeePolicyID)
+	writeUint64(h, state.CheckpointNonce)
+	writeString(h, state.AsyncUpdateRoot)
+	writeString(h, state.AcceptedUpdateRoot)
+	writeUint64(h, state.SendWindow)
+	writeUint64(h, state.ReceiveWindow)
+	writeString(h, state.MaxUnackedAmount)
+	writeUint64(h, state.ExpiryHeight)
 	for _, balance := range state.Balances {
+		writeString(h, balance.Participant)
+		writeString(h, balance.Amount)
+	}
+	for _, balance := range state.CheckpointBalances {
 		writeString(h, balance.Participant)
 		writeString(h, balance.Amount)
 	}
@@ -120,6 +131,49 @@ func ComputeClaimSignatureHash(signer, claimHash string) string {
 	h := sha256.New()
 	writeString(h, "aetheris-payment-unidirectional-claim-signature-v1")
 	_, _ = h.Write(ClaimSignaturePreimage(signer, claimHash))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAsyncDeltaHash(delta AsyncPaymentDelta) string {
+	delta = delta.Normalize()
+	h := sha256.New()
+	writeString(h, "aetheris-payment-async-delta-v1")
+	writeString(h, delta.UpdateID)
+	writeString(h, delta.ChannelID)
+	writeString(h, delta.From)
+	writeString(h, delta.To)
+	writeString(h, delta.Direction)
+	writeString(h, delta.Amount)
+	writeUint64(h, delta.NonceStart)
+	writeUint64(h, delta.NonceEnd)
+	writeUint64(h, delta.ExpiryHeight)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeAsyncDeltaRoot(deltas []AsyncPaymentDelta) string {
+	h := sha256.New()
+	writeString(h, "aetheris-payment-async-delta-root-v1")
+	for _, delta := range normalizeAsyncDeltas(deltas) {
+		writeString(h, delta.UpdateID)
+		writeString(h, delta.DeltaHash)
+		writeString(h, delta.Signature.Signer)
+		writeString(h, delta.Signature.SignatureHash)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func DeltaSignaturePreimage(signer, deltaHash string) []byte {
+	var buf bytes.Buffer
+	writeString(&buf, "aetheris-payment-async-delta-signature-preimage-v1")
+	writeString(&buf, signer)
+	writeString(&buf, deltaHash)
+	return buf.Bytes()
+}
+
+func ComputeDeltaSignatureHash(signer, deltaHash string) string {
+	h := sha256.New()
+	writeString(h, "aetheris-payment-async-delta-signature-v1")
+	_, _ = h.Write(DeltaSignaturePreimage(signer, deltaHash))
 	return hex.EncodeToString(h.Sum(nil))
 }
 

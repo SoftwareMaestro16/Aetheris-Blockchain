@@ -112,6 +112,49 @@ func AcceptSignedState(state PaymentsState, channelID string, nextState ChannelS
 	return next, next.Validate()
 }
 
+func AcceptAsyncCheckpoint(state PaymentsState, channelID string, checkpoint ChannelState, deltas []AsyncPaymentDelta, submitter string, currentHeight uint64) (PaymentsState, error) {
+	state = state.Export()
+	if currentHeight == 0 {
+		return PaymentsState{}, errors.New("payments async checkpoint height must be positive")
+	}
+	index, channel, found := state.ChannelIndex(channelID)
+	if !found {
+		return PaymentsState{}, errors.New("payments channel not found")
+	}
+	if channel.Status != ChannelStatusOpen {
+		return PaymentsState{}, errors.New("payments channel is not open")
+	}
+	if channel.ChannelType != ChannelTypeAsync {
+		return PaymentsState{}, errors.New("payments checkpoint requires async channel")
+	}
+	if !containsString(channel.Participants, submitter) {
+		return PaymentsState{}, errors.New("payments async checkpoint submitter must be participant")
+	}
+	checkpoint = checkpoint.Normalize()
+	if err := checkpoint.ValidateForChannel(channel, false); err != nil {
+		return PaymentsState{}, err
+	}
+	if checkpoint.CheckpointNonce <= channel.LatestState.CheckpointNonce {
+		return PaymentsState{}, errors.New("payments async checkpoint nonce must increase")
+	}
+	proof := AsyncDeltaDisputeProof{
+		ProofID:         HashParts("async-checkpoint-proof", checkpoint.StateHash),
+		ChannelID:       channel.ChannelID,
+		CheckpointState: checkpoint,
+		Deltas:          deltas,
+		EvidenceHash:    HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot(deltas)),
+	}
+	if err := proof.ValidateForChannel(channel, currentHeight); err != nil {
+		return PaymentsState{}, err
+	}
+	nextChannel := channel
+	nextChannel.LatestState = checkpoint
+	next := state.Clone()
+	next.Channels[index] = nextChannel.Normalize()
+	sortChannels(next.Channels)
+	return next, next.Validate()
+}
+
 func SubmitClose(state PaymentsState, channelID string, closingState ChannelState, submitter string, currentHeight uint64, settlementFee string) (PaymentsState, error) {
 	state = state.Export()
 	if currentHeight == 0 {

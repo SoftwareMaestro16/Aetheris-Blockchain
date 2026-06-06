@@ -99,6 +99,12 @@ type ClaimSignature struct {
 	SignatureHash string
 }
 
+type DeltaSignature struct {
+	Signer        string
+	DeltaHash     string
+	SignatureHash string
+}
+
 type ChannelState struct {
 	ChainID               string
 	ChannelID             string
@@ -122,7 +128,37 @@ type ChannelState struct {
 	TimeoutTimestamp      int64
 	CloseDelay            uint64
 	FeePolicyID           string
+	CheckpointNonce       uint64
+	CheckpointBalances    []Balance
+	AsyncUpdateRoot       string
+	AcceptedUpdateRoot    string
+	SendWindow            uint64
+	ReceiveWindow         uint64
+	MaxUnackedAmount      string
+	ExpiryHeight          uint64
 	Signatures            []StateSignature
+}
+
+type AsyncPaymentDelta struct {
+	UpdateID     string
+	ChannelID    string
+	From         string
+	To           string
+	Direction    string
+	Amount       string
+	NonceStart   uint64
+	NonceEnd     uint64
+	ExpiryHeight uint64
+	DeltaHash    string
+	Signature    DeltaSignature
+}
+
+type AsyncDeltaDisputeProof struct {
+	ProofID         string
+	ChannelID       string
+	CheckpointState ChannelState
+	Deltas          []AsyncPaymentDelta
+	EvidenceHash    string
 }
 
 type UnidirectionalClaim struct {
@@ -309,6 +345,95 @@ func SignatureForClaim(claim UnidirectionalClaim, signer string) (ClaimSignature
 	}, nil
 }
 
+func BuildAsyncDelta(delta AsyncPaymentDelta) (AsyncPaymentDelta, error) {
+	delta = delta.Normalize()
+	if err := validateUnsignedAsyncDelta(delta); err != nil {
+		return AsyncPaymentDelta{}, err
+	}
+	delta.DeltaHash = ComputeAsyncDeltaHash(delta)
+	return delta, nil
+}
+
+func SignatureForAsyncDelta(delta AsyncPaymentDelta, signer string) (DeltaSignature, error) {
+	if delta.DeltaHash == "" {
+		var err error
+		delta, err = BuildAsyncDelta(delta)
+		if err != nil {
+			return DeltaSignature{}, err
+		}
+	}
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments async delta signer", signer); err != nil {
+		return DeltaSignature{}, err
+	}
+	return DeltaSignature{
+		Signer:        signer,
+		DeltaHash:     delta.DeltaHash,
+		SignatureHash: ComputeDeltaSignatureHash(signer, delta.DeltaHash),
+	}, nil
+}
+
+func AsyncDeltaDirection(from, to string) string {
+	return strings.TrimSpace(from) + "->" + strings.TrimSpace(to)
+}
+
+func BuildAsyncCheckpointState(channel ChannelRecord, deltas []AsyncPaymentDelta, checkpointNonce, currentHeight uint64) (ChannelState, error) {
+	channel = channel.Normalize()
+	if channel.ChannelType != ChannelTypeAsync {
+		return ChannelState{}, errors.New("payments async checkpoint requires async channel")
+	}
+	if checkpointNonce == 0 {
+		return ChannelState{}, errors.New("payments async checkpoint nonce must be positive")
+	}
+	base := channel.LatestState.Normalize()
+	if base.StateHash == "" {
+		return ChannelState{}, errors.New("payments async checkpoint requires latest state")
+	}
+	if checkpointNonce <= base.CheckpointNonce {
+		return ChannelState{}, errors.New("payments async checkpoint nonce must increase")
+	}
+	if currentHeight == 0 {
+		return ChannelState{}, errors.New("payments async checkpoint height must be positive")
+	}
+	if currentHeight > base.ExpiryHeight {
+		return ChannelState{}, errors.New("payments async checkpoint is expired")
+	}
+	normalizedDeltas := normalizeAsyncDeltas(deltas)
+	if err := validateAsyncDeltasForCheckpoint(channel, base, normalizedDeltas, checkpointNonce, currentHeight); err != nil {
+		return ChannelState{}, err
+	}
+	nextBalances, err := applyAsyncDeltas(base.Balances, normalizedDeltas)
+	if err != nil {
+		return ChannelState{}, err
+	}
+	state, err := BuildState(ChannelState{
+		ChainID:            channel.ChainID,
+		ChannelID:          channel.ChannelID,
+		ChannelType:        ChannelTypeAsync,
+		Denom:              channel.Denom,
+		Version:            CurrentStateVersion,
+		Epoch:              base.Epoch,
+		Nonce:              checkpointNonce,
+		Balances:           nextBalances,
+		CheckpointNonce:    checkpointNonce,
+		CheckpointBalances: nextBalances,
+		AsyncUpdateRoot:    ComputeAsyncDeltaRoot(normalizedDeltas),
+		AcceptedUpdateRoot: ComputeAsyncDeltaRoot(normalizedDeltas),
+		SendWindow:         base.SendWindow,
+		ReceiveWindow:      base.ReceiveWindow,
+		MaxUnackedAmount:   base.MaxUnackedAmount,
+		ExpiryHeight:       base.ExpiryHeight,
+		TimeoutHeight:      base.TimeoutHeight,
+		TimeoutTimestamp:   base.TimeoutTimestamp,
+		CloseDelay:         base.CloseDelay,
+		FeePolicyID:        NativeDenom,
+	})
+	if err != nil {
+		return ChannelState{}, err
+	}
+	return state, nil
+}
+
 func StreamingClaimForChannel(channel ChannelRecord, frame StreamingPaymentFrame) (UnidirectionalClaim, error) {
 	channel = channel.Normalize()
 	frame = frame.Normalize()
@@ -380,6 +505,27 @@ func (s ChannelState) Normalize() ChannelState {
 	if s.FeePolicyID == "" {
 		s.FeePolicyID = NativeDenom
 	}
+	s.CheckpointBalances = normalizeBalances(s.CheckpointBalances)
+	s.AsyncUpdateRoot = normalizeOptionalHash(s.AsyncUpdateRoot)
+	s.AcceptedUpdateRoot = normalizeOptionalHash(s.AcceptedUpdateRoot)
+	s.MaxUnackedAmount = strings.TrimSpace(s.MaxUnackedAmount)
+	if s.ChannelType == ChannelTypeAsync {
+		if s.CheckpointNonce == 0 {
+			s.CheckpointNonce = s.Nonce
+		}
+		if len(s.CheckpointBalances) == 0 && len(s.Balances) > 0 {
+			s.CheckpointBalances = normalizeBalances(s.Balances)
+		}
+		if len(s.Balances) == 0 && len(s.CheckpointBalances) > 0 {
+			s.Balances = normalizeBalances(s.CheckpointBalances)
+		}
+		if s.AsyncUpdateRoot == "" {
+			s.AsyncUpdateRoot = ComputeAsyncDeltaRoot(nil)
+		}
+		if s.AcceptedUpdateRoot == "" {
+			s.AcceptedUpdateRoot = ComputeAsyncDeltaRoot(nil)
+		}
+	}
 	if s.ChannelType == ChannelTypeBidirectional && len(s.Balances) == 2 {
 		if s.ParticipantA == "" {
 			s.ParticipantA = s.Balances[0].Participant
@@ -424,6 +570,123 @@ func (s ClaimSignature) Validate(expectedClaimHash string) error {
 	}
 	if expected := ComputeClaimSignatureHash(s.Signer, s.ClaimHash); s.SignatureHash != expected {
 		return errors.New("payments claim signature value mismatch")
+	}
+	return nil
+}
+
+func (s DeltaSignature) Normalize() DeltaSignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.DeltaHash = normalizeHash(s.DeltaHash)
+	s.SignatureHash = normalizeHash(s.SignatureHash)
+	return s
+}
+
+func (s DeltaSignature) Validate(expectedDeltaHash string) error {
+	s = s.Normalize()
+	if err := addressing.ValidateUserAddress("payments async delta signature signer", s.Signer); err != nil {
+		return err
+	}
+	if s.DeltaHash != expectedDeltaHash {
+		return errors.New("payments async delta signature hash mismatch")
+	}
+	if err := ValidateHash("payments async delta signature hash", s.SignatureHash); err != nil {
+		return err
+	}
+	if expected := ComputeDeltaSignatureHash(s.Signer, s.DeltaHash); s.SignatureHash != expected {
+		return errors.New("payments async delta signature value mismatch")
+	}
+	return nil
+}
+
+func (d AsyncPaymentDelta) Normalize() AsyncPaymentDelta {
+	d.UpdateID = normalizeHash(d.UpdateID)
+	d.ChannelID = normalizeHash(d.ChannelID)
+	d.From = strings.TrimSpace(d.From)
+	d.To = strings.TrimSpace(d.To)
+	d.Direction = strings.TrimSpace(d.Direction)
+	if d.Direction == "" && d.From != "" && d.To != "" {
+		d.Direction = AsyncDeltaDirection(d.From, d.To)
+	}
+	d.Amount = strings.TrimSpace(d.Amount)
+	d.DeltaHash = normalizeOptionalHash(d.DeltaHash)
+	d.Signature = d.Signature.Normalize()
+	return d
+}
+
+func (d AsyncPaymentDelta) ValidateForChannel(channel ChannelRecord, currentHeight uint64) error {
+	channel = channel.Normalize()
+	if err := channel.ValidateCore(); err != nil {
+		return err
+	}
+	if channel.ChannelType != ChannelTypeAsync {
+		return errors.New("payments async delta requires async channel")
+	}
+	delta := d.Normalize()
+	if err := validateUnsignedAsyncDelta(delta); err != nil {
+		return err
+	}
+	if delta.ChannelID != channel.ChannelID {
+		return errors.New("payments async delta channel mismatch")
+	}
+	if !containsString(channel.Participants, delta.From) || !containsString(channel.Participants, delta.To) {
+		return errors.New("payments async delta parties must be channel participants")
+	}
+	if delta.From == delta.To {
+		return errors.New("payments async delta parties must differ")
+	}
+	if delta.Direction != AsyncDeltaDirection(delta.From, delta.To) {
+		return errors.New("payments async delta direction mismatch")
+	}
+	if currentHeight > delta.ExpiryHeight {
+		return errors.New("payments async delta is expired")
+	}
+	if delta.DeltaHash == "" {
+		return errors.New("payments async delta hash is required")
+	}
+	if expected := ComputeAsyncDeltaHash(delta); delta.DeltaHash != expected {
+		return errors.New("payments async delta hash mismatch")
+	}
+	if err := delta.Signature.Validate(delta.DeltaHash); err != nil {
+		return err
+	}
+	if delta.Signature.Signer != delta.From {
+		return errors.New("payments async delta signer must be sender")
+	}
+	return nil
+}
+
+func (p AsyncDeltaDisputeProof) Normalize() AsyncDeltaDisputeProof {
+	p.ProofID = normalizeHash(p.ProofID)
+	p.ChannelID = normalizeHash(p.ChannelID)
+	p.CheckpointState = p.CheckpointState.Normalize()
+	p.Deltas = normalizeAsyncDeltas(p.Deltas)
+	p.EvidenceHash = normalizeHash(p.EvidenceHash)
+	return p
+}
+
+func (p AsyncDeltaDisputeProof) ValidateForChannel(channel ChannelRecord, currentHeight uint64) error {
+	proof := p.Normalize()
+	if err := ValidateHash("payments async dispute proof id", proof.ProofID); err != nil {
+		return err
+	}
+	if proof.ChannelID != channel.Normalize().ChannelID {
+		return errors.New("payments async dispute proof channel mismatch")
+	}
+	if err := ValidateHash("payments async dispute evidence hash", proof.EvidenceHash); err != nil {
+		return err
+	}
+	if err := proof.CheckpointState.ValidateForChannel(channel, false); err != nil {
+		return err
+	}
+	reconstructed, err := BuildAsyncCheckpointState(channel, proof.Deltas, proof.CheckpointState.CheckpointNonce, currentHeight)
+	if err != nil {
+		return err
+	}
+	if reconstructed.StateHash != proof.CheckpointState.StateHash {
+		return errors.New("payments async dispute proof does not reconstruct checkpoint")
+	}
+	if proof.EvidenceHash != HashParts("async-dispute", proof.CheckpointState.StateHash, ComputeAsyncDeltaRoot(proof.Deltas)) {
+		return errors.New("payments async dispute evidence hash mismatch")
 	}
 	return nil
 }
@@ -1225,6 +1488,37 @@ func validateUnsignedUnidirectionalClaim(claim UnidirectionalClaim) error {
 	return nil
 }
 
+func validateUnsignedAsyncDelta(delta AsyncPaymentDelta) error {
+	if err := ValidateHash("payments async delta update id", delta.UpdateID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async delta channel id", delta.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments async delta from", delta.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments async delta to", delta.To); err != nil {
+		return err
+	}
+	if delta.From == delta.To {
+		return errors.New("payments async delta parties must differ")
+	}
+	if delta.Direction != AsyncDeltaDirection(delta.From, delta.To) {
+		return errors.New("payments async delta direction mismatch")
+	}
+	if err := validatePositiveInt("payments async delta amount", delta.Amount); err != nil {
+		return err
+	}
+	if delta.NonceStart == 0 || delta.NonceEnd < delta.NonceStart {
+		return errors.New("payments async delta nonce range is invalid")
+	}
+	if delta.ExpiryHeight == 0 {
+		return errors.New("payments async delta expiry height must be positive")
+	}
+	return nil
+}
+
 func validateUnidirectionalChannelCore(channel ChannelRecord) error {
 	if len(channel.Participants) != 2 {
 		return errors.New("payments unidirectional channel requires exactly two participants")
@@ -1311,6 +1605,11 @@ func validateStateParticipants(state ChannelState, channel ChannelRecord) error 
 			return err
 		}
 	}
+	if channel.ChannelType == ChannelTypeAsync {
+		if err := validateAsyncStateProjection(state, channel); err != nil {
+			return err
+		}
+	}
 	for _, balance := range state.Balances {
 		if !containsString(channel.Participants, balance.Participant) {
 			return errors.New("payments balance participant must be in channel")
@@ -1319,6 +1618,52 @@ func validateStateParticipants(state ChannelState, channel ChannelRecord) error 
 	for _, condition := range state.Conditions {
 		if !containsString(channel.Participants, condition.Payer) || !containsString(channel.Participants, condition.Payee) {
 			return errors.New("payments condition parties must be in channel")
+		}
+	}
+	return nil
+}
+
+func validateAsyncStateProjection(state ChannelState, channel ChannelRecord) error {
+	if state.CheckpointNonce == 0 {
+		return errors.New("payments async checkpoint nonce must be positive")
+	}
+	if state.CheckpointNonce != state.Nonce {
+		return errors.New("payments async checkpoint nonce must match state nonce")
+	}
+	if err := validateBalances(state.CheckpointBalances); err != nil {
+		return err
+	}
+	if !sameBalances(state.Balances, state.CheckpointBalances) {
+		return errors.New("payments async checkpoint balances mismatch")
+	}
+	if err := ValidateHash("payments async update root", state.AsyncUpdateRoot); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async accepted update root", state.AcceptedUpdateRoot); err != nil {
+		return err
+	}
+	if state.SendWindow == 0 {
+		return errors.New("payments async send window must be positive")
+	}
+	if state.ReceiveWindow == 0 {
+		return errors.New("payments async receive window must be positive")
+	}
+	if err := validatePositiveInt("payments async max unacked amount", state.MaxUnackedAmount); err != nil {
+		return err
+	}
+	if state.ExpiryHeight == 0 {
+		return errors.New("payments async expiry height must be positive")
+	}
+	if channel.LatestState.StateHash != "" && channel.LatestState.ChannelType == ChannelTypeAsync {
+		previous := channel.LatestState.Normalize()
+		if previous.SendWindow != 0 && state.SendWindow != previous.SendWindow {
+			return errors.New("payments async send window cannot change inside checkpoint")
+		}
+		if previous.ReceiveWindow != 0 && state.ReceiveWindow != previous.ReceiveWindow {
+			return errors.New("payments async receive window cannot change inside checkpoint")
+		}
+		if previous.MaxUnackedAmount != "" && state.MaxUnackedAmount != previous.MaxUnackedAmount {
+			return errors.New("payments async max unacked amount cannot change inside checkpoint")
 		}
 	}
 	return nil
@@ -1611,6 +1956,111 @@ func normalizeSignatures(signatures []StateSignature) []StateSignature {
 		return out[i].Signer < out[j].Signer
 	})
 	return out
+}
+
+func normalizeAsyncDeltas(deltas []AsyncPaymentDelta) []AsyncPaymentDelta {
+	out := make([]AsyncPaymentDelta, len(deltas))
+	for i, delta := range deltas {
+		out[i] = delta.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].UpdateID != out[j].UpdateID {
+			return out[i].UpdateID < out[j].UpdateID
+		}
+		return out[i].DeltaHash < out[j].DeltaHash
+	})
+	return out
+}
+
+func validateAsyncDeltasForCheckpoint(channel ChannelRecord, base ChannelState, deltas []AsyncPaymentDelta, checkpointNonce, currentHeight uint64) error {
+	if len(deltas) == 0 {
+		return errors.New("payments async checkpoint requires signed deltas")
+	}
+	maxExposure, err := parsePositiveInt("payments async max unacked amount", base.MaxUnackedAmount)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(deltas))
+	exposureBySender := make(map[string]sdkmath.Int, len(channel.Participants))
+	for _, delta := range normalizeAsyncDeltas(deltas) {
+		if _, found := seen[delta.UpdateID]; found {
+			return errors.New("payments duplicate async delta update id")
+		}
+		seen[delta.UpdateID] = struct{}{}
+		if err := delta.ValidateForChannel(channel, currentHeight); err != nil {
+			return err
+		}
+		if delta.NonceEnd-delta.NonceStart+1 > base.SendWindow {
+			return errors.New("payments async delta exceeds send window")
+		}
+		if delta.NonceEnd > checkpointNonce {
+			return errors.New("payments async delta nonce exceeds checkpoint")
+		}
+		if checkpointNonce-delta.NonceEnd > base.ReceiveWindow {
+			return errors.New("payments async delta is outside receive window")
+		}
+		amount, err := parsePositiveInt("payments async delta amount", delta.Amount)
+		if err != nil {
+			return err
+		}
+		currentExposure, found := exposureBySender[delta.From]
+		if !found {
+			currentExposure = sdkmath.ZeroInt()
+		}
+		exposureBySender[delta.From] = currentExposure.Add(amount)
+		if exposureBySender[delta.From].GT(maxExposure) {
+			return errors.New("payments async max unacked exposure exceeded")
+		}
+	}
+	return nil
+}
+
+func applyAsyncDeltas(baseBalances []Balance, deltas []AsyncPaymentDelta) ([]Balance, error) {
+	amounts := make(map[string]sdkmath.Int, len(baseBalances))
+	for _, balance := range normalizeBalances(baseBalances) {
+		amount, err := parseNonNegativeInt("payments async base balance", balance.Amount)
+		if err != nil {
+			return nil, err
+		}
+		amounts[balance.Participant] = amount
+	}
+	for _, delta := range normalizeAsyncDeltas(deltas) {
+		amount, err := parsePositiveInt("payments async delta amount", delta.Amount)
+		if err != nil {
+			return nil, err
+		}
+		fromBalance, found := amounts[delta.From]
+		if !found {
+			return nil, errors.New("payments async delta sender has no balance")
+		}
+		if fromBalance.LT(amount) {
+			return nil, errors.New("payments async delta exceeds sender balance")
+		}
+		if _, found := amounts[delta.To]; !found {
+			return nil, errors.New("payments async delta receiver has no balance")
+		}
+		amounts[delta.From] = fromBalance.Sub(amount)
+		amounts[delta.To] = amounts[delta.To].Add(amount)
+	}
+	out := make([]Balance, 0, len(amounts))
+	for participant, amount := range amounts {
+		out = append(out, Balance{Participant: participant, Amount: amount.String()})
+	}
+	return normalizeBalances(out), nil
+}
+
+func sameBalances(left, right []Balance) bool {
+	left = normalizeBalances(left)
+	right = normalizeBalances(right)
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeFraudProofs(proofs []FraudProof) []FraudProof {

@@ -144,6 +144,18 @@ func (k *Keeper) AcceptSignedState(channelID string, nextState paymentstypes.Cha
 	return nil
 }
 
+func (k *Keeper) AcceptAsyncCheckpoint(channelID string, checkpoint paymentstypes.ChannelState, deltas []paymentstypes.AsyncPaymentDelta, submitter string, currentHeight uint64) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.AcceptAsyncCheckpoint(k.genesis.State, channelID, checkpoint, deltas, submitter, currentHeight)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) SubmitClose(channelID string, closingState paymentstypes.ChannelState, submitter string, currentHeight uint64, settlementFee string) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err

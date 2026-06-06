@@ -297,6 +297,60 @@ func TestUnidirectionalStreamingPaymentHelperFormat(t *testing.T) {
 	require.NoError(t, claim.ValidateForChannel(channel))
 }
 
+func TestAsyncCheckpointAggregationExposureExpiryAndProof(t *testing.T) {
+	alice := testAddress(0x44)
+	bob := testAddress(0x45)
+	channel := signedAsyncChannel(t, "async-main", "1000", []Balance{
+		{Participant: alice, Amount: "700"},
+		{Participant: bob, Amount: "300"},
+	}, 4, 8, "100", 90, alice, bob)
+	state := EmptyState()
+
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+
+	delta := signedAsyncDelta(t, channel, "delta-1", alice, bob, "40", 2, 2, 80)
+	checkpoint, err := BuildAsyncCheckpointState(channel, []AsyncPaymentDelta{delta}, 3, 30)
+	require.NoError(t, err)
+	checkpoint = signAsyncCheckpoint(t, channel, checkpoint)
+	proof := AsyncDeltaDisputeProof{
+		ProofID:         HashParts("proof", checkpoint.StateHash),
+		ChannelID:       channel.ChannelID,
+		CheckpointState: checkpoint,
+		Deltas:          []AsyncPaymentDelta{delta},
+		EvidenceHash:    HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot([]AsyncPaymentDelta{delta})),
+	}
+	require.NoError(t, proof.ValidateForChannel(channel, 30))
+
+	state, err = AcceptAsyncCheckpoint(state, channel.ChannelID, checkpoint, []AsyncPaymentDelta{delta}, bob, 30)
+	require.NoError(t, err)
+	require.Equal(t, "660", amountFor(state.Channels[0].LatestState.Balances, alice))
+	require.Equal(t, "340", amountFor(state.Channels[0].LatestState.Balances, bob))
+	require.Equal(t, checkpoint.StateHash, state.Channels[0].LatestState.StateHash)
+
+	badSigner := delta
+	badSigner.Signature, err = SignatureForAsyncDelta(badSigner, bob)
+	require.NoError(t, err)
+	require.ErrorContains(t, badSigner.ValidateForChannel(channel, 30), "sender")
+
+	tooMuch := []AsyncPaymentDelta{
+		signedAsyncDelta(t, channel, "delta-2", alice, bob, "60", 3, 3, 80),
+		signedAsyncDelta(t, channel, "delta-3", alice, bob, "50", 4, 4, 80),
+	}
+	_, err = BuildAsyncCheckpointState(channel, tooMuch, 5, 30)
+	require.ErrorContains(t, err, "exposure")
+
+	expired := signedAsyncDelta(t, channel, "delta-expired", bob, alice, "10", 3, 3, 31)
+	_, err = BuildAsyncCheckpointState(channel, []AsyncPaymentDelta{expired}, 4, 32)
+	require.ErrorContains(t, err, "expired")
+
+	badProof := proof
+	badProof.Deltas = nil
+	badProof.EvidenceHash = HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot(nil))
+	require.ErrorContains(t, badProof.ValidateForChannel(channel, 30), "signed deltas")
+}
+
 func TestPaymentAssetScopeRejectsNonNaetFeesAndPenalties(t *testing.T) {
 	alice := testAddress(0x35)
 	bob := testAddress(0x36)
@@ -612,6 +666,83 @@ func signedUnidirectionalClaim(t *testing.T, channel ChannelRecord, claimed stri
 		require.NoError(t, claim.ValidateForChannel(channel))
 	}
 	return claim
+}
+
+func signedAsyncChannel(t *testing.T, salt, collateral string, balances []Balance, sendWindow, receiveWindow uint64, maxUnacked string, expiryHeight uint64, participants ...string) ChannelRecord {
+	t.Helper()
+
+	channel := ChannelRecord{
+		ChainID:       "aetheris-test-1",
+		ChannelID:     HashParts(append([]string{salt}, participants...)...),
+		ChannelType:   ChannelTypeAsync,
+		Participants:  participants,
+		Denom:         NativeDenom,
+		Collateral:    collateral,
+		OpenHeight:    10,
+		DisputePeriod: 8,
+		Status:        ChannelStatusOpen,
+	}
+	openState, err := BuildState(ChannelState{
+		ChainID:            channel.ChainID,
+		ChannelID:          channel.ChannelID,
+		ChannelType:        channel.ChannelType,
+		Denom:              channel.Denom,
+		Version:            CurrentStateVersion,
+		Epoch:              1,
+		Nonce:              1,
+		Balances:           balances,
+		CheckpointNonce:    1,
+		CheckpointBalances: balances,
+		AsyncUpdateRoot:    ComputeAsyncDeltaRoot(nil),
+		AcceptedUpdateRoot: ComputeAsyncDeltaRoot(nil),
+		SendWindow:         sendWindow,
+		ReceiveWindow:      receiveWindow,
+		MaxUnackedAmount:   maxUnacked,
+		ExpiryHeight:       expiryHeight,
+		TimeoutHeight:      expiryHeight,
+		CloseDelay:         channel.DisputePeriod,
+		FeePolicyID:        NativeDenom,
+	})
+	require.NoError(t, err)
+	channel.LatestState = signAsyncCheckpoint(t, channel, openState)
+	channel.OpeningStateHash = channel.LatestState.StateHash
+	require.NoError(t, channel.Validate())
+	return channel.Normalize()
+}
+
+func signedAsyncDelta(t *testing.T, channel ChannelRecord, salt, from, to, amount string, nonceStart, nonceEnd, expiryHeight uint64) AsyncPaymentDelta {
+	t.Helper()
+
+	delta, err := BuildAsyncDelta(AsyncPaymentDelta{
+		UpdateID:     HashParts("async-delta", channel.ChannelID, salt),
+		ChannelID:    channel.ChannelID,
+		From:         from,
+		To:           to,
+		Direction:    AsyncDeltaDirection(from, to),
+		Amount:       amount,
+		NonceStart:   nonceStart,
+		NonceEnd:     nonceEnd,
+		ExpiryHeight: expiryHeight,
+	})
+	require.NoError(t, err)
+	delta.Signature, err = SignatureForAsyncDelta(delta, from)
+	require.NoError(t, err)
+	require.NoError(t, delta.ValidateForChannel(channel, channel.OpenHeight))
+	return delta.Normalize()
+}
+
+func signAsyncCheckpoint(t *testing.T, channel ChannelRecord, state ChannelState) ChannelState {
+	t.Helper()
+
+	state.Signatures = nil
+	for _, signer := range channel.Normalize().Participants {
+		sig, err := SignatureForState(state, signer)
+		require.NoError(t, err)
+		state.Signatures = append(state.Signatures, sig)
+	}
+	state = state.Normalize()
+	require.NoError(t, state.ValidateForChannel(channel, true))
+	return state
 }
 
 func testAddress(fill byte) string {
