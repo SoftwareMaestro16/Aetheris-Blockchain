@@ -1029,6 +1029,176 @@ func TestAdaptivePeerRotationBoundsChurnAndKeepsStablePeers(t *testing.T) {
 	require.NoError(t, rotated.Graph.Validate(desc))
 }
 
+func TestAetherMeshMessageTypesMapToChannels(t *testing.T) {
+	expected := map[AetherMeshMessageType]ChannelClass{
+		MeshMessageConsensus: ChannelConsensus,
+		MeshMessageTx:        ChannelMempool,
+		MeshMessageExecution: ChannelExecution,
+		MeshMessageQuery:     ChannelService,
+		MeshMessageService:   ChannelService,
+		MeshMessageCrossZone: ChannelExecution,
+		MeshMessageStateSync: ChannelStateSync,
+		MeshMessageStorage:   ChannelData,
+		MeshMessageRouting:   ChannelRouting,
+	}
+
+	require.Len(t, AetherMeshMessageTypes(), len(expected))
+	for messageType, channel := range expected {
+		require.True(t, IsAetherMeshMessageType(messageType))
+		require.Equal(t, channel, channelForMeshMessageType(messageType))
+	}
+}
+
+func TestAetherMeshMessageSignsAndRejectsTampering(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	originKey := deterministicPrivateKey(0x5b)
+	origin := signedNodeRecord(t, 0x5b, salt, 100, NodeRoleService)
+	destination := signedNodeRecord(t, 0x5c, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+
+	msg, err := SignAetherMeshMessage(AetherMeshMessage{
+		Type:            MeshMessageService,
+		Payload:         []byte("service-call-payload"),
+		Origin:          origin.NodeID,
+		Destination:     destination.NodeID,
+		Priority:        PriorityForChannel(ChannelService),
+		TTL:             50,
+		OverlayID:       desc.OverlayID,
+		Sequence:        1,
+		RouteHint:       RouteHint{ServiceID: "execution-stream"},
+		DeadlineHeight:  70,
+		ConsensusEffect: false,
+	}, originKey)
+	require.NoError(t, err)
+	require.NoError(t, VerifyAetherMeshMessageSignature(msg, originKey.Public().(ed25519.PublicKey), 20))
+
+	again, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:            MeshMessageService,
+		Payload:         []byte("service-call-payload"),
+		Origin:          origin.NodeID,
+		Destination:     destination.NodeID,
+		Priority:        PriorityForChannel(ChannelService),
+		TTL:             50,
+		OverlayID:       desc.OverlayID,
+		Sequence:        1,
+		RouteHint:       RouteHint{ServiceID: "execution-stream"},
+		DeadlineHeight:  70,
+		ConsensusEffect: false,
+	})
+	require.NoError(t, err)
+	require.Equal(t, msg.MessageID, again.MessageID)
+
+	tampered := msg
+	tampered.Payload = []byte("tampered")
+	require.ErrorContains(t, VerifyAetherMeshMessageSignature(tampered, originKey.Public().(ed25519.PublicKey), 20), "payload hash")
+}
+
+func TestAetherMeshCrossZoneAndConsensusProofRules(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	origin := signedNodeRecord(t, 0x5d, salt, 100, NodeRoleZoneExecution)
+	destination := signedNodeRecord(t, 0x5e, salt, 100, NodeRoleZoneExecution)
+	desc := defaultOverlayByType(t, OverlayTypeExecution)
+
+	_, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:            MeshMessageCrossZone,
+		Payload:         []byte("cross-zone"),
+		Origin:          origin.NodeID,
+		Destination:     destination.NodeID,
+		Priority:        PriorityForChannel(ChannelExecution),
+		TTL:             25,
+		OverlayID:       desc.OverlayID,
+		SourceZone:      "APPLICATION_ZONE",
+		DestinationZone: "APPLICATION_ZONE",
+		Sequence:        1,
+	})
+	require.ErrorContains(t, err, "different zones")
+
+	_, err = NewAetherMeshMessage(AetherMeshMessage{
+		Type:              MeshMessageService,
+		Payload:           []byte("consensus-service"),
+		Origin:            origin.NodeID,
+		Destination:       destination.NodeID,
+		Priority:          PriorityForChannel(ChannelService),
+		TTL:               25,
+		OverlayID:         defaultOverlayByType(t, OverlayTypeService).OverlayID,
+		Sequence:          1,
+		ConsensusEffect:   true,
+		DeterminismSource: DeterminismCommittedState,
+	})
+	require.ErrorContains(t, err, "proof")
+
+	msg, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:              MeshMessageCrossZone,
+		Payload:           []byte("cross-zone"),
+		Origin:            origin.NodeID,
+		Destination:       destination.NodeID,
+		Priority:          PriorityForChannel(ChannelExecution),
+		TTL:               25,
+		OverlayID:         desc.OverlayID,
+		SourceZone:        "APPLICATION_ZONE",
+		DestinationZone:   "FINANCIAL_ZONE",
+		Sequence:          2,
+		ConsensusEffect:   true,
+		DeterminismSource: DeterminismDeterministicProof,
+		Proof: AetherMeshProof{
+			ProofType:   "zone-commitment",
+			ProofHash:   HashParts("cross-zone-proof"),
+			ProofHeight: 20,
+		},
+	})
+	require.NoError(t, err)
+	base, err := msg.ToNetworkMessage()
+	require.NoError(t, err)
+	require.Equal(t, ChannelExecution, base.Channel)
+	require.True(t, base.ConsensusEffect)
+	require.Equal(t, msg.MessageID, base.ReplaySafeID)
+}
+
+func TestAetherMeshRouteUsesOverlayAndServicePeers(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	source := signedNodeRecord(t, 0x5f, salt, 100, NodeRoleFull)
+	left := signedNodeRecord(t, 0x60, salt, 100, NodeRoleService)
+	right := signedNodeRecord(t, 0x62, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	msg, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:           MeshMessageService,
+		Payload:        []byte("mesh-service-route"),
+		Origin:         source.NodeID,
+		Destination:    right.NodeID,
+		Priority:       PriorityForChannel(ChannelService),
+		TTL:            30,
+		OverlayID:      desc.OverlayID,
+		Sequence:       1,
+		RouteHint:      RouteHint{ServiceID: "execution-stream"},
+		DeadlineHeight: 90,
+	})
+	require.NoError(t, err)
+
+	delivery, err := RouteAetherMeshMessage(AetherMeshRouteRequest{
+		Message:        msg,
+		SourceNodeID:   source.NodeID,
+		CandidatePeers: []NodeRecord{left, right},
+		MembershipProofs: []OverlayMembershipProof{
+			testOverlayMembershipProof(t, left, desc, MembershipProofServiceRegistration, OverlayMembershipModeServiceRegistry, 80),
+			testOverlayMembershipProof(t, right, desc, MembershipProofServiceRegistration, OverlayMembershipModeServiceRegistry, 80),
+		},
+		Graph: RoutingGraph{
+			OverlayID: desc.OverlayID,
+			Version:   1,
+			Edges: []RoutingEdge{
+				{FromNodeID: source.NodeID, ToNodeID: left.NodeID, LatencyMillis: 25, Priority: 1},
+				{FromNodeID: source.NodeID, ToNodeID: right.NodeID, LatencyMillis: 15, Priority: 0},
+			},
+		},
+		CurrentHeight: 20,
+	}, []OverlayDescriptor{desc})
+	require.NoError(t, err)
+	require.Equal(t, ChannelService, delivery.Channel)
+	require.Equal(t, desc.OverlayID, delivery.Route.OverlayID)
+	require.False(t, delivery.Route.FallbackUsed)
+	require.NotEmpty(t, delivery.Route.TargetNodeIDs)
+}
+
 func TestLayerStackPreservesCometBFTBaselineAndExtensionOrder(t *testing.T) {
 	stack := DefaultLayerStack()
 	require.NoError(t, ValidateLayerStack(stack))
