@@ -13,6 +13,12 @@ const (
 	MaxDelegationPermissionBytesV2   = 48
 	MaxDelegationRecordPrefixBytesV2 = 48
 	MaxAuctionFeeSplitIDBytesV2      = 64
+
+	DelegationRecordVersionV2 uint64 = 1
+
+	DelegationPermissionCreateV2         = "create"
+	DelegationPermissionRenewZoneV2      = "renew"
+	DelegationPermissionTransferParentV2 = "transfer_parent"
 )
 
 type DelegationScopeBitsV2 uint64
@@ -50,6 +56,18 @@ type DelegationRecordV2 struct {
 	RecordPrefixLimit     string
 	CreatedAtHeight       uint64
 	TimeLockedUntilHeight uint64
+	DelegationVersion     uint64
+	CanTransferParent     bool
+}
+
+type PartialDelegationAuthorizationV2 struct {
+	Scope                     DelegationScopeV2
+	Permission                string
+	RecordKey                 string
+	ChildLabel                string
+	SubtreeDepth              uint8
+	Height                    uint64
+	ExpectedDelegationVersion uint64
 }
 
 type AuctionRecordV2Status string
@@ -95,6 +113,7 @@ func NewDelegationRecordV2(name string, delegate sdk.AccAddress, scope Delegatio
 		SubtreeLimit:      subtreeLimit,
 		RecordPrefixLimit: recordPrefixLimit,
 		CreatedAtHeight:   createdAtHeight,
+		DelegationVersion: DelegationRecordVersionV2,
 	}
 	return record, ValidateDelegationRecordV2(record)
 }
@@ -117,6 +136,9 @@ func ValidateDelegationRecordV2(record DelegationRecordV2) error {
 	}
 	if record.TimeLockedUntilHeight != 0 && record.TimeLockedUntilHeight >= record.ExpiresAtHeight {
 		return errors.New("identity v2 delegation time lock must end before expires_at_height")
+	}
+	if record.DelegationVersion > DelegationRecordVersionV2 {
+		return fmt.Errorf("unsupported identity v2 delegation version %d", record.DelegationVersion)
 	}
 	if err := ValidateDelegationScopeBitsV2(record.Scope, record.ScopeBits); err != nil {
 		return err
@@ -157,6 +179,118 @@ func ValidateDelegationRecordV2Use(record DelegationRecordV2, scope DelegationSc
 	return nil
 }
 
+func ValidatePartialDelegationAuthorizationV2(record DelegationRecordV2, request PartialDelegationAuthorizationV2) error {
+	if err := ValidateDelegationRecordV2(record); err != nil {
+		return err
+	}
+	if err := ValidateDelegationVersionForUpdateV2(record, request.ExpectedDelegationVersion); err != nil {
+		return err
+	}
+	if request.Height == 0 {
+		return errors.New("identity v2 delegation authorization height is required")
+	}
+	if request.Height >= record.ExpiresAtHeight {
+		return errors.New("identity v2 delegation is expired")
+	}
+	scopeBit := DelegationScopeBitForScopeV2(request.Scope)
+	if scopeBit == 0 {
+		return fmt.Errorf("invalid identity v2 delegation scope %q", request.Scope)
+	}
+	if effectiveDelegationScopeBitsV2(record)&scopeBit == 0 {
+		return errors.New("identity v2 delegation scope mismatch")
+	}
+	if request.SubtreeDepth > record.SubtreeLimit {
+		return errors.New("identity v2 delegation subtree limit exceeded")
+	}
+	recordKey := request.RecordKey
+	if recordKey == "" {
+		recordKey = request.Permission
+	}
+	if request.Scope == DelegationScopeSubdomainCreate {
+		label := request.ChildLabel
+		if label == "" {
+			label = recordKey
+		}
+		return validatePartialSubdomainCreateDelegationV2(record, label, request.SubtreeDepth)
+	}
+	if recordKey == "" {
+		return errors.New("identity v2 partial delegation record key is required")
+	}
+	if err := validateDelegationPermissionV2("identity v2 partial delegation record key", recordKey); err != nil {
+		return err
+	}
+	if record.RecordPrefixLimit != "" && !strings.HasPrefix(recordKey, record.RecordPrefixLimit) {
+		return errors.New("identity v2 delegation record prefix limit exceeded")
+	}
+	permission := request.Permission
+	if permission == "" {
+		permission = partialDelegationDefaultPermissionV2(request.Scope, recordKey)
+	}
+	if !delegationPermissionsContainV2(record.Permissions, permission) {
+		return fmt.Errorf("identity v2 delegation does not allow permission %q", permission)
+	}
+	return nil
+}
+
+func ValidateDelegationVersionForUpdateV2(record DelegationRecordV2, expectedVersion uint64) error {
+	if expectedVersion == 0 {
+		return errors.New("identity v2 delegation expected version is required")
+	}
+	current := effectiveDelegationVersionV2(record)
+	if current != expectedVersion {
+		return fmt.Errorf("identity v2 delegation version conflict: expected %d got %d", expectedVersion, current)
+	}
+	return nil
+}
+
+func ValidateDelegationDoesNotEscalateV2(parent DelegationRecordV2, child DelegationRecordV2) error {
+	if err := ValidateDelegationRecordV2(parent); err != nil {
+		return err
+	}
+	if err := ValidateDelegationRecordV2(child); err != nil {
+		return err
+	}
+	parentBits := effectiveDelegationScopeBitsV2(parent)
+	childBits := effectiveDelegationScopeBitsV2(child)
+	if childBits&^parentBits != 0 {
+		return errors.New("identity v2 delegation cannot escalate scope bits")
+	}
+	if child.ExpiresAtHeight > parent.ExpiresAtHeight {
+		return errors.New("identity v2 delegation cannot extend expiry beyond parent delegation")
+	}
+	if child.SubtreeLimit > parent.SubtreeLimit {
+		return errors.New("identity v2 delegation cannot extend subtree limit")
+	}
+	if parent.RecordPrefixLimit != "" && !strings.HasPrefix(child.RecordPrefixLimit, parent.RecordPrefixLimit) {
+		return errors.New("identity v2 delegation cannot escape parent record prefix")
+	}
+	if child.CanTransferParent && !parent.CanTransferParent {
+		return errors.New("identity v2 delegation cannot escalate parent transfer permission")
+	}
+	for _, permission := range child.Permissions {
+		if !delegationPermissionsContainV2(parent.Permissions, permission) {
+			return fmt.Errorf("identity v2 delegation cannot escalate permission %q", permission)
+		}
+	}
+	return nil
+}
+
+func ValidateParentTransferByDelegationV2(record DelegationRecordV2, expectedVersion uint64, height uint64) error {
+	if err := ValidatePartialDelegationAuthorizationV2(record, PartialDelegationAuthorizationV2{
+		Scope:                     DelegationScopeSubdomainTransfer,
+		Permission:                DelegationPermissionTransferParentV2,
+		RecordKey:                 DelegationPermissionTransferParentV2,
+		Height:                    height,
+		ExpectedDelegationVersion: expectedVersion,
+	}); err != nil {
+		return err
+	}
+	if !record.CanTransferParent {
+		return errors.New("identity v2 delegation cannot transfer parent domain")
+	}
+	return nil
+}
+
 func DelegationScopeBitForScopeV2(scope DelegationScopeV2) DelegationScopeBitsV2 {
 	switch scope {
 	case DelegationScopeResolverUpdate:
@@ -190,6 +324,20 @@ func ValidateDelegationScopeBitsV2(scope DelegationScopeV2, bits DelegationScope
 		return errors.New("identity v2 delegation scope_bits must include scope")
 	}
 	return nil
+}
+
+func effectiveDelegationVersionV2(record DelegationRecordV2) uint64 {
+	if record.DelegationVersion == 0 {
+		return DelegationRecordVersionV2
+	}
+	return record.DelegationVersion
+}
+
+func effectiveDelegationScopeBitsV2(record DelegationRecordV2) DelegationScopeBitsV2 {
+	if record.ScopeBits != 0 {
+		return record.ScopeBits
+	}
+	return DelegationScopeBitForScopeV2(record.Scope)
 }
 
 func BuildAuctionRecordV2(auction Auction, minBid uint64, feeSplitID string) (AuctionRecordV2, error) {
@@ -375,6 +523,52 @@ func delegationPermissionsContainV2(permissions []string, permission string) boo
 		}
 	}
 	return false
+}
+
+func partialDelegationDefaultPermissionV2(scope DelegationScopeV2, recordKey string) string {
+	switch scope {
+	case DelegationScopeServiceRecordUpdate:
+		return ensureDelegationPermissionPrefixV2("service.", recordKey)
+	case DelegationScopeInterfaceRecordUpdate:
+		return ensureDelegationPermissionPrefixV2("interface.", recordKey)
+	case DelegationScopeRoutingRecordUpdate:
+		return ensureDelegationPermissionPrefixV2("routing.", recordKey)
+	case DelegationScopeZoneAdmin:
+		return recordKey
+	default:
+		return recordKey
+	}
+}
+
+func ensureDelegationPermissionPrefixV2(prefix string, value string) string {
+	if strings.HasPrefix(value, prefix) {
+		return value
+	}
+	return prefix + value
+}
+
+func validatePartialSubdomainCreateDelegationV2(record DelegationRecordV2, label string, subtreeDepth uint8) error {
+	if err := validateDomainLabel(label); err != nil {
+		return err
+	}
+	if record.RecordPrefixLimit != "" && !strings.HasPrefix(label, record.RecordPrefixLimit) {
+		return errors.New("identity v2 delegation child label prefix limit exceeded")
+	}
+	if subtreeDepth > record.SubtreeLimit {
+		return errors.New("identity v2 delegation subtree limit exceeded")
+	}
+	if delegationPermissionsContainV2(record.Permissions, DelegationPermissionCreateV2) {
+		return nil
+	}
+	if delegationPermissionsContainV2(record.Permissions, "label."+label) {
+		return nil
+	}
+	for _, permission := range record.Permissions {
+		if strings.HasPrefix(permission, "prefix.") && strings.HasPrefix(label, strings.TrimPrefix(permission, "prefix.")) {
+			return nil
+		}
+	}
+	return fmt.Errorf("identity v2 delegation does not allow child label %q", label)
 }
 
 func validateAuctionRecordStatusV2(status AuctionRecordV2Status) error {

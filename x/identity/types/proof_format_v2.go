@@ -780,6 +780,8 @@ func (e *identityProofBinaryEncoderV2) writeDelegations(records []DelegationReco
 		e.writeString(record.RecordPrefixLimit)
 		e.writeUint64(record.CreatedAtHeight)
 		e.writeUint64(record.TimeLockedUntilHeight)
+		e.writeUint64(effectiveDelegationVersionV2(record))
+		e.writeBool(record.CanTransferParent)
 	}
 }
 
