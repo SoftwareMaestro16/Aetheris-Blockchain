@@ -2,7 +2,7 @@ package types
 
 import "testing"
 
-func TestMigrationPathSpecCoversPhaseZeroAndOne(t *testing.T) {
+func TestMigrationPathSpecCoversPhaseZeroThroughThree(t *testing.T) {
 	spec, err := DefaultMigrationPathSpec()
 	if err != nil {
 		t.Fatalf("default migration path spec: %v", err)
@@ -13,8 +13,8 @@ func TestMigrationPathSpecCoversPhaseZeroAndOne(t *testing.T) {
 	if err := ValidateMigrationPathCoverage(); err != nil {
 		t.Fatalf("migration path coverage: %v", err)
 	}
-	if len(spec.Phases) != 2 {
-		t.Fatalf("expected 2 phases, got %d", len(spec.Phases))
+	if len(spec.Phases) != 4 {
+		t.Fatalf("expected 4 phases, got %d", len(spec.Phases))
 	}
 
 	phaseByID := map[MigrationPhaseID]MigrationPhase{}
@@ -37,6 +37,22 @@ func TestMigrationPathSpecCoversPhaseZeroAndOne(t *testing.T) {
 	if len(phase1.ExitCriteria) != 3 {
 		t.Fatalf("expected phase 1 to cover 3 exit criteria, got %d", len(phase1.ExitCriteria))
 	}
+
+	phase2 := phaseByID[MigrationPhaseMessageBus]
+	if len(phase2.Tasks) != 6 {
+		t.Fatalf("expected phase 2 to cover 6 tasks, got %d", len(phase2.Tasks))
+	}
+	if len(phase2.ExitCriteria) != 3 {
+		t.Fatalf("expected phase 2 to cover 3 exit criteria, got %d", len(phase2.ExitCriteria))
+	}
+
+	phase3 := phaseByID[MigrationPhaseZoneExtraction]
+	if len(phase3.Tasks) != 6 {
+		t.Fatalf("expected phase 3 to cover 6 tasks, got %d", len(phase3.Tasks))
+	}
+	if len(phase3.ExitCriteria) != 3 {
+		t.Fatalf("expected phase 3 to cover 3 exit criteria, got %d", len(phase3.ExitCriteria))
+	}
 }
 
 func TestMigrationPathSpecRootCanonicalAndRejectsTamper(t *testing.T) {
@@ -46,8 +62,10 @@ func TestMigrationPathSpecRootCanonicalAndRejectsTamper(t *testing.T) {
 	}
 
 	reordered, err := BuildMigrationPathSpec([]MigrationPhase{
-		migrationPhase(MigrationPhaseCoreCommitments, "Phase 1: Core Commitments", MigrationPhase1Tasks(), MigrationPhase1ExitCriteria()),
+		migrationPhase(MigrationPhaseZoneExtraction, "Phase 3: Zone Extraction", MigrationPhase3Tasks(), MigrationPhase3ExitCriteria()),
 		migrationPhase(MigrationPhaseBaselineHardening, "Phase 0: Baseline Hardening", MigrationPhase0Tasks(), MigrationPhase0ExitCriteria()),
+		migrationPhase(MigrationPhaseMessageBus, "Phase 2: Message Bus", MigrationPhase2Tasks(), MigrationPhase2ExitCriteria()),
+		migrationPhase(MigrationPhaseCoreCommitments, "Phase 1: Core Commitments", MigrationPhase1Tasks(), MigrationPhase1ExitCriteria()),
 	})
 	if err != nil {
 		t.Fatalf("build reordered migration path spec: %v", err)
@@ -136,6 +154,74 @@ func TestCoreCommitmentMigrationEvidenceRequiresDefaultZoneRootsAndProofRegistry
 	}
 }
 
+func TestMessageBusMigrationEvidenceRequiresCommittedMessagesAndProofReceipts(t *testing.T) {
+	evidence := validMessageBusMigrationEvidence()
+	if err := evidence.Validate(); err != nil {
+		t.Fatalf("message bus evidence should validate: %v", err)
+	}
+
+	notCommitted := evidence
+	notCommitted.MessagesCommitted = false
+	notCommitted.EvidenceHash = ComputeMessageBusMigrationEvidenceHash(notCommitted)
+	if err := notCommitted.Validate(); err == nil {
+		t.Fatal("expected uncommitted message evidence to fail")
+	}
+
+	notDeterministic := evidence
+	notDeterministic.LocalAsyncDeterministic = false
+	notDeterministic.EvidenceHash = ComputeMessageBusMigrationEvidenceHash(notDeterministic)
+	if err := notDeterministic.Validate(); err == nil {
+		t.Fatal("expected non-deterministic local async evidence to fail")
+	}
+
+	notQueryable := evidence
+	notQueryable.ReceiptProofQueryable = false
+	notQueryable.EvidenceHash = ComputeMessageBusMigrationEvidenceHash(notQueryable)
+	if err := notQueryable.Validate(); err == nil {
+		t.Fatal("expected non-queryable receipt evidence to fail")
+	}
+
+	tamperedHash := evidence
+	tamperedHash.EvidenceHash = hashParts("different message bus evidence")
+	if err := tamperedHash.Validate(); err == nil {
+		t.Fatal("expected tampered message bus evidence hash to fail")
+	}
+}
+
+func TestZoneExtractionMigrationEvidenceRequiresZoneIsolationAndPerBlockRoots(t *testing.T) {
+	evidence := validZoneExtractionMigrationEvidence()
+	if err := evidence.Validate(); err != nil {
+		t.Fatalf("zone extraction evidence should validate: %v", err)
+	}
+
+	financialNotRouted := evidence
+	financialNotRouted.FinancialModulesRouted = false
+	financialNotRouted.EvidenceHash = ComputeZoneExtractionMigrationEvidenceHash(financialNotRouted)
+	if err := financialNotRouted.Validate(); err == nil {
+		t.Fatal("expected financial modules not routed evidence to fail")
+	}
+
+	identityNotIsolated := evidence
+	identityNotIsolated.IdentityIsolated = false
+	identityNotIsolated.EvidenceHash = ComputeZoneExtractionMigrationEvidenceHash(identityNotIsolated)
+	if err := identityNotIsolated.Validate(); err == nil {
+		t.Fatal("expected non-isolated identity evidence to fail")
+	}
+
+	missingRoots := evidence
+	missingRoots.ZoneRootsCommittedPerBlock = false
+	missingRoots.EvidenceHash = ComputeZoneExtractionMigrationEvidenceHash(missingRoots)
+	if err := missingRoots.Validate(); err == nil {
+		t.Fatal("expected missing per-block zone roots evidence to fail")
+	}
+
+	tamperedHash := evidence
+	tamperedHash.EvidenceHash = hashParts("different zone extraction evidence")
+	if err := tamperedHash.Validate(); err == nil {
+		t.Fatal("expected tampered zone extraction evidence hash to fail")
+	}
+}
+
 func validBaselineHardeningEvidence() BaselineHardeningEvidence {
 	evidence := BaselineHardeningEvidence{
 		ModuleBoundaryDocsRoot:   hashParts("module boundary docs"),
@@ -168,5 +254,41 @@ func validCoreCommitmentMigrationEvidence() CoreCommitmentMigrationEvidence {
 		ProofRegistryMetadata:     true,
 	}
 	evidence.EvidenceHash = ComputeCoreCommitmentMigrationEvidenceHash(evidence)
+	return evidence
+}
+
+func validMessageBusMigrationEvidence() MessageBusMigrationEvidence {
+	evidence := MessageBusMigrationEvidence{
+		MsgbusModuleHash:        hashParts("x/msgbus"),
+		MessageCodecHash:        hashParts("canonical message encoding"),
+		MessageIDDerivationHash: hashParts("message id derivation"),
+		InboxStoreRoot:          hashParts("inbox store root"),
+		OutboxStoreRoot:         hashParts("outbox store root"),
+		ReceiptStoreRoot:        hashParts("receipt store root"),
+		LocalExecutionRoot:      hashParts("local zone message execution"),
+		ExpiryBounceRoot:        hashParts("expiry and bounce logic"),
+		InclusionProofRoot:      hashParts("message inclusion proof"),
+		MessagesCommitted:       true,
+		LocalAsyncDeterministic: true,
+		ReceiptProofQueryable:   true,
+	}
+	evidence.EvidenceHash = ComputeMessageBusMigrationEvidenceHash(evidence)
+	return evidence
+}
+
+func validZoneExtractionMigrationEvidence() ZoneExtractionMigrationEvidence {
+	evidence := ZoneExtractionMigrationEvidence{
+		FinancialZoneRoot:          hashParts("financial zone root"),
+		IdentityZoneRoot:           hashParts("identity zone root"),
+		ApplicationZoneRoot:        hashParts("application zone root"),
+		ZoneKeeperRoot:             hashParts("zone keeper root"),
+		ZonePrefixRoot:             hashParts("zone prefix root"),
+		ZoneFeePolicyRoot:          hashParts("zone fee policy root"),
+		ZoneExecutionSummaryRoot:   hashParts("zone execution summary root"),
+		FinancialModulesRouted:     true,
+		IdentityIsolated:           true,
+		ZoneRootsCommittedPerBlock: true,
+	}
+	evidence.EvidenceHash = ComputeZoneExtractionMigrationEvidenceHash(evidence)
 	return evidence
 }

@@ -15,6 +15,8 @@ type MigrationExitCriterionID string
 const (
 	MigrationPhaseBaselineHardening MigrationPhaseID = "phase-0-baseline-hardening"
 	MigrationPhaseCoreCommitments   MigrationPhaseID = "phase-1-core-commitments"
+	MigrationPhaseMessageBus        MigrationPhaseID = "phase-2-message-bus"
+	MigrationPhaseZoneExtraction    MigrationPhaseID = "phase-3-zone-extraction"
 
 	MigrationTaskModuleBoundaryDocs        MigrationTaskID = "module-boundary-documentation"
 	MigrationTaskStateExportValidation     MigrationTaskID = "state-export-validation"
@@ -30,6 +32,20 @@ const (
 	MigrationTaskProofRootRegistry    MigrationTaskID = "proof-root-registry"
 	MigrationTaskRootQueryAPIs        MigrationTaskID = "root-query-apis"
 
+	MigrationTaskMsgbusModule           MigrationTaskID = "msgbus-module"
+	MigrationTaskMessageEncodingAndIDs  MigrationTaskID = "message-encoding-and-ids"
+	MigrationTaskMessageStores          MigrationTaskID = "inbox-outbox-receipt-stores"
+	MigrationTaskLocalZoneExecution     MigrationTaskID = "local-zone-message-execution"
+	MigrationTaskExpiryBounceLogic      MigrationTaskID = "expiry-and-bounce-logic"
+	MigrationTaskMessageInclusionProofs MigrationTaskID = "message-inclusion-proofs"
+
+	MigrationTaskExtractFinancialZone   MigrationTaskID = "extract-financial-zone"
+	MigrationTaskExtractIdentityZone    MigrationTaskID = "extract-identity-zone"
+	MigrationTaskExtractApplicationZone MigrationTaskID = "extract-application-zone"
+	MigrationTaskZoneSpecificKeepers    MigrationTaskID = "zone-specific-keepers-state-prefixes"
+	MigrationTaskZoneLocalFeePolicies   MigrationTaskID = "zone-local-fee-policies"
+	MigrationTaskZoneExecutionSummaries MigrationTaskID = "zone-execution-summaries"
+
 	MigrationExitSingleChainReproducibleExport MigrationExitCriterionID = "single-chain-state-reproducible-exportable"
 	MigrationExitLegacyInvariantCoverage       MigrationExitCriterionID = "legacy-module-invariant-coverage"
 	MigrationExitSafePrefixMigration           MigrationExitCriterionID = "safe-prefix-migration-upgrade-handlers"
@@ -37,6 +53,14 @@ const (
 	MigrationExitSingleZoneOperation       MigrationExitCriterionID = "current-chain-operates-as-one-zone"
 	MigrationExitAppHashCoreRoot           MigrationExitCriterionID = "app-hash-includes-core-root-structure"
 	MigrationExitProofRegistryRootMetadata MigrationExitCriterionID = "proof-registry-serves-root-metadata"
+
+	MigrationExitMessagesFirstClassCommitted   MigrationExitCriterionID = "messages-first-class-committed-objects"
+	MigrationExitLocalAsyncDeterministic       MigrationExitCriterionID = "local-async-messages-deterministic"
+	MigrationExitMessageReceiptsProofQueryable MigrationExitCriterionID = "message-receipts-proof-queryable"
+
+	MigrationExitFinancialZoneExecution MigrationExitCriterionID = "financial-modules-execute-in-financial-zone"
+	MigrationExitIdentityZoneIsolated   MigrationExitCriterionID = "identity-module-isolated-zone"
+	MigrationExitZoneRootsPerBlock      MigrationExitCriterionID = "zone-roots-committed-per-block"
 )
 
 type MigrationTaskDescriptor struct {
@@ -99,10 +123,42 @@ type CoreCommitmentMigrationEvidence struct {
 	EvidenceHash              string
 }
 
+type MessageBusMigrationEvidence struct {
+	MsgbusModuleHash        string
+	MessageCodecHash        string
+	MessageIDDerivationHash string
+	InboxStoreRoot          string
+	OutboxStoreRoot         string
+	ReceiptStoreRoot        string
+	LocalExecutionRoot      string
+	ExpiryBounceRoot        string
+	InclusionProofRoot      string
+	MessagesCommitted       bool
+	LocalAsyncDeterministic bool
+	ReceiptProofQueryable   bool
+	EvidenceHash            string
+}
+
+type ZoneExtractionMigrationEvidence struct {
+	FinancialZoneRoot          string
+	IdentityZoneRoot           string
+	ApplicationZoneRoot        string
+	ZoneKeeperRoot             string
+	ZonePrefixRoot             string
+	ZoneFeePolicyRoot          string
+	ZoneExecutionSummaryRoot   string
+	FinancialModulesRouted     bool
+	IdentityIsolated           bool
+	ZoneRootsCommittedPerBlock bool
+	EvidenceHash               string
+}
+
 func DefaultMigrationPathSpec() (MigrationPathSpec, error) {
 	return BuildMigrationPathSpec([]MigrationPhase{
 		migrationPhase(MigrationPhaseBaselineHardening, "Phase 0: Baseline Hardening", MigrationPhase0Tasks(), MigrationPhase0ExitCriteria()),
 		migrationPhase(MigrationPhaseCoreCommitments, "Phase 1: Core Commitments", MigrationPhase1Tasks(), MigrationPhase1ExitCriteria()),
+		migrationPhase(MigrationPhaseMessageBus, "Phase 2: Message Bus", MigrationPhase2Tasks(), MigrationPhase2ExitCriteria()),
+		migrationPhase(MigrationPhaseZoneExtraction, "Phase 3: Zone Extraction", MigrationPhase3Tasks(), MigrationPhase3ExitCriteria()),
 	})
 }
 
@@ -140,6 +196,28 @@ func MigrationPhase1Tasks() []MigrationTaskDescriptor {
 	}
 }
 
+func MigrationPhase2Tasks() []MigrationTaskDescriptor {
+	return []MigrationTaskDescriptor{
+		migrationTask(MigrationPhaseMessageBus, MigrationTaskMsgbusModule, "Implement x/msgbus.", "x/msgbus", "message module;zone adapters;deterministic stores"),
+		migrationTask(MigrationPhaseMessageBus, MigrationTaskMessageEncodingAndIDs, "Add message encoding and IDs.", "AetherMessage codec", "canonical encoding;payload hash;nonce;route commitment;msg_id"),
+		migrationTask(MigrationPhaseMessageBus, MigrationTaskMessageStores, "Add inbox, outbox, and receipt stores.", "message stores", "zone and shard inbox/outbox/receipt prefixes with committed roots"),
+		migrationTask(MigrationPhaseMessageBus, MigrationTaskLocalZoneExecution, "Add local-zone message execution.", "message executor", "local async delivery;ApplyInboundMessage;deterministic receipt"),
+		migrationTask(MigrationPhaseMessageBus, MigrationTaskExpiryBounceLogic, "Add expiry and bounce logic.", "delivery executor", "expired, bounced, failed, refunded, and rejected receipts"),
+		migrationTask(MigrationPhaseMessageBus, MigrationTaskMessageInclusionProofs, "Add message inclusion proofs.", "message proof queries", "source outbox, destination inbox, receipt, and global message proofs"),
+	}
+}
+
+func MigrationPhase3Tasks() []MigrationTaskDescriptor {
+	return []MigrationTaskDescriptor{
+		migrationTask(MigrationPhaseZoneExtraction, MigrationTaskExtractFinancialZone, "Extract Financial Zone.", "Financial Zone adapter", "bank;fees;tokenfactory;dex prefixes and roots"),
+		migrationTask(MigrationPhaseZoneExtraction, MigrationTaskExtractIdentityZone, "Extract Identity Zone.", "Identity Zone adapter", "identity resolver;reverse lookup;delegation roots"),
+		migrationTask(MigrationPhaseZoneExtraction, MigrationTaskExtractApplicationZone, "Extract Application Zone.", "Application Zone adapter", "workflows;scheduler;app queues;permission roots"),
+		migrationTask(MigrationPhaseZoneExtraction, MigrationTaskZoneSpecificKeepers, "Add zone-specific keepers and state prefixes.", "zone keeper wiring", "keeper scopes;state prefixes;zone export manifests"),
+		migrationTask(MigrationPhaseZoneExtraction, MigrationTaskZoneLocalFeePolicies, "Add zone-local fee policies.", "zone fee policy registry", "financial fee roots;zone fee policy IDs;aggregation records"),
+		migrationTask(MigrationPhaseZoneExtraction, MigrationTaskZoneExecutionSummaries, "Add zone execution summaries.", "ZoneExecutionSummary", "tx counts;message counts;gas;roots;summary hash"),
+	}
+}
+
 func MigrationPhase0ExitCriteria() []MigrationExitCriterion {
 	return []MigrationExitCriterion{
 		migrationExitCriterion(MigrationPhaseBaselineHardening, MigrationExitSingleChainReproducibleExport, "Existing single-chain state is reproducible and exportable.", "state export manifest and genesis import hashes match after replay"),
@@ -153,6 +231,22 @@ func MigrationPhase1ExitCriteria() []MigrationExitCriterion {
 		migrationExitCriterion(MigrationPhaseCoreCommitments, MigrationExitSingleZoneOperation, "Current chain operates as one zone.", "exactly one enabled default zone is committed in the registry"),
 		migrationExitCriterion(MigrationPhaseCoreCommitments, MigrationExitAppHashCoreRoot, "App hash includes core root structure.", "app hash binds aether core, zone, message, receipt, and proof roots"),
 		migrationExitCriterion(MigrationPhaseCoreCommitments, MigrationExitProofRegistryRootMetadata, "Proof registry serves root metadata.", "proof root metadata is queryable by height and root type"),
+	}
+}
+
+func MigrationPhase2ExitCriteria() []MigrationExitCriterion {
+	return []MigrationExitCriterion{
+		migrationExitCriterion(MigrationPhaseMessageBus, MigrationExitMessagesFirstClassCommitted, "Messages are first-class committed objects.", "message envelopes, inboxes, outboxes, receipts, and replay state commit under deterministic roots"),
+		migrationExitCriterion(MigrationPhaseMessageBus, MigrationExitLocalAsyncDeterministic, "Local async messages execute deterministically.", "local-zone async delivery produces identical receipts and roots on replay"),
+		migrationExitCriterion(MigrationPhaseMessageBus, MigrationExitMessageReceiptsProofQueryable, "Message receipts are proof-queryable.", "receipt query returns height-scoped proof metadata under receipt and message roots"),
+	}
+}
+
+func MigrationPhase3ExitCriteria() []MigrationExitCriterion {
+	return []MigrationExitCriterion{
+		migrationExitCriterion(MigrationPhaseZoneExtraction, MigrationExitFinancialZoneExecution, "Existing bank, fees, tokenfactory, and DEX execute in Financial Zone.", "financial zone roots include bank, fee, tokenfactory, and DEX state transitions"),
+		migrationExitCriterion(MigrationPhaseZoneExtraction, MigrationExitIdentityZoneIsolated, "Identity module can activate as isolated Identity Zone.", "identity state writes are restricted to identity zone prefixes and roots"),
+		migrationExitCriterion(MigrationPhaseZoneExtraction, MigrationExitZoneRootsPerBlock, "Zone roots are committed per block.", "each finalized height commits zone roots, summaries, inbox, outbox, receipt, and event roots"),
 	}
 }
 
@@ -170,8 +264,8 @@ func (s MigrationPathSpec) ValidateFormat() error {
 	if s.Version != MigrationPathSpecVersion {
 		return fmt.Errorf("aethercore migration path spec version must be %d", MigrationPathSpecVersion)
 	}
-	if len(s.Phases) != 2 {
-		return errors.New("aethercore migration path spec requires phase 0 and phase 1")
+	if len(s.Phases) != 4 {
+		return errors.New("aethercore migration path spec requires phases 0 through 3")
 	}
 	seen := make(map[MigrationPhaseID]struct{}, len(s.Phases))
 	var previous MigrationPhaseID
@@ -193,6 +287,12 @@ func (s MigrationPathSpec) ValidateFormat() error {
 	}
 	if _, found := seen[MigrationPhaseCoreCommitments]; !found {
 		return errors.New("aethercore migration path missing phase 1 core commitments")
+	}
+	if _, found := seen[MigrationPhaseMessageBus]; !found {
+		return errors.New("aethercore migration path missing phase 2 message bus")
+	}
+	if _, found := seen[MigrationPhaseZoneExtraction]; !found {
+		return errors.New("aethercore migration path missing phase 3 zone extraction")
 	}
 	if s.Root != "" {
 		if err := ValidateHash("aethercore migration path spec root", s.Root); err != nil {
@@ -507,6 +607,136 @@ func (e CoreCommitmentMigrationEvidence) Validate() error {
 	return nil
 }
 
+func (e MessageBusMigrationEvidence) Normalize() MessageBusMigrationEvidence {
+	e.MsgbusModuleHash = normalizePerformanceHash(e.MsgbusModuleHash)
+	e.MessageCodecHash = normalizePerformanceHash(e.MessageCodecHash)
+	e.MessageIDDerivationHash = normalizePerformanceHash(e.MessageIDDerivationHash)
+	e.InboxStoreRoot = normalizePerformanceHash(e.InboxStoreRoot)
+	e.OutboxStoreRoot = normalizePerformanceHash(e.OutboxStoreRoot)
+	e.ReceiptStoreRoot = normalizePerformanceHash(e.ReceiptStoreRoot)
+	e.LocalExecutionRoot = normalizePerformanceHash(e.LocalExecutionRoot)
+	e.ExpiryBounceRoot = normalizePerformanceHash(e.ExpiryBounceRoot)
+	e.InclusionProofRoot = normalizePerformanceHash(e.InclusionProofRoot)
+	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
+	return e
+}
+
+func (e MessageBusMigrationEvidence) ValidateFormat() error {
+	e = e.Normalize()
+	hashes := []struct {
+		name  string
+		value string
+	}{
+		{"aethercore migration msgbus module hash", e.MsgbusModuleHash},
+		{"aethercore migration message codec hash", e.MessageCodecHash},
+		{"aethercore migration message ID derivation hash", e.MessageIDDerivationHash},
+		{"aethercore migration inbox store root", e.InboxStoreRoot},
+		{"aethercore migration outbox store root", e.OutboxStoreRoot},
+		{"aethercore migration receipt store root", e.ReceiptStoreRoot},
+		{"aethercore migration local execution root", e.LocalExecutionRoot},
+		{"aethercore migration expiry bounce root", e.ExpiryBounceRoot},
+		{"aethercore migration inclusion proof root", e.InclusionProofRoot},
+	}
+	for _, item := range hashes {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if !e.MessagesCommitted {
+		return errors.New("aethercore migration message bus evidence requires first-class committed messages")
+	}
+	if !e.LocalAsyncDeterministic {
+		return errors.New("aethercore migration message bus evidence requires deterministic local async execution")
+	}
+	if !e.ReceiptProofQueryable {
+		return errors.New("aethercore migration message bus evidence requires proof-queryable receipts")
+	}
+	if e.EvidenceHash != "" {
+		if err := ValidateHash("aethercore migration message bus evidence hash", e.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e MessageBusMigrationEvidence) Validate() error {
+	e = e.Normalize()
+	if err := e.ValidateFormat(); err != nil {
+		return err
+	}
+	if e.EvidenceHash == "" {
+		return errors.New("aethercore migration message bus evidence hash is required")
+	}
+	expected := ComputeMessageBusMigrationEvidenceHash(e)
+	if e.EvidenceHash != expected {
+		return fmt.Errorf("aethercore migration message bus evidence hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
+func (e ZoneExtractionMigrationEvidence) Normalize() ZoneExtractionMigrationEvidence {
+	e.FinancialZoneRoot = normalizePerformanceHash(e.FinancialZoneRoot)
+	e.IdentityZoneRoot = normalizePerformanceHash(e.IdentityZoneRoot)
+	e.ApplicationZoneRoot = normalizePerformanceHash(e.ApplicationZoneRoot)
+	e.ZoneKeeperRoot = normalizePerformanceHash(e.ZoneKeeperRoot)
+	e.ZonePrefixRoot = normalizePerformanceHash(e.ZonePrefixRoot)
+	e.ZoneFeePolicyRoot = normalizePerformanceHash(e.ZoneFeePolicyRoot)
+	e.ZoneExecutionSummaryRoot = normalizePerformanceHash(e.ZoneExecutionSummaryRoot)
+	e.EvidenceHash = normalizePerformanceHash(e.EvidenceHash)
+	return e
+}
+
+func (e ZoneExtractionMigrationEvidence) ValidateFormat() error {
+	e = e.Normalize()
+	hashes := []struct {
+		name  string
+		value string
+	}{
+		{"aethercore migration financial zone root", e.FinancialZoneRoot},
+		{"aethercore migration identity zone root", e.IdentityZoneRoot},
+		{"aethercore migration application zone root", e.ApplicationZoneRoot},
+		{"aethercore migration zone keeper root", e.ZoneKeeperRoot},
+		{"aethercore migration zone prefix root", e.ZonePrefixRoot},
+		{"aethercore migration zone fee policy root", e.ZoneFeePolicyRoot},
+		{"aethercore migration zone execution summary root", e.ZoneExecutionSummaryRoot},
+	}
+	for _, item := range hashes {
+		if err := ValidateHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if !e.FinancialModulesRouted {
+		return errors.New("aethercore migration zone extraction evidence requires financial modules routed to Financial Zone")
+	}
+	if !e.IdentityIsolated {
+		return errors.New("aethercore migration zone extraction evidence requires isolated Identity Zone")
+	}
+	if !e.ZoneRootsCommittedPerBlock {
+		return errors.New("aethercore migration zone extraction evidence requires zone roots committed per block")
+	}
+	if e.EvidenceHash != "" {
+		if err := ValidateHash("aethercore migration zone extraction evidence hash", e.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e ZoneExtractionMigrationEvidence) Validate() error {
+	e = e.Normalize()
+	if err := e.ValidateFormat(); err != nil {
+		return err
+	}
+	if e.EvidenceHash == "" {
+		return errors.New("aethercore migration zone extraction evidence hash is required")
+	}
+	expected := ComputeZoneExtractionMigrationEvidenceHash(e)
+	if e.EvidenceHash != expected {
+		return fmt.Errorf("aethercore migration zone extraction evidence hash mismatch: expected %s", expected)
+	}
+	return nil
+}
+
 func ValidateMigrationPathCoverage() error {
 	spec, err := DefaultMigrationPathSpec()
 	if err != nil {
@@ -529,6 +759,22 @@ func ValidateMigrationPathCoverage() error {
 			MigrationTaskProofRootRegistry,
 			MigrationTaskRootQueryAPIs,
 		},
+		MigrationPhaseMessageBus: {
+			MigrationTaskMsgbusModule,
+			MigrationTaskMessageEncodingAndIDs,
+			MigrationTaskMessageStores,
+			MigrationTaskLocalZoneExecution,
+			MigrationTaskExpiryBounceLogic,
+			MigrationTaskMessageInclusionProofs,
+		},
+		MigrationPhaseZoneExtraction: {
+			MigrationTaskExtractFinancialZone,
+			MigrationTaskExtractIdentityZone,
+			MigrationTaskExtractApplicationZone,
+			MigrationTaskZoneSpecificKeepers,
+			MigrationTaskZoneLocalFeePolicies,
+			MigrationTaskZoneExecutionSummaries,
+		},
 	}
 	requiredCriteria := map[MigrationPhaseID][]MigrationExitCriterionID{
 		MigrationPhaseBaselineHardening: {
@@ -540,6 +786,16 @@ func ValidateMigrationPathCoverage() error {
 			MigrationExitSingleZoneOperation,
 			MigrationExitAppHashCoreRoot,
 			MigrationExitProofRegistryRootMetadata,
+		},
+		MigrationPhaseMessageBus: {
+			MigrationExitMessagesFirstClassCommitted,
+			MigrationExitLocalAsyncDeterministic,
+			MigrationExitMessageReceiptsProofQueryable,
+		},
+		MigrationPhaseZoneExtraction: {
+			MigrationExitFinancialZoneExecution,
+			MigrationExitIdentityZoneIsolated,
+			MigrationExitZoneRootsPerBlock,
 		},
 	}
 	phaseByID := make(map[MigrationPhaseID]MigrationPhase, len(spec.Phases))
@@ -580,7 +836,7 @@ func ValidateMigrationPathCoverage() error {
 }
 
 func IsMigrationPhaseID(id MigrationPhaseID) bool {
-	return id == MigrationPhaseBaselineHardening || id == MigrationPhaseCoreCommitments
+	return id == MigrationPhaseBaselineHardening || id == MigrationPhaseCoreCommitments || id == MigrationPhaseMessageBus || id == MigrationPhaseZoneExtraction
 }
 
 func IsMigrationTaskID(phaseID MigrationPhaseID, taskID MigrationTaskID) bool {
@@ -682,6 +938,40 @@ func ComputeCoreCommitmentMigrationEvidenceHash(e CoreCommitmentMigrationEvidenc
 	})
 }
 
+func ComputeMessageBusMigrationEvidenceHash(e MessageBusMigrationEvidence) string {
+	e = e.Normalize()
+	return hashRoot("aetheris-aek-migration-message-bus-evidence-v1", func(w byteWriter) {
+		writePart(w, e.MsgbusModuleHash)
+		writePart(w, e.MessageCodecHash)
+		writePart(w, e.MessageIDDerivationHash)
+		writePart(w, e.InboxStoreRoot)
+		writePart(w, e.OutboxStoreRoot)
+		writePart(w, e.ReceiptStoreRoot)
+		writePart(w, e.LocalExecutionRoot)
+		writePart(w, e.ExpiryBounceRoot)
+		writePart(w, e.InclusionProofRoot)
+		writeBoolPart(w, e.MessagesCommitted)
+		writeBoolPart(w, e.LocalAsyncDeterministic)
+		writeBoolPart(w, e.ReceiptProofQueryable)
+	})
+}
+
+func ComputeZoneExtractionMigrationEvidenceHash(e ZoneExtractionMigrationEvidence) string {
+	e = e.Normalize()
+	return hashRoot("aetheris-aek-migration-zone-extraction-evidence-v1", func(w byteWriter) {
+		writePart(w, e.FinancialZoneRoot)
+		writePart(w, e.IdentityZoneRoot)
+		writePart(w, e.ApplicationZoneRoot)
+		writePart(w, e.ZoneKeeperRoot)
+		writePart(w, e.ZonePrefixRoot)
+		writePart(w, e.ZoneFeePolicyRoot)
+		writePart(w, e.ZoneExecutionSummaryRoot)
+		writeBoolPart(w, e.FinancialModulesRouted)
+		writeBoolPart(w, e.IdentityIsolated)
+		writeBoolPart(w, e.ZoneRootsCommittedPerBlock)
+	})
+}
+
 func migrationPhase(phaseID MigrationPhaseID, title string, tasks []MigrationTaskDescriptor, criteria []MigrationExitCriterion) MigrationPhase {
 	phase := MigrationPhase{
 		PhaseID:      phaseID,
@@ -769,6 +1059,24 @@ func phaseTasksForID(phaseID MigrationPhaseID) []MigrationTaskID {
 			MigrationTaskProofRootRegistry,
 			MigrationTaskRootQueryAPIs,
 		}
+	case MigrationPhaseMessageBus:
+		return []MigrationTaskID{
+			MigrationTaskMsgbusModule,
+			MigrationTaskMessageEncodingAndIDs,
+			MigrationTaskMessageStores,
+			MigrationTaskLocalZoneExecution,
+			MigrationTaskExpiryBounceLogic,
+			MigrationTaskMessageInclusionProofs,
+		}
+	case MigrationPhaseZoneExtraction:
+		return []MigrationTaskID{
+			MigrationTaskExtractFinancialZone,
+			MigrationTaskExtractIdentityZone,
+			MigrationTaskExtractApplicationZone,
+			MigrationTaskZoneSpecificKeepers,
+			MigrationTaskZoneLocalFeePolicies,
+			MigrationTaskZoneExecutionSummaries,
+		}
 	default:
 		return nil
 	}
@@ -787,6 +1095,18 @@ func phaseExitCriteriaForID(phaseID MigrationPhaseID) []MigrationExitCriterionID
 			MigrationExitSingleZoneOperation,
 			MigrationExitAppHashCoreRoot,
 			MigrationExitProofRegistryRootMetadata,
+		}
+	case MigrationPhaseMessageBus:
+		return []MigrationExitCriterionID{
+			MigrationExitMessagesFirstClassCommitted,
+			MigrationExitLocalAsyncDeterministic,
+			MigrationExitMessageReceiptsProofQueryable,
+		}
+	case MigrationPhaseZoneExtraction:
+		return []MigrationExitCriterionID{
+			MigrationExitFinancialZoneExecution,
+			MigrationExitIdentityZoneIsolated,
+			MigrationExitZoneRootsPerBlock,
 		}
 	default:
 		return nil
