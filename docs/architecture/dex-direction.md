@@ -1,7 +1,7 @@
 # DEX Direction
 
 Phase 12 keeps the current `x/dex` native module in the blockchain repository
-while Aetheris async contract execution and VM selection mature.
+while Aetra async contract execution and VM selection mature.
 
 The production target for the native DEX is documented in
 [x/dex Production Specification](dex-production-spec.md).
@@ -23,10 +23,10 @@ Current safety requirements:
 - Swap trader is also the current swap recipient and must be a valid non-zero
   user address.
 - Pool asset denoms must not spoof native AET metadata through display aliases
-  such as `AET` or `Aetheris`.
-- Factory denoms whose subdenom spoofs `naet`, `AET`, or `Aetheris` are
+  such as `AET` or `Aetra`.
+- Factory denoms whose subdenom spoofs `naet`, `AET`, or `Aetra` are
   rejected.
-- Factory denoms whose subdenom spoofs `naet`, `AET`, or `Aetheris` are rejected.
+- Factory denoms whose subdenom spoofs `naet`, `AET`, or `Aetra` are rejected.
 - LP denoms are native module-controlled `lp/{pool_id}` denoms and must not be
   accepted from user input as arbitrary native-token aliases.
 
@@ -49,7 +49,7 @@ burned only by the DEX module.
 
 ## Future Contract DEX
 
-Aetheris should move toward contract-based pools and routers only after async
+Aetra should move toward contract-based pools and routers only after async
 contract execution is safe and audited. Until then, the native DEX remains the
 reference implementation or migration bridge.
 

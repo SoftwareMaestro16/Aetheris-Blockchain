@@ -49,7 +49,7 @@ func initGenFiles(
 	}
 	bankGenState.DenomMetadata = appparams.EnsureNativeTokenMetadata(bankGenState.DenomMetadata)
 	appGenState[banktypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(&bankGenState)
-	appGenState[minttypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(appparams.AetherisMintGenesisState())
+	appGenState[minttypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(appparams.AetraMintGenesisState())
 
 	appGenStateJSON, err := json.MarshalIndent(appGenState, "", "  ")
 	if err != nil {

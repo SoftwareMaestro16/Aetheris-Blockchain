@@ -47,7 +47,7 @@ func (app *L1App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abc
 	if err != nil {
 		return nil, err
 	}
-	if err := app.validateAetherisGenesis(genesisState); err != nil {
+	if err := app.validateAetraGenesis(genesisState); err != nil {
 		return nil, err
 	}
 	res, err := app.ModuleManager.InitGenesis(ctx, app.appCodec, genesisState)

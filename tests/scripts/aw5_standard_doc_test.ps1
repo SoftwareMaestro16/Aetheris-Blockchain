@@ -18,7 +18,7 @@ $standardText = Get-Content -Raw -LiteralPath $StandardPath
 $boundariesText = Get-Content -Raw -LiteralPath $BoundariesPath
 
 foreach ($term in @(
-    'Aetheris Wallet Standard',
+    'Aetra Wallet Standard',
     'AW-5',
     'signature_allowed',
     'seqno',

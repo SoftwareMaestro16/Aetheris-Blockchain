@@ -129,7 +129,7 @@ func TestUnauthorizedSBTRevokeRejected(t *testing.T) {
 
 func TestMetadataSpoofingRejected(t *testing.T) {
 	tests := []Metadata{
-		{Name: "Aetheris", Symbol: "COLL", ContentRef: "ipfs://collection"},
+		{Name: "Aetra", Symbol: "COLL", ContentRef: "ipfs://collection"},
 		{Name: "Wrapped Asset", Symbol: "AET", ContentRef: "ipfs://collection"},
 		{Name: "Wrapped Asset", Symbol: "naet", ContentRef: "ipfs://collection"},
 	}
@@ -214,7 +214,7 @@ func testCollection(admin sdk.AccAddress) CollectionState {
 	return CollectionState{
 		Address:         testAddr(8),
 		Admin:           admin,
-		Metadata:        testMetadata("Aetheris Artifacts"),
+		Metadata:        testMetadata("Aetra Artifacts"),
 		NextItemIndex:   0,
 		ItemCodeHash:    testCodeHash(),
 		StandardVersion: DefaultVersion,

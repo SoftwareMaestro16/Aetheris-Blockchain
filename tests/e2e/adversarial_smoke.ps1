@@ -45,14 +45,14 @@ function Get-CliJson {
   return ($text.Substring($jsonStart) | ConvertFrom-Json)
 }
 
-function Invoke-AetherisJson {
+function Invoke-AetraJson {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
   $output = Invoke-ExternalChecked -FilePath $Binary -Arguments $Arguments -FailureMessage "aetherisd command failed"
   return Get-CliJson -Output $output
 }
 
-function Invoke-AetherisRaw {
+function Invoke-AetraRaw {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
   $previousErrorActionPreference = $ErrorActionPreference
@@ -79,7 +79,7 @@ function Wait-ForHeight {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
     try {
-      $block = Invoke-AetherisJson -Arguments @("query", "block", "--node", $Node, "--output", "json")
+      $block = Invoke-AetraJson -Arguments @("query", "block", "--node", $Node, "--output", "json")
       $heightValue = $block.header.height
       if (-not $heightValue -and $block.block) {
         $heightValue = $block.block.header.height
@@ -109,7 +109,7 @@ function Wait-ForTxResult {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
     try {
-      $query = Invoke-AetherisJson -Arguments @("query", "tx", $TxHash, "--node", $Node, "--output", "json")
+      $query = Invoke-AetraJson -Arguments @("query", "tx", $TxHash, "--node", $Node, "--output", "json")
       if ($query.tx_response) {
         return $query.tx_response
       }
@@ -140,7 +140,7 @@ function Assert-TxRejected {
     [int]$TimeoutSeconds = 45
   )
 
-  $raw = Invoke-AetherisRaw -Arguments $Arguments
+  $raw = Invoke-AetraRaw -Arguments $Arguments
   if ($raw.ExitCode -ne 0) {
     Write-Host "adversarial tx rejected: $Name"
     return

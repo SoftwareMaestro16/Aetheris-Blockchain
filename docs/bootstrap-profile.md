@@ -1,4 +1,4 @@
-# Aetheris Local Bootstrap Profile
+# Aetra Local Bootstrap Profile
 
 This document defines the reproducible local bootstrap contract for the prototype profile `aetheris-local-1`.
 

@@ -21,7 +21,7 @@ $auditText = Get-Content -Raw -LiteralPath $AuditPath
 $posText = Get-Content -Raw -LiteralPath $PosPath
 
 foreach ($term in @(
-    'Aetheris Slashing System',
+    'Aetra Slashing System',
     'core consensus security primitive',
     'validator honesty',
     'chain finality safety',
@@ -82,13 +82,13 @@ foreach ($term in @(
     'double_sign_slash_fraction        = 0.05',
     'downtime_slash_fraction           = 0.0001',
     'Rounding dust goes to burn',
-    'Slashing in Aetheris is a deterministic, protocol-level enforcement mechanism that guarantees economic security of consensus through enforceable stake penalties.'
+    'Slashing in Aetra is a deterministic, protocol-level enforcement mechanism that guarantees economic security of consensus through enforceable stake penalties.'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "slashing system doc missing: $term"
 }
 
 foreach ($term in @(
-    'Aetheris Slashing System',
+    'Aetra Slashing System',
     'slashing-system.md'
   )) {
   Assert-Contains -Text $auditText -Pattern ([regex]::Escape($term)) -Message "security audit pack missing slashing doc link: $term"

@@ -196,7 +196,7 @@ try {
   }
 
   $quickstart = @"
-# Aetheris Prototype Quickstart
+# Aetra Prototype Quickstart
 
 This is a prerelease prototype artifact, not mainnet validator software.
 
@@ -223,7 +223,7 @@ Prototype tx fees use `naet`, for example `--fees 1000000naet`.
   $quickstart | Set-Content -LiteralPath (Join-Path $packageDir "QUICKSTART.md")
 
   $manifest = [ordered]@{
-    name            = "Aetheris prototype release package"
+    name            = "Aetra prototype release package"
     version         = $Version
     commit          = $Commit
     dirty           = $dirty
@@ -249,7 +249,7 @@ Prototype tx fees use `naet`, for example `--fees 1000000naet`.
   $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $packageDir "release-manifest.json")
 
   $notes = @"
-# Aetheris $Version Prototype Release Notes
+# Aetra $Version Prototype Release Notes
 
 - commit: `$Commit`
 - dirty tree at package time: `$dirty`

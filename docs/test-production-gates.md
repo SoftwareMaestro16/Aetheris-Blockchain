@@ -1,7 +1,7 @@
 # Test And Production Gates
 
 Track 10 defines the required testing layers, release gates, production gate,
-immediate build order, and final economic architecture summary for Aetheris.
+immediate build order, and final economic architecture summary for Aetra.
 It complements the prototype test pyramid and public testnet gate ledger.
 
 ## Unit Tests
@@ -142,7 +142,7 @@ remain excluded unless their own gates are explicitly passed.
 
 ## Final Economic Architecture Summary
 
-Aetheris economy is controlled by four feedback loops:
+Aetra economy is controlled by four feedback loops:
 
 ```text
 staking participation -> adaptive inflation -> validator/delegator rewards

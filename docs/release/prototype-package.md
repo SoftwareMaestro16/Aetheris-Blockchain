@@ -1,6 +1,6 @@
-# Aetheris Prototype Release Package
+# Aetra Prototype Release Package
 
-This document defines the release package for the Aetheris working L1 prototype.
+This document defines the release package for the Aetra working L1 prototype.
 
 The package is a prerelease/testnet artifact. It is not a mainnet-ready release and must not be marketed as production validator software.
 

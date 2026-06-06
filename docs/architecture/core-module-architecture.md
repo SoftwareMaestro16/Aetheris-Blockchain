@@ -2,8 +2,8 @@
 
 Date: 2026-06-05
 
-Aetheris uses Cosmos SDK core modules where they are already consensus-safe and
-wraps them with Aetheris-specific address, denom, fee, and zero-address policy.
+Aetra uses Cosmos SDK core modules where they are already consensus-safe and
+wraps them with Aetra-specific address, denom, fee, and zero-address policy.
 Do not duplicate SDK core modules under new names unless a future design proves
 that replacement is safer than bounded integration.
 
@@ -21,7 +21,7 @@ Responsibilities:
 - address validation;
 - zero-address rejection before state mutation.
 
-Aetheris policy:
+Aetra policy:
 
 - account addresses are formatted through `app/addressing`;
 - valid public account formats are raw `4:` and userfriendly `AE...`;
@@ -31,7 +31,7 @@ Aetheris policy:
 - wrong chain-id signatures fail before balance or sequence mutation;
 - invalid signers fail before message state mutation;
 - account metadata for indexers is exposed through `app/indexer` helpers using
-  Aetheris address formatting.
+  Aetra address formatting.
 
 ### `x/bank`
 
@@ -43,7 +43,7 @@ Responsibilities:
 - mint/burn permission enforcement;
 - multi-asset readiness for non-native user assets.
 
-Aetheris policy:
+Aetra policy:
 
 - native transfer denom is `naet`;
 - protocol fees are not bank-transfer assets and remain enforced by `x/fees`;
@@ -64,7 +64,7 @@ Responsibilities:
 - voting power updates;
 - staking reward eligibility.
 
-Aetheris policy:
+Aetra policy:
 
 - bond denom is fixed to `naet`;
 - validator commission bounds are modeled in `app/params`:
@@ -83,7 +83,7 @@ Responsibilities:
 - jailing and tombstone behavior;
 - consensus security enforcement.
 
-Aetheris policy:
+Aetra policy:
 
 - slash fractions and missed-block windows must be positive and bounded;
 - downtime recovery must be explicit and tested;
@@ -100,7 +100,7 @@ Responsibilities:
 - treasury controls;
 - emergency controls.
 
-Aetheris policy:
+Aetra policy:
 
 - governance can update soft params only within hard-coded protocol bounds;
 - hard economic bounds, such as inflation caps and fee caps, require software
@@ -117,7 +117,7 @@ Responsibilities:
 - delegator reward accounting;
 - community pool and treasury integration.
 
-Aetheris policy:
+Aetra policy:
 
 - mint rewards provide the validator baseline security budget;
 - fee rewards provide activity-linked upside;

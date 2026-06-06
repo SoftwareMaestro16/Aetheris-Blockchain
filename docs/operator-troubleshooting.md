@@ -1,6 +1,6 @@
 # Operator Troubleshooting Runbook
 
-This runbook is for local Aetheris prototype operation. It uses localnet homes, local endpoints, and `--keyring-backend test` only. Never paste mnemonics, validator keys, node keys, or keyring files into tickets, chats, logs, or diagnostic bundles.
+This runbook is for local Aetra prototype operation. It uses localnet homes, local endpoints, and `--keyring-backend test` only. Never paste mnemonics, validator keys, node keys, or keyring files into tickets, chats, logs, or diagnostic bundles.
 
 Default variables:
 

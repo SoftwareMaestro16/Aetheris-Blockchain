@@ -1,6 +1,6 @@
 # Fees And Ante Policy
 
-This document defines the prototype fee policy for Aetheris.
+This document defines the prototype fee policy for Aetra.
 
 ## Contract
 
@@ -34,7 +34,7 @@ Rejected by `x/fees` policy:
 - malformed fee lists such as duplicate denom entries
 - transactions that do not expose the SDK `FeeTx` interface
 
-The localnet default `minimum-gas-prices = "0naet"` is a validator mempool setting. Aetheris protocol fee policy is stricter: delivered transactions must include at least `1naet` unless they are height-0 genesis create-validator transactions.
+The localnet default `minimum-gas-prices = "0naet"` is a validator mempool setting. Aetra protocol fee policy is stricter: delivered transactions must include at least `1naet` unless they are height-0 genesis create-validator transactions.
 
 For public testnets, keep protocol `min_fee_amount >= 1` and set validator min-gas-prices independently for mempool filtering. Localnet keeps validator min-gas-prices at `0naet` only so development commands are not filtered before protocol ante can be exercised.
 

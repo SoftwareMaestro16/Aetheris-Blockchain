@@ -45,7 +45,7 @@ if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
 }
 $checkText = $checkOutput -join "`n"
 foreach ($needle in @(
-    "Aetheris prototype demo check",
+    "Aetra prototype demo check",
     "local-only: true",
     "build aetherisd",
     "start 3-validator localnet",

@@ -1,4 +1,4 @@
-# Aetheris Custom Module Attacker Model
+# Aetra Custom Module Attacker Model
 
 ## Tokenfactory
 

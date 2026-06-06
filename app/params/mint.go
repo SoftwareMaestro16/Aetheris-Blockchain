@@ -9,11 +9,11 @@ func BpsToLegacyDec(bps int64) sdkmath.LegacyDec {
 	return sdkmath.LegacyNewDec(bps).Quo(sdkmath.LegacyNewDec(BasisPoints))
 }
 
-func AetherisInitialMinter() minttypes.Minter {
+func AetraInitialMinter() minttypes.Minter {
 	return minttypes.InitialMinter(BpsToLegacyDec(DefaultTargetInflationBps))
 }
 
-func AetherisMintParams() minttypes.Params {
+func AetraMintParams() minttypes.Params {
 	params := minttypes.DefaultParams()
 	params.MintDenom = BaseDenom
 	params.InflationRateChange = BpsToLegacyDec(DefaultResponsivenessBps)
@@ -24,6 +24,6 @@ func AetherisMintParams() minttypes.Params {
 	return params
 }
 
-func AetherisMintGenesisState() *minttypes.GenesisState {
-	return minttypes.NewGenesisState(AetherisInitialMinter(), AetherisMintParams())
+func AetraMintGenesisState() *minttypes.GenesisState {
+	return minttypes.NewGenesisState(AetraInitialMinter(), AetraMintParams())
 }

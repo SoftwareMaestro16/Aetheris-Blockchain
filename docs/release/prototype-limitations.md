@@ -1,6 +1,6 @@
 # Prototype Non-Goals And Limitations
 
-Version scope: current Aetheris working prototype prerelease line. Update this file for every prototype release decision that changes scope, risk acceptance, or blocker status.
+Version scope: current Aetra working prototype prerelease line. Update this file for every prototype release decision that changes scope, risk acceptance, or blocker status.
 
 This document prevents scope creep and avoids implying mainnet readiness. It does not override the security gate: any untriaged Critical or High security finding remains a release blocker, not an accepted limitation.
 

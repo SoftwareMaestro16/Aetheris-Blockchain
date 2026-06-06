@@ -143,7 +143,7 @@ Responsibilities:
 
 Rules:
 
-- IBC assets cannot pay Aetheris protocol fees;
+- IBC assets cannot pay Aetra protocol fees;
 - bridged and IBC assets must be clearly namespaced;
 - bridge, resolver, domain, and indexer integrations must reject native `AET`
   or `naet` spoofing;

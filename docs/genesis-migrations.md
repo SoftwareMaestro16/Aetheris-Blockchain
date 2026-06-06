@@ -8,7 +8,7 @@
 - AppModule `InitGenesis` and `ExportGenesis` may panic only because the Cosmos SDK module interface has no error return; these are startup/operator-export invariants, not transaction execution paths.
 - Custom module migrations must be registered for every `ConsensusVersion` bump. No-op migrations are allowed only when they still validate current exportable state.
 - App-level genesis policy runs before module `InitGenesis` and rejects
-  Aetheris-specific invariants that the SDK cannot infer, including duplicate
+  Aetra-specific invariants that the SDK cannot infer, including duplicate
   auth accounts, zero auth accounts, invalid bank balances, duplicate balances,
   staking denom drift away from `naet`, mint denom drift away from `naet`, and
   fee denom drift away from `naet`.
@@ -57,7 +57,7 @@ ever required, it must live in explicit migration-only tooling with:
 - an upgrade name;
 - a bounded input set;
 - old-format parsing isolated from `app/addressing` public validators;
-- output normalized to Aetheris `naet`, `AET`, raw `4:`, and userfriendly
+- output normalized to Aetra `naet`, `AET`, raw `4:`, and userfriendly
   `AE...` formats;
 - regression tests proving old formats still fail normal genesis, tx, query, and
   contract-standard validation.

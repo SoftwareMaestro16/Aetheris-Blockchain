@@ -1,6 +1,6 @@
-# Aetheris PoS Smoke Flow
+# Aetra PoS Smoke Flow
 
-This document defines the operator-visible proof-of-stake smoke scenario for the Aetheris prototype localnet.
+This document defines the operator-visible proof-of-stake smoke scenario for the Aetra prototype localnet.
 
 The flow verifies that a multi-validator localnet exposes staking and slashing state, accepts a `naet` delegation from a funded local account, commits the delegation, and updates validator voting power. It intentionally does not simulate downtime or double-sign slashing on the running localnet; destructive slashing behavior belongs in isolated unit or integration tests.
 

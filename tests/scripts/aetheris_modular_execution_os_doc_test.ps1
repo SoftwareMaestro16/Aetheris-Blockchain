@@ -25,7 +25,7 @@ $readmeText = Get-Content -Raw -LiteralPath $ReadmePath
 $shardingText = Get-Content -Raw -LiteralPath $ShardingPath
 
 foreach ($term in @(
-    'Aetheris Modular L1 Execution OS',
+    'Aetra Modular L1 Execution OS',
     'Architecture Diagram',
     'Layer-By-Layer Design',
     'Aether Core',
@@ -77,7 +77,7 @@ foreach ($term in @(
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "modular execution OS doc missing: $term"
 }
 
-$finalStatement = 'Aetheris is a modular Layer 1 execution operating system where consensus, execution, and scaling are separated into independent but cryptographically connected layers to achieve secure and scalable decentralized computation.'
+$finalStatement = 'Aetra is a modular Layer 1 execution operating system where consensus, execution, and scaling are separated into independent but cryptographically connected layers to achieve secure and scalable decentralized computation.'
 if ($docText.TrimEnd() -notlike "*$finalStatement") {
   throw "modular execution OS doc must end with the required final statement"
 }

@@ -156,7 +156,7 @@ func (app *L1App) initKeepers(
 		logger,
 	)
 
-	txConfig := newAetherisTxConfig(appCodec, app.BankKeeper)
+	txConfig := newAetraTxConfig(appCodec, app.BankKeeper)
 	app.txConfig = txConfig
 
 	app.StakingKeeper = stakingkeeper.NewKeeper(

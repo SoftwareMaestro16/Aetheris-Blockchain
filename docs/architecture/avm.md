@@ -1,6 +1,6 @@
-# Aetheris Virtual Machine
+# Aetra Virtual Machine
 
-AVM is the native Aetheris Virtual Machine research track for asynchronous
+AVM is the native Aetra Virtual Machine research track for asynchronous
 contracts. The current implementation is a pure Go executable specification in
 `x/aetherisvm/avm`; it is not wired into SDK keepers, module accounts, genesis,
 CLI, or ABCI hooks.
@@ -63,7 +63,7 @@ deterministically and must not create bounce/refund loops.
 
 ## Message ABI
 
-AVM receives the Aetheris async message envelope:
+AVM receives the Aetra async message envelope:
 
 - source
 - destination

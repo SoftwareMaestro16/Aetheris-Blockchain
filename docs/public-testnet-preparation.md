@@ -1,6 +1,6 @@
 # Public Testnet Preparation
 
-This runbook is the Phase 16 gate before opening Aetheris to external validators. It is not mainnet readiness.
+This runbook is the Phase 16 gate before opening Aetra to external validators. It is not mainnet readiness.
 
 The full public testnet and production gate ledger is
 [Public Testnet And Production Gates](public-testnet-production-gates.md).

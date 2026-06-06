@@ -15,7 +15,7 @@ Scope:
 ## Executive Summary
 
 The current `x/dex` module is a deterministic constant-product AMM prototype. It
-is not yet the production-grade DEX described in the Aetheris target
+is not yet the production-grade DEX described in the Aetra target
 architecture: there is no multi-hop execution, exact-out swap, LP locks,
 farming, TWAP oracle, protocol-owned liquidity, or DEX-specific protocol-fee
 distribution.
@@ -53,7 +53,7 @@ Status: fixed for the identified SDK path.
 
 Impact:
 
-Aetheris policy rejects zero addresses for signers, admins, recipients, and
+Aetra policy rejects zero addresses for signers, admins, recipients, and
 authorities. The fee ante decorator already covered fee payer, tx signers, bank
 send, and bank multisend. Standard SDK messages can also contain non-signer
 address fields. The concrete audited gap was
@@ -62,7 +62,7 @@ address fields. The concrete audited gap was
 Fix:
 
 The fee ante address policy now validates both `DelegatorAddress` and
-`WithdrawAddress` in `MsgSetWithdrawAddress` with Aetheris zero-address
+`WithdrawAddress` in `MsgSetWithdrawAddress` with Aetra zero-address
 rejection before fee admission and before SDK handler execution.
 
 Coverage:
@@ -89,7 +89,7 @@ the declared reserves or that bank supply for each LP denom matched
 
 Fix:
 
-`validateAetherisGenesis` now performs app-level DEX/bank reconciliation:
+`validateAetraGenesis` now performs app-level DEX/bank reconciliation:
 
 - sums expected reserves for all DEX pools by asset denom
 - compares those sums with the `dex` module account bank balances
@@ -148,7 +148,7 @@ liquidity or swap paths.
 
 Result: mostly pass for current DEX messages.
 
-Current DEX actors are validated with Aetheris non-zero user address parsing:
+Current DEX actors are validated with Aetra non-zero user address parsing:
 
 - pool creator
 - liquidity depositor

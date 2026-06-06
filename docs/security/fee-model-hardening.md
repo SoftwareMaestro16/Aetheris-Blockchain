@@ -1,6 +1,6 @@
 # Fee Model Hardening
 
-Aetheris v1 fee policy is intentionally narrow and deterministic.
+Aetra v1 fee policy is intentionally narrow and deterministic.
 
 ## Fixed Native Fee Denom
 
@@ -23,7 +23,7 @@ does not bypass base-chain fee policy.
 ## Zero-Fee Policy
 
 Localnet validator `minimum-gas-prices` can remain `0naet` for operator
-convenience, but Aetheris protocol policy still requires delivered
+convenience, but Aetra protocol policy still requires delivered
 transactions to pay at least `1naet`.
 
 The only v1 exception is height-0 genesis `MsgCreateValidator` transactions.

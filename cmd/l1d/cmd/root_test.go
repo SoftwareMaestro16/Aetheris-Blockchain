@@ -35,7 +35,7 @@ func TestRootCommandBranding(t *testing.T) {
 	rootCmd := cmd.NewRootCmd()
 
 	require.Equal(t, "aetherisd", rootCmd.Use)
-	require.Contains(t, rootCmd.Short, "Aetheris")
+	require.Contains(t, rootCmd.Short, "Aetra")
 }
 
 func TestObservabilityFlagsRegistered(t *testing.T) {
@@ -72,7 +72,7 @@ func TestRootHelpShowsOperatorCommandSurface(t *testing.T) {
 	require.NoError(t, rootCmd.Execute())
 
 	help := out.String()
-	require.Contains(t, help, "Aetheris sovereign L1 app")
+	require.Contains(t, help, "Aetra sovereign L1 app")
 	require.Contains(t, help, "version")
 	require.Contains(t, help, "testnet")
 	require.Contains(t, help, "query")
@@ -98,7 +98,7 @@ func TestVersionCommandShowsOperatorMetadata(t *testing.T) {
 		ExtraInfo        map[string]string `json:"extra_info"`
 	}
 	require.NoError(t, json.Unmarshal(out.Bytes(), &info), out.String())
-	require.Equal(t, "Aetheris", info.Name)
+	require.Equal(t, "Aetra", info.Name)
 	require.Equal(t, "aetherisd", info.ServerName)
 	require.NotEmpty(t, info.Version)
 	require.NotEmpty(t, info.Commit)

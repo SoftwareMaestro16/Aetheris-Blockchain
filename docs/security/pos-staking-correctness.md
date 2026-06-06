@@ -1,8 +1,8 @@
 # PoS And Staking Correctness
 
-This document records the Phase 6 Aetheris PoS and staking acceptance policy.
+This document records the Phase 6 Aetra PoS and staking acceptance policy.
 The detailed protocol-level slashing design is defined in
-[Aetheris Slashing System](slashing-system.md).
+[Aetra Slashing System](slashing-system.md).
 
 ## Production Staking Policy
 
@@ -24,7 +24,7 @@ Parameter validation must cover staking, slashing, distribution, mint, and fee p
 
 ## Native Staking Denom
 
-Aetheris staking uses only `naet` as the bond denom. Validator creation,
+Aetra staking uses only `naet` as the bond denom. Validator creation,
 delegation, unbonding, redelegation, rewards, slashing, and localnet genesis
 tests must not rely on `stake`, `uatom`, display denom `AET`, factory denoms,
 LP denoms, or `testtoken`.
@@ -93,7 +93,7 @@ tests and future keeper integration.
 
 ## System Balance Controller
 
-Aetheris economy controls four feedback loops:
+Aetra economy controls four feedback loops:
 
 ```text
 low staking -> inflation rises -> staking becomes more attractive

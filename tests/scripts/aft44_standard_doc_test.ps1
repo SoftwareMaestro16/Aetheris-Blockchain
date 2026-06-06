@@ -18,7 +18,7 @@ $standardText = Get-Content -Raw -LiteralPath $StandardPath
 $boundariesText = Get-Content -Raw -LiteralPath $BoundariesPath
 
 foreach ($term in @(
-    'Aetheris Fungible Token Standard',
+    'Aetra Fungible Token Standard',
     'AFT-44',
     'token_master',
     'token_wallet',

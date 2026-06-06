@@ -153,7 +153,7 @@ Production control notes:
 - Native `AET`/`naet` metadata remains reserved across token, NFT, SBT, DEX,
   IBC, bridge, and resolver surfaces.
 - Bridge assets must stay namespaced and cannot spoof native AET or pay
-  Aetheris protocol fees.
+  Aetra protocol fees.
 
 ## Audit Gate
 

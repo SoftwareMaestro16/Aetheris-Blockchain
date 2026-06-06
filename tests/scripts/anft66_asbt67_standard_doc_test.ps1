@@ -18,8 +18,8 @@ $standardText = Get-Content -Raw -LiteralPath $StandardPath
 $boundariesText = Get-Content -Raw -LiteralPath $BoundariesPath
 
 foreach ($term in @(
-    'Aetheris NFT Standard',
-    'Aetheris Soulbound Token Standard',
+    'Aetra NFT Standard',
+    'Aetra Soulbound Token Standard',
     'ANFT-66',
     'ASBT-67',
     'nft_collection',

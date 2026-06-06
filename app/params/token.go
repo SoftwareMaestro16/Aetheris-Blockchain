@@ -3,10 +3,10 @@ package params
 import banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 const (
-	ChainName            = "Aetheris"
+	ChainName            = "Aetra"
 	BaseDenom            = "naet"
 	DisplayDenom         = "AET"
-	TokenName            = "Aetheris"
+	TokenName            = "Aetra"
 	TokenSymbol          = "AET"
 	DisplayDenomExponent = uint32(9)
 	BaseUnitsPerDisplay  = int64(1_000_000_000)
@@ -14,7 +14,7 @@ const (
 
 func NativeTokenMetadata() banktypes.Metadata {
 	return banktypes.Metadata{
-		Description: "The native staking and fee token of Aetheris.",
+		Description: "The native staking and fee token of Aetra.",
 		Base:        BaseDenom,
 		Display:     DisplayDenom,
 		Name:        TokenName,

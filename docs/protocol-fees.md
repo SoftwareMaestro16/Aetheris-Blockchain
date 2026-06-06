@@ -4,7 +4,7 @@ Date: 2026-06-05
 
 ## Model
 
-Aetheris keeps SDK fee collection on the standard `fee_collector` module
+Aetra keeps SDK fee collection on the standard `fee_collector` module
 account. The `x/fees` module enforces protocol fee policy before the SDK ante
 handler deducts fees, then records deterministic accounting after successful
 deduction.
@@ -31,7 +31,7 @@ aligned.
 
 ## Low-Fee Dynamic Formula
 
-Aetheris does not use an Ethereum-style fee auction. The protocol computes a
+Aetra does not use an Ethereum-style fee auction. The protocol computes a
 single required fee from block utilization and rejects over-cap fees:
 
 ```text

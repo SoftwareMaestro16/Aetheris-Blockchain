@@ -1,6 +1,6 @@
 # Prototype Observability
 
-This runbook defines the minimum diagnostic surface for local Aetheris prototype nodes.
+This runbook defines the minimum diagnostic surface for local Aetra prototype nodes.
 
 ## Health Checks
 

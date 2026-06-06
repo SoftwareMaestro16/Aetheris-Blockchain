@@ -86,7 +86,7 @@ func TestAdminControlsMetadata(t *testing.T) {
 	require.NoError(t, state.ChangeMetadata(admin, metadata))
 	require.Equal(t, metadata, state.Master.Metadata)
 
-	require.ErrorContains(t, state.ChangeMetadata(admin, TokenMetadata{Name: "Aetheris", Symbol: "UUSD"}), "must not spoof")
+	require.ErrorContains(t, state.ChangeMetadata(admin, TokenMetadata{Name: "Aetra", Symbol: "UUSD"}), "must not spoof")
 	require.Equal(t, metadata, state.Master.Metadata)
 }
 
@@ -103,7 +103,7 @@ func TestNonAdminMintRejected(t *testing.T) {
 
 func TestNativeAETMetadataSpoofRejected(t *testing.T) {
 	tests := []TokenMetadata{
-		{Name: "Aetheris", Symbol: "USDT", Decimals: 6},
+		{Name: "Aetra", Symbol: "USDT", Decimals: 6},
 		{Name: "Wrapped USD", Symbol: "AET", Decimals: 6},
 		{Name: "Wrapped USD", Symbol: "naet", Decimals: 6},
 		{Name: "Wrapped USD", Symbol: "USDT", DisplayName: "AET", Decimals: 6},

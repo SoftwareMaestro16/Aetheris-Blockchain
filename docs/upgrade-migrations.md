@@ -33,10 +33,10 @@ Before adding a real migration:
 Old Orbitalis public data formats (`ORB`, `norb`, `orb1`, and raw `0:`
 addresses) must not be reintroduced through normal upgrade handlers. Migration
 support for historical data is allowed only inside explicit migration-only
-tools or named upgrade handlers, and the output must be normalized to Aetheris
+tools or named upgrade handlers, and the output must be normalized to Aetra
 formats before being accepted by normal app validation.
 
-Migration output must be normalized to Aetheris formats.
+Migration output must be normalized to Aetra formats.
 
 ## Security Review
 

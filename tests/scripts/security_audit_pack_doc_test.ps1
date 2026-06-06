@@ -38,7 +38,7 @@ foreach ($term in @(
     "consensus-safety",
     "secret-leak",
     "Security Risks And Controls",
-    "Aetheris Slashing System",
+    "Aetra Slashing System",
     "govulncheck",
     "gosec high severity",
     "gitleaks secrets",
@@ -133,7 +133,7 @@ foreach ($term in @(
 }
 
 foreach ($term in @(
-    "Aetheris",
+    "Aetra",
     "Public Testnet Gate",
     'untriaged `Critical` or `High`',
     "fund-safety",

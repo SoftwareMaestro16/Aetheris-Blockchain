@@ -1,10 +1,10 @@
-# Aetheris Automated Fuzzing And Invariant Testing Pipeline
+# Aetra Automated Fuzzing And Invariant Testing Pipeline
 
-This document defines the implementation task list for the Aetheris automated
+This document defines the implementation task list for the Aetra automated
 exploit simulator and invariant testing pipeline. It is a security engineering
 roadmap, not runtime code.
 
-The pipeline turns Aetheris into a continuously attacked simulation
+The pipeline turns Aetra into a continuously attacked simulation
 environment: every module, transaction path, routing decision, execution queue,
 and economic rule is treated as a hostile target under adversarial fuzzing and
 mandatory invariant enforcement.
@@ -137,7 +137,7 @@ Implementation tasks:
 
 ## Chain Simulator
 
-The simulator runs Aetheris execution locally with reproducible state.
+The simulator runs Aetra execution locally with reproducible state.
 
 Required modes:
 
@@ -163,7 +163,7 @@ Required simulated surfaces:
 
 Implementation tasks:
 
-- [ ] Add in-memory Aetheris app runner.
+- [ ] Add in-memory Aetra app runner.
 - [ ] Add randomized but valid genesis generation.
 - [ ] Add randomized validator set generation.
 - [ ] Add block replay support.
@@ -655,7 +655,7 @@ Final content:
 
 ## Safe-System Criteria
 
-Aetheris can be marked safe for the tested scope only if:
+Aetra can be marked safe for the tested scope only if:
 
 - mandatory invariant pass rate is `100%`;
 - no exploitable red-team path remains;
@@ -690,6 +690,6 @@ Aetheris can be marked safe for the tested scope only if:
 
 ## One-Line Summary
 
-This pipeline turns Aetheris L1 into a continuously attacked simulation
+This pipeline turns Aetra L1 into a continuously attacked simulation
 environment where every module is treated as a hostile target under adversarial
 fuzzing, invariant enforcement, deterministic replay, and exploit reporting.

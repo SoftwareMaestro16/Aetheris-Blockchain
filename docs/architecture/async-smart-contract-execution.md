@@ -1,9 +1,9 @@
 # Async Smart Contract Execution
 
-Phase 10 introduces Aetheris-native asynchronous contract message semantics
+Phase 10 introduces Aetra-native asynchronous contract message semantics
 without changing the Cosmos SDK rule that transaction delivery is synchronous.
 The current Cosmos SDK rule that transaction delivery is synchronous remains
-the baseline for delivered transactions. Aetheris can process deterministic
+the baseline for delivered transactions. Aetra can process deterministic
 async contract queues inside blocks. Production partitioning or sharding
 remains a later R&D track and must not be claimed until a separate consensus
 architecture exists.
@@ -189,7 +189,7 @@ specification for Phase 10. It does not wire the VM into the app. It defines:
   `next_sequence`, `next_tx_index`, logical-time, destination-key, and queue
   ordering drift
 
-When Aetheris VM execution is introduced, keeper storage, ABCI lifecycle hooks,
+When Aetra VM execution is introduced, keeper storage, ABCI lifecycle hooks,
 and contract bytecode handlers must match this package or explicitly migrate
 the semantics version.
 

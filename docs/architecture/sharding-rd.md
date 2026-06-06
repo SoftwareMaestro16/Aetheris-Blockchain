@@ -1,20 +1,20 @@
 # Production Sharding And Partitioning R&D
 
-Aetheris must not claim production sharding until the consensus-safety gate is
+Aetra must not claim production sharding until the consensus-safety gate is
 passed. Public language must use `sharding R&D` or `experimental sharding`
 until written spec, simulator, prototype, fuzz tests, adversarial tests,
 long-run testnet, independent audit, and consensus-safety proof are complete.
 
 This design uses masterchain, workchain, and shardchain terminology as an
-Aetheris-native R&D model. In this model, workchains are execution domains with
+Aetra-native R&D model. In this model, workchains are execution domains with
 their own rules, address formats, and VM sets; shardchains are workchain
 partitions keyed by a shard prefix; and the masterchain is the coordination
 chain for global configuration, validator state, and shard references.
-Aetheris must define and audit its own consensus-safe architecture before
+Aetra must define and audit its own consensus-safe architecture before
 implementation.
 
 The broader target-system design is defined in
-[Aetheris Modular L1 Execution OS](aetheris-modular-execution-os.md). This
+[Aetra Modular L1 Execution OS](aetheris-modular-execution-os.md). This
 document remains the narrower sharding and partitioning R&D safety gate.
 
 ## Terminology

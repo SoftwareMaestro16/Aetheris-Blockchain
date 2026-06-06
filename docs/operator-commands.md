@@ -24,7 +24,7 @@ build\aetherisd.exe --help
 
 Expected version fields:
 
-- `name = Aetheris`
+- `name = Aetra`
 - `server_name = aetherisd`
 - `version` is non-empty
 - `commit` is non-empty when built from a git checkout

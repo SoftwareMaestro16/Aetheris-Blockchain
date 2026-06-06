@@ -1,4 +1,4 @@
-# Aetheris Test Matrix
+# Aetra Test Matrix
 
 This matrix maps production protocol areas to their primary regression coverage.
 Test fixtures belong under `tests`, localnet helper libraries under

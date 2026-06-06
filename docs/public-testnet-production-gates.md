@@ -1,6 +1,6 @@
 # Public Testnet And Production Gates
 
-This file is the release gate ledger for Aetheris public testnet and later
+This file is the release gate ledger for Aetra public testnet and later
 production readiness. It is stricter than the prototype acceptance suite and
 does not replace module-specific security checklists. The full Track 10 test
 matrix, production gate, build order, and economic summary are recorded in

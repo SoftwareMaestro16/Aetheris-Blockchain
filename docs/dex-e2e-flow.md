@@ -1,6 +1,6 @@
 # DEX Prototype End-To-End Flow
 
-This document defines the prototype user flow for the Aetheris DEX module.
+This document defines the prototype user flow for the Aetra DEX module.
 
 ## Contract
 

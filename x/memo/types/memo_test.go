@@ -12,7 +12,7 @@ import (
 func TestValidateTxMetadataOptionalAndUTF8(t *testing.T) {
 	params := DefaultMemoParams()
 	require.NoError(t, ValidateTxMetadata(TxMetadata{}, params))
-	require.NoError(t, ValidateTxMetadata(TxMetadata{Memo: "hello Aetheris", MemoVisible: true}, params))
+	require.NoError(t, ValidateTxMetadata(TxMetadata{Memo: "hello Aetra", MemoVisible: true}, params))
 	require.ErrorContains(t, ValidateTxMetadata(TxMetadata{Memo: string([]byte{0xff})}, params), "UTF-8")
 }
 

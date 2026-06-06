@@ -62,7 +62,7 @@ if ($GoArgs.Count -gt 0 -and $GoArgs[0] -eq "build") {
   @(
     'param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)',
     'if ($Args.Count -ge 1 -and $Args[0] -eq "version") {',
-    '  Write-Output ''{"name":"Aetheris","server_name":"aetherisd","version":"prototype-test","commit":"deadbeef0000","extra_info":{"dirty":"false","cosmos_sdk_version":"v0.54.3","cometbft_version":"v0.39.3"}}''',
+    '  Write-Output ''{"name":"Aetra","server_name":"aetherisd","version":"prototype-test","commit":"deadbeef0000","extra_info":{"dirty":"false","cosmos_sdk_version":"v0.54.3","cometbft_version":"v0.39.3"}}''',
     '  exit 0',
     '}',
     'Write-Output "fake aetherisd"'
@@ -94,7 +94,7 @@ Assert-True ($text -match "modules downloaded") "go mod download was not run"
 Assert-True ($text -match "all modules verified") "go mod verify was not run"
 Assert-True ($text -match [regex]::Escape($fakeBinary)) "binary path was not printed"
 Assert-True ($text -match "prototype-test") "version metadata was not printed"
-Assert-True ($text -match "Aetheris") "built binary version was not executed"
+Assert-True ($text -match "Aetra") "built binary version was not executed"
 
 $fallbackGo = Join-Path $OutputRoot "fake-go-fallback.ps1"
 $fallbackBinary = Join-Path $OutputRoot "aetherisd-fallback.ps1"
@@ -129,7 +129,7 @@ if (`$GoArgs.Count -gt 0 -and `$GoArgs[0] -eq "build") {
   New-Item -ItemType Directory -Force -Path (Split-Path `$out) | Out-Null
   @(
     'param([Parameter(ValueFromRemainingArguments = `$true)][string[]]`$Args)',
-    'if (`$Args.Count -ge 1 -and `$Args[0] -eq "version") { Write-Output ''{"name":"Aetheris"}''; exit 0 }'
+    'if (`$Args.Count -ge 1 -and `$Args[0] -eq "version") { Write-Output ''{"name":"Aetra"}''; exit 0 }'
   ) | Set-Content -LiteralPath `$out
   exit 0
 }

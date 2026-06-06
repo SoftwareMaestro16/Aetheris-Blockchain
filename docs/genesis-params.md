@@ -4,11 +4,11 @@
 
 All chain constants that affect state transitions must be represented in genesis or module params. No consensus-critical value should be hardcoded in keeper logic.
 
-Initial Aetheris chain choices:
+Initial Aetra chain choices:
 - Address prefix: `orb`
 - Native base denom: `naet`
 - Display denom: `AET`
-- Native token name: `Aetheris`
+- Native token name: `Aetra`
 - Native token decimals: `9`
 - Governance authority: the `x/gov` module account or SDK authority configured at genesis.
 
@@ -21,7 +21,7 @@ Validation:
 - Denom IDs must be canonical factory denoms and collision-free.
 - Admin addresses must decode with the chain address codec.
 - Denoms must use the `factory/<admin>/<subdenom>` prefix.
-- Subdenoms must not directly spoof native names: `naet`, `AET`, or `Aetheris`.
+- Subdenoms must not directly spoof native names: `naet`, `AET`, or `Aetra`.
 - Prototype default genesis starts with no factory denoms.
 
 ## `x/dex`
@@ -51,7 +51,7 @@ Validation:
 
 ## Local Bootstrap Profile
 
-The tracked local profile is `aetheris-local-1`. Its operator-facing genesis, account, validator, endpoint, and audit contract is defined in [Aetheris Local Bootstrap Profile](bootstrap-profile.md).
+The tracked local profile is `aetheris-local-1`. Its operator-facing genesis, account, validator, endpoint, and audit contract is defined in [Aetra Local Bootstrap Profile](bootstrap-profile.md).
 
 ## Upgrade Policy
 

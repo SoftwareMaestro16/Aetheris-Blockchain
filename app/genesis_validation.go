@@ -22,26 +22,26 @@ import (
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 )
 
-func (app *L1App) validateAetherisGenesis(genesisState GenesisState) error {
-	if err := app.validateAetherisAuthGenesis(genesisState); err != nil {
+func (app *L1App) validateAetraGenesis(genesisState GenesisState) error {
+	if err := app.validateAetraAuthGenesis(genesisState); err != nil {
 		return err
 	}
-	if err := app.validateAetherisBankGenesis(genesisState); err != nil {
+	if err := app.validateAetraBankGenesis(genesisState); err != nil {
 		return err
 	}
-	if err := app.validateAetherisStakingGenesis(genesisState); err != nil {
+	if err := app.validateAetraStakingGenesis(genesisState); err != nil {
 		return err
 	}
-	if err := app.validateAetherisMintGenesis(genesisState); err != nil {
+	if err := app.validateAetraMintGenesis(genesisState); err != nil {
 		return err
 	}
-	if err := app.validateAetherisDexGenesis(genesisState); err != nil {
+	if err := app.validateAetraDexGenesis(genesisState); err != nil {
 		return err
 	}
-	return app.validateAetherisFeeGenesis(genesisState)
+	return app.validateAetraFeeGenesis(genesisState)
 }
 
-func (app *L1App) validateAetherisAuthGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetraAuthGenesis(genesisState GenesisState) error {
 	var authGenesis authtypes.GenesisState
 	if genesisState[authtypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", authtypes.ModuleName)
@@ -68,7 +68,7 @@ func (app *L1App) validateAetherisAuthGenesis(genesisState GenesisState) error {
 	return nil
 }
 
-func (app *L1App) validateAetherisBankGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetraBankGenesis(genesisState GenesisState) error {
 	var bankGenesis banktypes.GenesisState
 	if genesisState[banktypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", banktypes.ModuleName)
@@ -91,7 +91,7 @@ func (app *L1App) validateAetherisBankGenesis(genesisState GenesisState) error {
 	return nil
 }
 
-func (app *L1App) validateAetherisStakingGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetraStakingGenesis(genesisState GenesisState) error {
 	var stakingGenesis stakingtypes.GenesisState
 	if genesisState[stakingtypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", stakingtypes.ModuleName)
@@ -105,7 +105,7 @@ func (app *L1App) validateAetherisStakingGenesis(genesisState GenesisState) erro
 	return nil
 }
 
-func (app *L1App) validateAetherisMintGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetraMintGenesis(genesisState GenesisState) error {
 	var mintGenesis minttypes.GenesisState
 	if genesisState[minttypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", minttypes.ModuleName)
@@ -116,7 +116,7 @@ func (app *L1App) validateAetherisMintGenesis(genesisState GenesisState) error {
 	if err := minttypes.ValidateGenesis(mintGenesis); err != nil {
 		return fmt.Errorf("invalid %s genesis state: %w", minttypes.ModuleName, err)
 	}
-	expected := appparams.AetherisMintParams()
+	expected := appparams.AetraMintParams()
 	if mintGenesis.Params.MintDenom != expected.MintDenom {
 		return fmt.Errorf("invalid mint denom: expected %s, got %s", expected.MintDenom, mintGenesis.Params.MintDenom)
 	}
@@ -141,7 +141,7 @@ func (app *L1App) validateAetherisMintGenesis(genesisState GenesisState) error {
 	return nil
 }
 
-func (app *L1App) validateAetherisFeeGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetraFeeGenesis(genesisState GenesisState) error {
 	var feesGenesis feestypes.GenesisState
 	if genesisState[feestypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", feestypes.ModuleName)
@@ -158,7 +158,7 @@ func (app *L1App) validateAetherisFeeGenesis(genesisState GenesisState) error {
 	return nil
 }
 
-func (app *L1App) validateAetherisDexGenesis(genesisState GenesisState) error {
+func (app *L1App) validateAetraDexGenesis(genesisState GenesisState) error {
 	var dexGenesis dextypes.GenesisState
 	if genesisState[dextypes.ModuleName] == nil {
 		return fmt.Errorf("missing %s genesis state", dextypes.ModuleName)
@@ -246,10 +246,10 @@ func addGenesisInt(left, right sdkmath.Int) sdkmath.Int {
 }
 
 func (app *L1App) ensureCoreGenesisCollections(ctx sdk.Context) error {
-	if err := ensureCollectionItem(ctx, app.MintKeeper.Params, appparams.AetherisMintParams()); err != nil {
+	if err := ensureCollectionItem(ctx, app.MintKeeper.Params, appparams.AetraMintParams()); err != nil {
 		return err
 	}
-	if err := ensureCollectionItem(ctx, app.MintKeeper.Minter, appparams.AetherisInitialMinter()); err != nil {
+	if err := ensureCollectionItem(ctx, app.MintKeeper.Minter, appparams.AetraInitialMinter()); err != nil {
 		return err
 	}
 	if err := ensureCollectionItem(ctx, app.DistrKeeper.Params, distrtypes.DefaultParams()); err != nil {

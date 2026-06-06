@@ -1,8 +1,8 @@
 # AFT-44 Fungible Token Standard
 
-Working standard name: Aetheris Fungible Token Standard, `AFT-44`.
+Working standard name: Aetra Fungible Token Standard, `AFT-44`.
 
-`AFT-44` defines user-created fungible tokens through an Aetheris-native
+`AFT-44` defines user-created fungible tokens through an Aetra-native
 master/wallet contract model. It is not the native AET token model: AET remains
 the base chain coin for fees, staking, bank balances, and mint inflation.
 
@@ -71,7 +71,7 @@ the base chain coin for fees, staking, bank balances, and mint inflation.
   supply.
 - Master supply and all wallet balances must satisfy
   `master.total_supply == sum(wallet.balance)`.
-- Token metadata must not spoof native AET metadata: `Aetheris`, `AET`, or
+- Token metadata must not spoof native AET metadata: `Aetra`, `AET`, or
   `naet`.
 - Token balances are never accepted as protocol fee payment. Every transaction
   that creates a master, mints, transfers, burns, changes admin, changes

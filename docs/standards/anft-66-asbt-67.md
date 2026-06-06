@@ -2,8 +2,8 @@
 
 Working standard names:
 
-- Aetheris NFT Standard, `ANFT-66`.
-- Aetheris Soulbound Token Standard, `ASBT-67`.
+- Aetra NFT Standard, `ANFT-66`.
+- Aetra Soulbound Token Standard, `ASBT-67`.
 
 `ANFT-66` defines NFT collections and NFT item contracts. `ASBT-67` is the
 native non-transferable SBT extension for item contracts whose owner is
@@ -86,7 +86,7 @@ immutable after mint.
 - SBT revoke does not transfer ownership.
 - Metadata changes must be bounded and authorization-checked.
 - Metadata and royalties are bounded.
-- Metadata must not spoof native AET metadata: `Aetheris`, `AET`, or `naet`.
+- Metadata must not spoof native AET metadata: `Aetra`, `AET`, or `naet`.
 - Batch minting must have strict limits to prevent block or async queue DoS.
 
 ## VM-Independent Contract Requirements

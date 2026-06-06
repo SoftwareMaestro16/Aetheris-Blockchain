@@ -30,7 +30,7 @@ $testText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Tests)
 $fuzzTestText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $FuzzTests)
 
 foreach ($term in @(
-    'Aetheris Virtual Machine',
+    'Aetra Virtual Machine',
     'x/aetherisvm/avm',
     'binary serialization spec',
     'message ABI',
@@ -135,7 +135,7 @@ Assert-Contains -Text $fuzzTestText -Pattern ([regex]::Escape('FuzzDecodeModuleR
 
 foreach ($term in @(
     'x/aetherisvm/avm',
-    'Aetheris Virtual Machine',
+    'Aetra Virtual Machine',
     'go test ./x/aetherisvm/avm'
   )) {
   Assert-Contains -Text $directionText -Pattern ([regex]::Escape($term)) -Message "VM direction missing AVM term: $term"

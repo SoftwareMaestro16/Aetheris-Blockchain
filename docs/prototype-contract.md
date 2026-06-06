@@ -1,6 +1,6 @@
 # Executable Prototype Contract
 
-This document defines when the Aetheris L1 prototype is considered working.
+This document defines when the Aetra L1 prototype is considered working.
 
 The contract is intentionally narrower than a mainnet readiness checklist. It proves a local or CI operator can build `aetherisd`, create a reproducible localnet, produce blocks, run core signed transactions, query state through CLI/gRPC/REST, stop the network cleanly, and collect enough evidence to debug failures.
 
@@ -15,7 +15,7 @@ Terms used across prototype docs:
 - `naet`: base transaction, staking, mint, and fee denom.
 - `AET`: display metadata only, with exponent `9`; never use `AET` as a tx fee, bank send, stake, or module accounting denom.
 
-Do not commit or package localnet homes, keyrings, validator keys, mnemonics, diagnostic bundles, `.work`, `.localnet`, or external database credentials. Aetheris validator/full nodes do not require Redis, PostgreSQL, or another external database for consensus, mempool, or app state.
+Do not commit or package localnet homes, keyrings, validator keys, mnemonics, diagnostic bundles, `.work`, `.localnet`, or external database credentials. Aetra validator/full nodes do not require Redis, PostgreSQL, or another external database for consensus, mempool, or app state.
 
 ## Profiles
 

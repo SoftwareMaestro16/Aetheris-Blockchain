@@ -1,6 +1,6 @@
 # Account And Transaction Safety
 
-This document records the Phase 4 Aetheris transaction safety policy.
+This document records the Phase 4 Aetra transaction safety policy.
 
 ## Base Chain Safety Before Contracts
 
@@ -53,15 +53,15 @@ production coverage.
 ## Account Creation Paths
 
 Runtime account creation is handled through the Cosmos SDK account keeper and
-standard ante flow. Aetheris adds protocol guards around address parsing and
+standard ante flow. Aetra adds protocol guards around address parsing and
 genesis import:
 
-- Auth genesis accounts are rejected when the account address is the Aetheris
+- Auth genesis accounts are rejected when the account address is the Aetra
   zero address.
 - Bank genesis balances are rejected when the balance owner is the zero address.
 - `SimGenesisAccount.Validate` rejects nil base accounts and zero addresses.
 - Bank `MsgSend` and `MsgMultiSend` sender and recipient fields are checked by
-  the Aetheris ante wrapper before fee validation.
+  the Aetra ante wrapper before fee validation.
 - Custom modules parse actor, authority, admin, contract, and fee collector
   fields with `app/addressing` helpers, so empty, malformed, wrong-prefix,
   mixed-case raw, non-base64url userfriendly, and zero addresses cannot become
@@ -71,7 +71,7 @@ genesis import:
 
 ## Replay And Signer Safety
 
-All signed transactions run through the SDK ante handler after the Aetheris fee
+All signed transactions run through the SDK ante handler after the Aetra fee
 policy wrapper. SDK ante verifies account number, account sequence, chain ID in
 the sign bytes, signer/public-key binding, signature count, signature gas, and
 then increments sequence only after signature verification succeeds.
@@ -120,7 +120,7 @@ The SDK ante handler order in Cosmos SDK v0.54.3 is:
 11. `SigVerification`
 12. `IncrementSequence`
 
-Because Aetheris records protocol fee accounting only after the wrapped SDK ante
+Because Aetra records protocol fee accounting only after the wrapped SDK ante
 succeeds, missing fees, invalid fee denoms, insufficient fee funds, invalid
 signatures, wrong chain ID, stale sequence, and zero-address actor fields cannot
 update protocol fee accounting or message state.

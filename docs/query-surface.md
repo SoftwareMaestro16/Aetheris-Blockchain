@@ -1,6 +1,6 @@
 # Prototype Query Surface
 
-Aetheris prototype nodes must be observable through CLI, gRPC, REST gateway, and CometBFT RPC. The default localnet exposes node0 at:
+Aetra prototype nodes must be observable through CLI, gRPC, REST gateway, and CometBFT RPC. The default localnet exposes node0 at:
 
 ```powershell
 $NODE = "tcp://127.0.0.1:26657"

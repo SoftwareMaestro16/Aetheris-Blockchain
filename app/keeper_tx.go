@@ -12,7 +12,7 @@ import (
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 )
 
-func newAetherisTxConfig(appCodec codec.Codec, bankKeeper bankkeeper.BaseKeeper) client.TxConfig {
+func newAetraTxConfig(appCodec codec.Codec, bankKeeper bankkeeper.BaseKeeper) client.TxConfig {
 	enabledSignModes := append(authtx.DefaultSignModes, sigtypes.SignMode_SIGN_MODE_TEXTUAL)
 	txConfig, err := authtx.NewTxConfigWithOptions(
 		appCodec,

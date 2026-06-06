@@ -17,7 +17,7 @@ import (
 func withCoreModuleGenesisDefaults(cdc codec.JSONCodec, genesis map[string]json.RawMessage) map[string]json.RawMessage {
 	setDefaultGenesis(cdc, genesis, distrtypes.ModuleName, distrtypes.DefaultGenesisState())
 	setDefaultGenesis(cdc, genesis, govtypes.ModuleName, govv1.DefaultGenesisState())
-	setDefaultGenesis(cdc, genesis, minttypes.ModuleName, appparams.AetherisMintGenesisState())
+	setDefaultGenesis(cdc, genesis, minttypes.ModuleName, appparams.AetraMintGenesisState())
 	setDefaultGenesis(cdc, genesis, protocolpooltypes.ModuleName, protocolpooltypes.DefaultGenesisState())
 	return genesis
 }

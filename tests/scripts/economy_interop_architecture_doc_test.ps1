@@ -21,7 +21,7 @@ $required = @(
   'AET',
   'mint accumulator',
   'burn accumulator',
-  'IBC assets cannot pay Aetheris protocol fees',
+  'IBC assets cannot pay Aetra protocol fees',
   'bridge assets cannot become fee denoms',
   'emergency pause',
   'proof verification tests'

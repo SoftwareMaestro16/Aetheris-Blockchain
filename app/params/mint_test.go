@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAetherisMintPolicyMatchesEconomicsSpec(t *testing.T) {
-	params := AetherisMintParams()
+func TestAetraMintPolicyMatchesEconomicsSpec(t *testing.T) {
+	params := AetraMintParams()
 
 	require.Equal(t, BaseDenom, params.MintDenom)
 	require.Equal(t, BpsToLegacyDec(DefaultResponsivenessBps), params.InflationRateChange)
@@ -18,7 +18,7 @@ func TestAetherisMintPolicyMatchesEconomicsSpec(t *testing.T) {
 	require.True(t, params.MaxSupply.IsZero(), "zero max supply means uncapped issuance")
 	require.NoError(t, params.Validate())
 
-	minter := AetherisInitialMinter()
+	minter := AetraInitialMinter()
 	require.Equal(t, BpsToLegacyDec(DefaultTargetInflationBps), minter.Inflation)
-	require.NoError(t, minttypes.ValidateGenesis(*AetherisMintGenesisState()))
+	require.NoError(t, minttypes.ValidateGenesis(*AetraMintGenesisState()))
 }

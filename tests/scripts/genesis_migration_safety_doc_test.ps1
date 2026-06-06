@@ -53,7 +53,7 @@ foreach ($term in @(
     'export after the dry-run upgrade produces valid genesis',
     'Legacy Format Rule',
     '`ORB`, `norb`, `orb1`, and raw `0:`',
-    'normalized to Aetheris formats'
+    'normalized to Aetra formats'
   )) {
   Assert-Contains -Text $upgradeText -Pattern ([regex]::Escape($term)) -Message "upgrade migration doc missing: $term"
 }

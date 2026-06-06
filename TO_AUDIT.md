@@ -1,8 +1,8 @@
-# TO_AUDIT: Aetheris Automated Fuzzing And Exploit Campaign
+# TO_AUDIT: Aetra Automated Fuzzing And Exploit Campaign
 
 This file defines the audit task list to run before a fuzzing/invariant
 campaign. It is based on `docs/security/aetheris-fuzzing-invariant-pipeline.md`
-and the Aetheris attack catalog.
+and the Aetra attack catalog.
 
 Runtime reports, generated scenarios, minimized exploits, and state diffs
 should be written under `.work/aexs/` unless a later implementation explicitly
@@ -10,7 +10,7 @@ chooses another output path.
 
 ## Audit Goal
 
-Treat every Aetheris module as hostile input surface and prove, through
+Treat every Aetra module as hostile input surface and prove, through
 automated fuzzing, invariant checks, deterministic replay, and exploit
 minimization, that the tested scope has:
 

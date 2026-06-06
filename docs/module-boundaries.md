@@ -1,6 +1,6 @@
 # Module Boundaries
 
-Core SDK module responsibilities and Aetheris-specific wrappers are documented
+Core SDK module responsibilities and Aetra-specific wrappers are documented
 in [Core Module Architecture](architecture/core-module-architecture.md). This
 file focuses on custom modules and readiness packages. Economy and interop
 boundaries are documented in
@@ -572,7 +572,7 @@ Security invariants:
 
 ## `x/aetherisvm/standards`
 
-Purpose: define Aetheris-native contract standards before the VM runtime is
+Purpose: define Aetra-native contract standards before the VM runtime is
 wired into the app. Standards are VM-independent executable specifications with
 async/AVM-compatible conformance handlers.
 
@@ -641,7 +641,7 @@ Security invariants:
 
 ## `x/aetherisvm/avm`
 
-Purpose: define the native Aetheris Virtual Machine before keeper and runtime
+Purpose: define the native Aetra Virtual Machine before keeper and runtime
 wiring.
 
 State:
@@ -736,11 +736,11 @@ Security invariants:
 - Upload, instantiate, execute, query, migrate, pinning, code size, gas, and
   query response/depth limits must be enforced before state mutation when the
   real `x/wasm` keeper is wired.
-- A future Aetheris VM requires a written binary serialization spec, message
+- A future Aetra VM requires a written binary serialization spec, message
   ABI, storage ABI, gas schedule, deterministic execution proof, fuzz tests,
   upgrade/migration policy, and adversarial audit before implementation.
 - Contract standards must remain testable independent of CosmWasm or a future
-  Aetheris VM choice.
+  Aetra VM choice.
 
 ## `x/bridge`
 

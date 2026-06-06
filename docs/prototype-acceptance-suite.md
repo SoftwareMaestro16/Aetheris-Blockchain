@@ -1,6 +1,6 @@
 # Prototype Acceptance Suite
 
-This document defines the one-command acceptance check for the Aetheris L1 prototype.
+This document defines the one-command acceptance check for the Aetra L1 prototype.
 
 The suite proves that a local prototype can be built from the repository, initialized from zero, started with multiple validators, produce blocks, accept signed transactions, update state, expose CLI/gRPC/REST queries, and stop cleanly.
 

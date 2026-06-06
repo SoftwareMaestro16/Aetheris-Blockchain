@@ -26,8 +26,8 @@ $nativeDocText = Get-Content -Raw -LiteralPath $NativeDocPath
 $validateText = Get-Content -Raw -LiteralPath $ValidateGenesisPath
 
 foreach ($term in @(
-    "Phase 6 Aetheris",
-    "Aetheris Slashing System",
+    "Phase 6 Aetra",
+    "Aetra Slashing System",
     "slashing-system.md",
     "Production Staking Policy",
     "naet",

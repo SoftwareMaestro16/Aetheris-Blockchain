@@ -28,8 +28,8 @@ import (
 
 const fixtureTestAssetDenom = "testtoken"
 
-func TestAetherisChainConstants(t *testing.T) {
-	require.Equal(t, "Aetheris", appName)
+func TestAetraChainConstants(t *testing.T) {
+	require.Equal(t, "Aetra", appName)
 	require.Equal(t, "ae", AccountAddressPrefix)
 	require.Equal(t, "aevaloper", ValidatorAddressPrefix)
 	require.Equal(t, "aevalcons", ConsensusAddressPrefix)

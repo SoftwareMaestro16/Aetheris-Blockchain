@@ -1,12 +1,12 @@
-# Aetheris Native Token Lifecycle
+# Aetra Native Token Lifecycle
 
-This document defines the lifecycle contract for the native Aetheris token.
+This document defines the lifecycle contract for the native Aetra token.
 
 ## Contract
 
 - Base denom: `naet`
 - Display denom: `AET`
-- Name: `Aetheris`
+- Name: `Aetra`
 - Symbol: `AET`
 - Display exponent: `9`
 - Conversion: `1 AET = 1000000000 naet`
@@ -80,7 +80,7 @@ Expected fields:
   "metadata": {
     "base": "naet",
     "display": "AET",
-    "name": "Aetheris",
+    "name": "Aetra",
     "symbol": "AET",
     "denom_units": [
       { "denom": "naet", "exponent": 0 },
@@ -140,7 +140,7 @@ Expected values:
 - Inflation/reward params must pass SDK mint param validation and remain
   governance-bounded.
 - Tokenfactory denoms use `factory/<admin>/<subdenom>` and reject subdenoms that
-  directly spoof native names: `naet`, `AET`, or `Aetheris`.
+  directly spoof native names: `naet`, `AET`, or `Aetra`.
 - DEX LP tokens use `lp/<pool_id>` and are not display aliases for `AET`.
 - `testtoken` is allowed only as a local bootstrap test asset and must not
   appear in fee, staking, mint, or native-token examples.

@@ -1,6 +1,6 @@
 # Security Audit Pack
 
-Phase 14 defines the minimum Aetheris security audit pack before public
+Phase 14 defines the minimum Aetra security audit pack before public
 testnet. Public testnet cannot proceed with untriaged high/critical
 fund-safety, consensus-safety, or secret-leak findings.
 
@@ -12,7 +12,7 @@ fund-safety, consensus-safety, or secret-leak findings.
 - [Security Triage Policy](security-triage-policy.md)
 - [Determinism Gate](determinism-gate.md)
 - [Security Risks And Controls](security-risks-controls.md)
-- [Aetheris Slashing System](slashing-system.md)
+- [Aetra Slashing System](slashing-system.md)
 
 ## Required Workflows
 

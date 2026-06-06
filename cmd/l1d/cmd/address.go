@@ -21,7 +21,7 @@ func NewAddressCmd() *cobra.Command {
 func NewAddressConvertCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "convert [address]",
-		Short: "Convert an address to Aetheris raw and userfriendly forms",
+		Short: "Convert an address to Aetra raw and userfriendly forms",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			bz, err := aetherisaddress.Parse(args[0])

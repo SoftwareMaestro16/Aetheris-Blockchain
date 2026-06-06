@@ -1,4 +1,4 @@
-# Aetheris Execution OS Operator Tooling
+# Aetra Execution OS Operator Tooling
 
 Phase 10 exposes modular execution prototypes through localnet profiles and
 off-chain simulator diagnostics. These profiles are for local/testnet operator

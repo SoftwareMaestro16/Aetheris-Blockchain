@@ -273,7 +273,7 @@ func (h UniversalRootHierarchy) ValidateRequiredZones(required []ZoneID) error {
 	return nil
 }
 
-func RequiredAetherisNextProofZones() []ZoneID {
+func RequiredAetraNextProofZones() []ZoneID {
 	return []ZoneID{ZoneIDFinancial, ZoneIDIdentity, ZoneIDApplication, ZoneIDContract}
 }
 

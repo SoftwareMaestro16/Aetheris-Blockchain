@@ -1,6 +1,6 @@
-# Aetheris Slashing System
+# Aetra Slashing System
 
-Slashing in Aetheris is a core consensus security primitive, not an optional
+Slashing in Aetra is a core consensus security primitive, not an optional
 module or governance convenience. Every full node must deterministically verify
 valid slashing evidence and apply the same stake penalties, validator status
 changes, and replay protections during block execution.
@@ -26,7 +26,7 @@ forks, or free-ride on honest validators. Without slashing:
 - governance pressure can replace cryptographic evidence with subjective
   punishment.
 
-The Aetheris rule is strict: objective, cryptographically verifiable evidence
+The Aetra rule is strict: objective, cryptographically verifiable evidence
 causes automatic penalties. Subjective accusations do not.
 
 ## 2. Staking And Validator Model
@@ -86,7 +86,7 @@ adjust rates only inside hard software bounds.
 | Prolonged downtime | Validator misses more than the allowed missed-block threshold in a signed window. | Deterministic signing-info bitmap updated from consensus begin/end block evidence and commit participation. | `DowntimeEvidence{validator_consensus_address, window_start_height, window_end_height, missed_count, signed_blocks_window_root}` or internal signing-info state transition. | Medium | `0.01%` slash, jail until downtime recovery period |
 | Invalid votes beyond tolerance threshold | Validator signs malformed or invalid consensus votes above a configured threshold where invalidity is objectively checkable. | Verify signatures and deterministic vote validation failure reason, then count invalid votes in a bounded window. | `InvalidVoteEvidence{validator_consensus_address, height, round, vote_type, vote, signature, validation_error_code}` plus signing-info accumulator. | Medium | `0.1%` slash, jail if threshold crossed |
 | Protocol signing rule violation | Validator signs consensus messages violating protocol signing-domain rules, key-rotation delay, or disabled vote type rules. | Verify signature is valid and signed message violates a deterministic active protocol rule. | `SigningRuleEvidence{validator_consensus_address, rule_id, height, signed_message, signature, active_rule_hash}` | Optional advanced | `0.5%` slash, jail |
-| Censorship proof | Only enabled if Aetheris has protocol-level inclusion lists or encrypted mempool commitments with objective proof. | Verify inclusion-list commitment, tx validity at commitment height, proposer duty, and absence from block without valid exclusion proof. | `CensorshipEvidence{proposer, height, inclusion_commitment, tx_hash, tx_proof, block_header, absence_proof}` | Optional advanced | `0.5%` slash, jail |
+| Censorship proof | Only enabled if Aetra has protocol-level inclusion lists or encrypted mempool commitments with objective proof. | Verify inclusion-list commitment, tx validity at commitment height, proposer duty, and absence from block without valid exclusion proof. | `CensorshipEvidence{proposer, height, inclusion_commitment, tx_hash, tx_proof, block_header, absence_proof}` | Optional advanced | `0.5%` slash, jail |
 
 Censorship slashing is disabled until the protocol has objective inclusion
 commitments. Mempool gossip complaints, screenshots, or RPC logs are not valid
@@ -415,4 +415,4 @@ medium_distribution:
 All arithmetic is integer `naet` arithmetic. Rounding dust goes to burn to keep
 `slashed_amount == burned + treasury + reporter` deterministic.
 
-Slashing in Aetheris is a deterministic, protocol-level enforcement mechanism that guarantees economic security of consensus through enforceable stake penalties.
+Slashing in Aetra is a deterministic, protocol-level enforcement mechanism that guarantees economic security of consensus through enforceable stake penalties.

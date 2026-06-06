@@ -51,7 +51,7 @@ func NewRootCmd() *cobra.Command {
 
 	rootCmd := &cobra.Command{
 		Use:           "aetherisd",
-		Short:         "Aetheris sovereign L1 app",
+		Short:         "Aetra sovereign L1 app",
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// set the default command outputs
@@ -103,8 +103,8 @@ func NewRootCmd() *cobra.Command {
 			return startObservabilityMetrics(cmd)
 		},
 	}
-	rootCmd.PersistentFlags().Bool(flagObservabilityMetrics, false, "enable Aetheris process Prometheus metrics endpoint")
-	rootCmd.PersistentFlags().String(flagObservabilityMetricsAddr, "127.0.0.1:27660", "Aetheris process metrics listen address")
+	rootCmd.PersistentFlags().Bool(flagObservabilityMetrics, false, "enable Aetra process Prometheus metrics endpoint")
+	rootCmd.PersistentFlags().String(flagObservabilityMetricsAddr, "127.0.0.1:27660", "Aetra process metrics listen address")
 	rootCmd.SetContext(context.WithValue(context.Background(), version.ContextKey{}, extraVersionInfo))
 
 	initRootCmd(rootCmd, encodingConfig.TxConfig, tempApp.BasicModuleManager)

@@ -20,7 +20,7 @@ func TestDefaultServiceImplementationRoadmapCoversPhases0To8(t *testing.T) {
 	require.Contains(t, phase0.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskDefineReceiptFormat, ServiceModuleReceipts, "ServiceReceipt"))
 	require.Contains(t, phase0.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskDefinePaymentModelEnum, ServiceModulePayments, "ServicePaymentSettlementMode"))
 	require.Contains(t, phase0.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskDefineTrustVerificationEnums, ServiceModuleServices, "ServiceTrustModel/ServiceVerificationModel"))
-	require.Contains(t, phase0.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskMapExistingModules, ServiceModuleServices, "AetherisModuleServiceMapping"))
+	require.Contains(t, phase0.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskMapExistingModules, ServiceModuleServices, "AetraModuleServiceMapping"))
 	require.NoError(t, ValidateServiceRoadmapExitCriteria(phase0))
 
 	phase1, found := roadmap.PhaseByID(ServiceRoadmapPhaseCoreRegistry)
@@ -180,7 +180,7 @@ func TestServiceRoadmapPhase0ExitCriteriaEnforceCompatibilityArtifacts(t *testin
 
 	require.NoError(t, validateServiceCoreObjectDefinitions(phase0.CoreObjects))
 	require.NoError(t, validateServiceSignableObjectVectors(phase0.SignableVectors))
-	require.NoError(t, ValidateAetherisModuleServiceMappings(phase0.ModuleMappings))
+	require.NoError(t, ValidateAetraModuleServiceMappings(phase0.ModuleMappings))
 
 	phase0.CoreObjects = phase0.CoreObjects[1:]
 	phase0, err = NewServiceRoadmapPhase(phase0)
@@ -189,7 +189,7 @@ func TestServiceRoadmapPhase0ExitCriteriaEnforceCompatibilityArtifacts(t *testin
 
 	mapping := phase0.ModuleMappings[0]
 	mapping.OnChain = false
-	mapping.MappingHash = ComputeAetherisModuleServiceMappingHash(mapping)
+	mapping.MappingHash = ComputeAetraModuleServiceMappingHash(mapping)
 	phase0.ModuleMappings[0] = mapping
 	_, err = NewServiceRoadmapPhase(phase0)
 	require.ErrorContains(t, err, "on-chain services")
@@ -223,7 +223,7 @@ func TestServiceRoadmapCanonicalHashesDetectTampering(t *testing.T) {
 	vector.CanonicalEncoding = "amino"
 	require.ErrorContains(t, vector.Validate(), "hash mismatch")
 
-	mapping := newAetherisModuleServiceMapping("dex", "x/dex", "dex-service", true)
+	mapping := newAetraModuleServiceMapping("dex", "x/dex", "dex-service", true)
 	mapping.ServiceID = "other-service"
 	require.ErrorContains(t, mapping.Validate(), "hash mismatch")
 }

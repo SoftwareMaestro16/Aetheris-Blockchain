@@ -57,7 +57,7 @@ foreach ($term in @(
 }
 
 foreach ($term in @(
-    'CosmWasm stays disabled in Aetheris',
+    'CosmWasm stays disabled in Aetra',
     'wasm.enabled = false',
     'no `wasm` store key in the app',
     'governance-only',
@@ -85,7 +85,7 @@ foreach ($term in @(
     'CosmWasm remains disabled by default',
     'Pinned code is disabled by default',
     'CosmWasm cannot bypass `naet` fee policy',
-    'future Aetheris VM requires a written binary serialization spec',
+    'future Aetra VM requires a written binary serialization spec',
     'Contract standards must remain testable independent'
   )) {
   Assert-Contains -Text $boundariesText -Pattern ([regex]::Escape($term)) -Message "module boundaries missing VM direction boundary: $term"

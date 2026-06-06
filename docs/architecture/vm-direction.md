@@ -1,6 +1,6 @@
 # VM Direction
 
-Phase 11 defines the VM decision boundary for Aetheris. Contract standards must
+Phase 11 defines the VM decision boundary for Aetra. Contract standards must
 remain testable independent of the final VM choice, and no new VM may be
 introduced without a written specification and adversarial evidence.
 
@@ -47,16 +47,16 @@ CosmWasm readiness must not add a `wasm` store key, genesis state, module
 account, CLI upload/instantiate/execute/migrate surface, or keeper wiring unless
 the explicit gate is enabled and the full security checklist is satisfied.
 
-## Aetheris VM R&D Decision
+## Aetra VM R&D Decision
 
-Aetheris contracts may eventually be one of these models:
+Aetra contracts may eventually be one of these models:
 
-- CosmWasm contracts with Aetheris async/message standards.
-- AVM, the Aetheris Virtual Machine, with its own execution, storage, and
+- CosmWasm contracts with Aetra async/message standards.
+- AVM, the Aetra Virtual Machine, with its own execution, storage, and
   message ABI.
 - Both, with strict compatibility boundaries and explicit migration rules.
 
-No future Aetheris VM may be implemented before the R&D spec defines:
+No future Aetra VM may be implemented before the R&D spec defines:
 
 - binary serialization spec
 - message ABI
@@ -76,7 +76,7 @@ adversarial tests, long-run testnet, independent audit, and consensus-safety
 proof are complete.
 
 The AVM package `x/aetherisvm/avm` is the current pure Go executable
-specification for the native Aetheris Virtual Machine. It defines deterministic
+specification for the native Aetra Virtual Machine. It defines deterministic
 bytecode encoding, verifier, local runner, storage snapshot ABI, gas schedule,
 host function allowlist, forbidden opcode checks, and an async handler adapter.
 It is not wired into SDK stores or keepers.
@@ -100,13 +100,13 @@ Every contract standard must define:
 - explicit deployment behavior
 
 If CosmWasm is used first, CosmWasm message handlers must conform to these
-standard packages. If a native Aetheris VM is later introduced, its ABI must
+standard packages. If a native Aetra VM is later introduced, its ABI must
 either match the same standards or declare a versioned migration.
 
 ## Acceptance Gates
 
 - CosmWasm readiness does not weaken base chain security.
-- Aetheris async VM research has a written spec before implementation.
+- Aetra async VM research has a written spec before implementation.
 - Contract standards can be tested independent of the VM choice.
 - `go test ./app/wasmconfig`
 - `go test ./x/aetherisvm/standards/...`

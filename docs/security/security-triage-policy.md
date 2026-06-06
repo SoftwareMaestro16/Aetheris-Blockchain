@@ -1,6 +1,6 @@
 # Security Triage Policy
 
-This policy defines how Aetheris handles scanner, dependency, CodeQL, secret,
+This policy defines how Aetra handles scanner, dependency, CodeQL, secret,
 and manual audit findings.
 
 ## Merge Rule

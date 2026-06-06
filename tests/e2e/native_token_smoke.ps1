@@ -79,8 +79,8 @@ function Assert-NativeMetadata {
   if ($Metadata.symbol -ne "AET") {
     throw "metadata symbol must be AET, got $($Metadata.symbol)"
   }
-  if ($Metadata.name -ne "Aetheris") {
-    throw "metadata name must be Aetheris, got $($Metadata.name)"
+  if ($Metadata.name -ne "Aetra") {
+    throw "metadata name must be Aetra, got $($Metadata.name)"
   }
 
   $baseUnit = @($Metadata.denom_units | Where-Object { $_.denom -eq "naet" })

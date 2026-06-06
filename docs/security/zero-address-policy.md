@@ -1,6 +1,6 @@
-# Aetheris zero address policy
+# Aetra zero address policy
 
-Aetheris reserves the zero address as a protocol-invalid address:
+Aetra reserves the zero address as a protocol-invalid address:
 
 ```text
 raw:          4:0000000000000000000000000000000000000000000000000000000000000000
@@ -11,7 +11,7 @@ The zero address is forbidden by default. It must not be accepted as a signer,
 admin, authority, recipient, fee collector, pool creator, liquidity provider,
 swap actor, tokenfactory creator, tokenfactory admin, or genesis account.
 
-Aetheris does not currently define a zero-address burn sink. If a burn sink is
+Aetra does not currently define a zero-address burn sink. If a burn sink is
 needed later, it must be introduced as an explicitly named protocol sink, with
 state transitions that never require a private key or future action by that
 address.

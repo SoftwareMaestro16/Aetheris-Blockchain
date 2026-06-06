@@ -10,7 +10,7 @@ import (
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 )
 
-func TestNewAccountMetadataFormatsAetherisAddress(t *testing.T) {
+func TestNewAccountMetadataFormatsAetraAddress(t *testing.T) {
 	priv := secp256k1.GenPrivKey()
 	account := authtypes.NewBaseAccount(priv.PubKey().Address().Bytes(), priv.PubKey(), 12, 34)
 

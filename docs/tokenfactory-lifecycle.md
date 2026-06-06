@@ -8,7 +8,7 @@ This document defines the prototype tokenfactory user flow. It is localnet/testn
 - Default local example subdenom: `gold`
 - Admin controls create-time metadata, mint, burn from own account, and admin transfer.
 - Factory token bank metadata uses the full factory denom as base/display/symbol.
-- Factory denoms must not spoof native `naet`, `AET`, `Aetheris`, or LP denoms.
+- Factory denoms must not spoof native `naet`, `AET`, `Aetra`, or LP denoms.
 - `query tokenfactory denoms` uses bounded `next_key` pagination with default limit `50` and max limit `100`.
 
 ## One-Command Smoke

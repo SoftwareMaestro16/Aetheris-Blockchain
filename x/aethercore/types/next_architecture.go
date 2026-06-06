@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-type AetherisNextCommitment struct {
+type AetraNextCommitment struct {
 	Height              uint64
 	ZoneDescriptorRoot  string
 	ZoneCommitmentsRoot string
@@ -18,62 +18,62 @@ type AetherisNextCommitment struct {
 	ArchitectureHash    string
 }
 
-func BuildAetherisNextCommitment(height uint64, state CoreState, contributions RootContributions, resolverRoot string) (AetherisNextCommitment, error) {
+func BuildAetraNextCommitment(height uint64, state CoreState, contributions RootContributions, resolverRoot string) (AetraNextCommitment, error) {
 	if height == 0 {
-		return AetherisNextCommitment{}, errors.New("aethercore next architecture height must be positive")
+		return AetraNextCommitment{}, errors.New("aethercore next architecture height must be positive")
 	}
 	if err := state.Params.RequireEnabled(); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	if err := state.Validate(); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	if err := contributions.Validate(); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	if err := ValidateHash("aethercore resolver root", resolverRoot); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	zones := canonicalZones(state)
 	if err := ensureEnabledZones(zones); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	if err := ensureEnabledZoneCommitmentsAtHeight(height, zones, state.CommitmentsAtHeight(height)); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	if err := ensureNativeAETResolver(state); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
-	if err := ValidateAetherisNextTopologyState(state, height); err != nil {
-		return AetherisNextCommitment{}, err
+	if err := ValidateAetraNextTopologyState(state, height); err != nil {
+		return AetraNextCommitment{}, err
 	}
 
 	zoneDescriptorRoot, err := ComputeZoneDescriptorRoot(zones, state.Params)
 	if err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	zoneCommitmentsRoot, err := ComputeZoneCommitmentsRoot(height, state.CommitmentsAtHeight(height))
 	if err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	activeLayouts, err := latestExecutionZoneLayouts(height, state, zones)
 	if err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	shardLayoutRoot, err := ComputeActiveShardLayoutRoot(height, activeLayouts)
 	if err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	routingTable, found := state.LatestRoutingTableAtHeight(height)
 	if !found {
-		return AetherisNextCommitment{}, errors.New("aethercore next architecture requires committed routing table")
+		return AetraNextCommitment{}, errors.New("aethercore next architecture requires committed routing table")
 	}
 	if err := validateRoutingTableCoversLayouts(routingTable, activeLayouts); err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	globalRoot, err := BuildGlobalStateRoot(height, state, contributions)
 	if err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 	proofRegistryRoot, err := ComputeUniversalProofRegistryRoot(height, nextArchitectureProofRoots(
 		height,
@@ -85,10 +85,10 @@ func BuildAetherisNextCommitment(height uint64, state CoreState, contributions R
 		resolverRoot,
 	))
 	if err != nil {
-		return AetherisNextCommitment{}, err
+		return AetraNextCommitment{}, err
 	}
 
-	commitment := AetherisNextCommitment{
+	commitment := AetraNextCommitment{
 		Height:              height,
 		ZoneDescriptorRoot:  zoneDescriptorRoot,
 		ZoneCommitmentsRoot: zoneCommitmentsRoot,
@@ -98,11 +98,11 @@ func BuildAetherisNextCommitment(height uint64, state CoreState, contributions R
 		GlobalStateRoot:     globalRoot.GlobalRoot,
 		ParamsHash:          ComputeAetherCoreParamsHash(state.Params),
 	}
-	commitment.ArchitectureHash = ComputeAetherisNextArchitectureHash(commitment)
+	commitment.ArchitectureHash = ComputeAetraNextArchitectureHash(commitment)
 	return commitment, commitment.ValidateHash()
 }
 
-func (c AetherisNextCommitment) ValidateFormat() error {
+func (c AetraNextCommitment) ValidateFormat() error {
 	if c.Height == 0 {
 		return errors.New("aethercore next architecture height must be positive")
 	}
@@ -128,18 +128,18 @@ func (c AetherisNextCommitment) ValidateFormat() error {
 	return nil
 }
 
-func (c AetherisNextCommitment) ValidateHash() error {
+func (c AetraNextCommitment) ValidateHash() error {
 	if err := c.ValidateFormat(); err != nil {
 		return err
 	}
-	expected := ComputeAetherisNextArchitectureHash(c)
+	expected := ComputeAetraNextArchitectureHash(c)
 	if c.ArchitectureHash != expected {
 		return fmt.Errorf("aethercore next architecture hash mismatch: expected %s", expected)
 	}
 	return nil
 }
 
-func ComputeAetherisNextArchitectureHash(c AetherisNextCommitment) string {
+func ComputeAetraNextArchitectureHash(c AetraNextCommitment) string {
 	return hashParts(
 		"aetheris-next-architecture-v1",
 		fmt.Sprint(c.Height),

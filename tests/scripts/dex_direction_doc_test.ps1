@@ -29,7 +29,7 @@ foreach ($term in @(
     'Liquidity withdrawer must be a valid non-zero user address',
     'Swap trader is also the current swap recipient',
     'Pool asset denoms must not spoof native AET metadata',
-    'Factory denoms whose subdenom spoofs `naet`, `AET`, or `Aetheris` are rejected',
+    'Factory denoms whose subdenom spoofs `naet`, `AET`, or `Aetra` are rejected',
     'recorded reserves match the `dex` module account balances',
     'LP supply matches `pool.total_shares`',
     'swaps preserve constant-product constraints',

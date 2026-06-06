@@ -134,7 +134,7 @@ type ServiceSignableObjectVector struct {
 	VectorHash        string
 }
 
-type AetherisModuleServiceMapping struct {
+type AetraModuleServiceMapping struct {
 	ModuleName     string
 	ModulePath     string
 	ServiceID      string
@@ -151,7 +151,7 @@ type ServiceRoadmapPhase struct {
 	ExitCriteria    []ServiceRoadmapExitCriterion
 	CoreObjects     []ServiceCoreObjectDefinition
 	SignableVectors []ServiceSignableObjectVector
-	ModuleMappings  []AetherisModuleServiceMapping
+	ModuleMappings  []AetraModuleServiceMapping
 	DependsOn       []ServiceRoadmapPhaseID
 	PhaseHash       string
 }
@@ -172,16 +172,16 @@ func DefaultServiceImplementationRoadmap() (ServiceImplementationRoadmap, error)
 			newServiceRoadmapTask(ServiceRoadmapTaskDefineTrustVerificationEnums, ServiceModuleServices, "ServiceTrustModel/ServiceVerificationModel"),
 			newServiceRoadmapTask(ServiceRoadmapTaskFinalizeDescriptorSchema, ServiceModuleServices, "ServiceDescriptor"),
 			newServiceRoadmapTask(ServiceRoadmapTaskFinalizeInterfaceSchema, ServiceModuleInterface, "ServiceInterface"),
-			newServiceRoadmapTask(ServiceRoadmapTaskMapExistingModules, ServiceModuleServices, "AetherisModuleServiceMapping"),
+			newServiceRoadmapTask(ServiceRoadmapTaskMapExistingModules, ServiceModuleServices, "AetraModuleServiceMapping"),
 		},
 		ExitCriteria: []ServiceRoadmapExitCriterion{
 			newServiceRoadmapExitCriterion(ServiceRoadmapExitCoreObjectsProto, "ServiceCoreObjectDefinition", true),
-			newServiceRoadmapExitCriterion(ServiceRoadmapExitExistingDescriptors, "AetherisModuleServiceMapping", true),
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitExistingDescriptors, "AetraModuleServiceMapping", true),
 			newServiceRoadmapExitCriterion(ServiceRoadmapExitSignableVectors, "ServiceSignableObjectVector", true),
 		},
 		CoreObjects:     defaultServiceCoreObjectDefinitions(),
 		SignableVectors: defaultServiceSignableObjectVectors(),
-		ModuleMappings:  defaultAetherisModuleServiceMappings(),
+		ModuleMappings:  defaultAetraModuleServiceMappings(),
 	})
 	if err != nil {
 		return ServiceImplementationRoadmap{}, err
@@ -390,7 +390,7 @@ func ValidateServiceRoadmapExitCriteria(phase ServiceRoadmapPhase) error {
 		if err := validateServiceSignableObjectVectors(phase.SignableVectors); err != nil {
 			return err
 		}
-		return ValidateAetherisModuleServiceMappings(phase.ModuleMappings)
+		return ValidateAetraModuleServiceMappings(phase.ModuleMappings)
 	case ServiceRoadmapPhaseCoreRegistry:
 		return phase.requireTasks(ServiceRoadmapTaskImplementServicesModule, ServiceRoadmapTaskAddServiceRegistrationUpdate, ServiceRoadmapTaskAddNameOwnerIndexes, ServiceRoadmapTaskAddProofQuery, ServiceRoadmapTaskAddExportImport)
 	case ServiceRoadmapPhaseInterfaceSystem:
@@ -412,14 +412,14 @@ func ValidateServiceRoadmapExitCriteria(phase ServiceRoadmapPhase) error {
 	}
 }
 
-func ValidateAetherisModuleServiceMappings(mappings []AetherisModuleServiceMapping) error {
+func ValidateAetraModuleServiceMappings(mappings []AetraModuleServiceMapping) error {
 	if len(mappings) == 0 {
 		return errors.New("services roadmap module service mappings are required")
 	}
 	seen := map[string]struct{}{}
 	previous := ""
-	ordered := cloneAetherisModuleServiceMappings(mappings)
-	sortAetherisModuleServiceMappings(ordered)
+	ordered := cloneAetraModuleServiceMappings(mappings)
+	sortAetraModuleServiceMappings(ordered)
 	for _, mapping := range ordered {
 		if err := mapping.Validate(); err != nil {
 			return err
@@ -515,7 +515,7 @@ func (phase ServiceRoadmapPhase) ValidateFormat() error {
 		if err := validateServiceSignableObjectVectors(phase.SignableVectors); err != nil {
 			return err
 		}
-		if err := ValidateAetherisModuleServiceMappings(phase.ModuleMappings); err != nil {
+		if err := ValidateAetraModuleServiceMappings(phase.ModuleMappings); err != nil {
 			return err
 		}
 	default:
@@ -628,7 +628,7 @@ func (vector ServiceSignableObjectVector) Validate() error {
 	return nil
 }
 
-func (mapping AetherisModuleServiceMapping) Validate() error {
+func (mapping AetraModuleServiceMapping) Validate() error {
 	if err := validateInterfaceToken("services roadmap module name", mapping.ModuleName); err != nil {
 		return err
 	}
@@ -647,7 +647,7 @@ func (mapping AetherisModuleServiceMapping) Validate() error {
 	if err := coretypes.ValidateHash("services roadmap mapping hash", mapping.MappingHash); err != nil {
 		return err
 	}
-	if expected := ComputeAetherisModuleServiceMappingHash(mapping); mapping.MappingHash != expected {
+	if expected := ComputeAetraModuleServiceMappingHash(mapping); mapping.MappingHash != expected {
 		return fmt.Errorf("services roadmap mapping hash mismatch: expected %s", expected)
 	}
 	return nil
@@ -703,7 +703,7 @@ func ComputeServiceSignableObjectVectorHash(vector ServiceSignableObjectVector) 
 	return servicesHashParts("aetheris-services-roadmap-signable-vector-v1", vector.ObjectName, vector.CanonicalEncoding, vector.TestVectorHash)
 }
 
-func ComputeAetherisModuleServiceMappingHash(mapping AetherisModuleServiceMapping) string {
+func ComputeAetraModuleServiceMappingHash(mapping AetraModuleServiceMapping) string {
 	return servicesHashParts("aetheris-services-roadmap-module-mapping-v1", mapping.ModuleName, mapping.ModulePath, mapping.ServiceID, mapping.InterfaceHash, mapping.DescriptorHash, fmt.Sprint(mapping.OnChain))
 }
 
@@ -784,8 +784,8 @@ func newServiceSignableObjectVector(objectName, encoding, testVectorHash string)
 	return vector
 }
 
-func newAetherisModuleServiceMapping(moduleName, modulePath, serviceID string, onChain bool) AetherisModuleServiceMapping {
-	mapping := AetherisModuleServiceMapping{
+func newAetraModuleServiceMapping(moduleName, modulePath, serviceID string, onChain bool) AetraModuleServiceMapping {
+	mapping := AetraModuleServiceMapping{
 		ModuleName:     moduleName,
 		ModulePath:     modulePath,
 		ServiceID:      serviceID,
@@ -793,7 +793,7 @@ func newAetherisModuleServiceMapping(moduleName, modulePath, serviceID string, o
 		DescriptorHash: servicesHashParts("aetheris-services-roadmap-descriptor-v1", moduleName, serviceID),
 		OnChain:        onChain,
 	}
-	mapping.MappingHash = ComputeAetherisModuleServiceMappingHash(mapping)
+	mapping.MappingHash = ComputeAetraModuleServiceMappingHash(mapping)
 	return mapping
 }
 
@@ -817,14 +817,14 @@ func defaultServiceSignableObjectVectors() []ServiceSignableObjectVector {
 	}
 }
 
-func defaultAetherisModuleServiceMappings() []AetherisModuleServiceMapping {
-	return []AetherisModuleServiceMapping{
-		newAetherisModuleServiceMapping("aethercore", "x/aethercore", "aethercore-service", true),
-		newAetherisModuleServiceMapping("dex", "x/dex", "dex-service", true),
-		newAetherisModuleServiceMapping("fees", "x/fees", "fees-service", true),
-		newAetherisModuleServiceMapping("identity", "x/identity", "identity-service", true),
-		newAetherisModuleServiceMapping("payments", "x/payments", "payments-service", true),
-		newAetherisModuleServiceMapping("pos", "x/pos", "pos-service", true),
+func defaultAetraModuleServiceMappings() []AetraModuleServiceMapping {
+	return []AetraModuleServiceMapping{
+		newAetraModuleServiceMapping("aethercore", "x/aethercore", "aethercore-service", true),
+		newAetraModuleServiceMapping("dex", "x/dex", "dex-service", true),
+		newAetraModuleServiceMapping("fees", "x/fees", "fees-service", true),
+		newAetraModuleServiceMapping("identity", "x/identity", "identity-service", true),
+		newAetraModuleServiceMapping("payments", "x/payments", "payments-service", true),
+		newAetraModuleServiceMapping("pos", "x/pos", "pos-service", true),
 	}
 }
 
@@ -834,13 +834,13 @@ func canonicalServiceRoadmapPhase(phase ServiceRoadmapPhase) ServiceRoadmapPhase
 	phase.ExitCriteria = cloneServiceRoadmapExitCriteria(phase.ExitCriteria)
 	phase.CoreObjects = cloneServiceCoreObjectDefinitions(phase.CoreObjects)
 	phase.SignableVectors = cloneServiceSignableObjectVectors(phase.SignableVectors)
-	phase.ModuleMappings = cloneAetherisModuleServiceMappings(phase.ModuleMappings)
+	phase.ModuleMappings = cloneAetraModuleServiceMappings(phase.ModuleMappings)
 	phase.DependsOn = append([]ServiceRoadmapPhaseID(nil), phase.DependsOn...)
 	sortServiceRoadmapTasks(phase.Tasks)
 	sortServiceRoadmapExitCriteria(phase.ExitCriteria)
 	sortServiceCoreObjectDefinitions(phase.CoreObjects)
 	sortServiceSignableObjectVectors(phase.SignableVectors)
-	sortAetherisModuleServiceMappings(phase.ModuleMappings)
+	sortAetraModuleServiceMappings(phase.ModuleMappings)
 	sort.SliceStable(phase.DependsOn, func(i, j int) bool { return phase.DependsOn[i] < phase.DependsOn[j] })
 	phase.PhaseHash = strings.ToLower(strings.TrimSpace(phase.PhaseHash))
 	return phase
@@ -1019,8 +1019,8 @@ func cloneServiceSignableObjectVectors(vectors []ServiceSignableObjectVector) []
 	return out
 }
 
-func cloneAetherisModuleServiceMappings(mappings []AetherisModuleServiceMapping) []AetherisModuleServiceMapping {
-	out := make([]AetherisModuleServiceMapping, len(mappings))
+func cloneAetraModuleServiceMappings(mappings []AetraModuleServiceMapping) []AetraModuleServiceMapping {
+	out := make([]AetraModuleServiceMapping, len(mappings))
 	copy(out, mappings)
 	return out
 }
@@ -1045,6 +1045,6 @@ func sortServiceSignableObjectVectors(vectors []ServiceSignableObjectVector) {
 	sort.SliceStable(vectors, func(i, j int) bool { return vectors[i].ObjectName < vectors[j].ObjectName })
 }
 
-func sortAetherisModuleServiceMappings(mappings []AetherisModuleServiceMapping) {
+func sortAetraModuleServiceMappings(mappings []AetraModuleServiceMapping) {
 	sort.SliceStable(mappings, func(i, j int) bool { return mappings[i].ModuleName < mappings[j].ModuleName })
 }

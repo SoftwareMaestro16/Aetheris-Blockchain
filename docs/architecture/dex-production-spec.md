@@ -2,14 +2,14 @@
 
 Date: 2026-06-06
 
-Status: target architecture for the native Aetheris DEX. The current module is a
+Status: target architecture for the native Aetra DEX. The current module is a
 constant-product prototype and must migrate toward this specification in
 audited increments.
 
 ## Goals
 
 `x/dex` is the native liquidity, routing, incentive, and oracle module for
-Aetheris. It supports `naet`/custom-token and custom/custom swaps, deterministic
+Aetra. It supports `naet`/custom-token and custom/custom swaps, deterministic
 multi-hop execution, LP accounting, locked LP positions, farming rewards,
 fee rewards, and future IBC/concentrated-liquidity extensions.
 

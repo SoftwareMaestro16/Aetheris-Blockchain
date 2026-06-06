@@ -69,7 +69,7 @@ type Definition struct {
 }
 
 var Definitions = []Definition{
-	{MetricTelemetryEnabled, "Whether Aetheris process telemetry is enabled.", kindGauge},
+	{MetricTelemetryEnabled, "Whether Aetra process telemetry is enabled.", kindGauge},
 	{MetricBlockHeight, "Last finalized block height observed by the app process.", kindGauge},
 	{MetricBlockTimeSeconds, "Unix timestamp of the last finalized block time observed by the app process.", kindGauge},
 	{MetricBlockProcessing, "FinalizeBlock processing duration observed by the app process.", kindSummary},
@@ -114,7 +114,7 @@ var Definitions = []Definition{
 	{MetricValidatorTopNPowerBps, "Last validator active-set top-N voting power share in basis points.", kindGauge},
 	{MetricValidatorConcentrationRisks, "Number of validator concentration warnings in the last report.", kindGauge},
 	{MetricLocalnetHealth, "Localnet metrics endpoint health marker.", kindGauge},
-	{MetricProcessUptimeSeconds, "Aetheris process uptime in seconds.", kindGauge},
+	{MetricProcessUptimeSeconds, "Aetra process uptime in seconds.", kindGauge},
 	{MetricProcessMemoryBytes, "Go runtime memory allocation bytes.", kindGauge},
 	{MetricProcessGoroutines, "Go runtime goroutine count.", kindGauge},
 }

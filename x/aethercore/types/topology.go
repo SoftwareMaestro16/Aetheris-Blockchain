@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	AetherisNextTopologyVersion = uint64(1)
+	AetraNextTopologyVersion = uint64(1)
 
 	topologyNodeCore              = "core/aether"
 	topologyNodeFinancial         = "zone/financial"
@@ -32,7 +32,7 @@ const (
 	TopologyNodeShardGroup TopologyNodeKind = "SHARD_GROUP"
 )
 
-type AetherisNextTopologyNode struct {
+type AetraNextTopologyNode struct {
 	NodeID       string
 	Kind         TopologyNodeKind
 	ZoneID       ZoneID
@@ -40,23 +40,23 @@ type AetherisNextTopologyNode struct {
 	Capabilities []string
 }
 
-type AetherisNextTopologyEdge struct {
+type AetraNextTopologyEdge struct {
 	FromNodeID string
 	ToNodeID   string
 	Relation   string
 }
 
-type AetherisNextTopologyPlan struct {
+type AetraNextTopologyPlan struct {
 	Version      uint64
-	Nodes        []AetherisNextTopologyNode
-	Edges        []AetherisNextTopologyEdge
+	Nodes        []AetraNextTopologyNode
+	Edges        []AetraNextTopologyEdge
 	TopologyHash string
 }
 
-func DefaultAetherisNextTopology() (AetherisNextTopologyPlan, error) {
-	plan := AetherisNextTopologyPlan{
-		Version: AetherisNextTopologyVersion,
-		Nodes: []AetherisNextTopologyNode{
+func DefaultAetraNextTopology() (AetraNextTopologyPlan, error) {
+	plan := AetraNextTopologyPlan{
+		Version: AetraNextTopologyVersion,
+		Nodes: []AetraNextTopologyNode{
 			{NodeID: topologyNodeCore, Kind: TopologyNodeCore, Label: "Aether Core", Capabilities: []string{"consensus", "finality", "global-root", "message-root", "proof-registry", "scheduler", "validator-set", "zone-commitments"}},
 			{NodeID: topologyNodeFinancial, Kind: TopologyNodeZone, ZoneID: ZoneIDFinancial, Label: "Financial Zone", Capabilities: []string{"bank-fees", "dex-factory", "payment-settlement"}},
 			{NodeID: topologyNodeIdentity, Kind: TopologyNodeZone, ZoneID: ZoneIDIdentity, Label: "Identity Zone", Capabilities: []string{".aet-resolver", "nft-ownership", "resolver-proofs"}},
@@ -67,7 +67,7 @@ func DefaultAetherisNextTopology() (AetherisNextTopologyPlan, error) {
 			{NodeID: topologyNodeApplicationShards, Kind: TopologyNodeShardGroup, ZoneID: ZoneIDApplication, Label: "Application Compute Shards", Capabilities: []string{"scheduler-buckets", "workflow-routing"}},
 			{NodeID: topologyNodeContractShards, Kind: TopologyNodeShardGroup, ZoneID: ZoneIDContract, Label: "Contract Compute Shards", Capabilities: []string{"contract-address-routing", "storage-prefix-routing"}},
 		},
-		Edges: []AetherisNextTopologyEdge{
+		Edges: []AetraNextTopologyEdge{
 			{FromNodeID: topologyNodeCore, ToNodeID: topologyNodeFinancial, Relation: topologyRelationSchedules},
 			{FromNodeID: topologyNodeCore, ToNodeID: topologyNodeIdentity, Relation: topologyRelationSchedules},
 			{FromNodeID: topologyNodeCore, ToNodeID: topologyNodeApplication, Relation: topologyRelationSchedules},
@@ -80,25 +80,25 @@ func DefaultAetherisNextTopology() (AetherisNextTopologyPlan, error) {
 			{FromNodeID: topologyNodeContract, ToNodeID: topologyNodeContractShards, Relation: topologyRelationOwns},
 		},
 	}
-	return NewAetherisNextTopologyPlan(plan.Nodes, plan.Edges)
+	return NewAetraNextTopologyPlan(plan.Nodes, plan.Edges)
 }
 
-func NewAetherisNextTopologyPlan(nodes []AetherisNextTopologyNode, edges []AetherisNextTopologyEdge) (AetherisNextTopologyPlan, error) {
-	plan := AetherisNextTopologyPlan{
-		Version: AetherisNextTopologyVersion,
+func NewAetraNextTopologyPlan(nodes []AetraNextTopologyNode, edges []AetraNextTopologyEdge) (AetraNextTopologyPlan, error) {
+	plan := AetraNextTopologyPlan{
+		Version: AetraNextTopologyVersion,
 		Nodes:   cloneTopologyNodes(nodes),
-		Edges:   append([]AetherisNextTopologyEdge(nil), edges...),
+		Edges:   append([]AetraNextTopologyEdge(nil), edges...),
 	}
 	sortTopologyNodes(plan.Nodes)
 	sortTopologyEdges(plan.Edges)
 	if err := plan.ValidateFormat(); err != nil {
-		return AetherisNextTopologyPlan{}, err
+		return AetraNextTopologyPlan{}, err
 	}
-	plan.TopologyHash = ComputeAetherisNextTopologyHash(plan)
+	plan.TopologyHash = ComputeAetraNextTopologyHash(plan)
 	return plan, plan.ValidateHash()
 }
 
-func DefaultAetherisNextZoneDescriptors() []ZoneDescriptor {
+func DefaultAetraNextZoneDescriptors() []ZoneDescriptor {
 	return []ZoneDescriptor{
 		nextZoneDescriptor(ZoneIDFinancial, ZoneTypeFinancial, "financial", 8, []string{"async-inbox", "async-outbox", "cross-shard-transfer", "fee-accumulator"}, []string{"account", "balance", "message", "payment", "receipt"}),
 		nextZoneDescriptor(ZoneIDIdentity, ZoneTypeIdentity, "identity", 4, []string{"async-inbox", "async-outbox", "identity-lookup"}, []string{"domain", "identity", "message", "receipt", "resolver"}),
@@ -107,7 +107,7 @@ func DefaultAetherisNextZoneDescriptors() []ZoneDescriptor {
 	}
 }
 
-func DefaultAetherisNextShardLayouts(activationHeight uint64) ([]ShardLayout, error) {
+func DefaultAetraNextShardLayouts(activationHeight uint64) ([]ShardLayout, error) {
 	if activationHeight == 0 {
 		return nil, errors.New("aethercore next topology activation height must be positive")
 	}
@@ -143,7 +143,7 @@ func DefaultAetherisNextShardLayouts(activationHeight uint64) ([]ShardLayout, er
 	return layouts, nil
 }
 
-func DefaultAetherisNextIdentityResolverService(createdHeight uint64) (ServiceDescriptor, error) {
+func DefaultAetraNextIdentityResolverService(createdHeight uint64) (ServiceDescriptor, error) {
 	if createdHeight == 0 {
 		return ServiceDescriptor{}, errors.New("aethercore next resolver service height must be positive")
 	}
@@ -226,57 +226,57 @@ func DefaultAetherisNextIdentityResolverService(createdHeight uint64) (ServiceDe
 	return service, service.Validate()
 }
 
-func BuildAetherisNextTopologyState(params AetherCoreParams, activationHeight uint64, routingEpoch uint64, routingHeight uint64) (CoreState, AetherisNextTopologyPlan, error) {
+func BuildAetraNextTopologyState(params AetherCoreParams, activationHeight uint64, routingEpoch uint64, routingHeight uint64) (CoreState, AetraNextTopologyPlan, error) {
 	if err := params.RequireEnabled(); err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
 	if activationHeight == 0 || routingEpoch == 0 || routingHeight == 0 {
-		return CoreState{}, AetherisNextTopologyPlan{}, errors.New("aethercore next topology bootstrap heights and epochs must be positive")
+		return CoreState{}, AetraNextTopologyPlan{}, errors.New("aethercore next topology bootstrap heights and epochs must be positive")
 	}
-	plan, err := DefaultAetherisNextTopology()
+	plan, err := DefaultAetraNextTopology()
 	if err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
 	state := EmptyState(params)
-	for _, descriptor := range DefaultAetherisNextZoneDescriptors() {
+	for _, descriptor := range DefaultAetraNextZoneDescriptors() {
 		state, err = RegisterZoneDescriptor(state, descriptor)
 		if err != nil {
-			return CoreState{}, AetherisNextTopologyPlan{}, err
+			return CoreState{}, AetraNextTopologyPlan{}, err
 		}
 	}
-	service, err := DefaultAetherisNextIdentityResolverService(activationHeight)
+	service, err := DefaultAetraNextIdentityResolverService(activationHeight)
 	if err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
 	state, err = RegisterServiceDescriptor(state, service)
 	if err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
-	layouts, err := DefaultAetherisNextShardLayouts(activationHeight)
+	layouts, err := DefaultAetraNextShardLayouts(activationHeight)
 	if err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
 	for _, layout := range layouts {
 		state, err = RegisterShardLayout(state, layout)
 		if err != nil {
-			return CoreState{}, AetherisNextTopologyPlan{}, err
+			return CoreState{}, AetraNextTopologyPlan{}, err
 		}
 	}
 	table, err := BuildRoutingTableCommitment(routingEpoch, routingHeight, layouts)
 	if err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
 	state, err = CommitRoutingTable(state, table)
 	if err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
-	if err := ValidateAetherisNextTopologyState(state, routingHeight); err != nil {
-		return CoreState{}, AetherisNextTopologyPlan{}, err
+	if err := ValidateAetraNextTopologyState(state, routingHeight); err != nil {
+		return CoreState{}, AetraNextTopologyPlan{}, err
 	}
 	return state.Export(), plan, nil
 }
 
-func ValidateAetherisNextTopologyState(state CoreState, height uint64) error {
+func ValidateAetraNextTopologyState(state CoreState, height uint64) error {
 	if height == 0 {
 		return errors.New("aethercore next topology validation height must be positive")
 	}
@@ -286,10 +286,10 @@ func ValidateAetherisNextTopologyState(state CoreState, height uint64) error {
 	if err := state.Validate(); err != nil {
 		return err
 	}
-	if _, err := DefaultAetherisNextTopology(); err != nil {
+	if _, err := DefaultAetraNextTopology(); err != nil {
 		return err
 	}
-	required := DefaultAetherisNextZoneDescriptors()
+	required := DefaultAetraNextZoneDescriptors()
 	layouts := make([]ShardLayout, 0, len(required))
 	for _, descriptor := range required {
 		actual, found := state.ZoneDescriptorByID(descriptor.ZoneID)
@@ -323,8 +323,8 @@ func ValidateAetherisNextTopologyState(state CoreState, height uint64) error {
 	return validateRoutingTableCoversLayouts(table, layouts)
 }
 
-func (p AetherisNextTopologyPlan) ValidateFormat() error {
-	if p.Version != AetherisNextTopologyVersion {
+func (p AetraNextTopologyPlan) ValidateFormat() error {
+	if p.Version != AetraNextTopologyVersion {
 		return errors.New("aethercore next topology version mismatch")
 	}
 	if len(p.Nodes) == 0 {
@@ -333,7 +333,7 @@ func (p AetherisNextTopologyPlan) ValidateFormat() error {
 	if len(p.Edges) == 0 {
 		return errors.New("aethercore next topology requires edges")
 	}
-	seenNodes := make(map[string]AetherisNextTopologyNode, len(p.Nodes))
+	seenNodes := make(map[string]AetraNextTopologyNode, len(p.Nodes))
 	var previousNode string
 	for i, node := range p.Nodes {
 		node = canonicalTopologyNode(node)
@@ -349,7 +349,7 @@ func (p AetherisNextTopologyPlan) ValidateFormat() error {
 		}
 		previousNode = node.NodeID
 	}
-	var previousEdge AetherisNextTopologyEdge
+	var previousEdge AetraNextTopologyEdge
 	for i, edge := range p.Edges {
 		if err := edge.Validate(seenNodes); err != nil {
 			return err
@@ -365,18 +365,18 @@ func (p AetherisNextTopologyPlan) ValidateFormat() error {
 	return nil
 }
 
-func (p AetherisNextTopologyPlan) ValidateHash() error {
+func (p AetraNextTopologyPlan) ValidateHash() error {
 	if err := p.ValidateFormat(); err != nil {
 		return err
 	}
-	expected := ComputeAetherisNextTopologyHash(p)
+	expected := ComputeAetraNextTopologyHash(p)
 	if p.TopologyHash != expected {
 		return fmt.Errorf("aethercore next topology hash mismatch: expected %s", expected)
 	}
 	return nil
 }
 
-func (n AetherisNextTopologyNode) Validate() error {
+func (n AetraNextTopologyNode) Validate() error {
 	if err := validatePolicyID("aethercore next topology node id", n.NodeID); err != nil {
 		return err
 	}
@@ -396,7 +396,7 @@ func (n AetherisNextTopologyNode) Validate() error {
 	return validateCapabilitiesForField("aethercore next topology node capability", n.Capabilities)
 }
 
-func (e AetherisNextTopologyEdge) Validate(nodes map[string]AetherisNextTopologyNode) error {
+func (e AetraNextTopologyEdge) Validate(nodes map[string]AetraNextTopologyNode) error {
 	if err := validatePolicyID("aethercore next topology edge source", e.FromNodeID); err != nil {
 		return err
 	}
@@ -418,9 +418,9 @@ func (e AetherisNextTopologyEdge) Validate(nodes map[string]AetherisNextTopology
 	return nil
 }
 
-func ComputeAetherisNextTopologyHash(plan AetherisNextTopologyPlan) string {
+func ComputeAetraNextTopologyHash(plan AetraNextTopologyPlan) string {
 	nodes := cloneTopologyNodes(plan.Nodes)
-	edges := append([]AetherisNextTopologyEdge(nil), plan.Edges...)
+	edges := append([]AetraNextTopologyEdge(nil), plan.Edges...)
 	sortTopologyNodes(nodes)
 	sortTopologyEdges(edges)
 	parts := []string{"aetheris-next-topology-v1", fmt.Sprint(plan.Version), fmt.Sprint(len(nodes))}
@@ -454,21 +454,21 @@ func nextZoneDescriptor(id ZoneID, zoneType ZoneType, moduleName string, maxShar
 	})
 }
 
-func canonicalTopologyNode(node AetherisNextTopologyNode) AetherisNextTopologyNode {
+func canonicalTopologyNode(node AetraNextTopologyNode) AetraNextTopologyNode {
 	node.Capabilities = append([]string(nil), node.Capabilities...)
 	sort.Strings(node.Capabilities)
 	return node
 }
 
-func cloneTopologyNodes(nodes []AetherisNextTopologyNode) []AetherisNextTopologyNode {
-	out := make([]AetherisNextTopologyNode, len(nodes))
+func cloneTopologyNodes(nodes []AetraNextTopologyNode) []AetraNextTopologyNode {
+	out := make([]AetraNextTopologyNode, len(nodes))
 	for i, node := range nodes {
 		out[i] = canonicalTopologyNode(node)
 	}
 	return out
 }
 
-func sortTopologyNodes(nodes []AetherisNextTopologyNode) {
+func sortTopologyNodes(nodes []AetraNextTopologyNode) {
 	sort.SliceStable(nodes, func(i, j int) bool {
 		return nodes[i].NodeID < nodes[j].NodeID
 	})
@@ -477,13 +477,13 @@ func sortTopologyNodes(nodes []AetherisNextTopologyNode) {
 	}
 }
 
-func sortTopologyEdges(edges []AetherisNextTopologyEdge) {
+func sortTopologyEdges(edges []AetraNextTopologyEdge) {
 	sort.SliceStable(edges, func(i, j int) bool {
 		return compareTopologyEdges(edges[i], edges[j]) < 0
 	})
 }
 
-func compareTopologyEdges(left, right AetherisNextTopologyEdge) int {
+func compareTopologyEdges(left, right AetraNextTopologyEdge) int {
 	for _, pair := range [][2]string{
 		{left.FromNodeID, right.FromNodeID},
 		{left.ToNodeID, right.ToNodeID},

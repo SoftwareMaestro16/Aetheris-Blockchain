@@ -1,6 +1,6 @@
 # Performance And Speed
 
-Phase 15 performance work is measurement-first. Aetheris optimizes only when a
+Phase 15 performance work is measurement-first. Aetra optimizes only when a
 Go benchmark, localnet smoke duration, CI timing summary, or load-profile result
 shows the before/after cost. Performance changes must not bypass signer, fee, denom, zero-address, authority, or genesis validation.
 

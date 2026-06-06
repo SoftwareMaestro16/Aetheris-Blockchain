@@ -1,10 +1,10 @@
-# Aetheris Roadmap V4: Modular L1 Execution OS Implementation
+# Aetra Roadmap V4: Modular L1 Execution OS Implementation
 
 This roadmap turns the target design in
 `docs/architecture/aetheris-modular-execution-os.md` and the safety gates in
 `docs/architecture/sharding-rd.md` into implementation tasks.
 
-V4 is an implementation backlog, not a production claim. Aetheris must not
+V4 is an implementation backlog, not a production claim. Aetra must not
 claim production sharding, production Execution Zones, production Aether Mesh,
 or production AVM/CosmWasm state mutation until the simulator, prototype,
 adversarial tests, long-run testnet, independent audit, and consensus-safety
@@ -526,7 +526,7 @@ Recommended packages:
 
 Implementation tasks:
 
-- Keep AVM as the native Aetheris-defined VM direction.
+- Keep AVM as the native Aetra-defined VM direction.
 - Keep CosmWasm behind explicit config/governance gate.
 - Define contract upload policy:
   - governance-only by default;

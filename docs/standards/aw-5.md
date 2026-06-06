@@ -1,8 +1,8 @@
 # AW-5 Wallet Contract Standard
 
-Working standard name: Aetheris Wallet Standard, `AW-5`.
+Working standard name: Aetra Wallet Standard, `AW-5`.
 
-`AW-5` defines replay-safe Aetheris contract wallets while keeping consensus
+`AW-5` defines replay-safe Aetra contract wallets while keeping consensus
 rules deterministic. A relayer may submit a wallet command, but on-chain
 protocol fee payment remains native-only in `naet`.
 

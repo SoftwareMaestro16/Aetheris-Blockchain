@@ -435,7 +435,7 @@ func TestRoutingTableRejectsLayoutMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "active shard count mismatch")
 }
 
-func TestAetherisNextCommitmentDeterministicAcrossNodes(t *testing.T) {
+func TestAetraNextCommitmentDeterministicAcrossNodes(t *testing.T) {
 	nodeA := nextReadyState(t,
 		[]ZoneID{ZoneIDFinancial, ZoneIDIdentity, ZoneIDApplication, ZoneIDContract},
 		[]ZoneID{ZoneIDFinancial, ZoneIDIdentity, ZoneIDApplication, ZoneIDContract},
@@ -445,18 +445,18 @@ func TestAetherisNextCommitmentDeterministicAcrossNodes(t *testing.T) {
 		[]ZoneID{ZoneIDContract, ZoneIDApplication, ZoneIDIdentity, ZoneIDFinancial},
 	)
 
-	commitmentA, err := BuildAetherisNextCommitment(10, nodeA, testContributions(10), testHash("10/resolver"))
+	commitmentA, err := BuildAetraNextCommitment(10, nodeA, testContributions(10), testHash("10/resolver"))
 	require.NoError(t, err)
 	require.NoError(t, commitmentA.ValidateHash())
-	commitmentB, err := BuildAetherisNextCommitment(10, nodeB, testContributions(10), testHash("10/resolver"))
+	commitmentB, err := BuildAetraNextCommitment(10, nodeB, testContributions(10), testHash("10/resolver"))
 	require.NoError(t, err)
 
 	require.Equal(t, commitmentA, commitmentB)
 	require.NoError(t, ValidateHash("next architecture hash", commitmentA.ArchitectureHash))
 }
 
-func TestAetherisNextTopologyBootstrapMatchesArchitectureDiagram(t *testing.T) {
-	plan, err := DefaultAetherisNextTopology()
+func TestAetraNextTopologyBootstrapMatchesArchitectureDiagram(t *testing.T) {
+	plan, err := DefaultAetraNextTopology()
 	require.NoError(t, err)
 	require.NoError(t, plan.ValidateHash())
 	require.Len(t, plan.Nodes, 9)
@@ -469,14 +469,14 @@ func TestAetherisNextTopologyBootstrapMatchesArchitectureDiagram(t *testing.T) {
 	require.True(t, hasTopologyEdge(plan, topologyNodeApplicationShards, topologyNodeContract, topologyRelationAsyncCall))
 	require.True(t, hasTopologyEdge(plan, topologyNodeContract, topologyNodeContractShards, topologyRelationOwns))
 
-	stateA, planA, err := BuildAetherisNextTopologyState(TestnetParams(), 1, 1, 10)
+	stateA, planA, err := BuildAetraNextTopologyState(TestnetParams(), 1, 1, 10)
 	require.NoError(t, err)
-	stateB, planB, err := BuildAetherisNextTopologyState(TestnetParams(), 1, 1, 10)
+	stateB, planB, err := BuildAetraNextTopologyState(TestnetParams(), 1, 1, 10)
 	require.NoError(t, err)
 	require.Equal(t, planA, planB)
 	require.Equal(t, stateA, stateB)
 	require.Equal(t, plan.TopologyHash, planA.TopologyHash)
-	require.NoError(t, ValidateAetherisNextTopologyState(stateA, 10))
+	require.NoError(t, ValidateAetraNextTopologyState(stateA, 10))
 	require.Len(t, stateA.Export().Zones, 4)
 	require.Len(t, stateA.Export().ShardLayouts, 4)
 	require.Len(t, stateA.Export().RoutingTables, 1)
@@ -506,18 +506,18 @@ func TestFinalityRecordCommitsCoreFinalityState(t *testing.T) {
 	require.Equal(t, recordA, stored)
 }
 
-func TestAetherisNextCommitmentRejectsMissingShardLayout(t *testing.T) {
+func TestAetraNextCommitmentRejectsMissingShardLayout(t *testing.T) {
 	state := EmptyState(TestnetParams())
 	var err error
-	for _, zone := range DefaultAetherisNextZoneDescriptors() {
+	for _, zone := range DefaultAetraNextZoneDescriptors() {
 		state, err = RegisterZoneDescriptor(state, zone)
 		require.NoError(t, err)
 	}
-	service, err := DefaultAetherisNextIdentityResolverService(1)
+	service, err := DefaultAetraNextIdentityResolverService(1)
 	require.NoError(t, err)
 	state, err = RegisterServiceDescriptor(state, service)
 	require.NoError(t, err)
-	layouts, err := DefaultAetherisNextShardLayouts(1)
+	layouts, err := DefaultAetraNextShardLayouts(1)
 	require.NoError(t, err)
 	registeredLayouts := make([]ShardLayout, 0, len(layouts)-1)
 	for _, layout := range layouts {
@@ -532,16 +532,16 @@ func TestAetherisNextCommitmentRejectsMissingShardLayout(t *testing.T) {
 	require.NoError(t, err)
 	state, err = CommitRoutingTable(state, table)
 	require.NoError(t, err)
-	for _, zone := range DefaultAetherisNextZoneDescriptors() {
+	for _, zone := range DefaultAetraNextZoneDescriptors() {
 		state, err = AppendZoneCommitment(state, testCommitment(t, 10, zone.ZoneID))
 		require.NoError(t, err)
 	}
 
-	_, err = BuildAetherisNextCommitment(10, state, testContributions(10), testHash("10/resolver"))
+	_, err = BuildAetraNextCommitment(10, state, testContributions(10), testHash("10/resolver"))
 	require.ErrorContains(t, err, "missing shard layout for zone CONTRACT_ZONE")
 }
 
-func TestAetherisNextCommitmentRejectsStaleRoutingTable(t *testing.T) {
+func TestAetraNextCommitmentRejectsStaleRoutingTable(t *testing.T) {
 	state := nextReadyState(t,
 		[]ZoneID{ZoneIDIdentity, ZoneIDFinancial, ZoneIDApplication, ZoneIDContract},
 		[]ZoneID{ZoneIDIdentity, ZoneIDFinancial, ZoneIDApplication, ZoneIDContract},
@@ -551,7 +551,7 @@ func TestAetherisNextCommitmentRejectsStaleRoutingTable(t *testing.T) {
 	state, err = RegisterShardLayout(state, financialV2)
 	require.NoError(t, err)
 
-	_, err = BuildAetherisNextCommitment(10, state, testContributions(10), testHash("10/resolver"))
+	_, err = BuildAetraNextCommitment(10, state, testContributions(10), testHash("10/resolver"))
 	require.ErrorContains(t, err, "layout epoch mismatch")
 }
 
@@ -1034,7 +1034,7 @@ func hasProofRoot(snapshot RootSnapshot, rootType RootType, hash string) bool {
 	return false
 }
 
-func hasTopologyEdge(plan AetherisNextTopologyPlan, from string, to string, relation string) bool {
+func hasTopologyEdge(plan AetraNextTopologyPlan, from string, to string, relation string) bool {
 	for _, edge := range plan.Edges {
 		if edge.FromNodeID == from && edge.ToNodeID == to && edge.Relation == relation {
 			return true

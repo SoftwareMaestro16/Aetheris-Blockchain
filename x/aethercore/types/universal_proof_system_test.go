@@ -75,7 +75,7 @@ func TestUniversalRootHierarchyCanonicalizesZonesAndShards(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NoError(t, a.Validate())
-	require.NoError(t, a.ValidateRequiredZones(RequiredAetherisNextProofZones()))
+	require.NoError(t, a.ValidateRequiredZones(RequiredAetraNextProofZones()))
 
 	b, err := NewUniversalRootHierarchy(
 		height,
@@ -115,7 +115,7 @@ func TestUniversalRootHierarchyRejectsRootDrift(t *testing.T) {
 	missingZone.GlobalZoneRoot, err = ComputeUniversalGlobalZoneRoot(height, missingZone.Zones)
 	require.NoError(t, err)
 	missingZone.AppHash = ComputeUniversalAppHash(missingZone)
-	require.ErrorContains(t, missingZone.ValidateRequiredZones(RequiredAetherisNextProofZones()), "missing required zone")
+	require.ErrorContains(t, missingZone.ValidateRequiredZones(RequiredAetraNextProofZones()), "missing required zone")
 }
 
 func TestUniversalMessageRootBindsOutboxInboxAndReceipts(t *testing.T) {

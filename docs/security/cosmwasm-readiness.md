@@ -1,11 +1,11 @@
 # CosmWasm Readiness
 
-CosmWasm stays disabled in Aetheris until the base chain hardening phases pass
+CosmWasm stays disabled in Aetra until the base chain hardening phases pass
 and the app wiring explicitly opts into `x/wasm`.
 
 ## Version Decision
 
-Use `github.com/CosmWasm/wasmd v0.70.2` as the first integration candidate. Its module metadata targets Go `1.25.9`, Cosmos SDK `v0.54.0`, CometBFT `v0.39.0`, and `github.com/CosmWasm/wasmvm/v3 v3.0.6`, which is the closest match to the current Aetheris SDK `v0.54.x` base. Older wasmd lines inspected for this decision target SDK `v0.50` or `v0.53` and should not be used for the initial integration.
+Use `github.com/CosmWasm/wasmd v0.70.2` as the first integration candidate. Its module metadata targets Go `1.25.9`, Cosmos SDK `v0.54.0`, CometBFT `v0.39.0`, and `github.com/CosmWasm/wasmvm/v3 v3.0.6`, which is the closest match to the current Aetra SDK `v0.54.x` base. Older wasmd lines inspected for this decision target SDK `v0.50` or `v0.53` and should not be used for the initial integration.
 
 Do not add the real `x/wasm` keeper until the integration branch also wires the required keeper dependencies, wasm store keys, module account permissions, ante decorators, genesis validation, export, and e2e contract smoke tests.
 
@@ -21,7 +21,7 @@ Default policy:
 The future gate must be explicit in config or startup flags. Localnet and public testnet configs must not silently enable wasm because a dependency was added.
 
 Only the configured governance authority can enable or disable the gate. The
-authority address must be a valid non-zero Aetheris authority address, and
+authority address must be a valid non-zero Aetra authority address, and
 policy updates must validate the full next policy before it can become active.
 
 ## Permissions
@@ -29,7 +29,7 @@ policy updates must validate the full next policy before it can become active.
 Upload:
 
 - Public testnet and mainnet default: governance-only.
-- Dev testnet exception: allowlist upload is allowed only with a non-empty allowlist of valid non-zero Aetheris user addresses.
+- Dev testnet exception: allowlist upload is allowed only with a non-empty allowlist of valid non-zero Aetra user addresses.
 
 Instantiate:
 
@@ -38,7 +38,7 @@ Instantiate:
 
 Admin and migration:
 
-- Contract admin must be a valid non-zero Aetheris address.
+- Contract admin must be a valid non-zero Aetra address.
 - Migration is admin-only.
 - Empty admin, zero admin, unauthorized migrate, and admin takeover attempts are rejected.
 

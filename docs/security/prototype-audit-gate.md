@@ -1,6 +1,6 @@
 # Prototype Security And Determinism Audit Gate
 
-This gate blocks an Aetheris prototype release when consensus-critical or fund-safety risks are untriaged.
+This gate blocks an Aetra prototype release when consensus-critical or fund-safety risks are untriaged.
 
 Scope: custom modules `x/tokenfactory`, `x/dex`, `x/fees`; app wiring and ABCI paths; genesis/bootstrap; fees ante policy; DEX math/accounting; tokenfactory admin rights; localnet/prototype acceptance scripts.
 
@@ -146,7 +146,7 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | `go mod verify` reports modified global CometBFT module cache | Local `C:\Users\Ryzen\go\pkg\mod\github.com\cometbft\cometbft@v0.39.3` | Medium | Environment cache issue. Clean module cache or run in CI before release. Do not commit vendored or modified module cache. |
 | `GO-2026-5026` in `golang.org/x/net@v0.53.0` | `govulncheck -scan=package` | Medium/High by advisory | Fixed in `v0.55.0`. Upgrade when dependency graph permits; run symbol scan before release to confirm reachability. |
 | `GO-2026-5024` in `golang.org/x/sys@v0.43.0` | `govulncheck -scan=package`, Windows | Medium/High by advisory | Fixed in `v0.44.0`. Upgrade when dependency graph permits; Windows prototype builds should keep this visible. |
-| `GO-2026-4479` in `github.com/pion/dtls/v2@v2.2.12` | `govulncheck -scan=package` | Medium/High by advisory | No fixed version reported. Track upstream; confirm whether the vulnerable path is reachable from Aetheris node/runtime before release. |
+| `GO-2026-4479` in `github.com/pion/dtls/v2@v2.2.12` | `govulncheck -scan=package` | Medium/High by advisory | No fixed version reported. Track upstream; confirm whether the vulnerable path is reachable from Aetra node/runtime before release. |
 | `GO-2024-2584` in `github.com/cosmos/cosmos-sdk@v0.54.3` | `govulncheck -scan=package` | High | Cosmos SDK slashing advisory with no fixed version reported by current tool. Keep PoS/slashing smoke tests mandatory and track SDK patch guidance. |
 | `gosec` `G115` in generated protobuf | Generated `.pb.go` encode/decode casts | Low | Excluded with `-exclude-generated`; source `.proto` remains linted by `buf lint`. |
 | Localnet secrets in ignored directories | `.localnet*`, keyring, validator private files | Low if ignored | Full filesystem secret scans will find generated localnet material. Gate uses staged/history scans; diagnostic bundles exclude private material. |

@@ -153,7 +153,7 @@ function Get-DemoBalanceAmount {
 }
 
 function Invoke-DemoCheck {
-  Write-Output "Aetheris prototype demo check"
+  Write-Output "Aetra prototype demo check"
   Write-Output "local-only: true"
   Write-Output "chain-id: $ChainId"
   Write-Output "validators: $ValidatorCount"
@@ -186,7 +186,7 @@ $node1Home = $null
 
 Push-Location $RepoRoot
 try {
-  Write-Host "Aetheris prototype guided demo"
+  Write-Host "Aetra prototype guided demo"
   Write-Host "LOCAL ONLY: uses ignored localnet homes and --keyring-backend test. Do not use these keys on public networks."
   Write-Host "Demo wraps tested localnet commands; it is not a substitute for e2e tests."
 
@@ -269,7 +269,7 @@ try {
   Write-DemoNote "node0 lp/1=$node0Lp"
 
   Write-DemoStep "Demo complete"
-  Write-DemoNote "Aetheris local prototype produced blocks, accepted bank/tokenfactory/DEX txs, served REST queries, and updated final state."
+  Write-DemoNote "Aetra local prototype produced blocks, accepted bank/tokenfactory/DEX txs, served REST queries, and updated final state."
 } finally {
   if (-not $KeepLocalnet) {
     Write-DemoStep "Stop localnet"

@@ -1,6 +1,6 @@
-# Aetheris Prototype Demo
+# Aetra Prototype Demo
 
-This is a guided local-only demo path for showing the working Aetheris prototype in one visible sequence. It wraps tested localnet commands and is not a substitute for the e2e acceptance suite.
+This is a guided local-only demo path for showing the working Aetra prototype in one visible sequence. It wraps tested localnet commands and is not a substitute for the e2e acceptance suite.
 
 Preview the steps without building or starting localnet:
 

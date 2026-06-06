@@ -1,6 +1,6 @@
-# Aetheris Modular L1 Execution OS
+# Aetra Modular L1 Execution OS
 
-This document defines the target architecture for Aetheris as a scalable,
+This document defines the target architecture for Aetra as a scalable,
 secure, low-fee blockchain operating system. It is a system design, not an
 implementation claim. Current production-facing code remains the Cosmos SDK
 base chain and explicitly gated executable specifications until their
@@ -537,4 +537,4 @@ Reward and supply model:
 - Decentralization comes from a distributed validator set and independently
   verifiable execution zones coordinated by a minimal Core.
 
-Aetheris is a modular Layer 1 execution operating system where consensus, execution, and scaling are separated into independent but cryptographically connected layers to achieve secure and scalable decentralized computation.
+Aetra is a modular Layer 1 execution operating system where consensus, execution, and scaling are separated into independent but cryptographically connected layers to achieve secure and scalable decentralized computation.

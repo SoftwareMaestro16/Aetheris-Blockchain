@@ -303,7 +303,7 @@ func TestPoSMintPolicyIsNaetAndUncappedWithBoundedInflation(t *testing.T) {
 
 	params, err := app.MintKeeper.Params.Get(ctx)
 	require.NoError(t, err)
-	expected := appparams.AetherisMintParams()
+	expected := appparams.AetraMintParams()
 	require.Equal(t, BondDenom, params.MintDenom)
 	require.True(t, params.MaxSupply.IsZero(), "zero max supply means uncapped PoS issuance in Cosmos SDK mint params")
 	require.NoError(t, params.Validate())

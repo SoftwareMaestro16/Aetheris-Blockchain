@@ -124,7 +124,7 @@ type zoneShardSummary struct {
 func NewExecutionOSCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "execution-os",
-		Short: "Aetheris modular execution OS operator tools",
+		Short: "Aetra modular execution OS operator tools",
 	}
 	cmd.AddCommand(
 		newExecutionOSProfilesCmd(),

@@ -126,7 +126,7 @@ func TestInitChainRejectsZeroGenesisAccount(t *testing.T) {
 	authGenesis.Accounts = append(authGenesis.Accounts, zeroAny)
 	genesis[authtypes.ModuleName] = app.AppCodec().MustMarshalJSON(&authGenesis)
 
-	err = app.validateAetherisAuthGenesis(genesis)
+	err = app.validateAetraAuthGenesis(genesis)
 	require.ErrorContains(t, err, aetherisaddress.ZeroRawAddress)
 
 	stateBytes, err := json.MarshalIndent(genesis, "", " ")
@@ -341,7 +341,7 @@ func cloneGenesisState(genesis GenesisState) GenesisState {
 
 func requireGenesisValidationError(t *testing.T, app *L1App, genesis GenesisState, errMatch string) {
 	t.Helper()
-	appPolicyErr := app.validateAetherisGenesis(genesis)
+	appPolicyErr := app.validateAetraGenesis(genesis)
 	moduleErr := app.BasicModuleManager.ValidateGenesis(app.AppCodec(), app.TxConfig(), genesis)
 	require.True(t, appPolicyErr != nil || moduleErr != nil, "expected app policy or module genesis validation error")
 	matched := appPolicyErr != nil && strings.Contains(appPolicyErr.Error(), errMatch)

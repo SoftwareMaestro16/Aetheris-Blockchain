@@ -117,13 +117,13 @@ foreach ($term in @(
     'MinimumGasPrices = "0naet"',
     'node$i\aetherisd'
   )) {
-  Assert-Contains -Text $portsText -Pattern ([regex]::Escape($term)) -Message "localnet ports helper missing Aetheris term: $term"
+  Assert-Contains -Text $portsText -Pattern ([regex]::Escape($term)) -Message "localnet ports helper missing Aetra term: $term"
 }
 
 Assert-Contains -Text $pathsText -Pattern ([regex]::Escape('node$Index\aetherisd')) -Message "localnet paths helper must use aetherisd homes"
 
 foreach ($workflowText in @($adversarialText, $prototypeText)) {
-  Assert-Contains -Text $workflowText -Pattern "aetherisd|Aetheris|AETHERIS_BINARY" -Message "workflow missing Aetheris runtime naming"
+  Assert-Contains -Text $workflowText -Pattern "aetherisd|Aetra|AETHERIS_BINARY" -Message "workflow missing Aetra runtime naming"
 }
 
 $oldNamingPattern = "Orbitalis|orbitalisd|ORBITALIS|norb|ORB\b|orbitalis-local-1|\.orbitalis"
