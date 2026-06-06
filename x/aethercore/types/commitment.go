@@ -16,6 +16,7 @@ type ZoneCommitment struct {
 	OutboxRoot           string
 	ReceiptsRoot         string
 	EventsRoot           string
+	ShardRootsRoot       string
 	ParamsHash           string
 	ExecutionSummaryHash string
 	CommitmentHash       string
@@ -53,6 +54,7 @@ func NewZoneCommitment(
 	outboxRoot string,
 	receiptsRoot string,
 	eventsRoot string,
+	shardRootsRoot string,
 	paramsHash string,
 	executionSummaryHash string,
 ) (ZoneCommitment, error) {
@@ -64,6 +66,7 @@ func NewZoneCommitment(
 		OutboxRoot:           outboxRoot,
 		ReceiptsRoot:         receiptsRoot,
 		EventsRoot:           eventsRoot,
+		ShardRootsRoot:       shardRootsRoot,
 		ParamsHash:           paramsHash,
 		ExecutionSummaryHash: executionSummaryHash,
 	}
@@ -94,6 +97,9 @@ func (c ZoneCommitment) ValidateFormat() error {
 		return err
 	}
 	if err := ValidateHash("aethercore zone events root", c.EventsRoot); err != nil {
+		return err
+	}
+	if err := ValidateHash("aethercore zone shard roots root", c.ShardRootsRoot); err != nil {
 		return err
 	}
 	if err := ValidateHash("aethercore zone params hash", c.ParamsHash); err != nil {
@@ -131,6 +137,7 @@ func ComputeZoneCommitmentHash(c ZoneCommitment) string {
 	writePart(h, c.OutboxRoot)
 	writePart(h, c.ReceiptsRoot)
 	writePart(h, c.EventsRoot)
+	writePart(h, c.ShardRootsRoot)
 	writePart(h, c.ParamsHash)
 	writePart(h, c.ExecutionSummaryHash)
 	return hex.EncodeToString(h.Sum(nil))

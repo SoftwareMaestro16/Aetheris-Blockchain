@@ -70,6 +70,10 @@ func CollectZoneExecutionSummary(height uint64, zoneID ZoneID, envelopes []Kerne
 }
 
 func NewZoneCommitmentFromSummary(summary ZoneExecutionSummary, stateRoot string, inboxRoot string, paramsHash string) (ZoneCommitment, error) {
+	return NewZoneCommitmentFromSummaryWithShardRoots(summary, stateRoot, inboxRoot, EmptyRootHash, paramsHash)
+}
+
+func NewZoneCommitmentFromSummaryWithShardRoots(summary ZoneExecutionSummary, stateRoot string, inboxRoot string, shardRootsRoot string, paramsHash string) (ZoneCommitment, error) {
 	if err := summary.Validate(); err != nil {
 		return ZoneCommitment{}, err
 	}
@@ -81,6 +85,7 @@ func NewZoneCommitmentFromSummary(summary ZoneExecutionSummary, stateRoot string
 		summary.MessageRoot,
 		summary.ReceiptsRoot,
 		summary.EventsRoot,
+		shardRootsRoot,
 		paramsHash,
 		summary.SummaryHash,
 	)

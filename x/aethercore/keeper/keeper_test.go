@@ -233,6 +233,7 @@ func keeperCommitment(t *testing.T, height uint64, zoneID types.ZoneID) types.Zo
 		keeperHash(fmt.Sprintf("%d/%s/outbox", height, zoneID)),
 		keeperHash(fmt.Sprintf("%d/%s/receipts", height, zoneID)),
 		keeperHash(fmt.Sprintf("%d/%s/events", height, zoneID)),
+		keeperHash(fmt.Sprintf("%d/%s/shards", height, zoneID)),
 		keeperHash(fmt.Sprintf("%d/%s/params", height, zoneID)),
 		keeperHash(fmt.Sprintf("%d/%s/execution", height, zoneID)),
 	)

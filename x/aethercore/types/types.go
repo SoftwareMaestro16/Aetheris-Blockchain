@@ -9,28 +9,34 @@ import (
 )
 
 const (
-	DefaultAuthority     = "4:0000000000000000000000000000000000000000000000000000000000000001"
-	DefaultQueryLimit    = uint64(50)
-	MaxQueryLimit        = uint64(200)
-	DefaultRootHistory   = uint64(4096)
-	MaxRootHistory       = uint64(1_000_000)
-	DefaultMaxZones      = uint32(32)
-	MaxZones             = uint32(1024)
-	DefaultMaxShards     = uint32(64)
-	MaxShardsPerZone     = uint32(65_536)
-	DefaultProposalItems = uint32(10_000)
-	MaxProposalItems     = uint32(250_000)
-	NativeFeePolicyID    = "naet"
-	DefaultMempoolPolicy = "core-default"
-	DefaultMessagePolicy = "async-message-v1"
-	DefaultGasPolicy     = "deterministic-gas-v1"
-	DefaultProofRootType = "global"
-	ZoneCommitmentsRoot  = "zone_commitments"
-	ShardLayoutRootType  = "shard_layouts"
-	RoutingTableRootType = "routing_table"
-	MessageProofRootType = "messages"
-	ReceiptProofRootType = "receipts"
-	StateProofRootType   = "state"
+	DefaultAuthority         = "4:0000000000000000000000000000000000000000000000000000000000000001"
+	DefaultQueryLimit        = uint64(50)
+	MaxQueryLimit            = uint64(200)
+	DefaultRootHistory       = uint64(4096)
+	MaxRootHistory           = uint64(1_000_000)
+	DefaultMaxZones          = uint32(32)
+	MaxZones                 = uint32(1024)
+	DefaultMaxShards         = uint32(64)
+	MaxShardsPerZone         = uint32(65_536)
+	DefaultProposalItems     = uint32(10_000)
+	MaxProposalItems         = uint32(250_000)
+	NativeFeePolicyID        = "naet"
+	DefaultMempoolPolicy     = "core-default"
+	DefaultMessagePolicy     = "async-message-v1"
+	DefaultGasPolicy         = "deterministic-gas-v1"
+	DefaultProofRootType     = "global"
+	NextArchitectureRootType = "aetheris_next"
+	AccountProofRootType     = "account"
+	IdentityProofRootType    = "identity"
+	ResolverProofRootType    = "resolver"
+	ZoneCommitmentsRoot      = "zone_commitments"
+	ShardLayoutRootType      = "shard_layouts"
+	RoutingTableRootType     = "routing_table"
+	MessageProofRootType     = "messages"
+	ReceiptProofRootType     = "receipts"
+	PaymentsProofRootType    = "payments"
+	VMProofRootType          = "vm"
+	StateProofRootType       = "state"
 )
 
 type ZoneID string

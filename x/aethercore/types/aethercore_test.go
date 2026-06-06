@@ -177,12 +177,13 @@ func TestZoneCommitmentCoversKernelSpecificationFields(t *testing.T) {
 	require.NotEmpty(t, commitment.OutboxRoot)
 	require.NotEmpty(t, commitment.ReceiptsRoot)
 	require.NotEmpty(t, commitment.EventsRoot)
+	require.NotEmpty(t, commitment.ShardRootsRoot)
 	require.NotEmpty(t, commitment.ParamsHash)
 	require.NotEmpty(t, commitment.ExecutionSummaryHash)
 	require.NoError(t, commitment.ValidateHash())
 
 	mutated := commitment
-	mutated.EventsRoot = testHash("mutated/events")
+	mutated.ShardRootsRoot = testHash("mutated/shards")
 	require.ErrorContains(t, mutated.ValidateHash(), "commitment hash mismatch")
 }
 
@@ -306,6 +307,58 @@ func TestRoutingTableRejectsLayoutMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "active shard count mismatch")
 }
 
+func TestAetherisNextCommitmentDeterministicAcrossNodes(t *testing.T) {
+	nodeA := nextReadyState(t, []ZoneID{ZoneIDFinancial, ZoneIDIdentity}, []ZoneID{ZoneIDFinancial, ZoneIDIdentity})
+	nodeB := nextReadyState(t, []ZoneID{ZoneIDIdentity, ZoneIDFinancial}, []ZoneID{ZoneIDIdentity, ZoneIDFinancial})
+
+	commitmentA, err := BuildAetherisNextCommitment(10, nodeA, testContributions(10), testHash("10/resolver"))
+	require.NoError(t, err)
+	require.NoError(t, commitmentA.ValidateHash())
+	commitmentB, err := BuildAetherisNextCommitment(10, nodeB, testContributions(10), testHash("10/resolver"))
+	require.NoError(t, err)
+
+	require.Equal(t, commitmentA, commitmentB)
+	require.NoError(t, ValidateHash("next architecture hash", commitmentA.ArchitectureHash))
+}
+
+func TestAetherisNextCommitmentRejectsMissingShardLayout(t *testing.T) {
+	state := EmptyState(TestnetParams())
+	var err error
+	state, err = RegisterZoneDescriptor(state, testDescriptor(ZoneIDIdentity, ZoneTypeIdentity, "identity"))
+	require.NoError(t, err)
+	state, err = RegisterServiceDescriptor(state, testService("identity-resolver", ZoneIDIdentity))
+	require.NoError(t, err)
+	state, err = AppendZoneCommitment(state, testCommitment(t, 10, ZoneIDIdentity))
+	require.NoError(t, err)
+
+	_, err = BuildAetherisNextCommitment(10, state, testContributions(10), testHash("10/resolver"))
+	require.ErrorContains(t, err, "missing shard layout")
+}
+
+func TestAetherisNextCommitmentRejectsStaleRoutingTable(t *testing.T) {
+	state := nextReadyState(t, []ZoneID{ZoneIDIdentity, ZoneIDFinancial}, []ZoneID{ZoneIDIdentity, ZoneIDFinancial})
+	financialV2 := testShardLayout(t, ZoneIDFinancial, 2, []ShardID{"0", "1", "2"})
+	var err error
+	state, err = RegisterShardLayout(state, financialV2)
+	require.NoError(t, err)
+
+	_, err = BuildAetherisNextCommitment(10, state, testContributions(10), testHash("10/resolver"))
+	require.ErrorContains(t, err, "layout epoch mismatch")
+}
+
+func TestUniversalProofRegistryRootCanonicalizesInput(t *testing.T) {
+	roots := []ProofRoot{
+		{Height: 8, RootType: MessageProofRootType, RootHash: testHash("messages"), Source: "aethercore.next.messages"},
+		{Height: 8, RootType: AccountProofRootType, RootHash: testHash("accounts"), Source: "aethercore.next.accounts"},
+		{Height: 8, RootType: ResolverProofRootType, RootHash: testHash("resolver"), Source: "aethercore.next.resolver"},
+	}
+	rootA, err := ComputeUniversalProofRegistryRoot(8, roots)
+	require.NoError(t, err)
+	rootB, err := ComputeUniversalProofRegistryRoot(8, []ProofRoot{roots[2], roots[0], roots[1]})
+	require.NoError(t, err)
+	require.Equal(t, rootA, rootB)
+}
+
 func TestProposalScheduleRequiresCommittedActiveShard(t *testing.T) {
 	state := EmptyState()
 	var err error
@@ -388,6 +441,46 @@ func populatedState(t *testing.T, order []ZoneID) AetherCoreState {
 		state, err = RegisterZoneDescriptor(state, testDescriptor(zoneID, zoneType, name))
 		require.NoError(t, err)
 		state, err = AppendZoneCommitment(state, testCommitment(t, 7, zoneID))
+		require.NoError(t, err)
+	}
+	return state
+}
+
+func nextReadyState(t *testing.T, zoneOrder []ZoneID, layoutOrder []ZoneID) AetherCoreState {
+	t.Helper()
+	state := EmptyState(TestnetParams())
+	var err error
+	for _, zoneID := range zoneOrder {
+		switch zoneID {
+		case ZoneIDFinancial:
+			state, err = RegisterZoneDescriptor(state, testDescriptor(ZoneIDFinancial, ZoneTypeFinancial, "financial"))
+		case ZoneIDIdentity:
+			state, err = RegisterZoneDescriptor(state, testDescriptor(ZoneIDIdentity, ZoneTypeIdentity, "identity"))
+		default:
+			t.Fatalf("unsupported next zone %s", zoneID)
+		}
+		require.NoError(t, err)
+	}
+	state, err = RegisterServiceDescriptor(state, testService("identity-resolver", ZoneIDIdentity))
+	require.NoError(t, err)
+
+	layoutsByZone := map[ZoneID]ShardLayout{
+		ZoneIDFinancial: testShardLayout(t, ZoneIDFinancial, 1, []ShardID{"1", "0"}),
+		ZoneIDIdentity:  testShardLayout(t, ZoneIDIdentity, 1, []ShardID{"0"}),
+	}
+	layouts := make([]ShardLayout, 0, len(layoutOrder))
+	for _, zoneID := range layoutOrder {
+		layout := layoutsByZone[zoneID]
+		state, err = RegisterShardLayout(state, layout)
+		require.NoError(t, err)
+		layouts = append(layouts, layout)
+	}
+	table, err := BuildRoutingTableCommitment(1, 10, layouts)
+	require.NoError(t, err)
+	state, err = CommitRoutingTable(state, table)
+	require.NoError(t, err)
+	for _, zoneID := range zoneOrder {
+		state, err = AppendZoneCommitment(state, testCommitment(t, 10, zoneID))
 		require.NoError(t, err)
 	}
 	return state
@@ -667,6 +760,7 @@ func testCommitment(t *testing.T, height uint64, zoneID ZoneID) ZoneCommitment {
 		testHash(fmt.Sprintf("%d/%s/outbox", height, zoneID)),
 		testHash(fmt.Sprintf("%d/%s/receipts", height, zoneID)),
 		testHash(fmt.Sprintf("%d/%s/events", height, zoneID)),
+		testHash(fmt.Sprintf("%d/%s/shards", height, zoneID)),
 		testHash(fmt.Sprintf("%d/%s/params", height, zoneID)),
 		testHash(fmt.Sprintf("%d/%s/execution", height, zoneID)),
 	)
