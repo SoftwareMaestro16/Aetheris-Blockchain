@@ -1,0 +1,55 @@
+syntax = "proto3";
+package l1.identityroot.v1;
+
+import "l1/identityroot/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/identity-root/types";
+
+message QueryNameRecordRequest {
+  string name = 1;
+}
+
+message QueryNameRecordResponse {
+  NameRecord record = 1;
+}
+
+message QueryResolveNameRequest {
+  string name = 1;
+  uint64 height = 2;
+}
+
+message QueryResolveNameResponse {
+  NameRecord record = 1;
+  ResolverRecord resolver = 2;
+  bool active = 3;
+}
+
+message QueryReverseRecordRequest {
+  string address = 1;
+}
+
+message QueryReverseRecordResponse {
+  ReverseRecord record = 1;
+}
+
+message QuerySubdomainsRequest {
+  string parent_name = 1;
+}
+
+message QuerySubdomainsResponse {
+  repeated NameRecord records = 1;
+}
+
+message QueryIdentityRootParamsRequest {}
+
+message QueryIdentityRootParamsResponse {
+  IdentityRootParams params = 1;
+}
+
+service Query {
+  rpc NameRecord(QueryNameRecordRequest) returns (QueryNameRecordResponse);
+  rpc ResolveName(QueryResolveNameRequest) returns (QueryResolveNameResponse);
+  rpc ReverseRecord(QueryReverseRecordRequest) returns (QueryReverseRecordResponse);
+  rpc Subdomains(QuerySubdomainsRequest) returns (QuerySubdomainsResponse);
+  rpc IdentityRootParams(QueryIdentityRootParamsRequest) returns (QueryIdentityRootParamsResponse);
+}

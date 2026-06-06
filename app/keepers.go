@@ -60,6 +60,8 @@ import (
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	identityrootkeeper "github.com/sovereign-l1/l1/x/identity-root/keeper"
+	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
 	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
@@ -269,5 +271,6 @@ func (app *L1App) initKeepers(
 	app.AVMSchedulerKeeper = avmschedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[avmschedulertypes.StoreKey]))
 	app.ActorRegistryKeeper = actorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[actorregistrytypes.StoreKey]))
 	app.StorageRentKeeper = storagerentkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[storagerenttypes.StoreKey]))
+	app.IdentityRootKeeper = identityrootkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[identityroottypes.StoreKey]))
 	return txConfig
 }

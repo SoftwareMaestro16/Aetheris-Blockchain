@@ -66,6 +66,8 @@ import (
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	identityrootkeeper "github.com/sovereign-l1/l1/x/identity-root/keeper"
+	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
 	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
@@ -168,6 +170,7 @@ type L1App struct {
 	AVMSchedulerKeeper   avmschedulerkeeper.Keeper
 	ActorRegistryKeeper  actorregistrykeeper.Keeper
 	StorageRentKeeper    storagerentkeeper.Keeper
+	IdentityRootKeeper   identityrootkeeper.Keeper
 	SystemRegistryKeeper systemregistrykeeper.Keeper
 
 	// the module manager
@@ -285,6 +288,7 @@ func NewL1App(
 		avmschedulertypes.StoreKey,
 		actorregistrytypes.StoreKey,
 		storagerenttypes.StoreKey,
+		identityroottypes.StoreKey,
 	)
 
 	// register streaming services

@@ -1,0 +1,83 @@
+syntax = "proto3";
+package l1.identityroot.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/identity-root/types";
+
+message AuctionParams {
+  bool enabled = 1;
+  uint64 commit_blocks = 2;
+  uint64 reveal_blocks = 3;
+  uint64 minimum_bid_amount = 4;
+}
+
+message IdentityRootParams {
+  string root_namespace = 1;
+  uint64 registration_period = 2;
+  uint64 renewal_period = 3;
+  uint32 max_name_bytes = 4;
+  uint32 max_records = 5;
+  uint32 max_reserved_names = 6;
+  bool nft_binding_enabled = 7;
+  bool allow_public_subdomains = 8;
+  AuctionParams auction = 9;
+}
+
+message IdentityNFTBindingReference {
+  string name = 1;
+  bool enabled = 2;
+  string class_id = 3;
+  string nft_id = 4;
+  string owner = 5;
+}
+
+message NameRecord {
+  string name = 1;
+  string parent_name = 2;
+  string owner = 3;
+  string resolver_root = 4;
+  uint64 expiry_height = 5;
+  uint64 renewal_height = 6;
+  string subdomain_policy = 7;
+  IdentityNFTBindingReference nft_binding = 8;
+  uint64 created_height = 9;
+  uint64 updated_height = 10;
+}
+
+message ResolverRecord {
+  string name = 1;
+  string resolver_root = 2;
+  uint64 updated_height = 3;
+}
+
+message ReverseRecord {
+  string address = 1;
+  string name = 2;
+  string owner = 3;
+  uint64 updated_height = 4;
+}
+
+message RootAuthority {
+  string authority = 1;
+  string role = 2;
+}
+
+message ReservedName {
+  string name = 1;
+  string authority = 2;
+  string reason = 3;
+}
+
+message IdentityRootState {
+  repeated NameRecord records = 1;
+  repeated ResolverRecord resolvers = 2;
+  repeated ReverseRecord reverse_records = 3;
+  repeated IdentityNFTBindingReference nft_bindings = 4;
+  repeated RootAuthority root_authorities = 5;
+  repeated ReservedName reserved_names = 6;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  IdentityRootParams identity_params = 2;
+  IdentityRootState state = 3;
+}

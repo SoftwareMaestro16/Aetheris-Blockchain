@@ -28,6 +28,7 @@ import (
 	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
+	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
@@ -60,6 +61,7 @@ var aetherCorePrototypeModules = []string{
 	avmschedulertypes.ModuleName,
 	actorregistrytypes.ModuleName,
 	storagerenttypes.ModuleName,
+	identityroottypes.ModuleName,
 }
 
 var aetherCoreSystemModules = []string{
@@ -89,6 +91,7 @@ func AetherCorePrototypeStoreKeys() []string {
 		avmschedulertypes.StoreKey,
 		actorregistrytypes.StoreKey,
 		storagerenttypes.StoreKey,
+		identityroottypes.StoreKey,
 	}
 }
 
@@ -133,6 +136,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
 		storagerenttypes.ModuleName,
+		identityroottypes.ModuleName,
 	}
 }
 
@@ -158,6 +162,7 @@ func aetherCoreEndBlockerOrder() []string {
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
 		storagerenttypes.ModuleName,
+		identityroottypes.ModuleName,
 	}
 }
 
@@ -193,6 +198,7 @@ func aetherCoreInitGenesisOrder() []string {
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
 		storagerenttypes.ModuleName,
+		identityroottypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,
@@ -231,6 +237,7 @@ func aetherCoreExportGenesisOrder() []string {
 		avmschedulertypes.ModuleName,
 		actorregistrytypes.ModuleName,
 		storagerenttypes.ModuleName,
+		identityroottypes.ModuleName,
 		feestypes.ModuleName,
 		tokenfactorytypes.ModuleName,
 		dextypes.ModuleName,

@@ -39,6 +39,7 @@ import (
 	constitutionmodule "github.com/sovereign-l1/l1/x/constitution"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
+	identityrootmodule "github.com/sovereign-l1/l1/x/identity-root"
 	loadmodule "github.com/sovereign-l1/l1/x/load"
 	meshmodule "github.com/sovereign-l1/l1/x/mesh"
 	networkingmodule "github.com/sovereign-l1/l1/x/networking"
@@ -88,6 +89,7 @@ func (app *L1App) initModules(
 		avmschedulermodule.NewAppModule(&app.AVMSchedulerKeeper),
 		actorregistrymodule.NewAppModule(&app.ActorRegistryKeeper),
 		storagerentmodule.NewAppModule(&app.StorageRentKeeper),
+		identityrootmodule.NewAppModule(&app.IdentityRootKeeper),
 		tokenfactorymodule.NewAppModule(appCodec, app.TokenFactoryKeeper),
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),

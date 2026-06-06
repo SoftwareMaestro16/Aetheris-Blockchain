@@ -1,0 +1,106 @@
+syntax = "proto3";
+package l1.identityroot.v1;
+
+import "l1/identityroot/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/identity-root/types";
+
+message MsgRegisterName {
+  string owner = 1;
+  string name = 2;
+  uint64 height = 3;
+  string resolver_root = 4;
+  string subdomain_policy = 5;
+  IdentityNFTBindingReference nft_binding = 6;
+}
+
+message MsgRegisterNameResponse {
+  NameRecord record = 1;
+}
+
+message MsgRenewName {
+  string owner = 1;
+  string name = 2;
+  uint64 height = 3;
+}
+
+message MsgRenewNameResponse {
+  NameRecord record = 1;
+}
+
+message MsgTransferName {
+  string owner = 1;
+  string name = 2;
+  string new_owner = 3;
+  uint64 height = 4;
+  IdentityNFTBindingReference new_nft_binding = 5;
+}
+
+message MsgTransferNameResponse {
+  NameRecord record = 1;
+}
+
+message MsgSetResolver {
+  string owner = 1;
+  string name = 2;
+  string resolver_root = 3;
+  uint64 height = 4;
+}
+
+message MsgSetResolverResponse {
+  ResolverRecord resolver = 1;
+}
+
+message MsgSetReverseRecord {
+  string owner = 1;
+  string address = 2;
+  string name = 3;
+  uint64 height = 4;
+}
+
+message MsgSetReverseRecordResponse {
+  ReverseRecord record = 1;
+}
+
+message MsgCreateSubdomain {
+  string owner = 1;
+  string parent_name = 2;
+  string label = 3;
+  string subdomain_owner = 4;
+  uint64 height = 5;
+  string resolver_root = 6;
+  string subdomain_policy = 7;
+  IdentityNFTBindingReference nft_binding = 8;
+}
+
+message MsgCreateSubdomainResponse {
+  NameRecord record = 1;
+}
+
+message MsgReserveName {
+  string authority = 1;
+  string name = 2;
+  string reason = 3;
+}
+
+message MsgReserveNameResponse {
+  ReservedName name = 1;
+}
+
+message MsgReleaseReservedName {
+  string authority = 1;
+  string name = 2;
+}
+
+message MsgReleaseReservedNameResponse {}
+
+service Msg {
+  rpc RegisterName(MsgRegisterName) returns (MsgRegisterNameResponse);
+  rpc RenewName(MsgRenewName) returns (MsgRenewNameResponse);
+  rpc TransferName(MsgTransferName) returns (MsgTransferNameResponse);
+  rpc SetResolver(MsgSetResolver) returns (MsgSetResolverResponse);
+  rpc SetReverseRecord(MsgSetReverseRecord) returns (MsgSetReverseRecordResponse);
+  rpc CreateSubdomain(MsgCreateSubdomain) returns (MsgCreateSubdomainResponse);
+  rpc ReserveName(MsgReserveName) returns (MsgReserveNameResponse);
+  rpc ReleaseReservedName(MsgReleaseReservedName) returns (MsgReleaseReservedNameResponse);
+}
