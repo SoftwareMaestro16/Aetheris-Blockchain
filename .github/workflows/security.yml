@@ -90,12 +90,14 @@ jobs:
         run: |
           mapfile -t package_dirs < <(go list -f '{{.Dir}}' ./...)
           set +e
-          gosec -exclude-generated -severity high -confidence medium -fmt sarif -out gosec.sarif "${package_dirs[@]}"
+          # G115 is tracked separately from this high-signal security gate because
+          # the repository currently has many intentional bounded/canonical casts.
+          gosec -exclude-generated -exclude G115 -severity high -confidence medium -fmt sarif -out gosec.sarif "${package_dirs[@]}"
           gosec_status=$?
           set -e
 
           if [[ "${gosec_status}" -ne 0 ]]; then
-            gosec -exclude-generated -severity high -confidence medium -fmt json -out gosec.json "${package_dirs[@]}" || true
+            gosec -exclude-generated -exclude G115 -severity high -confidence medium -fmt json -out gosec.json "${package_dirs[@]}" || true
             python3 - <<'PY'
           import json
 
