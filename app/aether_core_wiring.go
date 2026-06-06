@@ -371,7 +371,7 @@ func (app *L1App) ValidateAetherCoreWiringGate() error {
 		if _, found := app.keys[storeKey]; !found {
 			return fmt.Errorf("prototype module %s store key %s is not mounted", moduleName, storeKey)
 		}
-		if _, found := maccPerms[moduleName]; found {
+		if _, found := maccPerms[moduleName]; found && !IsReservedSystemModuleAccountName(moduleName) {
 			return fmt.Errorf("prototype module %s must not have module account permissions", moduleName)
 		}
 	}
@@ -388,7 +388,7 @@ func (app *L1App) ValidateAetherCoreWiringGate() error {
 		if _, found := app.keys[storeKey]; !found {
 			return fmt.Errorf("system module %s store key %s is not mounted", moduleName, storeKey)
 		}
-		if _, found := maccPerms[moduleName]; found {
+		if _, found := maccPerms[moduleName]; found && !IsReservedSystemModuleAccountName(moduleName) {
 			return fmt.Errorf("system module %s must not have module account permissions", moduleName)
 		}
 	}

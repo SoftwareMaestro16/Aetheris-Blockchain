@@ -465,6 +465,18 @@ func BlockedAddresses() map[string]bool {
 	for acc := range GetMaccPerms() {
 		modAccAddrs[authtypes.NewModuleAddress(acc).String()] = true
 	}
+	for _, address := range aetherisaddress.AllSystemAddresses() {
+		bz, err := aetherisaddress.Parse(address.Raw)
+		if err != nil {
+			panic(fmt.Errorf("invalid reserved system address %s: %w", address.Name, err))
+		}
+		key := sdk.AccAddress(bz).String()
+		if address.CanReceiveUserFunds {
+			delete(modAccAddrs, key)
+			continue
+		}
+		modAccAddrs[key] = true
+	}
 
 	delete(modAccAddrs, authtypes.NewModuleAddress(govtypes.ModuleName).String())
 

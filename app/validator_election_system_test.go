@@ -24,7 +24,8 @@ func TestValidatorElectionSystemModuleWiringAndGenesis(t *testing.T) {
 	require.Contains(t, app.ModuleManager.Modules, validatorelectiontypes.ModuleName)
 	require.Contains(t, app.keys, validatorelectiontypes.StoreKey)
 	require.Contains(t, genesis, validatorelectiontypes.ModuleName)
-	require.NotContains(t, GetMaccPerms(), validatorelectiontypes.ModuleName)
+	require.Contains(t, GetMaccPerms(), validatorelectiontypes.ModuleName)
+	require.Nil(t, GetMaccPerms()[validatorelectiontypes.ModuleName])
 
 	var electionGenesis validatorelectionkeeper.GenesisState
 	require.NoError(t, json.Unmarshal(genesis[validatorelectiontypes.ModuleName], &electionGenesis))

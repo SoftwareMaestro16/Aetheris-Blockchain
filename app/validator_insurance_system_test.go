@@ -23,7 +23,8 @@ func TestValidatorInsuranceSystemModuleWiringAndGenesis(t *testing.T) {
 	require.Contains(t, app.ModuleManager.Modules, validatorinsurancetypes.ModuleName)
 	require.Contains(t, app.keys, validatorinsurancetypes.StoreKey)
 	require.Contains(t, genesis, validatorinsurancetypes.ModuleName)
-	require.NotContains(t, GetMaccPerms(), validatorinsurancetypes.ModuleName)
+	require.Contains(t, GetMaccPerms(), validatorinsurancetypes.ModuleName)
+	require.Nil(t, GetMaccPerms()[validatorinsurancetypes.ModuleName])
 
 	var insuranceGenesis validatorinsurancekeeper.GenesisState
 	require.NoError(t, json.Unmarshal(genesis[validatorinsurancetypes.ModuleName], &insuranceGenesis))

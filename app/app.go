@@ -167,6 +167,12 @@ var (
 		feecollectortypes.BurnModuleName:               nil,
 		feecollectortypes.ReporterRewardsModuleName:    nil,
 		mintauthoritytypes.ModuleName:                  {authtypes.Minter},
+		storagerenttypes.ModuleName:                    nil,
+		delegatorprotectiontypes.ModuleName:            nil,
+		validatorinsurancetypes.ModuleName:             nil,
+		configtypes.ModuleName:                         nil,
+		systemregistrytypes.ModuleName:                 nil,
+		validatorelectiontypes.ModuleName:              nil,
 		feestypes.ModuleName:                           nil,
 	}
 )
@@ -402,6 +408,9 @@ func NewL1App(
 	txConfig = app.initKeepers(appCodec, legacyAmino, logger, appOpts, keys)
 	app.initModules(appCodec, legacyAmino, interfaceRegistry, txConfig)
 	if err := app.ValidateAetherCoreWiringGate(); err != nil {
+		panic(err)
+	}
+	if err := ValidateReservedSystemModuleAccountWiring(BlockedAddresses()); err != nil {
 		panic(err)
 	}
 

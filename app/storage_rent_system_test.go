@@ -17,7 +17,8 @@ func TestStorageRentPrototypeModuleWiringAndGenesis(t *testing.T) {
 	require.Contains(t, app.ModuleManager.Modules, storagerenttypes.ModuleName)
 	require.Contains(t, app.keys, storagerenttypes.StoreKey)
 	require.Contains(t, genesis, storagerenttypes.ModuleName)
-	require.NotContains(t, GetMaccPerms(), storagerenttypes.ModuleName)
+	require.Contains(t, GetMaccPerms(), storagerenttypes.ModuleName)
+	require.Nil(t, GetMaccPerms()[storagerenttypes.ModuleName])
 
 	var gs storagerentkeeper.GenesisState
 	require.NoError(t, json.Unmarshal(genesis[storagerenttypes.ModuleName], &gs))

@@ -46,7 +46,12 @@ func TestAetherCoreWiringGateRegistersPrototypeModulesDisabled(t *testing.T) {
 		require.Contains(t, app.ModuleManager.Modules, moduleName)
 		require.Contains(t, app.keys, prototypeStoreKeys[i])
 		require.Contains(t, genesis, moduleName)
-		require.NotContains(t, GetMaccPerms(), moduleName)
+		if IsReservedSystemModuleAccountName(moduleName) {
+			require.Contains(t, GetMaccPerms(), moduleName)
+			require.Nil(t, GetMaccPerms()[moduleName])
+		} else {
+			require.NotContains(t, GetMaccPerms(), moduleName)
+		}
 		_, hasBegin := app.ModuleManager.Modules[moduleName].(appmodule.HasBeginBlocker)
 		_, hasEnd := app.ModuleManager.Modules[moduleName].(appmodule.HasEndBlocker)
 		require.False(t, hasBegin, moduleName)

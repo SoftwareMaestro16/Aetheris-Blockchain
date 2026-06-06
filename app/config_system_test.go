@@ -23,7 +23,8 @@ func TestConfigSystemModuleWiringAndGenesis(t *testing.T) {
 	require.Contains(t, app.ModuleManager.Modules, configtypes.ModuleName)
 	require.Contains(t, app.keys, configtypes.StoreKey)
 	require.Contains(t, genesis, configtypes.ModuleName)
-	require.NotContains(t, GetMaccPerms(), configtypes.ModuleName)
+	require.Contains(t, GetMaccPerms(), configtypes.ModuleName)
+	require.Nil(t, GetMaccPerms()[configtypes.ModuleName])
 
 	var configGenesis configkeeper.GenesisState
 	require.NoError(t, json.Unmarshal(genesis[configtypes.ModuleName], &configGenesis))

@@ -23,7 +23,8 @@ func TestSystemRegistrySystemModuleWiringAndGenesis(t *testing.T) {
 	require.Contains(t, app.ModuleManager.Modules, systemregistrytypes.ModuleName)
 	require.Contains(t, app.keys, systemregistrytypes.StoreKey)
 	require.Contains(t, genesis, systemregistrytypes.ModuleName)
-	require.NotContains(t, GetMaccPerms(), systemregistrytypes.ModuleName)
+	require.Contains(t, GetMaccPerms(), systemregistrytypes.ModuleName)
+	require.Nil(t, GetMaccPerms()[systemregistrytypes.ModuleName])
 
 	var registryGenesis systemregistrykeeper.GenesisState
 	require.NoError(t, json.Unmarshal(genesis[systemregistrytypes.ModuleName], &registryGenesis))

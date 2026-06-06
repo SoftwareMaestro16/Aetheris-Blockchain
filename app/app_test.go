@@ -29,6 +29,8 @@ import (
 	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/observability"
 	burntypes "github.com/sovereign-l1/l1/x/burn/types"
+	configtypes "github.com/sovereign-l1/l1/x/config/types"
+	delegatorprotectiontypes "github.com/sovereign-l1/l1/x/delegator-protection/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
@@ -39,7 +41,11 @@ import (
 	mintauthoritytypes "github.com/sovereign-l1/l1/x/mint-authority/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
+	storagerenttypes "github.com/sovereign-l1/l1/x/storage-rent/types"
+	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	validatorelectiontypes "github.com/sovereign-l1/l1/x/validator-election/types"
+	validatorinsurancetypes "github.com/sovereign-l1/l1/x/validator-insurance/types"
 	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
 )
@@ -571,6 +577,12 @@ func TestPrototypeModuleAccountPermissionsAreNarrow(t *testing.T) {
 		feecollectortypes.BurnModuleName:               nil,
 		feecollectortypes.ReporterRewardsModuleName:    nil,
 		mintauthoritytypes.ModuleName:                  {authtypes.Minter},
+		storagerenttypes.ModuleName:                    nil,
+		delegatorprotectiontypes.ModuleName:            nil,
+		validatorinsurancetypes.ModuleName:             nil,
+		configtypes.ModuleName:                         nil,
+		systemregistrytypes.ModuleName:                 nil,
+		validatorelectiontypes.ModuleName:              nil,
 		feestypes.ModuleName:                           nil,
 	}
 	require.Equal(t, expected, GetMaccPerms())
