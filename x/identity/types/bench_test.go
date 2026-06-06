@@ -93,6 +93,22 @@ func BenchmarkIdentityProofQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkIdentityBlockSTMBatchResolverUpdates(b *testing.B) {
+	msg := benchmarkBatchResolverUpdateMsg(b, MaxIdentityTxBatchResolverUpdatesV2)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		set, hashes, err := IdentityBlockSTMBatchResolverAccessSetV2(msg)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(hashes) != len(msg.Updates) || len(set.Writes) != len(msg.Updates) {
+			b.Fatal("batch resolver update access set is not disjoint")
+		}
+	}
+}
+
 const (
 	benchmarkIdentityRevealHeight  = uint64(11)
 	benchmarkIdentityResolveHeight = uint64(12)
@@ -150,6 +166,38 @@ func benchmarkIdentityNames(count int) []string {
 		names[i] = benchmarkIdentityName(i)
 	}
 	return names
+}
+
+func benchmarkBatchResolverUpdateMsg(b *testing.B, count int) MsgBatchUpdateResolversV2 {
+	b.Helper()
+	updates := make([]ResolverBatchUpdateV2, count)
+	for i := range updates {
+		name := benchmarkIdentityName(i)
+		nameHash, err := DomainRecordV2NameHash(name)
+		if err != nil {
+			b.Fatal(err)
+		}
+		updates[i] = ResolverBatchUpdateV2{
+			Name:                  name,
+			NameHash:              nameHash,
+			Patch:                 ResolverPatch{Primary: benchmarkIdentityAddress(i + 30_000)},
+			ExpectedRecordVersion: 1,
+			RecordTTL:             30,
+		}
+	}
+	return MsgBatchUpdateResolversV2{Auth: benchmarkIdentityTxAuth(IdentitySignerScopeBatchAdmin, 1), Updates: updates}
+}
+
+func benchmarkIdentityTxAuth(scope IdentitySignerScopeV2, nonce uint64) IdentityTxAuthV2 {
+	return IdentityTxAuthV2{
+		ChainID:                  "aetheris-local-1",
+		Signer:                   benchmarkIdentityAddress(int(nonce + 40_000)),
+		Scope:                    scope,
+		NameNormalizationVersion: NameNormalizationVersionV2,
+		Nonce:                    nonce,
+		Fee:                      1,
+		StorageCost:              1,
+	}
 }
 
 func benchmarkIdentityAddress(seed int) sdk.AccAddress {
