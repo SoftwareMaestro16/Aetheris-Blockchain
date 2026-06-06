@@ -48,6 +48,7 @@ import (
 	storagerenttypes "github.com/sovereign-l1/l1/x/storage-rent/types"
 	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	treasurytypes "github.com/sovereign-l1/l1/x/treasury/types"
 	validatorelectiontypes "github.com/sovereign-l1/l1/x/validator-election/types"
 	validatorregistrytypes "github.com/sovereign-l1/l1/x/validator-registry/types"
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
@@ -257,6 +258,7 @@ func aetherCoreInitGenesisOrder() []string {
 		crosschainregistrytypes.ModuleName,
 		shardingcoordinatortypes.ModuleName,
 		burntypes.ModuleName,
+		treasurytypes.ModuleName,
 		dynamiccommissiontypes.ModuleName,
 		feecollectortypes.ModuleName,
 		feestypes.ModuleName,
@@ -308,6 +310,7 @@ func aetherCoreExportGenesisOrder() []string {
 		crosschainregistrytypes.ModuleName,
 		shardingcoordinatortypes.ModuleName,
 		burntypes.ModuleName,
+		treasurytypes.ModuleName,
 		dynamiccommissiontypes.ModuleName,
 		feecollectortypes.ModuleName,
 		feestypes.ModuleName,

@@ -1,0 +1,82 @@
+syntax = "proto3";
+package l1.treasury.v1;
+
+import "cosmos/base/v1beta1/coin.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/treasury/types";
+
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+  TreasuryAllocations allocations = 2 [(gogoproto.nullable) = false];
+  repeated TreasurySpend spends = 3 [(gogoproto.nullable) = false];
+  repeated EpochSpend epoch_spends = 4 [(gogoproto.nullable) = false];
+  uint64 next_spend_id = 5;
+}
+
+message Params {
+  string base_denom = 1;
+  string treasury_module = 2;
+  uint32 reserve_bps = 3;
+  uint32 ecosystem_bps = 4;
+  uint32 validator_incentives_bps = 5;
+  uint32 burn_bps = 6;
+  cosmos.base.v1beta1.Coin per_epoch_spend_cap = 7 [(gogoproto.nullable) = false];
+  bool recipient_allowlist_enabled = 8;
+  repeated string recipient_allowlist = 9;
+  uint32 max_metadata_bytes = 10;
+}
+
+message TreasuryAllocations {
+  repeated cosmos.base.v1beta1.Coin reserve_balance = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  repeated cosmos.base.v1beta1.Coin ecosystem_balance = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  repeated cosmos.base.v1beta1.Coin validator_incentive_balance = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  repeated cosmos.base.v1beta1.Coin burn_balance = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  repeated cosmos.base.v1beta1.Coin total_received = 5 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  repeated cosmos.base.v1beta1.Coin total_spent = 6 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+}
+
+message TreasurySpend {
+  uint64 id = 1;
+  string proposer = 2;
+  string recipient = 3;
+  repeated cosmos.base.v1beta1.Coin amount = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  string bucket = 5;
+  string status = 6;
+  uint64 epoch = 7;
+  uint64 vesting_start_epoch = 8;
+  uint64 vesting_end_epoch = 9;
+  string metadata = 10;
+  int64 created_height = 11;
+  int64 updated_height = 12;
+  int64 executed_height = 13;
+}
+
+message EpochSpend {
+  uint64 epoch = 1;
+  repeated cosmos.base.v1beta1.Coin spent = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+}

@@ -106,6 +106,8 @@ import (
 	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	treasurykeeper "github.com/sovereign-l1/l1/x/treasury/keeper"
+	treasurytypes "github.com/sovereign-l1/l1/x/treasury/types"
 	validatorelectionkeeper "github.com/sovereign-l1/l1/x/validator-election/keeper"
 	validatorelectiontypes "github.com/sovereign-l1/l1/x/validator-election/types"
 	validatorregistrykeeper "github.com/sovereign-l1/l1/x/validator-registry/keeper"
@@ -193,6 +195,7 @@ type L1App struct {
 	TokenFactoryKeeper        tokenfactorykeeper.Keeper
 	DexKeeper                 dexkeeper.Keeper
 	BurnKeeper                burnkeeper.Keeper
+	TreasuryKeeper            treasurykeeper.Keeper
 	DynamicCommissionKeeper   dynamiccommissionkeeper.Keeper
 	FeeCollectorKeeper        feecollectorkeeper.Keeper
 	FeesKeeper                feeskeeper.Keeper
@@ -328,6 +331,7 @@ func NewL1App(
 		tokenfactorytypes.StoreKey,
 		dextypes.StoreKey,
 		burntypes.StoreKey,
+		treasurytypes.StoreKey,
 		dynamiccommissiontypes.StoreKey,
 		feecollectortypes.StoreKey,
 		feestypes.StoreKey,

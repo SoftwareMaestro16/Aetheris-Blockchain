@@ -1,0 +1,97 @@
+syntax = "proto3";
+package l1.treasury.v1;
+
+import "cosmos/base/v1beta1/coin.proto";
+import "cosmos/msg/v1/msg.proto";
+import "gogoproto/gogo.proto";
+import "l1/treasury/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/treasury/types";
+
+service Msg {
+  option (cosmos.msg.v1.service) = true;
+
+  rpc SubmitTreasurySpend(MsgSubmitTreasurySpend) returns (MsgSubmitTreasurySpendResponse);
+  rpc ApproveTreasurySpend(MsgApproveTreasurySpend) returns (MsgApproveTreasurySpendResponse);
+  rpc RejectTreasurySpend(MsgRejectTreasurySpend) returns (MsgRejectTreasurySpendResponse);
+  rpc ExecuteTreasurySpend(MsgExecuteTreasurySpend) returns (MsgExecuteTreasurySpendResponse);
+  rpc CancelTreasurySpend(MsgCancelTreasurySpend) returns (MsgCancelTreasurySpendResponse);
+  rpc UpdateTreasuryParams(MsgUpdateTreasuryParams) returns (MsgUpdateTreasuryParamsResponse);
+}
+
+message MsgSubmitTreasurySpend {
+  option (cosmos.msg.v1.signer) = "proposer";
+
+  string proposer = 1;
+  string recipient = 2;
+  repeated cosmos.base.v1beta1.Coin amount = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  string bucket = 4;
+  uint64 epoch = 5;
+  uint64 vesting_start_epoch = 6;
+  uint64 vesting_end_epoch = 7;
+  string metadata = 8;
+}
+
+message MsgSubmitTreasurySpendResponse {
+  TreasurySpend spend = 1 [(gogoproto.nullable) = false];
+}
+
+message MsgApproveTreasurySpend {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1;
+  uint64 spend_id = 2;
+  string metadata = 3;
+}
+
+message MsgApproveTreasurySpendResponse {
+  TreasurySpend spend = 1 [(gogoproto.nullable) = false];
+}
+
+message MsgRejectTreasurySpend {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1;
+  uint64 spend_id = 2;
+  string metadata = 3;
+}
+
+message MsgRejectTreasurySpendResponse {
+  TreasurySpend spend = 1 [(gogoproto.nullable) = false];
+}
+
+message MsgExecuteTreasurySpend {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1;
+  uint64 spend_id = 2;
+  uint64 epoch = 3;
+}
+
+message MsgExecuteTreasurySpendResponse {
+  TreasurySpend spend = 1 [(gogoproto.nullable) = false];
+}
+
+message MsgCancelTreasurySpend {
+  option (cosmos.msg.v1.signer) = "actor";
+
+  string actor = 1;
+  uint64 spend_id = 2;
+  string metadata = 3;
+}
+
+message MsgCancelTreasurySpendResponse {
+  TreasurySpend spend = 1 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateTreasuryParams {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  string authority = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateTreasuryParamsResponse {}

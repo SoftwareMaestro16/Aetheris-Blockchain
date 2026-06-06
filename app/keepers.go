@@ -100,6 +100,8 @@ import (
 	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
+	treasurykeeper "github.com/sovereign-l1/l1/x/treasury/keeper"
+	treasurytypes "github.com/sovereign-l1/l1/x/treasury/types"
 	validatorelectionkeeper "github.com/sovereign-l1/l1/x/validator-election/keeper"
 	validatorelectiontypes "github.com/sovereign-l1/l1/x/validator-election/types"
 	validatorregistrykeeper "github.com/sovereign-l1/l1/x/validator-registry/keeper"
@@ -285,6 +287,13 @@ func (app *L1App) initKeepers(
 	app.BurnKeeper = burnkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[burntypes.StoreKey]),
+		app.BankKeeper,
+		govAuthority,
+	)
+	app.TreasuryKeeper = treasurykeeper.NewKeeper(
+		appCodec,
+		runtime.NewKVStoreService(keys[treasurytypes.StoreKey]),
+		app.AccountKeeper,
 		app.BankKeeper,
 		govAuthority,
 	)

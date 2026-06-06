@@ -1,0 +1,73 @@
+syntax = "proto3";
+package l1.treasury.v1;
+
+import "cosmos/base/v1beta1/coin.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "l1/treasury/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/treasury/types";
+
+service Query {
+  rpc TreasuryBalance(QueryTreasuryBalanceRequest) returns (QueryTreasuryBalanceResponse) {
+    option (google.api.http).get = "/l1/treasury/v1/balance";
+  }
+
+  rpc TreasuryAllocations(QueryTreasuryAllocationsRequest) returns (QueryTreasuryAllocationsResponse) {
+    option (google.api.http).get = "/l1/treasury/v1/allocations";
+  }
+
+  rpc TreasurySpend(QueryTreasurySpendRequest) returns (QueryTreasurySpendResponse) {
+    option (google.api.http).get = "/l1/treasury/v1/spends/{spend_id}";
+  }
+
+  rpc TreasurySpends(QueryTreasurySpendsRequest) returns (QueryTreasurySpendsResponse) {
+    option (google.api.http).get = "/l1/treasury/v1/spends";
+  }
+
+  rpc TreasuryParams(QueryTreasuryParamsRequest) returns (QueryTreasuryParamsResponse) {
+    option (google.api.http).get = "/l1/treasury/v1/params";
+  }
+}
+
+message QueryTreasuryBalanceRequest {}
+
+message QueryTreasuryBalanceResponse {
+  string module_account = 1;
+  repeated cosmos.base.v1beta1.Coin bank_balance = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+  repeated cosmos.base.v1beta1.Coin accounting_balance = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+}
+
+message QueryTreasuryAllocationsRequest {}
+
+message QueryTreasuryAllocationsResponse {
+  TreasuryAllocations allocations = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryTreasurySpendRequest {
+  uint64 spend_id = 1;
+}
+
+message QueryTreasurySpendResponse {
+  TreasurySpend spend = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryTreasurySpendsRequest {
+  string status = 1;
+}
+
+message QueryTreasurySpendsResponse {
+  repeated TreasurySpend spends = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryTreasuryParamsRequest {}
+
+message QueryTreasuryParamsResponse {
+  Params params = 1 [(gogoproto.nullable) = false];
+}
