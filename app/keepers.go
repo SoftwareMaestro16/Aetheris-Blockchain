@@ -52,6 +52,8 @@ import (
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	avmschedulerkeeper "github.com/sovereign-l1/l1/x/avm-scheduler/keeper"
 	avmschedulertypes "github.com/sovereign-l1/l1/x/avm-scheduler/types"
+	bridgehubkeeper "github.com/sovereign-l1/l1/x/bridge-hub/keeper"
+	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
 	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutionkeeper "github.com/sovereign-l1/l1/x/constitution/keeper"
@@ -275,5 +277,6 @@ func (app *L1App) initKeepers(
 	app.ActorRegistryKeeper = actorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[actorregistrytypes.StoreKey]))
 	app.StorageRentKeeper = storagerentkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[storagerenttypes.StoreKey]))
 	app.IdentityRootKeeper = identityrootkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[identityroottypes.StoreKey]))
+	app.BridgeHubKeeper = bridgehubkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[bridgehubtypes.StoreKey]))
 	return txConfig
 }

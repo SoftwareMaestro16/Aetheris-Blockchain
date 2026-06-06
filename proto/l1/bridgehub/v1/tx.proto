@@ -1,0 +1,84 @@
+syntax = "proto3";
+package l1.bridgehub.v1;
+
+import "l1/bridgehub/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/bridge-hub/types";
+
+message MsgRegisterBridge {
+  string authority = 1;
+  BridgeRecord bridge = 2;
+}
+
+message MsgRegisterBridgeResponse {
+  BridgeRecord bridge = 1;
+}
+
+message MsgPauseBridge {
+  string authority = 1;
+  string bridge_id = 2;
+  uint64 height = 3;
+}
+
+message MsgPauseBridgeResponse {
+  BridgeRecord bridge = 1;
+}
+
+message MsgResumeBridge {
+  string authority = 1;
+  string bridge_id = 2;
+  uint64 height = 3;
+}
+
+message MsgResumeBridgeResponse {
+  BridgeRecord bridge = 1;
+}
+
+message MsgRegisterAssetMapping {
+  string authority = 1;
+  AssetMapping mapping = 2;
+}
+
+message MsgRegisterAssetMappingResponse {
+  AssetMapping mapping = 1;
+}
+
+message MsgUpdateBridgeLimits {
+  string authority = 1;
+  string bridge_id = 2;
+  uint64 daily_limit = 3;
+  uint64 height = 4;
+}
+
+message MsgUpdateBridgeLimitsResponse {
+  BridgeRecord bridge = 1;
+}
+
+message MsgSubmitBridgeEvent {
+  string submitter = 1;
+  BridgeEvent event = 2;
+}
+
+message MsgSubmitBridgeEventResponse {
+  BridgeEvent event = 1;
+}
+
+message MsgFinalizeBridgeEvent {
+  string authority = 1;
+  string event_id = 2;
+  uint64 height = 3;
+}
+
+message MsgFinalizeBridgeEventResponse {
+  BridgeEvent event = 1;
+}
+
+service Msg {
+  rpc RegisterBridge(MsgRegisterBridge) returns (MsgRegisterBridgeResponse);
+  rpc PauseBridge(MsgPauseBridge) returns (MsgPauseBridgeResponse);
+  rpc ResumeBridge(MsgResumeBridge) returns (MsgResumeBridgeResponse);
+  rpc RegisterAssetMapping(MsgRegisterAssetMapping) returns (MsgRegisterAssetMappingResponse);
+  rpc UpdateBridgeLimits(MsgUpdateBridgeLimits) returns (MsgUpdateBridgeLimitsResponse);
+  rpc SubmitBridgeEvent(MsgSubmitBridgeEvent) returns (MsgSubmitBridgeEventResponse);
+  rpc FinalizeBridgeEvent(MsgFinalizeBridgeEvent) returns (MsgFinalizeBridgeEventResponse);
+}

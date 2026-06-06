@@ -1,0 +1,69 @@
+syntax = "proto3";
+package l1.bridgehub.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/bridge-hub/types";
+
+message BridgeHubParams {
+  uint32 max_bridges = 1;
+  uint32 max_asset_mappings = 2;
+  uint32 max_pending_events = 3;
+  uint32 max_operators = 4;
+  uint32 fee_scale = 5;
+  uint64 default_daily_limit = 6;
+}
+
+message BridgeFeePolicy {
+  uint32 fee_bps = 1;
+  string collector = 2;
+  uint64 minimum_fee = 3;
+}
+
+message BridgeRecord {
+  string bridge_id = 1;
+  string source_chain = 2;
+  string target_chain = 3;
+  repeated string operators = 4;
+  string risk_status = 5;
+  bool paused = 6;
+  string proof_policy = 7;
+  uint64 daily_limit = 8;
+  uint64 daily_used = 9;
+  uint64 limit_window_start = 10;
+  BridgeFeePolicy fee_policy = 11;
+  uint64 registered_height = 12;
+  uint64 updated_height = 13;
+}
+
+message AssetMapping {
+  string bridge_id = 1;
+  string source_asset = 2;
+  string target_asset = 3;
+  uint32 decimals = 4;
+  bool enabled = 5;
+}
+
+message BridgeEvent {
+  string event_id = 1;
+  string bridge_id = 2;
+  string source_chain = 3;
+  string asset = 4;
+  uint64 amount = 5;
+  string proof_policy = 6;
+  string proof_root = 7;
+  string submitted_by = 8;
+  uint64 submitted_height = 9;
+  uint64 finalized_height = 10;
+  string status = 11;
+}
+
+message BridgeHubState {
+  repeated BridgeRecord bridges = 1;
+  repeated AssetMapping asset_mappings = 2;
+  repeated BridgeEvent events = 3;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  BridgeHubParams bridge_params = 2;
+  BridgeHubState state = 3;
+}

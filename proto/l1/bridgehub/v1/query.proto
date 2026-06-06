@@ -1,0 +1,55 @@
+syntax = "proto3";
+package l1.bridgehub.v1;
+
+import "l1/bridgehub/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/bridge-hub/types";
+
+message QueryBridgeRequest {
+  string bridge_id = 1;
+}
+
+message QueryBridgeResponse {
+  BridgeRecord bridge = 1;
+}
+
+message QueryBridgesRequest {}
+
+message QueryBridgesResponse {
+  repeated BridgeRecord bridges = 1;
+}
+
+message QueryAssetMappingRequest {
+  string bridge_id = 1;
+  string source_asset = 2;
+}
+
+message QueryAssetMappingResponse {
+  AssetMapping mapping = 1;
+}
+
+message QueryBridgeLimitsRequest {
+  string bridge_id = 1;
+}
+
+message QueryBridgeLimitsResponse {
+  uint64 daily_limit = 1;
+  uint64 daily_used = 2;
+  uint64 limit_window_start = 3;
+}
+
+message QueryBridgeEventsRequest {
+  string bridge_id = 1;
+}
+
+message QueryBridgeEventsResponse {
+  repeated BridgeEvent events = 1;
+}
+
+service Query {
+  rpc Bridge(QueryBridgeRequest) returns (QueryBridgeResponse);
+  rpc Bridges(QueryBridgesRequest) returns (QueryBridgesResponse);
+  rpc AssetMapping(QueryAssetMappingRequest) returns (QueryAssetMappingResponse);
+  rpc BridgeLimits(QueryBridgeLimitsRequest) returns (QueryBridgeLimitsResponse);
+  rpc BridgeEvents(QueryBridgeEventsRequest) returns (QueryBridgeEventsResponse);
+}

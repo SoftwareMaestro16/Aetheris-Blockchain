@@ -35,6 +35,7 @@ import (
 	actorregistrymodule "github.com/sovereign-l1/l1/x/actor-registry"
 	aethercoremodule "github.com/sovereign-l1/l1/x/aethercore"
 	avmschedulermodule "github.com/sovereign-l1/l1/x/avm-scheduler"
+	bridgehubmodule "github.com/sovereign-l1/l1/x/bridge-hub"
 	configmodule "github.com/sovereign-l1/l1/x/config"
 	constitutionmodule "github.com/sovereign-l1/l1/x/constitution"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
@@ -92,6 +93,7 @@ func (app *L1App) initModules(
 		actorregistrymodule.NewAppModule(&app.ActorRegistryKeeper),
 		storagerentmodule.NewAppModule(&app.StorageRentKeeper),
 		identityrootmodule.NewAppModule(&app.IdentityRootKeeper),
+		bridgehubmodule.NewAppModule(&app.BridgeHubKeeper),
 		tokenfactorymodule.NewAppModule(appCodec, app.TokenFactoryKeeper),
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),

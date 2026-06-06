@@ -58,6 +58,8 @@ import (
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	avmschedulerkeeper "github.com/sovereign-l1/l1/x/avm-scheduler/keeper"
 	avmschedulertypes "github.com/sovereign-l1/l1/x/avm-scheduler/types"
+	bridgehubkeeper "github.com/sovereign-l1/l1/x/bridge-hub/keeper"
+	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
 	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
 	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	constitutionkeeper "github.com/sovereign-l1/l1/x/constitution/keeper"
@@ -173,6 +175,7 @@ type L1App struct {
 	ActorRegistryKeeper     actorregistrykeeper.Keeper
 	StorageRentKeeper       storagerentkeeper.Keeper
 	IdentityRootKeeper      identityrootkeeper.Keeper
+	BridgeHubKeeper         bridgehubkeeper.Keeper
 	SystemRegistryKeeper    systemregistrykeeper.Keeper
 	ValidatorRegistryKeeper validatorregistrykeeper.Keeper
 
@@ -293,6 +296,7 @@ func NewL1App(
 		actorregistrytypes.StoreKey,
 		storagerenttypes.StoreKey,
 		identityroottypes.StoreKey,
+		bridgehubtypes.StoreKey,
 	)
 
 	// register streaming services
