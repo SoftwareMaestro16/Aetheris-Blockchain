@@ -252,6 +252,11 @@ func cloneSession(session SessionChannel) SessionChannel {
 		if session.Streams[i].Priority != session.Streams[j].Priority {
 			return session.Streams[i].Priority < session.Streams[j].Priority
 		}
+		leftRank := channelSortRank(session.Streams[i].Channel)
+		rightRank := channelSortRank(session.Streams[j].Channel)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
 		return session.Streams[i].StreamID < session.Streams[j].StreamID
 	})
 	return session
@@ -262,7 +267,7 @@ func sortChannelPolicies(policies []ChannelPolicy) {
 		if policies[i].Priority != policies[j].Priority {
 			return policies[i].Priority < policies[j].Priority
 		}
-		return policies[i].Channel < policies[j].Channel
+		return channelSortRank(policies[i].Channel) < channelSortRank(policies[j].Channel)
 	})
 }
 

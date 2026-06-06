@@ -101,6 +101,104 @@ func TestConsensusEnvelopeOutranksServiceAndBulkData(t *testing.T) {
 	require.Equal(t, ChannelConsensus, next.Channel)
 }
 
+func TestL0ChannelIDsAreStableAndRoundTrip(t *testing.T) {
+	expected := map[ChannelClass]ChannelID{
+		ChannelConsensus: ChannelIDConsensus,
+		ChannelMempool:   ChannelIDMempool,
+		ChannelBlock:     ChannelIDBlock,
+		ChannelStateSync: ChannelIDStateSync,
+		ChannelData:      ChannelIDData,
+		ChannelExecution: ChannelIDExecution,
+		ChannelService:   ChannelIDService,
+		ChannelRouting:   ChannelIDRouting,
+		ChannelDiscovery: ChannelIDDiscovery,
+	}
+
+	for channel, id := range expected {
+		gotID, err := ChannelIDForClass(channel)
+		require.NoError(t, err)
+		require.Equal(t, id, gotID)
+
+		gotChannel, err := ChannelClassForID(id)
+		require.NoError(t, err)
+		require.Equal(t, channel, gotChannel)
+	}
+
+	_, err := ChannelClassForID(ChannelID(0xff))
+	require.ErrorContains(t, err, "unknown")
+}
+
+func TestL0PriorityPolicyMatchesChannelClassOrder(t *testing.T) {
+	require.Less(t, PriorityForChannel(ChannelConsensus), PriorityForChannel(ChannelBlock))
+	require.Less(t, PriorityForChannel(ChannelBlock), PriorityForChannel(ChannelStateSync))
+	require.Less(t, PriorityForChannel(ChannelStateSync), PriorityForChannel(ChannelExecution))
+	require.Less(t, PriorityForChannel(ChannelExecution), PriorityForChannel(ChannelMempool))
+	require.Less(t, PriorityForChannel(ChannelMempool), PriorityForChannel(ChannelService))
+	require.Equal(t, PriorityForChannel(ChannelService), PriorityForChannel(ChannelDiscovery))
+	require.Equal(t, PriorityForChannel(ChannelService), PriorityForChannel(ChannelRouting))
+	require.Less(t, PriorityForChannel(ChannelService), PriorityForChannel(ChannelData))
+}
+
+func TestL0BandwidthLedgerAccountsByChannel(t *testing.T) {
+	adapter := DefaultAetherNetworkingAdapter()
+	ledger, err := NewBandwidthLedger(42, adapter.Bandwidth, DefaultChannelPolicies())
+	require.NoError(t, err)
+	require.NoError(t, ledger.Validate())
+
+	consensusAccount := bandwidthAccountForChannel(t, ledger, ChannelConsensus)
+	reserve := adapter.Bandwidth.MaxOutboundBytesPerBlock * uint64(adapter.Bandwidth.ConsensusReserveBps) / uint64(BasisPoints)
+	require.GreaterOrEqual(t, consensusAccount.LimitBytes, reserve)
+
+	envelope := testEnvelope(ChannelService, 512, 42, 1, "service-bandwidth")
+	nextLedger, err := AccountBandwidth(ledger, envelope)
+	require.NoError(t, err)
+	serviceAccount := bandwidthAccountForChannel(t, nextLedger, ChannelService)
+	require.Equal(t, envelope.SizeBytes, serviceAccount.UsedBytes)
+}
+
+func TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic(t *testing.T) {
+	adapter := DefaultAetherNetworkingAdapter()
+	adapter.Bandwidth.MaxOutboundBytesPerBlock = 8 << 20
+	adapter.Bandwidth.ConsensusReserveBps = 5_000
+
+	envelopes := []TransportEnvelope{
+		testEnvelope(ChannelService, DefaultMaxMessageBytes, 10, 1, "service-1"),
+		testEnvelope(ChannelData, MaxStreamMessageBytes, 10, 2, "bulk-data"),
+		testEnvelope(ChannelDiscovery, 16<<10, 10, 3, "discovery-1"),
+		testEnvelope(ChannelConsensus, 256, 99, 99, "consensus-vote"),
+		testEnvelope(ChannelExecution, 512, 10, 4, "execution-receipt"),
+	}
+
+	schedule, err := ScheduleL0Propagation(adapter, envelopes, 20, PeerScore{ScoreBps: BasisPoints}, 100)
+	require.NoError(t, err)
+	require.NoError(t, schedule.Validate())
+	require.NotEmpty(t, schedule.Plans)
+	require.Equal(t, ChannelConsensus, schedule.Plans[0].Envelope.Channel)
+	require.True(t, schedule.Plans[0].HandledByCometBFT)
+
+	for _, dropped := range schedule.Dropped {
+		require.NotEqual(t, ChannelConsensus, dropped.Channel)
+	}
+	consensusMetrics := l0MetricsForChannel(t, schedule.Metrics, ChannelConsensus)
+	require.Equal(t, uint64(1), consensusMetrics.SentCount)
+	require.Zero(t, consensusMetrics.DroppedCount)
+	require.Zero(t, consensusMetrics.ConsensusDelayBlocks)
+	require.NotContains(t, l0AlertCodes(schedule.Alerts), "CONSENSUS_TRAFFIC_DROPPED")
+}
+
+func TestL0AlertsEscalateConsensusDropsAboveBackpressure(t *testing.T) {
+	alerts := EvaluateL0Alerts([]L0ChannelMetrics{
+		{Channel: ChannelService, ChannelID: ChannelIDService, DroppedCount: 1},
+		{Channel: ChannelConsensus, ChannelID: ChannelIDConsensus, DroppedCount: 1},
+	})
+
+	require.Len(t, alerts, 2)
+	require.Equal(t, L0AlertCritical, alerts[0].Severity)
+	require.Equal(t, "CONSENSUS_TRAFFIC_DROPPED", alerts[0].Code)
+	require.Equal(t, L0AlertWarning, alerts[1].Severity)
+	require.Equal(t, "NON_CONSENSUS_BACKPRESSURE", alerts[1].Code)
+}
+
 func TestChunkPayloadRoundTripAndCorruptionDetection(t *testing.T) {
 	payload := bytes.Repeat([]byte("aetheris-networking"), 512)
 	chunks, err := ChunkPayload(payload, 257)
@@ -495,6 +593,48 @@ func TestRoleCommitmentRejectsUnbondedUnadvertisedAndOutlivingRecords(t *testing
 		ExpiresHeight:  101,
 	}, 10)
 	require.ErrorContains(t, err, "outlive")
+}
+
+func testEnvelope(channel ChannelClass, sizeBytes uint64, enqueuedHeight uint64, sequence uint64, label string) TransportEnvelope {
+	return TransportEnvelope{
+		Channel:        channel,
+		SizeBytes:      sizeBytes,
+		EnqueuedHeight: enqueuedHeight,
+		Sequence:       sequence,
+		PayloadHash:    HashParts(label),
+	}
+}
+
+func bandwidthAccountForChannel(t *testing.T, ledger BandwidthLedger, channel ChannelClass) BandwidthAccount {
+	t.Helper()
+
+	for _, account := range ledger.Accounts {
+		if account.Channel == channel {
+			return account
+		}
+	}
+	t.Fatalf("missing bandwidth account for %s", channel)
+	return BandwidthAccount{}
+}
+
+func l0MetricsForChannel(t *testing.T, metrics []L0ChannelMetrics, channel ChannelClass) L0ChannelMetrics {
+	t.Helper()
+
+	for _, metric := range metrics {
+		if metric.Channel == channel {
+			return metric
+		}
+	}
+	t.Fatalf("missing L0 metrics for %s", channel)
+	return L0ChannelMetrics{}
+}
+
+func l0AlertCodes(alerts []L0Alert) []string {
+	codes := make([]string, len(alerts))
+	for i, alert := range alerts {
+		codes[i] = alert.Code
+	}
+	return codes
 }
 
 func signedNodeRecord(t *testing.T, seed byte, salt []byte, expiresHeight uint64, roles ...NodeRole) NodeRecord {

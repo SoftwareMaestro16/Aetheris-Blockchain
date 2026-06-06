@@ -59,7 +59,12 @@ func TestKeeperRegistersNodeAndSessionWhenEnabled(t *testing.T) {
 
 	sessions, _, err := k.Sessions(nil)
 	require.NoError(t, err)
-	require.Equal(t, []networkingtypes.SessionChannel{session}, sessions)
+	expected := networkingtypes.EmptyState()
+	expected.NodeRecords = []networkingtypes.NodeRecord{local, remote}
+	expected.Sessions = []networkingtypes.SessionChannel{session}
+	expected = expected.Export()
+	require.NoError(t, expected.Validate())
+	require.Equal(t, expected.Sessions, sessions)
 
 	require.NoError(t, k.RegisterRoleCommitment(networkingtypes.RoleCommitment{
 		NodeID:         remote.NodeID,

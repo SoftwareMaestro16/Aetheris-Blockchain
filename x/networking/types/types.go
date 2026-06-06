@@ -182,11 +182,11 @@ func DefaultChannelPolicies() []ChannelPolicy {
 		{Channel: ChannelBlock, Priority: 1, MaxMessageBytes: 4 << 20, BandwidthWeight: 2_000, BurstBytes: 8 << 20},
 		{Channel: ChannelStateSync, Priority: 2, MaxMessageBytes: 4 << 20, BandwidthWeight: 1_250, BurstBytes: 16 << 20},
 		{Channel: ChannelExecution, Priority: 3, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 1_000, BurstBytes: 4 << 20},
-		{Channel: ChannelRouting, Priority: 4, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 750, BurstBytes: 2 << 20},
-		{Channel: ChannelMempool, Priority: 5, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 1_000, BurstBytes: 4 << 20},
-		{Channel: ChannelDiscovery, Priority: 6, MaxMessageBytes: 256 << 10, BandwidthWeight: 500, BurstBytes: 1 << 20},
-		{Channel: ChannelService, Priority: 7, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 350, BurstBytes: 2 << 20},
-		{Channel: ChannelData, Priority: 8, MaxMessageBytes: MaxStreamMessageBytes, BandwidthWeight: 150, BurstBytes: MaxStreamMessageBytes},
+		{Channel: ChannelMempool, Priority: 4, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 1_000, BurstBytes: 4 << 20},
+		{Channel: ChannelService, Priority: 5, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 350, BurstBytes: 2 << 20},
+		{Channel: ChannelRouting, Priority: 5, MaxMessageBytes: DefaultMaxMessageBytes, BandwidthWeight: 750, BurstBytes: 2 << 20},
+		{Channel: ChannelDiscovery, Priority: 5, MaxMessageBytes: 256 << 10, BandwidthWeight: 500, BurstBytes: 1 << 20},
+		{Channel: ChannelData, Priority: 6, MaxMessageBytes: MaxStreamMessageBytes, BandwidthWeight: 150, BurstBytes: MaxStreamMessageBytes},
 	}
 }
 
@@ -468,7 +468,7 @@ func NegotiateSession(local, remote NodeRecord, req SessionRequest) (SessionChan
 	}
 	channels := req.ChannelClasses
 	if len(channels) == 0 {
-		channels = []ChannelClass{ChannelConsensus, ChannelBlock, ChannelStateSync, ChannelExecution, ChannelRouting, ChannelMempool, ChannelDiscovery, ChannelService, ChannelData}
+		channels = normalizeChannels([]ChannelClass{ChannelConsensus, ChannelBlock, ChannelStateSync, ChannelExecution, ChannelMempool, ChannelService, ChannelRouting, ChannelDiscovery, ChannelData})
 	}
 	if err := validateChannels(channels); err != nil {
 		return SessionChannel{}, err
@@ -835,6 +835,14 @@ func priorityForPolicy(policies []ChannelPolicy, channel ChannelClass) uint32 {
 	return PriorityForChannel(channel)
 }
 
+func channelSortRank(channel ChannelClass) uint32 {
+	id, err := ChannelIDForClass(channel)
+	if err != nil {
+		return uint32(MaxChannelPolicies) + uint32(len(channel))
+	}
+	return uint32(id)
+}
+
 func normalizeRoles(roles []NodeRole) []NodeRole {
 	out := make([]NodeRole, 0, len(roles))
 	seen := make(map[NodeRole]struct{}, len(roles))
@@ -870,7 +878,12 @@ func normalizeChannels(channels []ChannelClass) []ChannelClass {
 		out = append(out, normalized)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return PriorityForChannel(out[i]) < PriorityForChannel(out[j])
+		leftPriority := PriorityForChannel(out[i])
+		rightPriority := PriorityForChannel(out[j])
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		return channelSortRank(out[i]) < channelSortRank(out[j])
 	})
 	return out
 }
