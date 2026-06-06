@@ -6,15 +6,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultImplementationRoadmapCoversPhaseZeroAndOne(t *testing.T) {
+func TestDefaultImplementationRoadmapCoversPhaseZeroThroughThree(t *testing.T) {
 	roadmap, err := DefaultImplementationRoadmap()
 	require.NoError(t, err)
 	require.NoError(t, roadmap.Validate())
-	require.Len(t, roadmap.Phases, 2)
+	require.Len(t, roadmap.Phases, 4)
 	require.Equal(t, RoadmapPhaseBaselineAudit, roadmap.Phases[0].PhaseID)
 	require.Equal(t, uint32(0), roadmap.Phases[0].PhaseNumber)
 	require.Equal(t, RoadmapPhaseKernelRootModel, roadmap.Phases[1].PhaseID)
 	require.Equal(t, uint32(1), roadmap.Phases[1].PhaseNumber)
+	require.Equal(t, RoadmapPhaseCrossZoneMessages, roadmap.Phases[2].PhaseID)
+	require.Equal(t, uint32(2), roadmap.Phases[2].PhaseNumber)
+	require.Equal(t, RoadmapPhaseCanonicalZones, roadmap.Phases[3].PhaseID)
+	require.Equal(t, uint32(3), roadmap.Phases[3].PhaseNumber)
 	require.Equal(t, ComputeImplementationRoadmapHash(roadmap), roadmap.RoadmapHash)
 
 	phase0 := roadmap.Phases[0]
@@ -53,6 +57,55 @@ func TestDefaultImplementationRoadmapCoversPhaseZeroAndOne(t *testing.T) {
 	require.True(t, phase1.Evidence.DefaultZoneRunnable)
 	require.True(t, phase1.Evidence.DefaultZoneRootIncluded)
 	require.True(t, phase1.Evidence.ExportImportPreservesRootMeta)
+
+	phase2 := roadmap.Phases[2]
+	requireRoadmapTask(t, phase2, "implement-x-messages")
+	requireRoadmapTask(t, phase2, "add-message-envelope")
+	requireRoadmapTask(t, phase2, "add-fifo-per-sender-queues")
+	requireRoadmapTask(t, phase2, "add-nonce-and-replay-protection")
+	requireRoadmapTask(t, phase2, "add-receipts")
+	requireRoadmapTask(t, phase2, "add-bounce-and-expiry")
+	requireRoadmapTask(t, phase2, "add-message-and-receipt-roots")
+	requireRoadmapExit(t, phase2, "same-chain-async-messages-execute-deterministically")
+	requireRoadmapExit(t, phase2, "message-inclusion-and-receipt-proofs-available")
+	requireRoadmapExit(t, phase2, "replay-attempts-rejected")
+	require.True(t, phase2.Evidence.MessagesModuleImplemented)
+	require.True(t, phase2.Evidence.MessageEnvelopeAdded)
+	require.True(t, phase2.Evidence.FIFOPerSenderQueuesAdded)
+	require.True(t, phase2.Evidence.NonceReplayProtectionAdded)
+	require.True(t, phase2.Evidence.MessageReceiptsAdded)
+	require.True(t, phase2.Evidence.BounceAndExpiryAdded)
+	require.True(t, phase2.Evidence.MessageReceiptRootsAdded)
+	require.True(t, phase2.Evidence.SameChainAsyncDeterministic)
+	require.True(t, phase2.Evidence.MessageReceiptProofsAvailable)
+	require.True(t, phase2.Evidence.ReplayAttemptsRejected)
+
+	phase3 := roadmap.Phases[3]
+	requireRoadmapTask(t, phase3, "move-bank-fees-tokenfactory-dex-into-financial-zone-boundary")
+	requireRoadmapTask(t, phase3, "activate-identity-zone")
+	requireRoadmapTask(t, phase3, "add-application-zone-scheduler-boundary")
+	requireRoadmapTask(t, phase3, "add-contract-zone-skeleton")
+	requireRoadmapTask(t, phase3, "add-zone-specific-queries-and-roots")
+	requireRoadmapExit(t, phase3, "four-canonical-zones-exist")
+	requireRoadmapExit(t, phase3, "each-zone-has-namespace-root-queue-msg-query-keeper")
+	requireRoadmapExit(t, phase3, "cross-zone-state-mutation-only-through-messages")
+	require.Equal(t, []ZoneID{ZoneIDApplication, ZoneIDContract, ZoneIDFinancial, ZoneIDIdentity}, roadmapCanonicalZoneIDs(phase3.Evidence.CanonicalZones))
+	require.True(t, phase3.Evidence.FinancialZoneBoundaryMoved)
+	require.True(t, phase3.Evidence.IdentityZoneActivated)
+	require.True(t, phase3.Evidence.ApplicationZoneSchedulerBoundary)
+	require.True(t, phase3.Evidence.ContractZoneSkeletonAdded)
+	require.True(t, phase3.Evidence.ZoneSpecificQueriesRoots)
+	require.True(t, phase3.Evidence.FourCanonicalZonesExist)
+	require.True(t, phase3.Evidence.CanonicalZoneSurfacesComplete)
+	require.True(t, phase3.Evidence.CrossZoneMutationMessagesOnly)
+	for _, zone := range phase3.Evidence.CanonicalZones {
+		require.True(t, zone.MessageQueue, zone.ZoneID)
+		require.True(t, zone.MsgServer, zone.ZoneID)
+		require.True(t, zone.QueryServer, zone.ZoneID)
+		require.True(t, zone.Keeper, zone.ZoneID)
+		require.NotEmpty(t, zone.StateNamespace)
+		require.NotEmpty(t, zone.RootType)
+	}
 }
 
 func TestImplementationRoadmapInventoryIsDerivedFromModuleManifest(t *testing.T) {
@@ -125,11 +178,70 @@ func TestImplementationRoadmapRejectsIncompletePhaseOneEvidence(t *testing.T) {
 	require.ErrorContains(t, noRootMetadataRoundTrip.Validate(), "root metadata preservation")
 }
 
+func TestImplementationRoadmapRejectsIncompletePhaseTwoEvidence(t *testing.T) {
+	roadmap, err := DefaultImplementationRoadmap()
+	require.NoError(t, err)
+
+	noEnvelope := roadmap
+	noEnvelope.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noEnvelope.Phases[2].Evidence.MessageEnvelopeAdded = false
+	noEnvelope.Phases[2].PhaseHash = ComputeRoadmapPhaseHash(noEnvelope.Phases[2])
+	noEnvelope.RoadmapHash = ComputeImplementationRoadmapHash(noEnvelope)
+	require.ErrorContains(t, noEnvelope.Validate(), "message envelope")
+
+	noProofs := roadmap
+	noProofs.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noProofs.Phases[2].Evidence.MessageReceiptProofsAvailable = false
+	noProofs.Phases[2].PhaseHash = ComputeRoadmapPhaseHash(noProofs.Phases[2])
+	noProofs.RoadmapHash = ComputeImplementationRoadmapHash(noProofs)
+	require.ErrorContains(t, noProofs.Validate(), "message inclusion and receipt proofs")
+
+	noReplayRejection := roadmap
+	noReplayRejection.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noReplayRejection.Phases[2].Evidence.ReplayAttemptsRejected = false
+	noReplayRejection.Phases[2].PhaseHash = ComputeRoadmapPhaseHash(noReplayRejection.Phases[2])
+	noReplayRejection.RoadmapHash = ComputeImplementationRoadmapHash(noReplayRejection)
+	require.ErrorContains(t, noReplayRejection.Validate(), "replay rejection")
+}
+
+func TestImplementationRoadmapRejectsIncompletePhaseThreeEvidence(t *testing.T) {
+	roadmap, err := DefaultImplementationRoadmap()
+	require.NoError(t, err)
+
+	noFinancialBoundary := roadmap
+	noFinancialBoundary.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	noFinancialBoundary.Phases[3].Evidence.FinancialZoneBoundaryMoved = false
+	noFinancialBoundary.Phases[3].PhaseHash = ComputeRoadmapPhaseHash(noFinancialBoundary.Phases[3])
+	noFinancialBoundary.RoadmapHash = ComputeImplementationRoadmapHash(noFinancialBoundary)
+	require.ErrorContains(t, noFinancialBoundary.Validate(), "Financial Zone boundary")
+
+	missingZone := roadmap
+	missingZone.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	missingZone.Phases[3].Evidence.CanonicalZones = missingZone.Phases[3].Evidence.CanonicalZones[1:]
+	missingZone.Phases[3].PhaseHash = ComputeRoadmapPhaseHash(missingZone.Phases[3])
+	missingZone.RoadmapHash = ComputeImplementationRoadmapHash(missingZone)
+	require.ErrorContains(t, missingZone.Validate(), "must include 4 zones")
+
+	missingSurface := roadmap
+	missingSurface.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	missingSurface.Phases[3].Evidence.CanonicalZones[0].MsgServer = false
+	missingSurface.Phases[3].PhaseHash = ComputeRoadmapPhaseHash(missingSurface.Phases[3])
+	missingSurface.RoadmapHash = ComputeImplementationRoadmapHash(missingSurface)
+	require.ErrorContains(t, missingSurface.Validate(), "MsgServer")
+
+	directMutation := roadmap
+	directMutation.Phases = append([]ImplementationRoadmapPhase(nil), roadmap.Phases...)
+	directMutation.Phases[3].Evidence.CrossZoneMutationMessagesOnly = false
+	directMutation.Phases[3].PhaseHash = ComputeRoadmapPhaseHash(directMutation.Phases[3])
+	directMutation.RoadmapHash = ComputeImplementationRoadmapHash(directMutation)
+	require.ErrorContains(t, directMutation.Validate(), "cross-zone mutation only through messages")
+}
+
 func TestImplementationRoadmapHashIsCanonical(t *testing.T) {
 	roadmap, err := DefaultImplementationRoadmap()
 	require.NoError(t, err)
 
-	reversed, err := NewImplementationRoadmap([]ImplementationRoadmapPhase{roadmap.Phases[1], roadmap.Phases[0]})
+	reversed, err := NewImplementationRoadmap([]ImplementationRoadmapPhase{roadmap.Phases[3], roadmap.Phases[2], roadmap.Phases[1], roadmap.Phases[0]})
 	require.NoError(t, err)
 	require.Equal(t, roadmap.RoadmapHash, reversed.RoadmapHash)
 	require.Equal(t, roadmap.Phases, reversed.Phases)
@@ -170,6 +282,15 @@ func roadmapInventoryModuleNames(entries []RoadmapModuleInventoryEntry) []Cosmos
 	out := make([]CosmosSDKModuleName, len(entries))
 	for i, entry := range entries {
 		out[i] = entry.ModuleName
+	}
+	return out
+}
+
+func roadmapCanonicalZoneIDs(entries []RoadmapCanonicalZoneEntry) []ZoneID {
+	entries = normalizeRoadmapCanonicalZones(entries)
+	out := make([]ZoneID, len(entries))
+	for i, entry := range entries {
+		out[i] = entry.ZoneID
 	}
 	return out
 }
