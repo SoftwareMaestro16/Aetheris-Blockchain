@@ -1,0 +1,371 @@
+package types
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+)
+
+type RequiredTestCoverageKind string
+type RequiredUnitTestCoverageID string
+type RequiredIntegrationTestCoverageID string
+
+const (
+	TestCoverageKindUnit        RequiredTestCoverageKind = "unit"
+	TestCoverageKindIntegration RequiredTestCoverageKind = "integration"
+
+	UnitCoverageMessageIDDerivation              RequiredUnitTestCoverageID = "message-id-derivation"
+	UnitCoverageMessageNonceValidation           RequiredUnitTestCoverageID = "message-nonce-validation"
+	UnitCoverageFIFOOrdering                     RequiredUnitTestCoverageID = "fifo-ordering"
+	UnitCoverageBounceHandling                   RequiredUnitTestCoverageID = "bounce-handling"
+	UnitCoverageExpiryHandling                   RequiredUnitTestCoverageID = "expiry-handling"
+	UnitCoverageZoneDescriptorValidation         RequiredUnitTestCoverageID = "zone-descriptor-validation"
+	UnitCoverageServiceDescriptorValidation      RequiredUnitTestCoverageID = "service-descriptor-validation"
+	UnitCoverageStorageObjectHashValidation      RequiredUnitTestCoverageID = "storage-object-hash-validation"
+	UnitCoverageIdentityResolverOutputValidation RequiredUnitTestCoverageID = "identity-resolver-output-validation"
+	UnitCoveragePaymentConditionValidation       RequiredUnitTestCoverageID = "payment-condition-validation"
+	UnitCoverageRoutingCostCalculation           RequiredUnitTestCoverageID = "routing-cost-calculation"
+	UnitCoverageRootEncoding                     RequiredUnitTestCoverageID = "root-encoding"
+
+	IntegrationCoverageDefaultZoneMigration                RequiredIntegrationTestCoverageID = "default-zone-migration"
+	IntegrationCoverageFinancialZoneTransferViaMessage     RequiredIntegrationTestCoverageID = "financial-zone-transfer-via-message"
+	IntegrationCoverageIdentityZoneResolverUpdate          RequiredIntegrationTestCoverageID = "identity-zone-resolver-update"
+	IntegrationCoverageServiceRegistrationLookupProof      RequiredIntegrationTestCoverageID = "service-registration-and-lookup-proof"
+	IntegrationCoverageStorageObjectRegistrationChunkProof RequiredIntegrationTestCoverageID = "storage-object-registration-and-chunk-proof"
+	IntegrationCoverageCrossZoneIdentityBoundPayment       RequiredIntegrationTestCoverageID = "cross-zone-identity-bound-payment"
+	IntegrationCoverageContractOutboundMessageFinancial    RequiredIntegrationTestCoverageID = "contract-outbound-message-to-financial-zone"
+	IntegrationCoverageApplicationSchedulerToContract      RequiredIntegrationTestCoverageID = "application-scheduler-emits-message-to-contract-zone"
+)
+
+type RequiredTestCoverageSpec struct {
+	ID             string
+	Kind           RequiredTestCoverageKind
+	ModuleName     CosmosSDKModuleName
+	PhaseID        ImplementationRoadmapPhaseID
+	CoverageTarget string
+	Assertions     []string
+	SpecHash       string
+}
+
+type RequiredTestCoverageManifest struct {
+	UnitTests        []RequiredTestCoverageSpec
+	IntegrationTests []RequiredTestCoverageSpec
+	ManifestHash     string
+}
+
+func DefaultRequiredTestCoverageManifest() (RequiredTestCoverageManifest, error) {
+	manifest := RequiredTestCoverageManifest{
+		UnitTests: []RequiredTestCoverageSpec{
+			testCoverageSpec(string(UnitCoverageMessageIDDerivation), TestCoverageKindUnit, CosmosModuleMessages, RoadmapPhaseCrossZoneMessages, "canonical message id derivation", "same canonical envelope derives identical id", "payload hash chain id sender nonce and source zone affect id"),
+			testCoverageSpec(string(UnitCoverageMessageNonceValidation), TestCoverageKindUnit, CosmosModuleMessages, RoadmapPhaseCrossZoneMessages, "message nonce validation", "same sender nonce cannot be reused", "nonce scope includes source zone and sender"),
+			testCoverageSpec(string(UnitCoverageFIFOOrdering), TestCoverageKindUnit, CosmosModuleMessages, RoadmapPhaseCrossZoneMessages, "FIFO per-sender queue ordering", "sender queue drains in sequence order", "different senders remain deterministic after canonical sorting"),
+			testCoverageSpec(string(UnitCoverageBounceHandling), TestCoverageKindUnit, CosmosModuleMessages, RoadmapPhaseCrossZoneMessages, "message bounce handling", "failed message produces bounce metadata", "remaining value returns through message semantics"),
+			testCoverageSpec(string(UnitCoverageExpiryHandling), TestCoverageKindUnit, CosmosModuleMessages, RoadmapPhaseCrossZoneMessages, "message expiry handling", "expired messages are skipped", "expiry creates receipt and replay tombstone"),
+			testCoverageSpec(string(UnitCoverageZoneDescriptorValidation), TestCoverageKindUnit, CosmosModuleZones, RoadmapPhaseCanonicalZones, "zone descriptor validation", "zone id type scope and root prefix are validated", "invalid zone capabilities are rejected"),
+			testCoverageSpec(string(UnitCoverageServiceDescriptorValidation), TestCoverageKindUnit, CosmosModuleServices, RoadmapPhaseServiceStorageRouting, "service descriptor validation", "service owner endpoint interface and ttl are validated", "descriptor hash changes when interface changes"),
+			testCoverageSpec(string(UnitCoverageStorageObjectHashValidation), TestCoverageKindUnit, CosmosModuleStorage, RoadmapPhaseServiceStorageRouting, "storage object hash validation", "content hash commits to ordered chunk roots", "object size equals chunk sizes"),
+			testCoverageSpec(string(UnitCoverageIdentityResolverOutputValidation), TestCoverageKindUnit, CosmosModuleIdentity, RoadmapPhaseIdentityPaymentIntegration, "identity resolver output validation", "account zone service contract and composite outputs validate", "invalid resolver output hashes are rejected"),
+			testCoverageSpec(string(UnitCoveragePaymentConditionValidation), TestCoverageKindUnit, CosmosModulePayments, RoadmapPhaseIdentityPaymentIntegration, "payment condition validation", "condition hash and expiry are validated", "invalid conditional transfer proofs are rejected"),
+			testCoverageSpec(string(UnitCoverageRoutingCostCalculation), TestCoverageKindUnit, CosmosModuleRouting, RoadmapPhaseServiceStorageRouting, "routing cost calculation", "integer weights produce deterministic cost", "route tie breaks lexicographically"),
+			testCoverageSpec(string(UnitCoverageRootEncoding), TestCoverageKindUnit, CosmosModuleAetherCore, RoadmapPhaseKernelRootModel, "root encoding", "root order is canonical", "tampered root contribution changes global root"),
+		},
+		IntegrationTests: []RequiredTestCoverageSpec{
+			testCoverageSpec(string(IntegrationCoverageDefaultZoneMigration), TestCoverageKindIntegration, CosmosModuleZones, RoadmapPhaseKernelRootModel, "default zone migration", "existing chain state runs as default zone", "export import preserves root metadata"),
+			testCoverageSpec(string(IntegrationCoverageFinancialZoneTransferViaMessage), TestCoverageKindIntegration, CosmosModuleMessages, RoadmapPhaseCanonicalZones, "Financial Zone transfer via message", "message ingress applies transfer in Financial Zone", "receipt proves transfer execution"),
+			testCoverageSpec(string(IntegrationCoverageIdentityZoneResolverUpdate), TestCoverageKindIntegration, CosmosModuleIdentity, RoadmapPhaseCanonicalZones, "Identity Zone resolver update", "resolver update mutates identity namespace only", "identity root changes deterministically"),
+			testCoverageSpec(string(IntegrationCoverageServiceRegistrationLookupProof), TestCoverageKindIntegration, CosmosModuleServices, RoadmapPhaseServiceStorageRouting, "service registration and lookup proof", "registered service is found by deterministic index", "lookup response includes proof root"),
+			testCoverageSpec(string(IntegrationCoverageStorageObjectRegistrationChunkProof), TestCoverageKindIntegration, CosmosModuleStorage, RoadmapPhaseServiceStorageRouting, "storage object registration and chunk proof", "object registration commits chunk roots", "chunk inclusion proof verifies object root"),
+			testCoverageSpec(string(IntegrationCoverageCrossZoneIdentityBoundPayment), TestCoverageKindIntegration, CosmosModulePayments, RoadmapPhaseIdentityPaymentIntegration, "cross-zone identity-bound payment", "identity binding resolves payment recipient", "payment settles through Financial Zone"),
+			testCoverageSpec(string(IntegrationCoverageContractOutboundMessageFinancial), TestCoverageKindIntegration, CosmosModuleContracts, RoadmapPhaseVMRuntime, "contract outbound message to Financial Zone", "contract emits outbound settlement message", "contract cannot directly mutate financial state"),
+			testCoverageSpec(string(IntegrationCoverageApplicationSchedulerToContract), TestCoverageKindIntegration, CosmosModuleZones, RoadmapPhaseCanonicalZones, "Application scheduler emits message to Contract Zone", "scheduler emits ordered contract-zone message", "contract zone receipt is queryable"),
+		},
+	}
+	return NewRequiredTestCoverageManifest(manifest.UnitTests, manifest.IntegrationTests)
+}
+
+func NewRequiredTestCoverageManifest(unitTests, integrationTests []RequiredTestCoverageSpec) (RequiredTestCoverageManifest, error) {
+	manifest := RequiredTestCoverageManifest{
+		UnitTests:        normalizeTestCoverageSpecs(unitTests, TestCoverageKindUnit),
+		IntegrationTests: normalizeTestCoverageSpecs(integrationTests, TestCoverageKindIntegration),
+	}
+	if err := manifest.ValidateFormat(); err != nil {
+		return RequiredTestCoverageManifest{}, err
+	}
+	for i := range manifest.UnitTests {
+		manifest.UnitTests[i].SpecHash = ComputeRequiredTestCoverageSpecHash(manifest.UnitTests[i])
+	}
+	for i := range manifest.IntegrationTests {
+		manifest.IntegrationTests[i].SpecHash = ComputeRequiredTestCoverageSpecHash(manifest.IntegrationTests[i])
+	}
+	manifest.ManifestHash = ComputeRequiredTestCoverageManifestHash(manifest)
+	return manifest, manifest.Validate()
+}
+
+func RequiredUnitTestCoverageIDs() []RequiredUnitTestCoverageID {
+	return []RequiredUnitTestCoverageID{
+		UnitCoverageMessageIDDerivation,
+		UnitCoverageMessageNonceValidation,
+		UnitCoverageFIFOOrdering,
+		UnitCoverageBounceHandling,
+		UnitCoverageExpiryHandling,
+		UnitCoverageZoneDescriptorValidation,
+		UnitCoverageServiceDescriptorValidation,
+		UnitCoverageStorageObjectHashValidation,
+		UnitCoverageIdentityResolverOutputValidation,
+		UnitCoveragePaymentConditionValidation,
+		UnitCoverageRoutingCostCalculation,
+		UnitCoverageRootEncoding,
+	}
+}
+
+func RequiredIntegrationTestCoverageIDs() []RequiredIntegrationTestCoverageID {
+	return []RequiredIntegrationTestCoverageID{
+		IntegrationCoverageDefaultZoneMigration,
+		IntegrationCoverageFinancialZoneTransferViaMessage,
+		IntegrationCoverageIdentityZoneResolverUpdate,
+		IntegrationCoverageServiceRegistrationLookupProof,
+		IntegrationCoverageStorageObjectRegistrationChunkProof,
+		IntegrationCoverageCrossZoneIdentityBoundPayment,
+		IntegrationCoverageContractOutboundMessageFinancial,
+		IntegrationCoverageApplicationSchedulerToContract,
+	}
+}
+
+func (manifest RequiredTestCoverageManifest) ValidateFormat() error {
+	manifest.UnitTests = normalizeTestCoverageSpecs(manifest.UnitTests, TestCoverageKindUnit)
+	manifest.IntegrationTests = normalizeTestCoverageSpecs(manifest.IntegrationTests, TestCoverageKindIntegration)
+	if err := validateCoverageSpecSet("aethercore unit test coverage", manifest.UnitTests, requiredUnitCoverageIDStrings(), TestCoverageKindUnit); err != nil {
+		return err
+	}
+	if err := validateCoverageSpecSet("aethercore integration test coverage", manifest.IntegrationTests, requiredIntegrationCoverageIDStrings(), TestCoverageKindIntegration); err != nil {
+		return err
+	}
+	if manifest.ManifestHash != "" {
+		return ValidateHash("aethercore required test coverage manifest hash", manifest.ManifestHash)
+	}
+	return nil
+}
+
+func (manifest RequiredTestCoverageManifest) Validate() error {
+	manifest.UnitTests = normalizeTestCoverageSpecs(manifest.UnitTests, TestCoverageKindUnit)
+	manifest.IntegrationTests = normalizeTestCoverageSpecs(manifest.IntegrationTests, TestCoverageKindIntegration)
+	if err := manifest.ValidateFormat(); err != nil {
+		return err
+	}
+	for _, spec := range manifest.UnitTests {
+		if err := spec.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, spec := range manifest.IntegrationTests {
+		if err := spec.Validate(); err != nil {
+			return err
+		}
+	}
+	if manifest.ManifestHash != ComputeRequiredTestCoverageManifestHash(manifest) {
+		return errors.New("aethercore required test coverage manifest hash mismatch")
+	}
+	return nil
+}
+
+func (spec RequiredTestCoverageSpec) ValidateFormat() error {
+	spec = normalizeTestCoverageSpec(spec, spec.Kind)
+	if spec.Kind != TestCoverageKindUnit && spec.Kind != TestCoverageKindIntegration {
+		return fmt.Errorf("unknown aethercore required test coverage kind %q", spec.Kind)
+	}
+	if err := validatePolicyID("aethercore required test coverage id", spec.ID); err != nil {
+		return err
+	}
+	if !IsRequiredCosmosSDKModule(spec.ModuleName) {
+		return fmt.Errorf("aethercore required test coverage %s references unknown module %s", spec.ID, spec.ModuleName)
+	}
+	if !IsImplementationRoadmapPhaseID(spec.PhaseID) {
+		return fmt.Errorf("aethercore required test coverage %s references unknown roadmap phase %s", spec.ID, spec.PhaseID)
+	}
+	if err := validateRoadmapText("aethercore required test coverage target", spec.CoverageTarget); err != nil {
+		return err
+	}
+	if err := validateCoverageAssertions(spec.ID, spec.Assertions); err != nil {
+		return err
+	}
+	if spec.SpecHash != "" {
+		return ValidateHash("aethercore required test coverage spec hash", spec.SpecHash)
+	}
+	return nil
+}
+
+func (spec RequiredTestCoverageSpec) Validate() error {
+	spec = normalizeTestCoverageSpec(spec, spec.Kind)
+	if err := spec.ValidateFormat(); err != nil {
+		return err
+	}
+	if spec.SpecHash != ComputeRequiredTestCoverageSpecHash(spec) {
+		return errors.New("aethercore required test coverage spec hash mismatch")
+	}
+	return nil
+}
+
+func RequiredUnitTestCoverageByID(manifest RequiredTestCoverageManifest, id RequiredUnitTestCoverageID) (RequiredTestCoverageSpec, bool) {
+	return requiredTestCoverageByID(manifest.UnitTests, string(id))
+}
+
+func RequiredIntegrationTestCoverageByID(manifest RequiredTestCoverageManifest, id RequiredIntegrationTestCoverageID) (RequiredTestCoverageSpec, bool) {
+	return requiredTestCoverageByID(manifest.IntegrationTests, string(id))
+}
+
+func ComputeRequiredTestCoverageSpecHash(spec RequiredTestCoverageSpec) string {
+	spec = normalizeTestCoverageSpec(spec, spec.Kind)
+	return hashRoot("aetheris-aek-required-test-coverage-spec-v1", func(w byteWriter) {
+		writePart(w, spec.ID)
+		writePart(w, string(spec.Kind))
+		writePart(w, string(spec.ModuleName))
+		writePart(w, string(spec.PhaseID))
+		writePart(w, spec.CoverageTarget)
+		writeStringParts(w, spec.Assertions)
+	})
+}
+
+func ComputeRequiredTestCoverageManifestHash(manifest RequiredTestCoverageManifest) string {
+	manifest.UnitTests = normalizeTestCoverageSpecs(manifest.UnitTests, TestCoverageKindUnit)
+	manifest.IntegrationTests = normalizeTestCoverageSpecs(manifest.IntegrationTests, TestCoverageKindIntegration)
+	return hashRoot("aetheris-aek-required-test-coverage-manifest-v1", func(w byteWriter) {
+		writeUint64(w, uint64(len(manifest.UnitTests)))
+		for _, spec := range manifest.UnitTests {
+			writePart(w, spec.SpecHash)
+		}
+		writeUint64(w, uint64(len(manifest.IntegrationTests)))
+		for _, spec := range manifest.IntegrationTests {
+			writePart(w, spec.SpecHash)
+		}
+	})
+}
+
+func testCoverageSpec(id string, kind RequiredTestCoverageKind, moduleName CosmosSDKModuleName, phaseID ImplementationRoadmapPhaseID, target string, assertions ...string) RequiredTestCoverageSpec {
+	return RequiredTestCoverageSpec{
+		ID:             id,
+		Kind:           kind,
+		ModuleName:     moduleName,
+		PhaseID:        phaseID,
+		CoverageTarget: target,
+		Assertions:     assertions,
+	}
+}
+
+func normalizeTestCoverageSpecs(specs []RequiredTestCoverageSpec, kind RequiredTestCoverageKind) []RequiredTestCoverageSpec {
+	out := make([]RequiredTestCoverageSpec, len(specs))
+	for i, spec := range specs {
+		spec = normalizeTestCoverageSpec(spec, kind)
+		if spec.SpecHash == "" {
+			spec.SpecHash = ComputeRequiredTestCoverageSpecHash(spec)
+		}
+		out[i] = spec
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func normalizeTestCoverageSpec(spec RequiredTestCoverageSpec, defaultKind RequiredTestCoverageKind) RequiredTestCoverageSpec {
+	spec.ID = strings.TrimSpace(spec.ID)
+	if spec.Kind == "" {
+		spec.Kind = defaultKind
+	}
+	spec.Kind = RequiredTestCoverageKind(strings.TrimSpace(string(spec.Kind)))
+	spec.ModuleName = CosmosSDKModuleName(strings.TrimSpace(string(spec.ModuleName)))
+	spec.PhaseID = ImplementationRoadmapPhaseID(strings.TrimSpace(string(spec.PhaseID)))
+	spec.CoverageTarget = strings.TrimSpace(spec.CoverageTarget)
+	spec.Assertions = normalizeRoadmapStringSet(spec.Assertions)
+	spec.SpecHash = strings.ToLower(strings.TrimSpace(spec.SpecHash))
+	return spec
+}
+
+func validateCoverageSpecSet(field string, specs []RequiredTestCoverageSpec, required []string, kind RequiredTestCoverageKind) error {
+	if len(specs) != len(required) {
+		return fmt.Errorf("%s must include %d required coverage areas", field, len(required))
+	}
+	seen := make(map[string]struct{}, len(specs))
+	var previous string
+	for i, spec := range specs {
+		if spec.Kind != kind {
+			return fmt.Errorf("%s %s must have kind %s", field, spec.ID, kind)
+		}
+		if err := spec.ValidateFormat(); err != nil {
+			return err
+		}
+		if _, found := seen[spec.ID]; found {
+			return fmt.Errorf("duplicate %s %s", field, spec.ID)
+		}
+		seen[spec.ID] = struct{}{}
+		if i > 0 && previous >= spec.ID {
+			return fmt.Errorf("%s must be sorted canonically", field)
+		}
+		previous = spec.ID
+	}
+	for _, id := range required {
+		if _, found := seen[id]; !found {
+			return fmt.Errorf("missing %s %s", field, id)
+		}
+	}
+	return nil
+}
+
+func validateCoverageAssertions(id string, assertions []string) error {
+	if len(assertions) == 0 {
+		return fmt.Errorf("aethercore required test coverage %s assertions are required", id)
+	}
+	seen := make(map[string]struct{}, len(assertions))
+	var previous string
+	for i, assertion := range assertions {
+		if err := validateRoadmapText("aethercore required test coverage assertion", assertion); err != nil {
+			return err
+		}
+		if _, found := seen[assertion]; found {
+			return fmt.Errorf("duplicate aethercore required test coverage assertion %s", assertion)
+		}
+		seen[assertion] = struct{}{}
+		if i > 0 && previous >= assertion {
+			return errors.New("aethercore required test coverage assertions must be sorted canonically")
+		}
+		previous = assertion
+	}
+	return nil
+}
+
+func requiredTestCoverageByID(specs []RequiredTestCoverageSpec, id string) (RequiredTestCoverageSpec, bool) {
+	for _, spec := range specs {
+		if spec.ID == id {
+			return spec, true
+		}
+	}
+	return RequiredTestCoverageSpec{}, false
+}
+
+func requiredUnitCoverageIDStrings() []string {
+	ids := RequiredUnitTestCoverageIDs()
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func requiredIntegrationCoverageIDStrings() []string {
+	ids := RequiredIntegrationTestCoverageIDs()
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func writeStringParts(w byteWriter, values []string) {
+	values = normalizeRoadmapStringSet(values)
+	writeUint64(w, uint64(len(values)))
+	for _, value := range values {
+		writePart(w, value)
+	}
+}
