@@ -156,6 +156,18 @@ func (k *Keeper) RegisterRoleCommitment(commitment networkingtypes.RoleCommitmen
 	return nil
 }
 
+func (k *Keeper) RegisterOverlayDescriptor(desc networkingtypes.OverlayDescriptor, currentHeight uint64) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := networkingtypes.RegisterOverlayDescriptor(k.genesis.State, desc, currentHeight)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) PruneExpired(currentHeight uint64) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err
@@ -187,6 +199,17 @@ func (k Keeper) Sessions(req *prototype.PageRequest) ([]networkingtypes.SessionC
 	}
 	out := make([]networkingtypes.SessionChannel, end-start)
 	copy(out, sessions[start:end])
+	return out, res, nil
+}
+
+func (k Keeper) OverlayDescriptors(req *prototype.PageRequest) ([]networkingtypes.OverlayDescriptor, prototype.PageResponse, error) {
+	descriptors := k.genesis.State.Export().OverlayDescriptors
+	start, end, res, err := prototype.NormalizePage(req, k.genesis.Params, len(descriptors))
+	if err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	out := make([]networkingtypes.OverlayDescriptor, end-start)
+	copy(out, descriptors[start:end])
 	return out, res, nil
 }
 

@@ -15,6 +15,7 @@ type NetworkingState struct {
 	RoleCommitments     []RoleCommitment
 	Sessions            []SessionChannel
 	IdentityTransitions []IdentityTransitionRecord
+	OverlayDescriptors  []OverlayDescriptor
 }
 
 func EmptyState() NetworkingState {
@@ -26,6 +27,7 @@ func EmptyState() NetworkingState {
 		RoleCommitments:     []RoleCommitment{},
 		Sessions:            []SessionChannel{},
 		IdentityTransitions: []IdentityTransitionRecord{},
+		OverlayDescriptors:  DefaultOverlayDescriptors(),
 	}
 }
 
@@ -143,6 +145,7 @@ func PruneExpired(state NetworkingState, currentHeight uint64) (NetworkingState,
 		Adapter:             cloneAdapter(state.Adapter),
 		ChannelPolicies:     cloneChannelPolicies(state.ChannelPolicies),
 		IdentityTransitions: []IdentityTransitionRecord{},
+		OverlayDescriptors:  []OverlayDescriptor{},
 	}
 	for _, record := range state.NodeRecords {
 		if currentHeight == 0 || currentHeight <= record.ExpiresHeight {
@@ -168,10 +171,16 @@ func PruneExpired(state NetworkingState, currentHeight uint64) (NetworkingState,
 			next.IdentityTransitions = append(next.IdentityTransitions, transition)
 		}
 	}
+	for _, desc := range state.OverlayDescriptors {
+		if currentHeight == 0 || desc.ExpiresHeight == 0 || currentHeight <= desc.ExpiresHeight {
+			next.OverlayDescriptors = append(next.OverlayDescriptors, desc)
+		}
+	}
 	sortNodeRecords(next.NodeRecords)
 	sortRoleCommitments(next.RoleCommitments)
 	sortSessions(next.Sessions)
 	sortIdentityTransitions(next.IdentityTransitions)
+	sortOverlayDescriptors(next.OverlayDescriptors)
 	return next, next.Validate()
 }
 
@@ -194,11 +203,15 @@ func (s NetworkingState) Export() NetworkingState {
 	if len(out.ChannelPolicies) == 0 {
 		out.ChannelPolicies = DefaultChannelPolicies()
 	}
+	if len(out.OverlayDescriptors) == 0 {
+		out.OverlayDescriptors = DefaultOverlayDescriptors()
+	}
 	sortChannelPolicies(out.ChannelPolicies)
 	sortNodeRecords(out.NodeRecords)
 	sortRoleCommitments(out.RoleCommitments)
 	sortSessions(out.Sessions)
 	sortIdentityTransitions(out.IdentityTransitions)
+	sortOverlayDescriptors(out.OverlayDescriptors)
 	return out
 }
 
@@ -211,6 +224,7 @@ func (s NetworkingState) Clone() NetworkingState {
 		RoleCommitments:     cloneRoleCommitments(s.RoleCommitments),
 		Sessions:            make([]SessionChannel, len(s.Sessions)),
 		IdentityTransitions: cloneIdentityTransitions(s.IdentityTransitions),
+		OverlayDescriptors:  cloneOverlayDescriptors(s.OverlayDescriptors),
 	}
 	for i, record := range s.NodeRecords {
 		out.NodeRecords[i] = NormalizeNodeRecord(record)
@@ -240,7 +254,10 @@ func (s NetworkingState) Validate() error {
 	if err := validateSessions(s.NodeRecords, s.Sessions); err != nil {
 		return err
 	}
-	return validateIdentityTransitions(s.IdentityTransitions)
+	if err := validateIdentityTransitions(s.IdentityTransitions); err != nil {
+		return err
+	}
+	return validateOverlayDescriptors(s.OverlayDescriptors, 0)
 }
 
 func (s NetworkingState) hasNode(nodeID string) bool {
@@ -430,5 +447,5 @@ func normalizeHashText(value string) string {
 }
 
 func (s NetworkingState) DebugString() string {
-	return fmt.Sprintf("networking nodes=%d sessions=%d channels=%d", len(s.NodeRecords), len(s.Sessions), len(s.ChannelPolicies))
+	return fmt.Sprintf("networking nodes=%d sessions=%d channels=%d overlays=%d", len(s.NodeRecords), len(s.Sessions), len(s.ChannelPolicies), len(s.OverlayDescriptors))
 }

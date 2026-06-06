@@ -485,6 +485,171 @@ func TestNetworkingStateRegistersNodesAndSessionsCanonically(t *testing.T) {
 	require.Empty(t, pruned.Sessions)
 }
 
+func TestDefaultOverlayDescriptorsCoverL2OverlayTypes(t *testing.T) {
+	descriptors := DefaultOverlayDescriptors()
+	require.NoError(t, ValidateOverlayDescriptors(descriptors, 0))
+	require.Len(t, descriptors, 8)
+
+	seen := make(map[OverlayType]bool)
+	for _, desc := range descriptors {
+		require.Equal(t, ComputeOverlayID(desc), desc.OverlayID)
+		require.NotZero(t, desc.MinPeers)
+		require.GreaterOrEqual(t, desc.MaxPeers, desc.MinPeers)
+		require.LessOrEqual(t, desc.Fanout, desc.MaxPeers)
+		require.True(t, IsQoSClass(desc.QoSClass))
+		seen[desc.OverlayType] = true
+	}
+
+	for _, overlayType := range []OverlayType{
+		OverlayTypeValidator,
+		OverlayTypeZone,
+		OverlayTypeExecution,
+		OverlayTypeData,
+		OverlayTypeService,
+		OverlayTypeDiscovery,
+		OverlayTypeStorage,
+		OverlayTypeRouting,
+	} {
+		require.True(t, seen[overlayType], overlayType)
+	}
+}
+
+func TestOverlayDescriptorRejectsInvalidMembershipQoSAndFanout(t *testing.T) {
+	_, err := NewOverlayDescriptor(OverlayDescriptor{
+		OverlayType: OverlayTypeService,
+		PolicyHash:  HashParts("bad-service-overlay-qos"),
+		Membership:  OverlayMembershipServiceAdvertisement,
+		Routing:     RoutingStrategyLowLatencyAdvisory,
+		MinPeers:    2,
+		MaxPeers:    8,
+		Fanout:      2,
+		QoSClass:    QoSClassBulkData,
+		Version:     1,
+	})
+	require.ErrorContains(t, err, "qos")
+
+	_, err = NewOverlayDescriptor(OverlayDescriptor{
+		OverlayType: OverlayTypeService,
+		PolicyHash:  HashParts("bad-service-overlay-membership"),
+		Membership:  OverlayMembershipRoutingRole,
+		Routing:     RoutingStrategyLowLatencyAdvisory,
+		MinPeers:    2,
+		MaxPeers:    8,
+		Fanout:      2,
+		QoSClass:    QoSClassServiceCall,
+		Version:     1,
+	})
+	require.ErrorContains(t, err, "membership")
+
+	_, err = NewOverlayDescriptor(OverlayDescriptor{
+		OverlayType: OverlayTypeData,
+		PolicyHash:  HashParts("bad-data-overlay-fanout"),
+		Membership:  OverlayMembershipDataProvider,
+		Routing:     RoutingStrategyKBucket,
+		MinPeers:    2,
+		MaxPeers:    4,
+		Fanout:      5,
+		QoSClass:    QoSClassBulkData,
+		Version:     1,
+	})
+	require.ErrorContains(t, err, "fanout")
+
+	_, err = NewOverlayDescriptor(OverlayDescriptor{
+		OverlayType: OverlayTypeValidator,
+		PolicyHash:  HashParts("bad-validator-overlay-routing"),
+		Membership:  OverlayMembershipValidatorSet,
+		Routing:     RoutingStrategyLowLatencyAdvisory,
+		MinPeers:    4,
+		MaxPeers:    32,
+		Fanout:      4,
+		QoSClass:    QoSClassCriticalConsensus,
+		Version:     1,
+	})
+	require.ErrorContains(t, err, "advisory")
+}
+
+func TestOverlayMembershipMatchesNodeRolesAndCapabilities(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	multiRole := signedNodeRecord(t, 0x35, salt, 100, NodeRoleFull, NodeRoleZoneExecution, NodeRoleService, NodeRoleStorageProvider, NodeRoleRouting)
+
+	for _, overlayType := range []OverlayType{
+		OverlayTypeZone,
+		OverlayTypeExecution,
+		OverlayTypeData,
+		OverlayTypeService,
+		OverlayTypeDiscovery,
+		OverlayTypeStorage,
+		OverlayTypeRouting,
+	} {
+		matches, err := NodeSatisfiesOverlayMembership(multiRole, defaultOverlayByType(t, overlayType))
+		require.NoError(t, err)
+		require.True(t, matches, overlayType)
+	}
+
+	matches, err := NodeSatisfiesOverlayMembership(multiRole, defaultOverlayByType(t, OverlayTypeValidator))
+	require.NoError(t, err)
+	require.False(t, matches)
+
+	validatorKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x36}, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	validatorPrivateKey := deterministicPrivateKey(0x37)
+	addressHash, err := HashNetworkAddresses([]string{"tcp://127.0.0.1:26656"})
+	require.NoError(t, err)
+	validator, err := SignNodeRecord(NodeRecord{
+		ValidatorPubKey:      validatorKey,
+		Roles:                []NodeRole{NodeRoleValidator, NodeRoleFull},
+		NetworkAddressesHash: addressHash,
+		ZonesSupported:       []string{"APPLICATION_ZONE"},
+		ProtocolVersions:     []string{DefaultProtocolVersion},
+		ExpiresHeight:        100,
+	}, validatorPrivateKey, salt)
+	require.NoError(t, err)
+
+	matches, err = NodeSatisfiesOverlayMembership(validator, defaultOverlayByType(t, OverlayTypeValidator))
+	require.NoError(t, err)
+	require.True(t, matches)
+}
+
+func TestNetworkingStateRegistersAndPrunesOverlayDescriptors(t *testing.T) {
+	state := EmptyState()
+	desc, err := NewOverlayDescriptor(OverlayDescriptor{
+		OverlayType:   OverlayTypeService,
+		PolicyHash:    HashParts("temporary-service-overlay"),
+		Membership:    OverlayMembershipServiceAdvertisement,
+		Routing:       RoutingStrategyLowLatencyAdvisory,
+		MinPeers:      2,
+		MaxPeers:      16,
+		Fanout:        4,
+		QoSClass:      QoSClassServiceCall,
+		ExpiresHeight: 30,
+		Version:       2,
+	})
+	require.NoError(t, err)
+
+	state, err = RegisterOverlayDescriptor(state, desc, 10)
+	require.NoError(t, err)
+	require.Contains(t, overlayIDs(state.OverlayDescriptors), desc.OverlayID)
+
+	pruned, err := PruneExpired(state, 31)
+	require.NoError(t, err)
+	require.NotContains(t, overlayIDs(pruned.OverlayDescriptors), desc.OverlayID)
+	require.NoError(t, pruned.Validate())
+}
+
+func TestOverlayRoutingFanoutClampsToEligiblePeers(t *testing.T) {
+	desc := defaultOverlayByType(t, OverlayTypeService)
+
+	fanout, err := PlanOverlayFanout(desc, 20)
+	require.NoError(t, err)
+	require.Equal(t, desc.Fanout, fanout)
+
+	fanout, err = PlanOverlayFanout(desc, 4)
+	require.NoError(t, err)
+	require.Equal(t, uint32(4), fanout)
+
+	_, err = PlanOverlayFanout(desc, 1)
+	require.ErrorContains(t, err, "insufficient")
+}
+
 func TestLayerStackPreservesCometBFTBaselineAndExtensionOrder(t *testing.T) {
 	stack := DefaultLayerStack()
 	require.NoError(t, ValidateLayerStack(stack))
@@ -866,6 +1031,26 @@ func l0AlertCodes(alerts []L0Alert) []string {
 		codes[i] = alert.Code
 	}
 	return codes
+}
+
+func defaultOverlayByType(t *testing.T, overlayType OverlayType) OverlayDescriptor {
+	t.Helper()
+
+	for _, desc := range DefaultOverlayDescriptors() {
+		if desc.OverlayType == overlayType {
+			return desc
+		}
+	}
+	t.Fatalf("missing default overlay %s", overlayType)
+	return OverlayDescriptor{}
+}
+
+func overlayIDs(descriptors []OverlayDescriptor) []string {
+	out := make([]string, len(descriptors))
+	for i, desc := range descriptors {
+		out[i] = NormalizeOverlayDescriptor(desc).OverlayID
+	}
+	return out
 }
 
 func testSessionRequest(local, remote NodeRecord, openedHeight, expiresHeight uint64, nonce string, channels []ChannelClass) SessionRequest {

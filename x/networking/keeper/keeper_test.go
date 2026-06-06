@@ -17,6 +17,7 @@ func TestDefaultGenesisIsDisabledAndValid(t *testing.T) {
 	require.NoError(t, gs.Validate())
 	require.False(t, gs.Params.Enabled)
 	require.NotEmpty(t, gs.State.ChannelPolicies)
+	require.NotEmpty(t, gs.State.OverlayDescriptors)
 	require.Empty(t, gs.State.NodeRecords)
 	require.Empty(t, gs.State.Sessions)
 }
@@ -66,6 +67,24 @@ func TestKeeperRegistersNodeAndSessionWhenEnabled(t *testing.T) {
 		CommitmentHash: networkingtypes.HashParts("keeper-service-role"),
 		ExpiresHeight:  80,
 	}, 22))
+
+	overlay, err := networkingtypes.NewOverlayDescriptor(networkingtypes.OverlayDescriptor{
+		OverlayType:   networkingtypes.OverlayTypeService,
+		PolicyHash:    networkingtypes.HashParts("keeper-service-overlay"),
+		Membership:    networkingtypes.OverlayMembershipServiceAdvertisement,
+		Routing:       networkingtypes.RoutingStrategyLowLatencyAdvisory,
+		MinPeers:      2,
+		MaxPeers:      16,
+		Fanout:        4,
+		QoSClass:      networkingtypes.QoSClassServiceCall,
+		ExpiresHeight: 90,
+		Version:       2,
+	})
+	require.NoError(t, err)
+	require.NoError(t, k.RegisterOverlayDescriptor(overlay, 23))
+	overlays, _, err := k.OverlayDescriptors(nil)
+	require.NoError(t, err)
+	require.Contains(t, keeperOverlayIDs(overlays), overlay.OverlayID)
 }
 
 func TestKeeperAppliesSignedIdentityTransition(t *testing.T) {
@@ -120,4 +139,12 @@ func keeperSessionRequest(local, remote networkingtypes.NodeRecord, openedHeight
 		ExpiresHeight:               expiresHeight,
 		Nonce:                       []byte(nonce),
 	}
+}
+
+func keeperOverlayIDs(descriptors []networkingtypes.OverlayDescriptor) []string {
+	out := make([]string, len(descriptors))
+	for i, desc := range descriptors {
+		out[i] = networkingtypes.NormalizeOverlayDescriptor(desc).OverlayID
+	}
+	return out
 }
