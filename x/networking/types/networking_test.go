@@ -2206,6 +2206,82 @@ func TestDRTBucketsAndOverlayNativeDiscoveryAreDeterministic(t *testing.T) {
 	require.Equal(t, 2, total)
 }
 
+func TestSignedDiscoveryRecordStoreFindRenewAndRevoke(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	owner := signedNodeRecordWithCapabilities(t, 0x5d, salt, 120, []NodeRole{NodeRoleService}, nil, []string{"svc.payments"})
+	targetID := HashParts("discovery-target", "svc.payments")
+	endpointHash := HashParts("endpoint", "svc.payments.primary")
+	record := testSignedDiscoveryObjectRecord(t, owner, 0x5d, salt, DRTObjectServiceEndpoint, targetID, endpointHash, "", "svc.payments", "", 80)
+
+	require.Equal(t, ComputeDiscoveryRecordID(record), record.RecordID)
+	require.NoError(t, record.Validate(salt, 20))
+
+	tampered := record
+	tampered.Signature = cloneBytes(record.Signature)
+	tampered.Signature[0] ^= 0xff
+	require.ErrorContains(t, tampered.Validate(salt, 20), "signature")
+
+	table := EmptyDistributedRoutingTable()
+	table, err := table.Store(record, salt, 20)
+	require.NoError(t, err)
+	require.Len(t, table.FindService("svc.payments", 20), 1)
+	require.Len(t, table.FindEndpoint(endpointHash, 20), 1)
+	require.Empty(t, table.FindService("svc.payments", 81))
+
+	renewed, err := RenewDiscoveryRecord(record, 100, deterministicPrivateKey(0x5d), salt)
+	require.NoError(t, err)
+	table, err = table.UpdateLease(renewed, salt, 30)
+	require.NoError(t, err)
+	require.Len(t, table.Records, 1)
+	require.Equal(t, uint64(100), table.FindService("svc.payments", 90)[0].ExpiresHeight)
+
+	_, err = table.UpdateLease(record, salt, 31)
+	require.ErrorContains(t, err, "extend expiry")
+
+	revocation, err := NewDiscoveryRevocation(renewed, deterministicPrivateKey(0x5d), 95)
+	require.NoError(t, err)
+	table, err = table.Revoke(revocation, salt, 95)
+	require.NoError(t, err)
+	require.Empty(t, table.FindService("svc.payments", 95))
+	require.Len(t, table.Revocations, 1)
+
+	_, err = table.Store(renewed, salt, 96)
+	require.ErrorContains(t, err, "revoked")
+}
+
+func TestDiscoveryQueryOperationsCoverNodeZoneStorageAndEndpoint(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	node := signedNodeRecord(t, 0x5e, salt, 100, NodeRoleFull)
+	zone := signedNodeRecordWithCapabilities(t, 0x5f, salt, 100, []NodeRole{NodeRoleZoneExecution}, []string{"zone-b"}, nil)
+	storage := signedNodeRecord(t, 0x60, salt, 100, NodeRoleStorageProvider)
+	table := EmptyDistributedRoutingTable()
+
+	nodeRecord := testSignedDiscoveryObjectRecord(t, node, 0x5e, salt, DRTObjectNode, node.NodeID, HashParts("advertisement", "node"), "", "", "", 80)
+	zoneRecord := testSignedDiscoveryObjectRecord(t, zone, 0x5f, salt, DRTObjectExecutionZone, HashParts("target", "zone-b"), HashParts("advertisement", "zone-b"), "zone-b", "", "", 80)
+	storageRecord := testSignedDiscoveryObjectRecord(t, storage, 0x60, salt, DRTObjectStorageProvider, storage.NodeID, HashParts("endpoint", "storage"), "", "", "", 80)
+
+	var err error
+	for _, record := range []DiscoveryRecord{nodeRecord, zoneRecord, storageRecord} {
+		table, err = table.Store(record, salt, 20)
+		require.NoError(t, err)
+	}
+
+	require.Len(t, table.FindNode(node.NodeID, 20), 1)
+	require.Len(t, table.FindZone("zone-b", 20), 1)
+	require.Len(t, table.FindStorageProvider(20), 1)
+	require.Len(t, table.FindEndpoint(HashParts("endpoint", "storage"), 20), 1)
+
+	_, err = NewSignedDiscoveryRecord(DiscoveryRecord{
+		RecordType:        DRTObjectStorageProvider,
+		OwnerNodeID:       node.NodeID,
+		TargetID:          node.NodeID,
+		AdvertisementHash: HashParts("endpoint", "bad-storage"),
+		ExpiresHeight:     80,
+		Record:            node,
+	}, deterministicPrivateKey(0x5e), salt)
+	require.ErrorContains(t, err, "storage provider role")
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
@@ -2592,6 +2668,24 @@ func testDRTAdvertisement(objectType DRTObjectType, record NodeRecord, overlayID
 		LeaseStartHeight:  leaseStart,
 		LeaseExpireHeight: leaseExpires,
 	}
+}
+
+func testSignedDiscoveryObjectRecord(t *testing.T, owner NodeRecord, seed byte, salt []byte, recordType DRTObjectType, targetID, advertisementHash, zoneID, serviceID, overlayID string, expiresHeight uint64) DiscoveryRecord {
+	t.Helper()
+
+	record, err := NewSignedDiscoveryRecord(DiscoveryRecord{
+		RecordType:        recordType,
+		OwnerNodeID:       owner.NodeID,
+		TargetID:          targetID,
+		AdvertisementHash: advertisementHash,
+		ZoneID:            zoneID,
+		ServiceID:         serviceID,
+		OverlayID:         overlayID,
+		ExpiresHeight:     expiresHeight,
+		Record:            owner,
+	}, deterministicPrivateKey(seed), salt)
+	require.NoError(t, err)
+	return record
 }
 
 func deterministicPrivateKey(fill byte) ed25519.PrivateKey {

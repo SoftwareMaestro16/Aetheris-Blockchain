@@ -56,9 +56,19 @@ type NetworkMessage struct {
 }
 
 type DiscoveryRecord struct {
-	Record      NodeRecord
-	ProofHash   string
-	ProofHeight uint64
+	RecordID          string
+	RecordType        DRTObjectType
+	OwnerNodeID       string
+	TargetID          string
+	AdvertisementHash string
+	ZoneID            string
+	ServiceID         string
+	OverlayID         string
+	ExpiresHeight     uint64
+	Signature         []byte
+	ProofHash         string
+	ProofHeight       uint64
+	Record            NodeRecord
 }
 
 type PeerScoreUse struct {
@@ -223,6 +233,9 @@ func ComputeNetworkMessageID(msg NetworkMessage) string {
 }
 
 func (d DiscoveryRecord) Validate(networkSalt []byte, currentHeight uint64) error {
+	if IsObjectDiscoveryRecord(d) {
+		return ValidateSignedDiscoveryRecord(d, networkSalt, currentHeight)
+	}
 	if err := d.Record.Validate(networkSalt, currentHeight); err != nil {
 		return err
 	}

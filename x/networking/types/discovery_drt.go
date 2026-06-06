@@ -1,6 +1,8 @@
 package types
 
 import (
+	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -59,6 +61,17 @@ type DRTBucket struct {
 
 type DistributedRoutingTable struct {
 	Advertisements []DRTAdvertisement
+	Records        []DiscoveryRecord
+	Revocations    []DiscoveryRevocation
+}
+
+type DiscoveryRevocation struct {
+	RevocationID      string
+	RecordID          string
+	OwnerNodeID       string
+	AdvertisementHash string
+	RevokedHeight     uint64
+	Signature         []byte
 }
 
 func EmptyDistributedRoutingTable() DistributedRoutingTable {
@@ -83,13 +96,171 @@ func NormalizeDRTAdvertisement(ad DRTAdvertisement) DRTAdvertisement {
 	ad.AdvertisementID = normalizeHashText(ad.AdvertisementID)
 	ad.ObjectType = DRTObjectType(strings.ToLower(strings.TrimSpace(string(ad.ObjectType))))
 	ad.ObjectID = normalizeHashText(ad.ObjectID)
-	ad.Discovery.Record = NormalizeNodeRecord(ad.Discovery.Record)
-	ad.Discovery.ProofHash = normalizeHashText(ad.Discovery.ProofHash)
+	ad.Discovery = NormalizeDiscoveryRecord(ad.Discovery)
 	ad.OverlayID = normalizeHashText(ad.OverlayID)
 	ad.ZoneID = strings.TrimSpace(ad.ZoneID)
 	ad.ServiceID = strings.TrimSpace(ad.ServiceID)
 	ad.EndpointHash = normalizeHashText(ad.EndpointHash)
 	return ad
+}
+
+func NormalizeDiscoveryRecord(record DiscoveryRecord) DiscoveryRecord {
+	record.RecordID = normalizeHashText(record.RecordID)
+	record.RecordType = DRTObjectType(strings.ToLower(strings.TrimSpace(string(record.RecordType))))
+	record.OwnerNodeID = normalizeHashText(record.OwnerNodeID)
+	record.TargetID = normalizeHashText(record.TargetID)
+	record.AdvertisementHash = normalizeHashText(record.AdvertisementHash)
+	record.ZoneID = strings.TrimSpace(record.ZoneID)
+	record.ServiceID = strings.TrimSpace(record.ServiceID)
+	record.OverlayID = normalizeHashText(record.OverlayID)
+	record.ProofHash = normalizeHashText(record.ProofHash)
+	record.Record = NormalizeNodeRecord(record.Record)
+	record.Signature = cloneBytes(record.Signature)
+	return record
+}
+
+func NewSignedDiscoveryRecord(record DiscoveryRecord, privateKey ed25519.PrivateKey, networkSalt []byte) (DiscoveryRecord, error) {
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return DiscoveryRecord{}, errors.New("networking discovery record private key must be ed25519")
+	}
+	if len(networkSalt) == 0 {
+		return DiscoveryRecord{}, errors.New("networking discovery record network salt is required")
+	}
+	record = NormalizeDiscoveryRecord(record)
+	if err := record.Record.Validate(networkSalt, 0); err != nil {
+		return DiscoveryRecord{}, err
+	}
+	pubKey, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok || string(pubKey) != string(record.Record.NodePubKey) {
+		return DiscoveryRecord{}, errors.New("networking discovery record signer must own node record")
+	}
+	if record.OwnerNodeID == "" {
+		record.OwnerNodeID = record.Record.NodeID
+	}
+	if record.ExpiresHeight == 0 {
+		record.ExpiresHeight = record.Record.ExpiresHeight
+	}
+	if record.RecordID == "" {
+		record.RecordID = ComputeDiscoveryRecordID(record)
+	}
+	payload, err := DiscoveryRecordSigningPayload(record)
+	if err != nil {
+		return DiscoveryRecord{}, err
+	}
+	record.Signature = ed25519.Sign(privateKey, payload)
+	if err := ValidateSignedDiscoveryRecord(record, networkSalt, 0); err != nil {
+		return DiscoveryRecord{}, err
+	}
+	return record, nil
+}
+
+func RenewDiscoveryRecord(record DiscoveryRecord, expiresHeight uint64, privateKey ed25519.PrivateKey, networkSalt []byte) (DiscoveryRecord, error) {
+	record = NormalizeDiscoveryRecord(record)
+	if expiresHeight <= record.ExpiresHeight {
+		return DiscoveryRecord{}, errors.New("networking discovery renewal expiry must increase")
+	}
+	record.ExpiresHeight = expiresHeight
+	record.RecordID = ""
+	record.Signature = nil
+	return NewSignedDiscoveryRecord(record, privateKey, networkSalt)
+}
+
+func ComputeDiscoveryRecordID(record DiscoveryRecord) string {
+	record = NormalizeDiscoveryRecord(record)
+	return HashParts(
+		"discovery-record",
+		string(record.RecordType),
+		record.OwnerNodeID,
+		record.TargetID,
+		record.AdvertisementHash,
+		record.ZoneID,
+		record.ServiceID,
+		record.OverlayID,
+		fmt.Sprintf("%d", record.ExpiresHeight),
+		record.ProofHash,
+	)
+}
+
+func DiscoveryRecordSigningPayload(record DiscoveryRecord) ([]byte, error) {
+	record = NormalizeDiscoveryRecord(record)
+	record.Signature = nil
+	return json.Marshal(record)
+}
+
+func IsObjectDiscoveryRecord(record DiscoveryRecord) bool {
+	record = NormalizeDiscoveryRecord(record)
+	return record.RecordID != "" ||
+		record.RecordType != "" ||
+		record.OwnerNodeID != "" ||
+		record.TargetID != "" ||
+		record.AdvertisementHash != "" ||
+		record.ExpiresHeight != 0 ||
+		len(record.Signature) > 0
+}
+
+func ValidateSignedDiscoveryRecord(record DiscoveryRecord, networkSalt []byte, currentHeight uint64) error {
+	record = NormalizeDiscoveryRecord(record)
+	if err := ValidateHash("networking discovery record id", record.RecordID); err != nil {
+		return err
+	}
+	if record.RecordID != ComputeDiscoveryRecordID(record) {
+		return errors.New("networking discovery record id mismatch")
+	}
+	if !IsDRTObjectType(record.RecordType) {
+		return fmt.Errorf("unknown networking discovery record type %q", record.RecordType)
+	}
+	if len(networkSalt) > 0 {
+		if err := record.Record.Validate(networkSalt, currentHeight); err != nil {
+			return err
+		}
+	} else if err := record.Record.ValidateBasic(); err != nil {
+		return err
+	}
+	if record.OwnerNodeID != record.Record.NodeID {
+		return errors.New("networking discovery record owner must match node record")
+	}
+	if err := ValidateHash("networking discovery target id", record.TargetID); err != nil {
+		return err
+	}
+	if err := ValidateHash("networking discovery advertisement hash", record.AdvertisementHash); err != nil {
+		return err
+	}
+	if record.OverlayID != "" {
+		if err := ValidateHash("networking discovery overlay id", record.OverlayID); err != nil {
+			return err
+		}
+	}
+	if record.ProofHash != "" {
+		if err := ValidateHash("networking discovery proof hash", record.ProofHash); err != nil {
+			return err
+		}
+		if record.ProofHeight == 0 {
+			return errors.New("networking discovery proof height must be positive")
+		}
+		if record.ProofHeight > record.ExpiresHeight {
+			return errors.New("networking discovery proof cannot outlive record")
+		}
+	}
+	if record.ExpiresHeight == 0 || record.ExpiresHeight > record.Record.ExpiresHeight {
+		return errors.New("networking discovery record expiry must be positive and not outlive node record")
+	}
+	if currentHeight > 0 && currentHeight > record.ExpiresHeight {
+		return errors.New("networking discovery record is expired")
+	}
+	if len(record.Signature) != ed25519.SignatureSize {
+		return fmt.Errorf("networking discovery record signature must be %d bytes", ed25519.SignatureSize)
+	}
+	if err := validateDiscoveryRecordCompatibility(record); err != nil {
+		return err
+	}
+	payload, err := DiscoveryRecordSigningPayload(record)
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(record.Record.NodePubKey, payload, record.Signature) {
+		return errors.New("networking discovery record signature verification failed")
+	}
+	return nil
 }
 
 func ComputeDRTObjectID(ad DRTAdvertisement) string {
@@ -259,6 +430,119 @@ func (table DistributedRoutingTable) Query(query DRTQuery) []DRTAdvertisement {
 	return out
 }
 
+func (table DistributedRoutingTable) Store(record DiscoveryRecord, networkSalt []byte, currentHeight uint64) (DistributedRoutingTable, error) {
+	record = NormalizeDiscoveryRecord(record)
+	if err := record.Validate(networkSalt, currentHeight); err != nil {
+		return DistributedRoutingTable{}, err
+	}
+	if table.isRevoked(record.RecordID) {
+		return DistributedRoutingTable{}, errors.New("networking discovery record is revoked")
+	}
+	next := table.Clone()
+	replaced := false
+	for i, existing := range next.Records {
+		if discoveryRecordKey(existing) == discoveryRecordKey(record) {
+			next.Records[i] = record
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		next.Records = append(next.Records, record)
+	}
+	sortDiscoveryRecords(next.Records)
+	return next, next.Validate(networkSalt, currentHeight)
+}
+
+func (table DistributedRoutingTable) UpdateLease(record DiscoveryRecord, networkSalt []byte, currentHeight uint64) (DistributedRoutingTable, error) {
+	record = NormalizeDiscoveryRecord(record)
+	if err := record.Validate(networkSalt, currentHeight); err != nil {
+		return DistributedRoutingTable{}, err
+	}
+	found := false
+	next := table.Clone()
+	records := make([]DiscoveryRecord, 0, len(next.Records)+1)
+	for _, existing := range table.Records {
+		existing = NormalizeDiscoveryRecord(existing)
+		if existing.RecordType == record.RecordType &&
+			existing.OwnerNodeID == record.OwnerNodeID &&
+			existing.TargetID == record.TargetID &&
+			existing.AdvertisementHash == record.AdvertisementHash {
+			found = true
+			if record.ExpiresHeight <= existing.ExpiresHeight {
+				return DistributedRoutingTable{}, errors.New("networking discovery lease update must extend expiry")
+			}
+			continue
+		}
+		records = append(records, existing)
+	}
+	if !found {
+		return DistributedRoutingTable{}, errors.New("networking discovery lease update target not found")
+	}
+	records = append(records, record)
+	next.Records = records
+	sortDiscoveryRecords(next.Records)
+	return next, next.Validate(networkSalt, currentHeight)
+}
+
+func (table DistributedRoutingTable) Revoke(revocation DiscoveryRevocation, networkSalt []byte, currentHeight uint64) (DistributedRoutingTable, error) {
+	revocation = NormalizeDiscoveryRevocation(revocation)
+	record, found := table.discoveryRecordByID(revocation.RecordID)
+	if !found {
+		return DistributedRoutingTable{}, errors.New("networking discovery revoke target not found")
+	}
+	if err := revocation.Validate(record, networkSalt, currentHeight); err != nil {
+		return DistributedRoutingTable{}, err
+	}
+	next := table.Clone()
+	remaining := make([]DiscoveryRecord, 0, len(next.Records))
+	for _, existing := range next.Records {
+		if NormalizeDiscoveryRecord(existing).RecordID == revocation.RecordID {
+			continue
+		}
+		remaining = append(remaining, existing)
+	}
+	next.Records = remaining
+	next.Revocations = append(next.Revocations, revocation)
+	sortDiscoveryRecords(next.Records)
+	sortDiscoveryRevocations(next.Revocations)
+	return next, next.Validate(networkSalt, currentHeight)
+}
+
+func (table DistributedRoutingTable) FindNode(nodeID string, currentHeight uint64) []DiscoveryRecord {
+	nodeID = normalizeHashText(nodeID)
+	return table.findRecords(func(record DiscoveryRecord) bool {
+		return record.RecordType == DRTObjectNode && (record.TargetID == nodeID || record.OwnerNodeID == nodeID)
+	}, currentHeight)
+}
+
+func (table DistributedRoutingTable) FindService(serviceID string, currentHeight uint64) []DiscoveryRecord {
+	serviceID = strings.TrimSpace(serviceID)
+	return table.findRecords(func(record DiscoveryRecord) bool {
+		return record.RecordType == DRTObjectServiceEndpoint && record.ServiceID == serviceID
+	}, currentHeight)
+}
+
+func (table DistributedRoutingTable) FindZone(zoneID string, currentHeight uint64) []DiscoveryRecord {
+	zoneID = strings.TrimSpace(zoneID)
+	return table.findRecords(func(record DiscoveryRecord) bool {
+		return record.RecordType == DRTObjectExecutionZone && record.ZoneID == zoneID
+	}, currentHeight)
+}
+
+func (table DistributedRoutingTable) FindEndpoint(advertisementHash string, currentHeight uint64) []DiscoveryRecord {
+	advertisementHash = normalizeHashText(advertisementHash)
+	return table.findRecords(func(record DiscoveryRecord) bool {
+		return record.AdvertisementHash == advertisementHash
+	}, currentHeight)
+}
+
+func (table DistributedRoutingTable) FindStorageProvider(currentHeight uint64) []DiscoveryRecord {
+	return table.findRecords(func(record DiscoveryRecord) bool {
+		return record.RecordType == DRTObjectStorageProvider
+	}, currentHeight)
+}
+
 func (table DistributedRoutingTable) Prune(currentHeight uint64) DistributedRoutingTable {
 	next := DistributedRoutingTable{}
 	for _, ad := range table.Advertisements {
@@ -268,7 +552,20 @@ func (table DistributedRoutingTable) Prune(currentHeight uint64) DistributedRout
 		}
 		next.Advertisements = append(next.Advertisements, ad)
 	}
+	for _, record := range table.Records {
+		record = NormalizeDiscoveryRecord(record)
+		if currentHeight > 0 && currentHeight > record.ExpiresHeight {
+			continue
+		}
+		if table.isRevoked(record.RecordID) {
+			continue
+		}
+		next.Records = append(next.Records, record)
+	}
+	next.Revocations = append([]DiscoveryRevocation(nil), table.Revocations...)
 	sortDRTAdvertisements(next.Advertisements)
+	sortDiscoveryRecords(next.Records)
+	sortDiscoveryRevocations(next.Revocations)
 	return next
 }
 
@@ -326,11 +623,52 @@ func (table DistributedRoutingTable) Validate(networkSalt []byte, currentHeight 
 		}
 		previous = key
 	}
+	seenRecords := make(map[string]struct{}, len(table.Records))
+	previous = ""
+	for i, record := range table.Records {
+		record = NormalizeDiscoveryRecord(record)
+		if err := record.Validate(networkSalt, currentHeight); err != nil {
+			return err
+		}
+		key := discoveryRecordKey(record)
+		if _, found := seenRecords[key]; found {
+			return errors.New("networking duplicate discovery record")
+		}
+		if table.isRevoked(record.RecordID) {
+			return errors.New("networking active discovery record is revoked")
+		}
+		seenRecords[key] = struct{}{}
+		if i > 0 && previous >= key {
+			return errors.New("networking discovery records must be sorted canonically")
+		}
+		previous = key
+	}
+	seenRevocations := make(map[string]struct{}, len(table.Revocations))
+	previous = ""
+	for i, revocation := range table.Revocations {
+		revocation = NormalizeDiscoveryRevocation(revocation)
+		if err := ValidateHash("networking discovery revocation id", revocation.RevocationID); err != nil {
+			return err
+		}
+		key := discoveryRevocationKey(revocation)
+		if _, found := seenRevocations[key]; found {
+			return errors.New("networking duplicate discovery revocation")
+		}
+		seenRevocations[key] = struct{}{}
+		if i > 0 && previous >= key {
+			return errors.New("networking discovery revocations must be sorted canonically")
+		}
+		previous = key
+	}
 	return nil
 }
 
 func (table DistributedRoutingTable) Clone() DistributedRoutingTable {
-	return DistributedRoutingTable{Advertisements: cloneDRTAdvertisements(table.Advertisements)}
+	return DistributedRoutingTable{
+		Advertisements: cloneDRTAdvertisements(table.Advertisements),
+		Records:        cloneDiscoveryRecords(table.Records),
+		Revocations:    cloneDiscoveryRevocations(table.Revocations),
+	}
 }
 
 func IsDRTObjectType(objectType DRTObjectType) bool {
@@ -421,12 +759,136 @@ func validateDRTObjectCompatibility(ad DRTAdvertisement) error {
 	return nil
 }
 
+func validateDiscoveryRecordCompatibility(record DiscoveryRecord) error {
+	ad := DRTAdvertisement{
+		ObjectType:        record.RecordType,
+		ObjectID:          record.TargetID,
+		Discovery:         DiscoveryRecord{Record: record.Record},
+		OverlayID:         record.OverlayID,
+		ZoneID:            record.ZoneID,
+		ServiceID:         record.ServiceID,
+		EndpointHash:      record.AdvertisementHash,
+		StakeWeight:       1,
+		PeerScoreBps:      0,
+		LeaseStartHeight:  1,
+		LeaseExpireHeight: record.ExpiresHeight,
+	}
+	switch record.RecordType {
+	case DRTObjectNode, DRTObjectOverlayMembershipRecord:
+		return nil
+	default:
+		return validateDRTObjectCompatibility(ad)
+	}
+}
+
+func NewDiscoveryRevocation(record DiscoveryRecord, privateKey ed25519.PrivateKey, revokedHeight uint64) (DiscoveryRevocation, error) {
+	record = NormalizeDiscoveryRecord(record)
+	if len(privateKey) != ed25519.PrivateKeySize {
+		return DiscoveryRevocation{}, errors.New("networking discovery revocation private key must be ed25519")
+	}
+	pubKey, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok || string(pubKey) != string(record.Record.NodePubKey) {
+		return DiscoveryRevocation{}, errors.New("networking discovery revocation signer must own node record")
+	}
+	revocation := NormalizeDiscoveryRevocation(DiscoveryRevocation{
+		RecordID:          record.RecordID,
+		OwnerNodeID:       record.OwnerNodeID,
+		AdvertisementHash: record.AdvertisementHash,
+		RevokedHeight:     revokedHeight,
+	})
+	revocation.RevocationID = ComputeDiscoveryRevocationID(revocation)
+	payload, err := DiscoveryRevocationSigningPayload(revocation)
+	if err != nil {
+		return DiscoveryRevocation{}, err
+	}
+	revocation.Signature = ed25519.Sign(privateKey, payload)
+	if err := revocation.Validate(record, nil, revokedHeight); err != nil {
+		return DiscoveryRevocation{}, err
+	}
+	return revocation, nil
+}
+
+func NormalizeDiscoveryRevocation(revocation DiscoveryRevocation) DiscoveryRevocation {
+	revocation.RevocationID = normalizeHashText(revocation.RevocationID)
+	revocation.RecordID = normalizeHashText(revocation.RecordID)
+	revocation.OwnerNodeID = normalizeHashText(revocation.OwnerNodeID)
+	revocation.AdvertisementHash = normalizeHashText(revocation.AdvertisementHash)
+	revocation.Signature = cloneBytes(revocation.Signature)
+	return revocation
+}
+
+func ComputeDiscoveryRevocationID(revocation DiscoveryRevocation) string {
+	revocation = NormalizeDiscoveryRevocation(revocation)
+	return HashParts(
+		"discovery-revocation",
+		revocation.RecordID,
+		revocation.OwnerNodeID,
+		revocation.AdvertisementHash,
+		fmt.Sprintf("%d", revocation.RevokedHeight),
+	)
+}
+
+func DiscoveryRevocationSigningPayload(revocation DiscoveryRevocation) ([]byte, error) {
+	revocation = NormalizeDiscoveryRevocation(revocation)
+	revocation.Signature = nil
+	return json.Marshal(revocation)
+}
+
+func (r DiscoveryRevocation) Validate(record DiscoveryRecord, networkSalt []byte, currentHeight uint64) error {
+	revocation := NormalizeDiscoveryRevocation(r)
+	record = NormalizeDiscoveryRecord(record)
+	if err := ValidateSignedDiscoveryRecord(record, networkSalt, 0); err != nil {
+		return err
+	}
+	if revocation.RevocationID != ComputeDiscoveryRevocationID(revocation) {
+		return errors.New("networking discovery revocation id mismatch")
+	}
+	if revocation.RecordID != record.RecordID || revocation.OwnerNodeID != record.OwnerNodeID || revocation.AdvertisementHash != record.AdvertisementHash {
+		return errors.New("networking discovery revocation target mismatch")
+	}
+	if revocation.RevokedHeight == 0 {
+		return errors.New("networking discovery revocation height must be positive")
+	}
+	if currentHeight > 0 && revocation.RevokedHeight > currentHeight {
+		return errors.New("networking discovery revocation height is in the future")
+	}
+	if len(revocation.Signature) != ed25519.SignatureSize {
+		return fmt.Errorf("networking discovery revocation signature must be %d bytes", ed25519.SignatureSize)
+	}
+	payload, err := DiscoveryRevocationSigningPayload(revocation)
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(record.Record.NodePubKey, payload, revocation.Signature) {
+		return errors.New("networking discovery revocation signature verification failed")
+	}
+	return nil
+}
+
 func cloneDRTAdvertisements(advertisements []DRTAdvertisement) []DRTAdvertisement {
 	out := make([]DRTAdvertisement, len(advertisements))
 	for i, ad := range advertisements {
 		out[i] = NormalizeDRTAdvertisement(ad)
 	}
 	sortDRTAdvertisements(out)
+	return out
+}
+
+func cloneDiscoveryRecords(records []DiscoveryRecord) []DiscoveryRecord {
+	out := make([]DiscoveryRecord, len(records))
+	for i, record := range records {
+		out[i] = NormalizeDiscoveryRecord(record)
+	}
+	sortDiscoveryRecords(out)
+	return out
+}
+
+func cloneDiscoveryRevocations(revocations []DiscoveryRevocation) []DiscoveryRevocation {
+	out := make([]DiscoveryRevocation, len(revocations))
+	for i, revocation := range revocations {
+		out[i] = NormalizeDiscoveryRevocation(revocation)
+	}
+	sortDiscoveryRevocations(out)
 	return out
 }
 
@@ -456,6 +918,67 @@ func sortDRTAdvertisementsByRank(advertisements []DRTAdvertisement) {
 func drtAdvertisementKey(ad DRTAdvertisement) string {
 	ad = NormalizeDRTAdvertisement(ad)
 	return string(ad.ObjectType) + "/" + ad.ObjectID + "/" + ad.Discovery.Record.NodeID
+}
+
+func discoveryRecordKey(record DiscoveryRecord) string {
+	record = NormalizeDiscoveryRecord(record)
+	return string(record.RecordType) + "/" + record.OwnerNodeID + "/" + record.TargetID + "/" + record.RecordID
+}
+
+func discoveryRevocationKey(revocation DiscoveryRevocation) string {
+	revocation = NormalizeDiscoveryRevocation(revocation)
+	return revocation.RecordID + "/" + revocation.RevocationID
+}
+
+func sortDiscoveryRecords(records []DiscoveryRecord) {
+	sort.SliceStable(records, func(i, j int) bool {
+		return discoveryRecordKey(records[i]) < discoveryRecordKey(records[j])
+	})
+}
+
+func sortDiscoveryRevocations(revocations []DiscoveryRevocation) {
+	sort.SliceStable(revocations, func(i, j int) bool {
+		return discoveryRevocationKey(revocations[i]) < discoveryRevocationKey(revocations[j])
+	})
+}
+
+func (table DistributedRoutingTable) isRevoked(recordID string) bool {
+	recordID = normalizeHashText(recordID)
+	for _, revocation := range table.Revocations {
+		if NormalizeDiscoveryRevocation(revocation).RecordID == recordID {
+			return true
+		}
+	}
+	return false
+}
+
+func (table DistributedRoutingTable) discoveryRecordByID(recordID string) (DiscoveryRecord, bool) {
+	recordID = normalizeHashText(recordID)
+	for _, record := range table.Records {
+		record = NormalizeDiscoveryRecord(record)
+		if record.RecordID == recordID {
+			return record, true
+		}
+	}
+	return DiscoveryRecord{}, false
+}
+
+func (table DistributedRoutingTable) findRecords(match func(DiscoveryRecord) bool, currentHeight uint64) []DiscoveryRecord {
+	out := make([]DiscoveryRecord, 0)
+	for _, record := range table.Records {
+		record = NormalizeDiscoveryRecord(record)
+		if currentHeight > 0 && currentHeight > record.ExpiresHeight {
+			continue
+		}
+		if table.isRevoked(record.RecordID) {
+			continue
+		}
+		if match(record) {
+			out = append(out, record)
+		}
+	}
+	sortDiscoveryRecords(out)
+	return out
 }
 
 func drtBucketID(localNodeID, remoteNodeID string, bucketCount uint32) uint32 {
