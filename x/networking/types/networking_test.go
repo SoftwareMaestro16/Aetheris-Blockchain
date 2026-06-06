@@ -4136,7 +4136,7 @@ func TestXNetworkStateRejectsInvalidKeysMessagesAndConsensusReputation(t *testin
 func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *testing.T) {
 	roadmap := DefaultNetworkingImplementationRoadmap()
 	require.NoError(t, ValidateNetworkingImplementationRoadmap(roadmap))
-	require.Len(t, roadmap.Phases, 7)
+	require.Len(t, roadmap.Phases, 9)
 	require.Equal(t, ComputeNetworkingRoadmapRoot(roadmap), roadmap.RoadmapRoot)
 
 	phase0 := roadmap.Phases[0]
@@ -4155,7 +4155,7 @@ func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *t
 	require.ErrorContains(t, ValidateNetworkingImplementationRoadmap(broken), "root mismatch")
 }
 
-func TestNetworkingRoadmapReadinessForPhasesZeroToSix(t *testing.T) {
+func TestNetworkingRoadmapReadinessForPhasesZeroToEight(t *testing.T) {
 	evidence := testRoadmapEvidence(t)
 
 	phase0, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseBaselineInstrumentation, evidence)
@@ -4206,6 +4206,20 @@ func TestNetworkingRoadmapReadinessForPhasesZeroToSix(t *testing.T) {
 	require.Contains(t, phase6.SatisfiedExitCriteria, ExitBlocksHeaderChunksProofSet)
 	require.Contains(t, phase6.SatisfiedExitCriteria, ExitDuplicateConflictingHandled)
 	require.Contains(t, phase6.SatisfiedExitCriteria, ExitFallbackGossipResilient)
+
+	phase7, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseAetherMesh, evidence)
+	require.NoError(t, err)
+	require.True(t, phase7.Ready)
+	require.Contains(t, phase7.SatisfiedExitCriteria, ExitL3MessageClassesSupported)
+	require.Contains(t, phase7.SatisfiedExitCriteria, ExitCrossZoneDeliverySemantics)
+	require.Contains(t, phase7.SatisfiedExitCriteria, ExitReceiptsVisibleProofQueryable)
+
+	phase8, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseSecurityLoadHardening, evidence)
+	require.NoError(t, err)
+	require.True(t, phase8.Ready)
+	require.Contains(t, phase8.SatisfiedExitCriteria, ExitMaliciousPeersIsolated)
+	require.Contains(t, phase8.SatisfiedExitCriteria, ExitCriticalChannelsUnderFlood)
+	require.Contains(t, phase8.SatisfiedExitCriteria, ExitDiscoveryPoisoningDetected)
 }
 
 func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
@@ -4257,6 +4271,20 @@ func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, phase6.Ready)
 	require.NotContains(t, phase6.SatisfiedExitCriteria, ExitDuplicateConflictingHandled)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.CrossZoneExactlyOnce = false
+	phase7, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseAetherMesh, evidence)
+	require.NoError(t, err)
+	require.False(t, phase7.Ready)
+	require.NotContains(t, phase7.SatisfiedExitCriteria, ExitCrossZoneDeliverySemantics)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.DiscoveryPoisoningDetected = false
+	phase8, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseSecurityLoadHardening, evidence)
+	require.NoError(t, err)
+	require.False(t, phase8.Ready)
+	require.NotContains(t, phase8.SatisfiedExitCriteria, ExitDiscoveryPoisoningDetected)
 }
 
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
@@ -4758,7 +4786,7 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 		PayloadHash: HashParts("roadmap-broadcast-payload"),
 		PayloadType: BroadcastPayloadService,
 		Height:      20,
-		TTL:         6,
+		TTL:         64,
 		Priority:    PriorityForChannel(ChannelService),
 		FanoutPolicy: BroadcastFanoutPolicy{
 			TreeFanout:   serviceDesc.Fanout + 10,
@@ -4787,6 +4815,213 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 	conflictMsg := broadcastMsg
 	conflictMsg.PayloadHash = HashParts("roadmap-conflicting-broadcast-payload")
 	broadcastCache, conflictDecision, err := broadcastCache.Accept(conflictMsg, remote.NodeID, 21)
+	require.NoError(t, err)
+	executionDesc := testDefaultOverlayDescriptor(t, OverlayTypeExecution)
+	dataDesc := testDefaultOverlayDescriptor(t, OverlayTypeData)
+	executionMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:              MeshMessageExecution,
+		Payload:           []byte("roadmap-execution-message"),
+		Origin:            local.NodeID,
+		Destination:       remote.NodeID,
+		Priority:          PriorityForChannel(ChannelExecution),
+		TTL:               40,
+		OverlayID:         executionDesc.OverlayID,
+		DestinationZone:   "zone-roadmap",
+		Sequence:          1,
+		ConsensusEffect:   true,
+		DeterminismSource: DeterminismCommittedState,
+		Proof: AetherMeshProof{
+			ProofType:   "roadmap-execution-schedule",
+			ProofHash:   HashParts("roadmap-execution-proof"),
+			ProofHeight: 30,
+		},
+	})
+	require.NoError(t, err)
+	serviceMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:           MeshMessageService,
+		Payload:        []byte("roadmap-service-message"),
+		Origin:         local.NodeID,
+		Destination:    remote.NodeID,
+		Priority:       PriorityForChannel(ChannelService),
+		TTL:            40,
+		OverlayID:      serviceDesc.OverlayID,
+		Sequence:       2,
+		RouteHint:      RouteHint{ServiceID: "svc.roadmap"},
+		DeadlineHeight: 90,
+	})
+	require.NoError(t, err)
+	queryMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:        MeshMessageQuery,
+		Payload:     []byte("roadmap-query-message"),
+		Origin:      local.NodeID,
+		Destination: remote.NodeID,
+		Priority:    PriorityForChannel(ChannelService),
+		TTL:         40,
+		OverlayID:   serviceDesc.OverlayID,
+		Sequence:    3,
+	})
+	require.NoError(t, err)
+	storageMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:        MeshMessageStorage,
+		Payload:     []byte("roadmap-storage-message"),
+		Origin:      local.NodeID,
+		Destination: storageOwner.NodeID,
+		Priority:    PriorityForChannel(ChannelData),
+		TTL:         40,
+		OverlayID:   dataDesc.OverlayID,
+		Sequence:    4,
+		RouteHint:   RouteHint{StorageKeyHash: HashParts("roadmap-storage-key")},
+	})
+	require.NoError(t, err)
+	crossZoneMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:              MeshMessageCrossZone,
+		Payload:           []byte("roadmap-cross-zone-message"),
+		Origin:            local.NodeID,
+		Destination:       remote.NodeID,
+		Priority:          PriorityForChannel(ChannelExecution),
+		TTL:               40,
+		OverlayID:         executionDesc.OverlayID,
+		SourceZone:        "zone-roadmap",
+		DestinationZone:   "zone-remote",
+		Sequence:          5,
+		ConsensusEffect:   true,
+		DeterminismSource: DeterminismDeterministicProof,
+		Proof: AetherMeshProof{
+			ProofType:   "roadmap-cross-zone-proof",
+			ProofHash:   HashParts("roadmap-cross-zone-proof"),
+			ProofHeight: 30,
+		},
+	})
+	require.NoError(t, err)
+	meshRoute := func(msg AetherMeshMessage, desc OverlayDescriptor, channel ChannelClass, target string) AetherMeshDelivery {
+		return AetherMeshDelivery{
+			Message: msg,
+			Channel: channel,
+			Route: OverlayRoutePlan{
+				MessageID:     msg.MessageID,
+				OverlayID:     desc.OverlayID,
+				OverlayType:   desc.OverlayType,
+				Strategy:      desc.Routing,
+				TargetNodeIDs: []string{target},
+			},
+		}
+	}
+	crossZoneMsg, err := NewCrossZoneMessage(CrossZoneMessage{
+		SourceZone:      "zone-roadmap",
+		DestinationZone: "zone-remote",
+		SourceSequence:  1,
+		MessageHash:     crossZoneMesh.PayloadHash,
+		ExpiryHeight:    100,
+		ReceiptPolicy:   ReceiptPolicyAlways,
+		ProofRequired:   true,
+	})
+	require.NoError(t, err)
+	crossZoneTracker := CrossZoneSequenceTracker{}
+	crossZoneTracker, err = AcceptCrossZoneSequence(crossZoneTracker, crossZoneMsg, true, 30)
+	require.NoError(t, err)
+	_, replayErr := AcceptCrossZoneSequence(crossZoneTracker, crossZoneMsg, true, 31)
+	crossZoneReceipt, err := NewCrossZoneReceipt(CrossZoneReceipt{
+		SourceZone:      crossZoneMsg.SourceZone,
+		DestinationZone: crossZoneMsg.DestinationZone,
+		SourceSequence:  crossZoneMsg.SourceSequence,
+		MessageHash:     crossZoneMsg.MessageHash,
+		Status:          CrossZoneReceiptExecuted,
+		ReceiptPolicy:   ReceiptPolicyAlways,
+		ProofHash:       HashParts("roadmap-cross-zone-receipt-proof"),
+		ReceiptHeight:   35,
+		RollbackSafe:    true,
+		ProofQueryable:  true,
+	})
+	require.NoError(t, err)
+	receiptDelivery, err := NewReceiptDelivery(crossZoneReceipt, remote.NodeID, 36)
+	require.NoError(t, err)
+	receiptDelivery, err = AckReceiptDelivery(receiptDelivery, HashParts("roadmap-receipt-ack"))
+	require.NoError(t, err)
+	queryResponseProof, err := NewQueryResponseProof(QueryResponseProof{
+		RequestID:   queryMesh.MessageID,
+		Responder:   remote.NodeID,
+		PayloadHash: HashParts("roadmap-query-response"),
+		Proof: AetherMeshProof{
+			ProofType:   "roadmap-query-proof",
+			ProofHash:   HashParts("roadmap-query-proof"),
+			ProofHeight: 36,
+		},
+		ResponseHeight: 37,
+	})
+	require.NoError(t, err)
+	l3Metrics, err := EvaluateL3Metrics(nil, []ReceiptDelivery{receiptDelivery}, []QueryResponseProof{queryResponseProof}, nil, nil)
+	require.NoError(t, err)
+	securityPolicy := DefaultNetworkSecurityPolicy()
+	securityDecision, err := EvaluateNetworkSecurity(PeerScore{ScoreBps: 8_500, ReliabilityBps: 9_000, ThroughputBps: 8_000}, PeerSecurityObservation{
+		PeerNodeID:            remote.NodeID,
+		InvalidMessages:       securityPolicy.MaxInvalidMessages + 1,
+		DuplicateMessages:     securityPolicy.MaxInvalidMessages + 2,
+		ConflictingBroadcasts: 1,
+		CorruptChunks:         1,
+		ForgedAdvertisements:  1,
+		BytesThisEpoch:        securityPolicy.MaxBytesPerEpoch + 1,
+		SybilClusterPeers:     1,
+		CrossZoneReplayCount:  1,
+	}, securityPolicy)
+	require.NoError(t, err)
+	reputationDecision, err := ComputePeerReputation(PeerReputationInput{
+		PeerNodeID:                remote.NodeID,
+		ValidMessages:             90,
+		InvalidMessages:           10,
+		LatencyMillis:             50,
+		ThroughputBytesPerSec:     32 << 20,
+		CorrectChunks:             10,
+		CorruptChunks:             1,
+		ValidDiscoveryResponses:   9,
+		InvalidDiscoveryResponses: 1,
+		ValidServiceResponses:     9,
+		InvalidServiceResponses:   1,
+		Timeouts:                  1,
+		DuplicateBroadcasts:       1,
+		ConflictingBroadcasts:     1,
+	})
+	require.NoError(t, err)
+	eclipsePlan, err := BuildEclipseResistancePlan(AdaptiveOverlayGraph{
+		OverlayID:    serviceDesc.OverlayID,
+		LocalNodeID:  local.NodeID,
+		RoutingEpoch: 30,
+		PolicyHash:   HashParts("roadmap-security-eclipse-policy"),
+		RandomSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-random-a", []NodeRole{NodeRoleFull}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("roadmap-random-b", []NodeRole{NodeRoleFull}, []string{"zone-b"}),
+		},
+		FallbackSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-fallback", []NodeRole{NodeRoleFull}, []string{"zone-c"}),
+		},
+		StableSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-validator-a", []NodeRole{NodeRoleValidator}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("roadmap-validator-b", []NodeRole{NodeRoleValidator}, []string{"zone-b"}),
+		},
+		ZoneSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-zone-a", []NodeRole{NodeRoleZoneExecution}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("roadmap-zone-b", []NodeRole{NodeRoleZoneExecution}, []string{"zone-b"}),
+		},
+	}, []DiscoveryRecord{{RecordType: DRTObjectRoutingEntryPoint, OwnerNodeID: HashParts("security-adaptive-peer", "roadmap-validator-a"), ProofHash: HashParts("roadmap-proof-backed-route"), ProofHeight: 30}}, DefaultEclipseResistancePolicy(), 30)
+	require.NoError(t, err)
+	_, eclipseThreats, err := SimulateEclipseResistance(AdaptiveOverlayGraph{
+		OverlayID:    HashParts("roadmap-bad-eclipse-overlay"),
+		LocalNodeID:  HashParts("roadmap-bad-eclipse-local"),
+		RoutingEpoch: 31,
+		PolicyHash:   HashParts("roadmap-bad-eclipse-policy"),
+		RandomSet:    []AdaptivePeer{testSecurityAdaptivePeer("roadmap-only-random", []NodeRole{NodeRoleFull}, []string{"zone-a"})},
+		FallbackSet:  []AdaptivePeer{testSecurityAdaptivePeer("roadmap-only-fallback", []NodeRole{NodeRoleFull}, []string{"zone-a"})},
+	}, nil, DefaultEclipseResistancePolicy(), 31)
+	require.NoError(t, err)
+	spamSimulation, err := SimulateSpamResistance(securityPolicy, PeerRateUsage{
+		PeerNodeID:  remote.NodeID,
+		Channel:     ChannelService,
+		Messages:    securityPolicy.MaxPeerMessagesPerWindow + 10,
+		Bytes:       10 << 20,
+		WindowStart: 30,
+		WindowEnd:   30,
+	}, []BroadcastMessage{broadcastMsg, broadcastMsg}, remote.NodeID, 30)
+	require.NoError(t, err)
+	routingManipulation, err := SimulateRoutingManipulation([]BroadcastMessage{broadcastMsg, conflictMsg}, remote.NodeID, 30)
 	require.NoError(t, err)
 	return NetworkingRoadmapEvidence{
 		CometBFTInventory: adapter,
@@ -4849,6 +5084,30 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 		BlockSession:              testPerformanceBlockSession(t),
 		ParallelChunkPlan:         testPerformanceStreamPlan(),
 		GossipFallbackUsed:        broadcastPlan.FallbackUsed,
+		MeshMessages:              []AetherMeshMessage{executionMesh, serviceMesh, queryMesh, storageMesh, crossZoneMesh},
+		MeshDeliveries: []AetherMeshDelivery{
+			meshRoute(executionMesh, executionDesc, ChannelExecution, remote.NodeID),
+			meshRoute(serviceMesh, serviceDesc, ChannelService, remote.NodeID),
+			meshRoute(crossZoneMesh, executionDesc, ChannelExecution, remote.NodeID),
+		},
+		CrossZoneTracker:            crossZoneTracker,
+		CrossZoneReceipt:            crossZoneReceipt,
+		ReceiptDelivery:             receiptDelivery,
+		QueryResponseProof:          queryResponseProof,
+		L3Metrics:                   l3Metrics,
+		CrossZoneAtLeastOnce:        true,
+		CrossZoneExactlyOnce:        replayErr != nil,
+		SecurityPolicy:              securityPolicy,
+		SecurityDecision:            securityDecision,
+		ReputationDecision:          reputationDecision,
+		EclipsePlan:                 eclipsePlan,
+		EclipseThreats:              eclipseThreats,
+		SpamSimulation:              spamSimulation,
+		RoutingManipulation:         routingManipulation,
+		BandwidthExhaustionDetected: containsNetworkThreat(spamSimulation.Threats, ThreatBandwidthExhaustion),
+		ChunkCorruptionDetected:     containsNetworkThreat(securityDecision.Threats, ThreatChunkCorruption),
+		DiscoveryPoisoningDetected:  forgedDiscoveryErr != nil && discoveryResponse.OnChainProof.ProofHash != "",
+		CriticalChannelsAvailable:   true,
 	}
 }
 

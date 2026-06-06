@@ -17,6 +17,8 @@ const (
 	RoadmapPhaseRL2Streaming            NetworkingRoadmapPhase = "phase_4_rl2_streaming"
 	RoadmapPhaseDiscoveryLayer          NetworkingRoadmapPhase = "phase_5_discovery_layer"
 	RoadmapPhaseHybridBroadcast         NetworkingRoadmapPhase = "phase_6_hybrid_broadcast"
+	RoadmapPhaseAetherMesh              NetworkingRoadmapPhase = "phase_7_aether_mesh"
+	RoadmapPhaseSecurityLoadHardening   NetworkingRoadmapPhase = "phase_8_security_and_load_hardening"
 )
 
 type NetworkingRoadmapTask string
@@ -63,31 +65,49 @@ const (
 	RoadmapTaskHashDeduplication           NetworkingRoadmapTask = "implement_hash_deduplication"
 	RoadmapTaskHeaderFirstBlockPropagation NetworkingRoadmapTask = "implement_header_first_block_propagation"
 	RoadmapTaskParallelChunkFetch          NetworkingRoadmapTask = "implement_parallel_chunk_fetch"
+	RoadmapTaskApplicationMessageEnvelope  NetworkingRoadmapTask = "implement_application_network_message_envelope"
+	RoadmapTaskExecutionZoneMessageRouting NetworkingRoadmapTask = "add_execution_zone_message_routing"
+	RoadmapTaskCrossZoneSequenceHandling   NetworkingRoadmapTask = "add_cross_zone_sequence_handling"
+	RoadmapTaskReceiptDeliveryProtocol     NetworkingRoadmapTask = "add_receipt_delivery_protocol"
+	RoadmapTaskQueryResponseProofAttach    NetworkingRoadmapTask = "add_query_response_proof_attachment"
+	RoadmapTaskServiceTrafficPath          NetworkingRoadmapTask = "add_service_network_traffic_path"
+	RoadmapTaskPeerReputationHardening     NetworkingRoadmapTask = "add_peer_reputation_hardening"
+	RoadmapTaskEclipseResistanceTests      NetworkingRoadmapTask = "add_eclipse_resistance_tests"
+	RoadmapTaskSpamFloodSimulations        NetworkingRoadmapTask = "add_spam_flood_simulations"
+	RoadmapTaskRoutingManipulationSims     NetworkingRoadmapTask = "add_routing_manipulation_simulations"
+	RoadmapTaskBandwidthExhaustionTests    NetworkingRoadmapTask = "add_bandwidth_exhaustion_tests"
+	RoadmapTaskChunkCorruptionTests        NetworkingRoadmapTask = "add_chunk_corruption_tests"
 )
 
 type NetworkingExitCriterion string
 
 const (
-	ExitCurrentBehaviorMeasurable    NetworkingExitCriterion = "current_network_behavior_is_measurable"
-	ExitBaselineMetricsExist         NetworkingExitCriterion = "baseline_propagation_and_peer_quality_metrics_exist"
-	ExitConsensusProtectedPriority   NetworkingExitCriterion = "consensus_traffic_has_protected_priority"
-	ExitPeerScoringChannelMetrics    NetworkingExitCriterion = "peer_scoring_and_channel_metrics_are_available"
-	ExitServiceCannotStarveConsensus NetworkingExitCriterion = "service_traffic_cannot_starve_consensus"
-	ExitCryptographicNodeAuth        NetworkingExitCriterion = "nodes_authenticate_through_cryptographic_identity"
-	ExitLogicalStreamsShareSession   NetworkingExitCriterion = "logical_streams_share_one_peer_session"
-	ExitExpiredForgedRecordsRejected NetworkingExitCriterion = "expired_or_forged_node_records_are_rejected"
-	ExitOverlayJoinSupported         NetworkingExitCriterion = "nodes_can_join_validator_zone_service_data_and_discovery_overlays"
-	ExitCommittedRoutesReproducible  NetworkingExitCriterion = "overlay_routing_decisions_are_reproducible_when_committed"
-	ExitPeerRotationConnectivity     NetworkingExitCriterion = "peer_rotation_preserves_connectivity"
-	ExitChunkedStreamingPayloads     NetworkingExitCriterion = "blocks_state_snapshots_and_proof_bundles_stream_in_chunks"
-	ExitInterruptedTransfersResume   NetworkingExitCriterion = "interrupted_transfers_can_resume"
-	ExitInvalidChunksRejected        NetworkingExitCriterion = "invalid_chunks_are_rejected"
-	ExitDiscoveryObjectsDiscoverable NetworkingExitCriterion = "nodes_zones_services_endpoints_and_storage_providers_are_discoverable"
-	ExitDiscoveryRecordsExpireVerify NetworkingExitCriterion = "discovery_records_expire_and_can_be_verified"
-	ExitForgedExpiredRecordsRejected NetworkingExitCriterion = "forged_or_expired_discovery_records_are_rejected"
-	ExitBlocksHeaderChunksProofSet   NetworkingExitCriterion = "blocks_propagate_as_header_chunks_and_proof_set"
-	ExitDuplicateConflictingHandled  NetworkingExitCriterion = "duplicate_and_conflicting_broadcasts_are_handled"
-	ExitFallbackGossipResilient      NetworkingExitCriterion = "fallback_gossip_preserves_resilience"
+	ExitCurrentBehaviorMeasurable     NetworkingExitCriterion = "current_network_behavior_is_measurable"
+	ExitBaselineMetricsExist          NetworkingExitCriterion = "baseline_propagation_and_peer_quality_metrics_exist"
+	ExitConsensusProtectedPriority    NetworkingExitCriterion = "consensus_traffic_has_protected_priority"
+	ExitPeerScoringChannelMetrics     NetworkingExitCriterion = "peer_scoring_and_channel_metrics_are_available"
+	ExitServiceCannotStarveConsensus  NetworkingExitCriterion = "service_traffic_cannot_starve_consensus"
+	ExitCryptographicNodeAuth         NetworkingExitCriterion = "nodes_authenticate_through_cryptographic_identity"
+	ExitLogicalStreamsShareSession    NetworkingExitCriterion = "logical_streams_share_one_peer_session"
+	ExitExpiredForgedRecordsRejected  NetworkingExitCriterion = "expired_or_forged_node_records_are_rejected"
+	ExitOverlayJoinSupported          NetworkingExitCriterion = "nodes_can_join_validator_zone_service_data_and_discovery_overlays"
+	ExitCommittedRoutesReproducible   NetworkingExitCriterion = "overlay_routing_decisions_are_reproducible_when_committed"
+	ExitPeerRotationConnectivity      NetworkingExitCriterion = "peer_rotation_preserves_connectivity"
+	ExitChunkedStreamingPayloads      NetworkingExitCriterion = "blocks_state_snapshots_and_proof_bundles_stream_in_chunks"
+	ExitInterruptedTransfersResume    NetworkingExitCriterion = "interrupted_transfers_can_resume"
+	ExitInvalidChunksRejected         NetworkingExitCriterion = "invalid_chunks_are_rejected"
+	ExitDiscoveryObjectsDiscoverable  NetworkingExitCriterion = "nodes_zones_services_endpoints_and_storage_providers_are_discoverable"
+	ExitDiscoveryRecordsExpireVerify  NetworkingExitCriterion = "discovery_records_expire_and_can_be_verified"
+	ExitForgedExpiredRecordsRejected  NetworkingExitCriterion = "forged_or_expired_discovery_records_are_rejected"
+	ExitBlocksHeaderChunksProofSet    NetworkingExitCriterion = "blocks_propagate_as_header_chunks_and_proof_set"
+	ExitDuplicateConflictingHandled   NetworkingExitCriterion = "duplicate_and_conflicting_broadcasts_are_handled"
+	ExitFallbackGossipResilient       NetworkingExitCriterion = "fallback_gossip_preserves_resilience"
+	ExitL3MessageClassesSupported     NetworkingExitCriterion = "l3_messages_support_execution_service_query_storage_and_cross_zone_classes"
+	ExitCrossZoneDeliverySemantics    NetworkingExitCriterion = "cross_zone_delivery_is_at_least_once_network_and_exactly_once_execution"
+	ExitReceiptsVisibleProofQueryable NetworkingExitCriterion = "receipts_are_delivery_visible_and_proof_queryable_where_committed"
+	ExitMaliciousPeersIsolated        NetworkingExitCriterion = "malicious_peers_are_isolated_locally"
+	ExitCriticalChannelsUnderFlood    NetworkingExitCriterion = "critical_channels_remain_available_under_service_flood"
+	ExitDiscoveryPoisoningDetected    NetworkingExitCriterion = "discovery_poisoning_is_detected_by_signature_and_proof_checks"
 )
 
 type RoadmapTaskStatus string
@@ -112,43 +132,63 @@ type NetworkingRoadmapTaskEvidence struct {
 }
 
 type NetworkingRoadmapEvidence struct {
-	CometBFTInventory         AetherNetworkingAdapter
-	PerformanceSnapshot       PerformanceMetricsSnapshot
-	L0Schedule                L0Schedule
-	XNetworkParams            XNetworkParams
-	Session                   SessionChannel
-	NodeRecords               []NodeRecord
-	SignedDiscoveryRecords    []DiscoveryRecord
-	HandshakeReplayRejected   bool
-	KeyRotationAvailable      bool
-	OverlayDescriptors        []OverlayDescriptor
-	OverlayMemberships        []OverlayMembershipRecord
-	AdaptiveGraph             AdaptiveOverlayGraph
-	RoutingGraph              RoutingGraph
-	RoutingTableUse           RoutingTableUse
-	PeerRotationPreserved     bool
-	RL2Offer                  RL2TransferOffer
-	RL2ChunkDescriptors       []RL2ChunkDescriptor
-	RL2Session                RL2TransferSession
-	RL2StreamingPlan          RL2StreamingPlan
-	RL2PayloadTypes           []RL2PayloadType
-	RL2BackpressureSignal     RL2BackpressureSignal
-	RL2InvalidChunkRejected   bool
-	RL2InterruptedResumed     bool
-	DiscoveryTable            DistributedRoutingTable
-	DiscoveryResponse         DiscoveryResponse
-	DiscoveryObjectTypes      []DRTObjectType
-	DiscoveryLeaseRenewed     bool
-	DiscoveryForgedRejected   bool
-	DiscoveryExpiredRejected  bool
-	BroadcastMessage          BroadcastMessage
-	BroadcastPlan             BroadcastPlan
-	BroadcastDedupCache       BroadcastDedupCache
-	BroadcastDuplicateHandled bool
-	BroadcastConflictHandled  bool
-	BlockSession              BlockPropagationSession
-	ParallelChunkPlan         StreamParallelFetchPlan
-	GossipFallbackUsed        bool
+	CometBFTInventory           AetherNetworkingAdapter
+	PerformanceSnapshot         PerformanceMetricsSnapshot
+	L0Schedule                  L0Schedule
+	XNetworkParams              XNetworkParams
+	Session                     SessionChannel
+	NodeRecords                 []NodeRecord
+	SignedDiscoveryRecords      []DiscoveryRecord
+	HandshakeReplayRejected     bool
+	KeyRotationAvailable        bool
+	OverlayDescriptors          []OverlayDescriptor
+	OverlayMemberships          []OverlayMembershipRecord
+	AdaptiveGraph               AdaptiveOverlayGraph
+	RoutingGraph                RoutingGraph
+	RoutingTableUse             RoutingTableUse
+	PeerRotationPreserved       bool
+	RL2Offer                    RL2TransferOffer
+	RL2ChunkDescriptors         []RL2ChunkDescriptor
+	RL2Session                  RL2TransferSession
+	RL2StreamingPlan            RL2StreamingPlan
+	RL2PayloadTypes             []RL2PayloadType
+	RL2BackpressureSignal       RL2BackpressureSignal
+	RL2InvalidChunkRejected     bool
+	RL2InterruptedResumed       bool
+	DiscoveryTable              DistributedRoutingTable
+	DiscoveryResponse           DiscoveryResponse
+	DiscoveryObjectTypes        []DRTObjectType
+	DiscoveryLeaseRenewed       bool
+	DiscoveryForgedRejected     bool
+	DiscoveryExpiredRejected    bool
+	BroadcastMessage            BroadcastMessage
+	BroadcastPlan               BroadcastPlan
+	BroadcastDedupCache         BroadcastDedupCache
+	BroadcastDuplicateHandled   bool
+	BroadcastConflictHandled    bool
+	BlockSession                BlockPropagationSession
+	ParallelChunkPlan           StreamParallelFetchPlan
+	GossipFallbackUsed          bool
+	MeshMessages                []AetherMeshMessage
+	MeshDeliveries              []AetherMeshDelivery
+	CrossZoneTracker            CrossZoneSequenceTracker
+	CrossZoneReceipt            CrossZoneReceipt
+	ReceiptDelivery             ReceiptDelivery
+	QueryResponseProof          QueryResponseProof
+	L3Metrics                   []L3OverlayMetrics
+	CrossZoneAtLeastOnce        bool
+	CrossZoneExactlyOnce        bool
+	SecurityPolicy              NetworkSecurityPolicy
+	SecurityDecision            NetworkSecurityDecision
+	ReputationDecision          PeerReputationDecision
+	EclipsePlan                 EclipseResistancePlan
+	EclipseThreats              []NetworkThreat
+	SpamSimulation              SpamSimulationResult
+	RoutingManipulation         RoutingManipulationSimulationResult
+	BandwidthExhaustionDetected bool
+	ChunkCorruptionDetected     bool
+	DiscoveryPoisoningDetected  bool
+	CriticalChannelsAvailable   bool
 }
 
 type NetworkingRoadmapPhaseReport struct {
@@ -290,6 +330,42 @@ func DefaultNetworkingImplementationRoadmap() NetworkingImplementationRoadmap {
 				},
 				DependsOn: []NetworkingRoadmapPhase{RoadmapPhaseDiscoveryLayer},
 			},
+			{
+				Phase: RoadmapPhaseAetherMesh,
+				Title: "Aether Mesh",
+				Tasks: []NetworkingRoadmapTask{
+					RoadmapTaskApplicationMessageEnvelope,
+					RoadmapTaskExecutionZoneMessageRouting,
+					RoadmapTaskCrossZoneSequenceHandling,
+					RoadmapTaskReceiptDeliveryProtocol,
+					RoadmapTaskQueryResponseProofAttach,
+					RoadmapTaskServiceTrafficPath,
+				},
+				ExitCriteria: []NetworkingExitCriterion{
+					ExitL3MessageClassesSupported,
+					ExitCrossZoneDeliverySemantics,
+					ExitReceiptsVisibleProofQueryable,
+				},
+				DependsOn: []NetworkingRoadmapPhase{RoadmapPhaseHybridBroadcast},
+			},
+			{
+				Phase: RoadmapPhaseSecurityLoadHardening,
+				Title: "Security and Load Hardening",
+				Tasks: []NetworkingRoadmapTask{
+					RoadmapTaskPeerReputationHardening,
+					RoadmapTaskEclipseResistanceTests,
+					RoadmapTaskSpamFloodSimulations,
+					RoadmapTaskRoutingManipulationSims,
+					RoadmapTaskBandwidthExhaustionTests,
+					RoadmapTaskChunkCorruptionTests,
+				},
+				ExitCriteria: []NetworkingExitCriterion{
+					ExitMaliciousPeersIsolated,
+					ExitCriticalChannelsUnderFlood,
+					ExitDiscoveryPoisoningDetected,
+				},
+				DependsOn: []NetworkingRoadmapPhase{RoadmapPhaseAetherMesh},
+			},
 		},
 	}
 	roadmap.RoadmapRoot = ComputeNetworkingRoadmapRoot(roadmap)
@@ -298,8 +374,8 @@ func DefaultNetworkingImplementationRoadmap() NetworkingImplementationRoadmap {
 
 func ValidateNetworkingImplementationRoadmap(roadmap NetworkingImplementationRoadmap) error {
 	roadmap = NormalizeNetworkingImplementationRoadmap(roadmap)
-	if len(roadmap.Phases) != 7 {
-		return errors.New("networking roadmap must define phases 0-6")
+	if len(roadmap.Phases) != 9 {
+		return errors.New("networking roadmap must define phases 0-8")
 	}
 	if roadmap.RoadmapRoot != ComputeNetworkingRoadmapRoot(roadmap) {
 		return errors.New("networking roadmap root mismatch")
@@ -314,7 +390,7 @@ func ValidateNetworkingImplementationRoadmap(roadmap NetworkingImplementationRoa
 		}
 		seen[phase.Phase] = struct{}{}
 	}
-	for _, required := range []NetworkingRoadmapPhase{RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions, RoadmapPhaseOverlayRouting, RoadmapPhaseRL2Streaming, RoadmapPhaseDiscoveryLayer, RoadmapPhaseHybridBroadcast} {
+	for _, required := range []NetworkingRoadmapPhase{RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions, RoadmapPhaseOverlayRouting, RoadmapPhaseRL2Streaming, RoadmapPhaseDiscoveryLayer, RoadmapPhaseHybridBroadcast, RoadmapPhaseAetherMesh, RoadmapPhaseSecurityLoadHardening} {
 		if _, found := seen[required]; !found {
 			return fmt.Errorf("networking roadmap missing phase %s", required)
 		}
@@ -401,6 +477,10 @@ func EvaluateRoadmapPhaseReadiness(phase NetworkingRoadmapPhase, evidence Networ
 		tasks, criteria, err = evaluatePhase5(evidence)
 	case RoadmapPhaseHybridBroadcast:
 		tasks, criteria, err = evaluatePhase6(evidence)
+	case RoadmapPhaseAetherMesh:
+		tasks, criteria, err = evaluatePhase7(evidence)
+	case RoadmapPhaseSecurityLoadHardening:
+		tasks, criteria, err = evaluatePhase8(evidence)
 	}
 	if err != nil {
 		return NetworkingRoadmapPhaseReport{}, err
@@ -446,7 +526,7 @@ func ComputeRoadmapPhaseReportHash(report NetworkingRoadmapPhaseReport) string {
 
 func IsNetworkingRoadmapPhase(phase NetworkingRoadmapPhase) bool {
 	switch phase {
-	case RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions, RoadmapPhaseOverlayRouting, RoadmapPhaseRL2Streaming, RoadmapPhaseDiscoveryLayer, RoadmapPhaseHybridBroadcast:
+	case RoadmapPhaseBaselineInstrumentation, RoadmapPhaseAetherNetworkingAdapter, RoadmapPhaseNodeIdentitySessions, RoadmapPhaseOverlayRouting, RoadmapPhaseRL2Streaming, RoadmapPhaseDiscoveryLayer, RoadmapPhaseHybridBroadcast, RoadmapPhaseAetherMesh, RoadmapPhaseSecurityLoadHardening:
 		return true
 	default:
 		return false
@@ -495,7 +575,19 @@ func IsNetworkingRoadmapTask(task NetworkingRoadmapTask) bool {
 		RoadmapTaskGossipFallback,
 		RoadmapTaskHashDeduplication,
 		RoadmapTaskHeaderFirstBlockPropagation,
-		RoadmapTaskParallelChunkFetch:
+		RoadmapTaskParallelChunkFetch,
+		RoadmapTaskApplicationMessageEnvelope,
+		RoadmapTaskExecutionZoneMessageRouting,
+		RoadmapTaskCrossZoneSequenceHandling,
+		RoadmapTaskReceiptDeliveryProtocol,
+		RoadmapTaskQueryResponseProofAttach,
+		RoadmapTaskServiceTrafficPath,
+		RoadmapTaskPeerReputationHardening,
+		RoadmapTaskEclipseResistanceTests,
+		RoadmapTaskSpamFloodSimulations,
+		RoadmapTaskRoutingManipulationSims,
+		RoadmapTaskBandwidthExhaustionTests,
+		RoadmapTaskChunkCorruptionTests:
 		return true
 	default:
 		return false
@@ -523,7 +615,13 @@ func IsNetworkingExitCriterion(criterion NetworkingExitCriterion) bool {
 		ExitForgedExpiredRecordsRejected,
 		ExitBlocksHeaderChunksProofSet,
 		ExitDuplicateConflictingHandled,
-		ExitFallbackGossipResilient:
+		ExitFallbackGossipResilient,
+		ExitL3MessageClassesSupported,
+		ExitCrossZoneDeliverySemantics,
+		ExitReceiptsVisibleProofQueryable,
+		ExitMaliciousPeersIsolated,
+		ExitCriticalChannelsUnderFlood,
+		ExitDiscoveryPoisoningDetected:
 		return true
 	default:
 		return false
@@ -727,6 +825,62 @@ func evaluatePhase6(evidence NetworkingRoadmapEvidence) ([]NetworkingRoadmapTask
 	return tasks, criteria, nil
 }
 
+func evaluatePhase7(evidence NetworkingRoadmapEvidence) ([]NetworkingRoadmapTaskEvidence, []NetworkingExitCriterion, error) {
+	envelopeOK := roadmapMeshMessagesValid(evidence.MeshMessages)
+	executionRoutingOK := roadmapHasMeshDelivery(evidence.MeshDeliveries, MeshMessageExecution, ChannelExecution) || roadmapHasMeshDelivery(evidence.MeshDeliveries, MeshMessageCrossZone, ChannelExecution)
+	crossZoneOK := evidence.CrossZoneAtLeastOnce && evidence.CrossZoneExactlyOnce && len(evidence.CrossZoneTracker.States) > 0
+	receiptOK := evidence.CrossZoneReceipt.Validate() == nil && evidence.ReceiptDelivery.State == ReceiptDeliveryAcknowledged
+	queryProofOK := evidence.QueryResponseProof.Validate() == nil
+	servicePathOK := roadmapHasMeshDelivery(evidence.MeshDeliveries, MeshMessageService, ChannelService)
+	tasks := []NetworkingRoadmapTaskEvidence{
+		taskEvidence(RoadmapTaskApplicationMessageEnvelope, envelopeOK, "application mesh message envelopes validate"),
+		taskEvidence(RoadmapTaskExecutionZoneMessageRouting, executionRoutingOK, "execution zone messages route through execution channel"),
+		taskEvidence(RoadmapTaskCrossZoneSequenceHandling, crossZoneOK, "cross-zone sequence tracker rejects replay and preserves delivery intent"),
+		taskEvidence(RoadmapTaskReceiptDeliveryProtocol, receiptOK, "receipt delivery is acknowledged and visible"),
+		taskEvidence(RoadmapTaskQueryResponseProofAttach, queryProofOK, "query response proof validates"),
+		taskEvidence(RoadmapTaskServiceTrafficPath, servicePathOK, "service traffic routes through service channel"),
+	}
+	criteria := make([]NetworkingExitCriterion, 0, 3)
+	if envelopeOK && roadmapHasMeshMessageTypes(evidence.MeshMessages, MeshMessageExecution, MeshMessageService, MeshMessageQuery, MeshMessageStorage, MeshMessageCrossZone) {
+		criteria = append(criteria, ExitL3MessageClassesSupported)
+	}
+	if crossZoneOK {
+		criteria = append(criteria, ExitCrossZoneDeliverySemantics)
+	}
+	if receiptOK && evidence.CrossZoneReceipt.ProofQueryable && evidence.CrossZoneReceipt.ProofHash != "" {
+		criteria = append(criteria, ExitReceiptsVisibleProofQueryable)
+	}
+	return tasks, criteria, nil
+}
+
+func evaluatePhase8(evidence NetworkingRoadmapEvidence) ([]NetworkingRoadmapTaskEvidence, []NetworkingExitCriterion, error) {
+	reputationOK := evidence.SecurityPolicy.Validate() == nil && evidence.ReputationDecision.PeerNodeID != "" && evidence.SecurityDecision.PeerNodeID != ""
+	eclipseOK := ValidateEclipseResistancePlan(evidence.EclipsePlan) == nil || containsNetworkThreat(evidence.EclipseThreats, ThreatEclipseAttack)
+	spamOK := containsNetworkThreat(evidence.SpamSimulation.Threats, ThreatSpamFlood)
+	routingOK := evidence.RoutingManipulation.FaultsDetected > 0 && containsNetworkThreat(evidence.RoutingManipulation.Threats, ThreatRoutingManipulation)
+	bandwidthOK := evidence.BandwidthExhaustionDetected && containsNetworkThreat(evidence.SpamSimulation.Threats, ThreatBandwidthExhaustion)
+	chunkOK := evidence.ChunkCorruptionDetected && containsNetworkThreat(evidence.SecurityDecision.Threats, ThreatChunkCorruption)
+	tasks := []NetworkingRoadmapTaskEvidence{
+		taskEvidence(RoadmapTaskPeerReputationHardening, reputationOK, "peer reputation and security decision available"),
+		taskEvidence(RoadmapTaskEclipseResistanceTests, eclipseOK, "eclipse resistance plan or simulation detects risk"),
+		taskEvidence(RoadmapTaskSpamFloodSimulations, spamOK, "spam flood simulation detects spam"),
+		taskEvidence(RoadmapTaskRoutingManipulationSims, routingOK, "routing manipulation simulation detects conflicts"),
+		taskEvidence(RoadmapTaskBandwidthExhaustionTests, bandwidthOK, "bandwidth exhaustion is detected"),
+		taskEvidence(RoadmapTaskChunkCorruptionTests, chunkOK, "chunk corruption is detected"),
+	}
+	criteria := make([]NetworkingExitCriterion, 0, 3)
+	if reputationOK && evidence.SecurityDecision.ConsensusIsolated && (evidence.SecurityDecision.Quarantine || evidence.SecurityDecision.RotatePeer || evidence.SecurityDecision.DropMessage) {
+		criteria = append(criteria, ExitMaliciousPeersIsolated)
+	}
+	if evidence.CriticalChannelsAvailable && ValidateServiceTrafficIsolationFromMetrics(evidence.L0Schedule.Metrics) == nil {
+		criteria = append(criteria, ExitCriticalChannelsUnderFlood)
+	}
+	if evidence.DiscoveryPoisoningDetected && (evidence.DiscoveryForgedRejected || containsNetworkThreat(evidence.SecurityDecision.Threats, ThreatServiceAdvertisementForge) || containsNetworkThreat(evidence.SecurityDecision.Threats, ThreatDiscoveryPoisoning)) {
+		criteria = append(criteria, ExitDiscoveryPoisoningDetected)
+	}
+	return tasks, criteria, nil
+}
+
 func taskEvidence(task NetworkingRoadmapTask, complete bool, evidence string) NetworkingRoadmapTaskEvidence {
 	status := RoadmapTaskPending
 	if complete {
@@ -825,6 +979,32 @@ func roadmapRequirementsForPhase(phase NetworkingRoadmapPhase) ([]NetworkingRoad
 				ExitBlocksHeaderChunksProofSet,
 				ExitDuplicateConflictingHandled,
 				ExitFallbackGossipResilient,
+			}
+	case RoadmapPhaseAetherMesh:
+		return []NetworkingRoadmapTask{
+				RoadmapTaskApplicationMessageEnvelope,
+				RoadmapTaskExecutionZoneMessageRouting,
+				RoadmapTaskCrossZoneSequenceHandling,
+				RoadmapTaskReceiptDeliveryProtocol,
+				RoadmapTaskQueryResponseProofAttach,
+				RoadmapTaskServiceTrafficPath,
+			}, []NetworkingExitCriterion{
+				ExitL3MessageClassesSupported,
+				ExitCrossZoneDeliverySemantics,
+				ExitReceiptsVisibleProofQueryable,
+			}
+	case RoadmapPhaseSecurityLoadHardening:
+		return []NetworkingRoadmapTask{
+				RoadmapTaskPeerReputationHardening,
+				RoadmapTaskEclipseResistanceTests,
+				RoadmapTaskSpamFloodSimulations,
+				RoadmapTaskRoutingManipulationSims,
+				RoadmapTaskBandwidthExhaustionTests,
+				RoadmapTaskChunkCorruptionTests,
+			}, []NetworkingExitCriterion{
+				ExitMaliciousPeersIsolated,
+				ExitCriticalChannelsUnderFlood,
+				ExitDiscoveryPoisoningDetected,
 			}
 	default:
 		return nil, nil
@@ -1014,6 +1194,50 @@ func roadmapHasDiscoveryObjectTypes(objectTypes []DRTObjectType, required ...DRT
 		}
 	}
 	return true
+}
+
+func roadmapMeshMessagesValid(messages []AetherMeshMessage) bool {
+	if len(messages) == 0 {
+		return false
+	}
+	for _, msg := range messages {
+		if err := msg.ValidateBasic(0); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func roadmapHasMeshMessageTypes(messages []AetherMeshMessage, required ...AetherMeshMessageType) bool {
+	seen := make(map[AetherMeshMessageType]struct{}, len(messages))
+	for _, msg := range messages {
+		msg = NormalizeAetherMeshMessage(msg)
+		seen[msg.Type] = struct{}{}
+	}
+	for _, messageType := range required {
+		if _, found := seen[messageType]; !found {
+			return false
+		}
+	}
+	return true
+}
+
+func roadmapHasMeshDelivery(deliveries []AetherMeshDelivery, messageType AetherMeshMessageType, channel ChannelClass) bool {
+	for _, delivery := range deliveries {
+		if NormalizeAetherMeshMessage(delivery.Message).Type == messageType && delivery.Channel == channel && len(delivery.Route.TargetNodeIDs) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func containsNetworkThreat(threats []NetworkThreat, needle NetworkThreat) bool {
+	for _, threat := range threats {
+		if threat == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeRoadmapTaskSet(values []NetworkingRoadmapTask) []NetworkingRoadmapTask {
