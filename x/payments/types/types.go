@@ -22,6 +22,7 @@ const (
 	SignatureObjectDelta          = "async_delta"
 	SignatureObjectPromise        = "conditional_promise"
 	SignatureObjectGossip         = "payment_gossip"
+	SignatureObjectRoutingFee     = "routing_fee_policy"
 	SignatureObjectVirtual        = "virtual_channel"
 	SignatureObjectVirtualReserve = "virtual_reservation"
 	SignatureObjectVirtualClose   = "virtual_close"
@@ -519,6 +520,61 @@ type RoutePolicy struct {
 	ExcludedNodes           []string
 	ExcludedChannels        []string
 	EdgeStats               []EdgeRoutingStats
+}
+
+type RoutingFeePolicyUpdate struct {
+	PolicyID                string
+	ChainID                 string
+	ChannelID               string
+	From                    string
+	To                      string
+	FeeDenom                string
+	BaseHopFee              string
+	ProportionalFeeBps      uint32
+	LiquidityReservationFee string
+	VirtualChannelSetupFee  string
+	CongestionSurcharge     string
+	FailurePenalty          string
+	MaxHopFee               string
+	ValidAfterHeight        uint64
+	ValidUntilHeight        uint64
+	Sequence                uint64
+	PolicyHash              string
+	Signature               RoutingFeePolicySignature
+}
+
+type RoutingFeePolicySignature struct {
+	Signer           string
+	ChainID          string
+	ChannelID        string
+	ObjectType       string
+	Version          uint32
+	Sequence         uint64
+	ObjectID         string
+	ExpirationHeight uint64
+	CommitmentHash   string
+	SignatureHash    string
+}
+
+type HopFeeCalculationRequest struct {
+	Amount                  string
+	Policy                  RoutingFeePolicyUpdate
+	CurrentHeight           uint64
+	IncludeVirtualSetup     bool
+	RepeatedInvalidAttempts uint32
+}
+
+type RoutingHopFee struct {
+	Denom                   string
+	BaseHopFee              string
+	ProportionalFee         string
+	LiquidityReservationFee string
+	VirtualChannelSetupFee  string
+	CongestionSurcharge     string
+	FailurePenalty          string
+	RepeatedInvalidAttempts uint32
+	TotalFee                string
+	PolicyHash              string
 }
 
 type RouteFailureClass string
@@ -2897,6 +2953,209 @@ func (p RoutePolicy) Validate() error {
 			return errors.New("payments duplicate route stats")
 		}
 		seenStats[key] = struct{}{}
+	}
+	return nil
+}
+
+func BuildRoutingFeePolicyUpdate(update RoutingFeePolicyUpdate, signer string) (RoutingFeePolicyUpdate, error) {
+	update = update.Normalize()
+	if update.PolicyID == "" {
+		update.PolicyID = HashParts("routing-fee-policy-id", update.ChainID, update.ChannelID, update.From, update.To, fmt.Sprintf("%020d", update.Sequence))
+	}
+	update.PolicyHash = ""
+	update.Signature = RoutingFeePolicySignature{}
+	update.PolicyHash = ComputeRoutingFeePolicyHash(update)
+	signature, err := SignatureForRoutingFeePolicy(update, signer)
+	if err != nil {
+		return RoutingFeePolicyUpdate{}, err
+	}
+	update.Signature = signature
+	if err := update.ValidateAtHeight(update.ValidAfterHeight); err != nil {
+		return RoutingFeePolicyUpdate{}, err
+	}
+	return update.Normalize(), nil
+}
+
+func ComputeRoutingFeePolicyHash(update RoutingFeePolicyUpdate) string {
+	update = update.Normalize()
+	return HashParts(
+		"routing-fee-policy",
+		update.PolicyID,
+		update.ChainID,
+		update.ChannelID,
+		update.From,
+		update.To,
+		update.FeeDenom,
+		update.BaseHopFee,
+		fmt.Sprintf("%010d", update.ProportionalFeeBps),
+		update.LiquidityReservationFee,
+		update.VirtualChannelSetupFee,
+		update.CongestionSurcharge,
+		update.FailurePenalty,
+		update.MaxHopFee,
+		fmt.Sprintf("%020d", update.ValidAfterHeight),
+		fmt.Sprintf("%020d", update.ValidUntilHeight),
+		fmt.Sprintf("%020d", update.Sequence),
+	)
+}
+
+func SignatureForRoutingFeePolicy(update RoutingFeePolicyUpdate, signer string) (RoutingFeePolicySignature, error) {
+	update = update.Normalize()
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments routing fee policy signer", signer); err != nil {
+		return RoutingFeePolicySignature{}, err
+	}
+	if update.PolicyHash == "" {
+		update.PolicyHash = ComputeRoutingFeePolicyHash(update)
+	}
+	return RoutingFeePolicySignature{
+		Signer:           signer,
+		ChainID:          update.ChainID,
+		ChannelID:        update.ChannelID,
+		ObjectType:       SignatureObjectRoutingFee,
+		Version:          CurrentStateVersion,
+		Sequence:         update.Sequence,
+		ObjectID:         update.PolicyHash,
+		ExpirationHeight: update.ValidUntilHeight,
+		CommitmentHash:   update.PolicyHash,
+		SignatureHash: ComputeSignatureEnvelopeHash(
+			signer,
+			update.ChainID,
+			update.ChannelID,
+			SignatureObjectRoutingFee,
+			CurrentStateVersion,
+			update.Sequence,
+			update.PolicyHash,
+			update.ValidUntilHeight,
+			update.PolicyHash,
+		),
+	}, nil
+}
+
+func (u RoutingFeePolicyUpdate) Normalize() RoutingFeePolicyUpdate {
+	u.PolicyID = normalizeOptionalHash(u.PolicyID)
+	u.ChainID = strings.TrimSpace(u.ChainID)
+	u.ChannelID = normalizeHash(u.ChannelID)
+	u.From = strings.TrimSpace(u.From)
+	u.To = strings.TrimSpace(u.To)
+	u.FeeDenom = normalizeAssetDenom(u.FeeDenom)
+	u.BaseHopFee = strings.TrimSpace(u.BaseHopFee)
+	u.LiquidityReservationFee = strings.TrimSpace(u.LiquidityReservationFee)
+	u.VirtualChannelSetupFee = strings.TrimSpace(u.VirtualChannelSetupFee)
+	u.CongestionSurcharge = strings.TrimSpace(u.CongestionSurcharge)
+	u.FailurePenalty = strings.TrimSpace(u.FailurePenalty)
+	u.MaxHopFee = strings.TrimSpace(u.MaxHopFee)
+	for _, field := range []*string{&u.BaseHopFee, &u.LiquidityReservationFee, &u.VirtualChannelSetupFee, &u.CongestionSurcharge, &u.FailurePenalty, &u.MaxHopFee} {
+		if *field == "" {
+			*field = "0"
+		}
+	}
+	u.PolicyHash = normalizeOptionalHash(u.PolicyHash)
+	u.Signature = u.Signature.Normalize()
+	return u
+}
+
+func (u RoutingFeePolicyUpdate) ValidateAtHeight(currentHeight uint64) error {
+	update := u.Normalize()
+	if update.PolicyID == "" {
+		return errors.New("payments routing fee policy id is required")
+	}
+	if err := ValidateHash("payments routing fee policy id", update.PolicyID); err != nil {
+		return err
+	}
+	if update.ChainID == "" {
+		return errors.New("payments routing fee policy chain id is required")
+	}
+	if err := ValidateHash("payments routing fee policy channel id", update.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments routing fee policy from", update.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments routing fee policy to", update.To); err != nil {
+		return err
+	}
+	if update.From == update.To {
+		return errors.New("payments routing fee policy endpoints must differ")
+	}
+	if update.FeeDenom != NativeDenom {
+		return fmt.Errorf("payments routing fee policy denom must be %s", NativeDenom)
+	}
+	for _, value := range []struct {
+		field string
+		text  string
+	}{
+		{"payments routing base hop fee", update.BaseHopFee},
+		{"payments routing liquidity reservation fee", update.LiquidityReservationFee},
+		{"payments routing virtual setup fee", update.VirtualChannelSetupFee},
+		{"payments routing congestion surcharge", update.CongestionSurcharge},
+		{"payments routing failure penalty", update.FailurePenalty},
+		{"payments routing max hop fee", update.MaxHopFee},
+	} {
+		if err := validateNonNegativeInt(value.field, value.text); err != nil {
+			return err
+		}
+	}
+	if update.ProportionalFeeBps > 100_000 {
+		return errors.New("payments routing proportional fee bps is too high")
+	}
+	if update.ValidAfterHeight == 0 || update.ValidUntilHeight == 0 || update.ValidUntilHeight < update.ValidAfterHeight {
+		return errors.New("payments routing fee policy validity window is invalid")
+	}
+	if currentHeight != 0 && (currentHeight < update.ValidAfterHeight || currentHeight > update.ValidUntilHeight) {
+		return errors.New("payments routing fee policy is outside validity window")
+	}
+	if update.Sequence == 0 {
+		return errors.New("payments routing fee policy sequence must be positive")
+	}
+	expectedHash := ComputeRoutingFeePolicyHash(update)
+	if update.PolicyHash != expectedHash {
+		return errors.New("payments routing fee policy hash mismatch")
+	}
+	return update.Signature.Validate(update)
+}
+
+func (s RoutingFeePolicySignature) Normalize() RoutingFeePolicySignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ObjectType = strings.TrimSpace(s.ObjectType)
+	s.ObjectID = normalizeOptionalHash(s.ObjectID)
+	s.CommitmentHash = normalizeOptionalHash(s.CommitmentHash)
+	s.SignatureHash = normalizeOptionalHash(s.SignatureHash)
+	return s
+}
+
+func (s RoutingFeePolicySignature) Validate(update RoutingFeePolicyUpdate) error {
+	sig := s.Normalize()
+	update = update.Normalize()
+	if err := addressing.ValidateUserAddress("payments routing fee policy signature signer", sig.Signer); err != nil {
+		return err
+	}
+	if sig.Signer != update.From {
+		return errors.New("payments routing fee policy signer must be forwarding node")
+	}
+	if sig.ChainID != update.ChainID || sig.ChannelID != update.ChannelID {
+		return errors.New("payments routing fee policy signature domain mismatch")
+	}
+	if sig.ObjectType != SignatureObjectRoutingFee {
+		return errors.New("payments routing fee policy signature object type mismatch")
+	}
+	if sig.Version != CurrentStateVersion || sig.Sequence != update.Sequence {
+		return errors.New("payments routing fee policy signature version or sequence mismatch")
+	}
+	if sig.ObjectID != update.PolicyHash || sig.CommitmentHash != update.PolicyHash {
+		return errors.New("payments routing fee policy signature commitment mismatch")
+	}
+	if sig.ExpirationHeight != update.ValidUntilHeight {
+		return errors.New("payments routing fee policy signature expiration mismatch")
+	}
+	if err := ValidateHash("payments routing fee policy signature hash", sig.SignatureHash); err != nil {
+		return err
+	}
+	expected := ComputeSignatureEnvelopeHash(sig.Signer, sig.ChainID, sig.ChannelID, sig.ObjectType, sig.Version, sig.Sequence, sig.ObjectID, sig.ExpirationHeight, sig.CommitmentHash)
+	if sig.SignatureHash != expected {
+		return errors.New("payments routing fee policy signature value mismatch")
 	}
 	return nil
 }

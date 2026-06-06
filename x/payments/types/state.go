@@ -2252,6 +2252,121 @@ func ClassifyRouteFailure(reason string) RouteFailureClass {
 	}
 }
 
+func CalculateHopRoutingFee(req HopFeeCalculationRequest) (RoutingHopFee, error) {
+	policy := req.Policy.Normalize()
+	if err := policy.ValidateAtHeight(req.CurrentHeight); err != nil {
+		return RoutingHopFee{}, err
+	}
+	amount, err := parsePositiveInt("payments routing hop fee amount", req.Amount)
+	if err != nil {
+		return RoutingHopFee{}, err
+	}
+	base, err := parseNonNegativeInt("payments routing base hop fee", policy.BaseHopFee)
+	if err != nil {
+		return RoutingHopFee{}, err
+	}
+	proportional := sdkmath.ZeroInt()
+	if policy.ProportionalFeeBps > 0 {
+		proportional = amount.Mul(sdkmath.NewInt(int64(policy.ProportionalFeeBps)))
+		denom := sdkmath.NewInt(10_000)
+		proportional = proportional.Add(denom.Sub(sdkmath.OneInt())).Quo(denom)
+	}
+	reservation, err := parseNonNegativeInt("payments routing liquidity reservation fee", policy.LiquidityReservationFee)
+	if err != nil {
+		return RoutingHopFee{}, err
+	}
+	virtualSetup := sdkmath.ZeroInt()
+	if req.IncludeVirtualSetup {
+		virtualSetup, err = parseNonNegativeInt("payments routing virtual setup fee", policy.VirtualChannelSetupFee)
+		if err != nil {
+			return RoutingHopFee{}, err
+		}
+	}
+	congestion, err := parseNonNegativeInt("payments routing congestion surcharge", policy.CongestionSurcharge)
+	if err != nil {
+		return RoutingHopFee{}, err
+	}
+	failurePenaltyUnit, err := parseNonNegativeInt("payments routing failure penalty", policy.FailurePenalty)
+	if err != nil {
+		return RoutingHopFee{}, err
+	}
+	failurePenalty := failurePenaltyUnit.Mul(sdkmath.NewInt(int64(req.RepeatedInvalidAttempts)))
+	total := base.Add(proportional).Add(reservation).Add(virtualSetup).Add(congestion).Add(failurePenalty)
+	maxHopFee, err := parseNonNegativeInt("payments routing max hop fee", policy.MaxHopFee)
+	if err != nil {
+		return RoutingHopFee{}, err
+	}
+	if !maxHopFee.IsZero() && total.GT(maxHopFee) {
+		return RoutingHopFee{}, errors.New("payments routing hop fee exceeds policy maximum")
+	}
+	return RoutingHopFee{
+		Denom:                   NativeDenom,
+		BaseHopFee:              base.String(),
+		ProportionalFee:         proportional.String(),
+		LiquidityReservationFee: reservation.String(),
+		VirtualChannelSetupFee:  virtualSetup.String(),
+		CongestionSurcharge:     congestion.String(),
+		FailurePenalty:          failurePenalty.String(),
+		RepeatedInvalidAttempts: req.RepeatedInvalidAttempts,
+		TotalFee:                total.String(),
+		PolicyHash:              policy.PolicyHash,
+	}, nil
+}
+
+func ValidateRouteFeeCeiling(route ScoredRoute, policy RoutePolicy) error {
+	route = route.Normalize()
+	policy = policy.Normalize()
+	if strings.TrimSpace(policy.MaxFeeAmount) == "" {
+		return nil
+	}
+	totalFee, err := parseNonNegativeInt("payments route total fee", route.TotalFee)
+	if err != nil {
+		return err
+	}
+	maxFee, err := parseNonNegativeInt("payments route policy max fee", policy.MaxFeeAmount)
+	if err != nil {
+		return err
+	}
+	if totalFee.GT(maxFee) {
+		return errors.New("payments route fee exceeds policy ceiling")
+	}
+	return nil
+}
+
+func ValidateConditionLinkageFeeCeiling(proof ConditionLinkageProof, policy RoutePolicy) error {
+	proof = proof.Normalize()
+	policy = policy.Normalize()
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	totalFees, err := parseNonNegativeInt("payments linked route declared fees", proof.TotalFees)
+	if err != nil {
+		return err
+	}
+	promiseFees := sdkmath.ZeroInt()
+	for i := 1; i < len(proof.Promises); i++ {
+		fee, err := parseNonNegativeInt("payments linked route promise fee", proof.Promises[i].Fee)
+		if err != nil {
+			return err
+		}
+		promiseFees = promiseFees.Add(fee)
+	}
+	if promiseFees.GT(totalFees) {
+		return errors.New("payments linked route promise fee overcharge")
+	}
+	if strings.TrimSpace(policy.MaxFeeAmount) == "" {
+		return nil
+	}
+	maxFee, err := parseNonNegativeInt("payments linked route policy max fee", policy.MaxFeeAmount)
+	if err != nil {
+		return err
+	}
+	if totalFees.GT(maxFee) || promiseFees.GT(maxFee) {
+		return errors.New("payments linked route fee exceeds policy ceiling")
+	}
+	return nil
+}
+
 func SimulateRoute(route ScoredRoute, req RouteSelectionRequest) (RouteSimulationResult, error) {
 	route = route.Normalize()
 	req = req.Normalize()
@@ -2287,18 +2402,11 @@ func SimulateRoute(route ScoredRoute, req RouteSelectionRequest) (RouteSimulatio
 			return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation edge expired", TotalFee: route.TotalFee}, nil
 		}
 	}
-	totalFee, err := parseNonNegativeInt("payments route simulation total fee", route.TotalFee)
-	if err != nil {
-		return RouteSimulationResult{}, err
-	}
-	if strings.TrimSpace(req.Policy.MaxFeeAmount) != "" {
-		maxFee, err := parseNonNegativeInt("payments route simulation max fee", req.Policy.MaxFeeAmount)
-		if err != nil {
+	if err := ValidateRouteFeeCeiling(route, req.Policy); err != nil {
+		if !strings.Contains(err.Error(), "policy ceiling") {
 			return RouteSimulationResult{}, err
 		}
-		if totalFee.GT(maxFee) {
-			return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation fee exceeds policy", TotalFee: route.TotalFee}, nil
-		}
+		return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation fee exceeds policy", TotalFee: route.TotalFee}, nil
 	}
 	return RouteSimulationResult{Route: route, Attemptable: true, TotalFee: route.TotalFee}, nil
 }

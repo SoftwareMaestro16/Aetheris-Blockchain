@@ -2562,6 +2562,131 @@ func TestScoredRouteSelectionExcludesInsufficientCapacityAndMaxFee(t *testing.T)
 	require.ErrorContains(t, err, "not found")
 }
 
+func TestRoutingFeePolicyUpdateAndHopFeeCalculation(t *testing.T) {
+	alice := testAddress(0x41)
+	router := testAddress(0x42)
+	policy, err := BuildRoutingFeePolicyUpdate(RoutingFeePolicyUpdate{
+		ChainID:                 "aetheris-test-chain",
+		ChannelID:               HashParts("routing-fee-policy-channel"),
+		From:                    router,
+		To:                      alice,
+		FeeDenom:                NativeDenom,
+		BaseHopFee:              "2",
+		ProportionalFeeBps:      250,
+		LiquidityReservationFee: "3",
+		VirtualChannelSetupFee:  "5",
+		CongestionSurcharge:     "7",
+		FailurePenalty:          "11",
+		MaxHopFee:               "100",
+		ValidAfterHeight:        10,
+		ValidUntilHeight:        20,
+		Sequence:                1,
+	}, router)
+	require.NoError(t, err)
+	require.NotEmpty(t, policy.PolicyID)
+	require.NotEmpty(t, policy.PolicyHash)
+	require.NoError(t, policy.ValidateAtHeight(12))
+	require.ErrorContains(t, policy.ValidateAtHeight(21), "validity window")
+
+	fee, err := CalculateHopRoutingFee(HopFeeCalculationRequest{
+		Amount:                  "1000",
+		Policy:                  policy,
+		CurrentHeight:           12,
+		IncludeVirtualSetup:     true,
+		RepeatedInvalidAttempts: 2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "2", fee.BaseHopFee)
+	require.Equal(t, "25", fee.ProportionalFee)
+	require.Equal(t, "3", fee.LiquidityReservationFee)
+	require.Equal(t, "5", fee.VirtualChannelSetupFee)
+	require.Equal(t, "7", fee.CongestionSurcharge)
+	require.Equal(t, "22", fee.FailurePenalty)
+	require.Equal(t, "64", fee.TotalFee)
+	require.Equal(t, policy.PolicyHash, fee.PolicyHash)
+
+	tooLowMax, err := BuildRoutingFeePolicyUpdate(RoutingFeePolicyUpdate{
+		ChainID:                 policy.ChainID,
+		ChannelID:               policy.ChannelID,
+		From:                    policy.From,
+		To:                      policy.To,
+		FeeDenom:                NativeDenom,
+		BaseHopFee:              "2",
+		ProportionalFeeBps:      250,
+		LiquidityReservationFee: "3",
+		VirtualChannelSetupFee:  "5",
+		CongestionSurcharge:     "7",
+		FailurePenalty:          "11",
+		MaxHopFee:               "50",
+		ValidAfterHeight:        10,
+		ValidUntilHeight:        20,
+		Sequence:                2,
+	}, router)
+	require.NoError(t, err)
+	_, err = CalculateHopRoutingFee(HopFeeCalculationRequest{
+		Amount:                  "1000",
+		Policy:                  tooLowMax,
+		CurrentHeight:           12,
+		IncludeVirtualSetup:     true,
+		RepeatedInvalidAttempts: 2,
+	})
+	require.ErrorContains(t, err, "exceeds policy maximum")
+}
+
+func TestRouteFeeCeilingRejectsMicroFeeOvercharge(t *testing.T) {
+	alice := testAddress(0x43)
+	router := testAddress(0x44)
+	bob := testAddress(0x45)
+	policy := DefaultRoutePolicy()
+	policy.MaxFeeAmount = "5"
+	route := ScoredRoute{
+		Edges: []ChannelEdge{{
+			ChannelID: HashParts("fee-ceiling-edge"),
+			From:      alice,
+			To:        bob,
+			Capacity:  "100",
+			FeeDenom:  NativeDenom,
+			FeeAmount: "4",
+			Active:    true,
+		}},
+		Amount:      "50",
+		TotalFee:    "4",
+		TotalCost:   "4",
+		MinCapacity: "100",
+	}
+	require.NoError(t, ValidateRouteFeeCeiling(route, policy))
+	route.TotalFee = "6"
+	require.ErrorContains(t, ValidateRouteFeeCeiling(route, policy), "policy ceiling")
+
+	first := signedChannel(t, "fee-ceiling-first", "1000", alice, router)
+	second := signedChannel(t, "fee-ceiling-second", "1000", router, bob)
+	first.ConditionalPayments = true
+	second.ConditionalPayments = true
+	routeID := HashParts("fee-ceiling-route")
+	hashLock := HashParts("fee-ceiling-preimage")
+	secondID := HashParts("fee-ceiling-second-promise")
+	firstID := HashParts("fee-ceiling-first-promise")
+	firstPromise := signedRoutePromise(t, first, firstID, routeID, alice, router, "58", "0", 9, 70, hashLock, "", secondID)
+	secondPromise := signedRoutePromise(t, second, secondID, routeID, router, bob, "50", "8", 10, 40, hashLock, firstID, "")
+	proof := ConditionLinkageProof{
+		RouteID:       routeID,
+		Sender:        alice,
+		Receiver:      bob,
+		Amount:        "50",
+		TotalFees:     "8",
+		HashLock:      hashLock,
+		Promises:      []ConditionalPromise{firstPromise, secondPromise},
+		TimeoutMargin: DefaultTimeoutMargin,
+	}
+	require.ErrorContains(t, ValidateConditionLinkageFeeCeiling(proof, policy), "policy ceiling")
+	policy.MaxFeeAmount = "8"
+	require.NoError(t, ValidateConditionLinkageFeeCeiling(proof, policy))
+
+	underreported := proof
+	underreported.TotalFees = "4"
+	require.ErrorContains(t, ValidateConditionLinkageFeeCeiling(underreported, policy), "overcharge")
+}
+
 func TestMultiPathSplittingUsesIndependentCapacityAwareRoutes(t *testing.T) {
 	alice := testAddress(0x3d)
 	r1 := testAddress(0x3e)
