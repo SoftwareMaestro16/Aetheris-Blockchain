@@ -43,6 +43,13 @@ func TestKeeperPaymentLifecycleWhenEnabled(t *testing.T) {
 		{Participant: bob, Amount: "250"},
 	})
 	require.NoError(t, k.SubmitClose(channel.ChannelID, closeState, alice, 20, "5"))
+	debug, err := k.QueryStateHash(channel.ChannelID)
+	require.NoError(t, err)
+	require.Equal(t, paymentstypes.ChannelStatusPendingClose, debug.Status)
+	require.Equal(t, closeState.Nonce, debug.PendingNonce)
+	require.Equal(t, closeState.StateHash, debug.PendingStateHash)
+	require.Equal(t, paymentstypes.ComputeStateHash(closeState), debug.ComputedPendingStateHash)
+	require.Equal(t, closeState.Nonce, debug.DisputedNonce)
 
 	settlement, err := k.FinalizeSettlement(channel.ChannelID, 30)
 	require.NoError(t, err)

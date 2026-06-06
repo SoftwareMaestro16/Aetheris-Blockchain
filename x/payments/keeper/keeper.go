@@ -324,6 +324,13 @@ func (k *Keeper) AddSettlementBatch(batch paymentstypes.SettlementBatch) error {
 	return nil
 }
 
+func (k Keeper) QueryStateHash(channelID string) (paymentstypes.StateHashDebug, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.StateHashDebug{}, err
+	}
+	return k.genesis.State.StateHashDebug(channelID)
+}
+
 func (k Keeper) Channels(req *prototype.PageRequest) ([]paymentstypes.ChannelRecord, prototype.PageResponse, error) {
 	channels := k.genesis.State.Export().Channels
 	start, end, res, err := prototype.NormalizePage(req, k.genesis.Params, len(channels))

@@ -12,9 +12,22 @@ import (
 
 const HashHexLength = 64
 
+const (
+	domainHashParts              = "aetheris-payments-hash-parts-v1"
+	domainChannelState           = "aetheris-payment-channel-state"
+	domainAsyncDelta             = "aetheris-payment-async-delta"
+	domainConditionalPromise     = "aetheris-payment-conditional-promise"
+	domainConditionsRoot         = "aetheris-payment-conditions-root"
+	domainCooperativeClose       = "aetheris-payment-cooperative-close"
+	domainDisputeProof           = "aetheris-payment-dispute-proof"
+	domainVirtualChannelState    = "aetheris-virtual-payment-channel-state"
+	domainVirtualChannelAnchor   = "aetheris-virtual-payment-channel-anchor"
+	domainStateSignaturePreimage = "aetheris-payment-state-signature-preimage-hash"
+)
+
 func HashParts(parts ...string) string {
 	h := sha256.New()
-	writeString(h, "aetheris-payments-hash-parts-v1")
+	writeString(h, domainHashParts)
 	for _, part := range parts {
 		writeString(h, part)
 	}
@@ -22,12 +35,27 @@ func HashParts(parts ...string) string {
 }
 
 func ComputeStateHash(state ChannelState) string {
+	hash, err := ComputeStateHashForEncodingVersion(state, CanonicalEncodingVersion)
+	if err != nil {
+		panic(err)
+	}
+	return hash
+}
+
+func ComputeStateHashForEncodingVersion(state ChannelState, version byte) (string, error) {
+	if version != CanonicalEncodingVersion {
+		return "", fmt.Errorf("payments unsupported channel state encoding version %d", version)
+	}
 	state = state.Normalize()
 	h := sha256.New()
-	writeString(h, "aetheris-payment-channel-state-v1")
+	writeString(h, domainChannelState)
+	writeByte(h, version)
 	writeString(h, state.ChainID)
 	writeUint64(h, uint64(state.AppVersion))
 	writeString(h, state.ModuleName)
+	for _, field := range state.RequiredFields {
+		writeString(h, field)
+	}
 	writeString(h, state.ChannelID)
 	writeString(h, string(state.ChannelType))
 	writeString(h, state.ParticipantSetHash)
@@ -80,7 +108,7 @@ func ComputeStateHash(state ChannelState) string {
 		writeUint64(h, condition.NonceStart)
 		writeUint64(h, condition.NonceEnd)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func ComputeParticipantSetHash(participants []string) string {
@@ -118,6 +146,10 @@ func ComputeStateSignaturePreimageHash(state ChannelState) string {
 	moduleName := strings.TrimSpace(state.ModuleName)
 	if moduleName == "" {
 		moduleName = ModuleName
+	}
+	requiredFields := normalizeRequiredFields(state.RequiredFields)
+	if len(requiredFields) == 0 {
+		requiredFields = CanonicalStateRequiredFields()
 	}
 	version := state.Version
 	if version == 0 {
@@ -168,10 +200,14 @@ func ComputeStateSignaturePreimageHash(state ChannelState) string {
 	checkpointBalances := normalizeBalances(state.CheckpointBalances)
 
 	h := sha256.New()
-	writeString(h, "aetheris-payment-state-signature-preimage-hash-v1")
+	writeString(h, domainStateSignaturePreimage)
+	writeByte(h, CanonicalEncodingVersion)
 	writeString(h, strings.TrimSpace(state.ChainID))
 	writeUint64(h, uint64(appVersion))
 	writeString(h, moduleName)
+	for _, field := range requiredFields {
+		writeString(h, field)
+	}
 	writeString(h, normalizeHash(state.ChannelID))
 	writeString(h, string(state.ChannelType))
 	writeString(h, participantSetHash)
@@ -228,18 +264,28 @@ func ComputeStateSignaturePreimageHash(state ChannelState) string {
 
 func ComputeConditionsRoot(conditions []ConditionalPayment) string {
 	h := sha256.New()
-	writeString(h, "aetheris-payment-conditions-root-v1")
+	writeString(h, domainConditionsRoot)
+	writeByte(h, CanonicalEncodingVersion)
 	for _, condition := range normalizeConditions(conditions) {
-		writeString(h, condition.ConditionID)
-		writeString(h, string(condition.ConditionType))
-		writeString(h, condition.Payer)
-		writeString(h, condition.Payee)
-		writeString(h, condition.Amount)
-		writeString(h, condition.HashLock)
-		writeUint64(h, condition.TimeoutHeight)
-		writeUint64(h, condition.NonceStart)
-		writeUint64(h, condition.NonceEnd)
+		writeString(h, ComputeConditionalPromiseHash(condition))
 	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeConditionalPromiseHash(condition ConditionalPayment) string {
+	condition = condition.Normalize()
+	h := sha256.New()
+	writeString(h, domainConditionalPromise)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, condition.ConditionID)
+	writeString(h, string(condition.ConditionType))
+	writeString(h, condition.Payer)
+	writeString(h, condition.Payee)
+	writeString(h, condition.Amount)
+	writeString(h, condition.HashLock)
+	writeUint64(h, condition.TimeoutHeight)
+	writeUint64(h, condition.NonceStart)
+	writeUint64(h, condition.NonceEnd)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -262,6 +308,8 @@ func ComputeUnidirectionalClaimHash(claim UnidirectionalClaim) string {
 	claim = claim.Normalize()
 	h := sha256.New()
 	writeString(h, "aetheris-payment-unidirectional-claim-v1")
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, claim.ChainID)
 	writeString(h, claim.ChannelID)
 	writeString(h, claim.Payer)
 	writeString(h, claim.Receiver)
@@ -291,8 +339,10 @@ func ComputeClaimSignatureHash(signer, claimHash string) string {
 func ComputeAsyncDeltaHash(delta AsyncPaymentDelta) string {
 	delta = delta.Normalize()
 	h := sha256.New()
-	writeString(h, "aetheris-payment-async-delta-v1")
+	writeString(h, domainAsyncDelta)
+	writeByte(h, CanonicalEncodingVersion)
 	writeString(h, delta.UpdateID)
+	writeString(h, delta.ChainID)
 	writeString(h, delta.ChannelID)
 	writeString(h, delta.From)
 	writeString(h, delta.To)
@@ -334,8 +384,11 @@ func ComputeDeltaSignatureHash(signer, deltaHash string) string {
 func ComputeVirtualChannelAnchor(vc VirtualChannel) string {
 	vc = vc.Normalize()
 	h := sha256.New()
-	writeString(h, "aetheris-virtual-payment-channel-anchor-v1")
+	writeString(h, domainVirtualChannelAnchor)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, vc.ChainID)
 	writeString(h, vc.VirtualChannelID)
+	writeUint64(h, vc.Nonce)
 	for _, id := range vc.ParentChannelIDs {
 		writeString(h, id)
 	}
@@ -344,6 +397,59 @@ func ComputeVirtualChannelAnchor(vc VirtualChannel) string {
 	}
 	writeString(h, vc.Capacity)
 	writeUint64(h, vc.ExpiresHeight)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeVirtualChannelStateHash(vc VirtualChannel) string {
+	vc = vc.Normalize()
+	h := sha256.New()
+	writeString(h, domainVirtualChannelState)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, vc.ChainID)
+	writeString(h, vc.VirtualChannelID)
+	writeUint64(h, vc.Nonce)
+	for _, id := range vc.ParentChannelIDs {
+		writeString(h, id)
+	}
+	for _, endpoint := range vc.Endpoints {
+		writeString(h, endpoint)
+	}
+	writeString(h, vc.Capacity)
+	writeUint64(h, vc.ExpiresHeight)
+	writeString(h, string(vc.Status))
+	writeString(h, vc.AnchorCommitment)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeCooperativeCloseHash(chainID, channelID, stateHash string, nonce uint64) string {
+	h := sha256.New()
+	writeString(h, domainCooperativeClose)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, strings.TrimSpace(chainID))
+	writeString(h, normalizeHash(channelID))
+	writeString(h, normalizeHash(stateHash))
+	writeUint64(h, nonce)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func ComputeDisputeProofHash(proof FraudProof) string {
+	proof = proof.Normalize()
+	h := sha256.New()
+	writeString(h, domainDisputeProof)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, proof.StateA.ChainID)
+	writeString(h, proof.ChannelID())
+	writeString(h, proof.ProofID)
+	writeString(h, string(proof.ProofType))
+	writeString(h, proof.SubmittedBy)
+	writeString(h, proof.OffendingSigner)
+	writeString(h, proof.StateA.StateHash)
+	writeUint64(h, proof.StateA.Nonce)
+	writeString(h, proof.StateB.StateHash)
+	writeUint64(h, proof.StateB.Nonce)
+	writeString(h, proof.PenaltyDenom)
+	writeString(h, proof.PenaltyAmount)
+	writeString(h, proof.EvidenceHash)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -400,6 +506,10 @@ func ValidateHash(fieldName, value string) error {
 func writeString(w interface{ Write([]byte) (int, error) }, value string) {
 	writeUint64(w, uint64(len(value)))
 	_, _ = w.Write([]byte(value))
+}
+
+func writeByte(w interface{ Write([]byte) (int, error) }, value byte) {
+	_, _ = w.Write([]byte{value})
 }
 
 func writeUint64(w interface{ Write([]byte) (int, error) }, value uint64) {

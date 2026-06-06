@@ -336,6 +336,93 @@ func TestCanonicalChannelStateIncludesAllStateDomains(t *testing.T) {
 	require.ErrorContains(t, badScheme.ValidateForChannel(channel, true), "signature scheme")
 }
 
+func TestStateHashEncodingVersionAndDomainSeparation(t *testing.T) {
+	alice := testAddress(0x3f)
+	bob := testAddress(0x40)
+	channel := signedChannel(t, "state-hash-version", "1000", alice, bob)
+	state := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "490"},
+		{Participant: bob, Amount: "510"},
+	})
+
+	v1Hash, err := ComputeStateHashForEncodingVersion(state, CanonicalEncodingVersion)
+	require.NoError(t, err)
+	require.Equal(t, state.StateHash, v1Hash)
+	_, err = ComputeStateHashForEncodingVersion(state, CanonicalEncodingVersion+1)
+	require.ErrorContains(t, err, "unsupported")
+
+	condition := ConditionalPayment{
+		ConditionID:   HashParts("promise", channel.ChannelID),
+		ConditionType: ConditionTypeHashLock,
+		Payer:         alice,
+		Payee:         bob,
+		Amount:        "10",
+		HashLock:      HashParts("promise-preimage"),
+		TimeoutHeight: 64,
+		NonceStart:    2,
+		NonceEnd:      3,
+	}
+	async := signedAsyncChannel(t, "domain-async", "1000", []Balance{
+		{Participant: alice, Amount: "1000"},
+		{Participant: bob, Amount: "0"},
+	}, 4, 4, "100", 80, alice, bob)
+	delta := signedAsyncDelta(t, async, "domain-delta", alice, bob, "5", 2, 2, 70)
+	conflicting := signedState(t, channel, state.Nonce, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "510"},
+		{Participant: bob, Amount: "490"},
+	})
+	proof := FraudProof{
+		ProofID:         HashParts("domain-proof", channel.ChannelID),
+		ProofType:       FraudProofTypeDoubleSign,
+		SubmittedBy:     bob,
+		OffendingSigner: alice,
+		StateA:          state,
+		StateB:          conflicting,
+		PenaltyAmount:   "10",
+		EvidenceHash:    HashParts("evidence", state.StateHash, conflicting.StateHash),
+	}
+	vc := VirtualChannel{
+		VirtualChannelID: HashParts("domain-vc", alice, bob),
+		ChainID:          channel.ChainID,
+		Nonce:            1,
+		ParentChannelIDs: []string{channel.ChannelID},
+		Endpoints:        []string{alice, bob},
+		Capacity:         "100",
+		ExpiresHeight:    90,
+	}
+	vc.AnchorCommitment = ComputeVirtualChannelAnchor(vc)
+	vc.StateHash = ComputeVirtualChannelStateHash(vc)
+
+	hashes := []string{
+		state.StateHash,
+		delta.DeltaHash,
+		ComputeConditionalPromiseHash(condition),
+		ComputeCooperativeCloseHash(channel.ChainID, channel.ChannelID, state.StateHash, state.Nonce),
+		ComputeDisputeProofHash(proof),
+		vc.StateHash,
+	}
+	seen := map[string]struct{}{}
+	for _, hash := range hashes {
+		require.NotContains(t, seen, hash)
+		seen[hash] = struct{}{}
+	}
+}
+
+func TestStateRejectsUnknownRequiredFields(t *testing.T) {
+	alice := testAddress(0x41)
+	bob := testAddress(0x42)
+	channel := signedChannel(t, "unknown-required-field", "1000", alice, bob)
+	state := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "490"},
+		{Participant: bob, Amount: "510"},
+	})
+
+	bad := resignState(t, channel, mutateCanonicalState(state, func(s *ChannelState) {
+		s.RequiredFields = append(s.RequiredFields, "future_required_field")
+	}))
+	require.ErrorContains(t, bad.ValidateForChannel(channel, true), "unknown required field")
+}
+
 func TestBidirectionalCloseAndUpdateRules(t *testing.T) {
 	alice := testAddress(0x39)
 	bob := testAddress(0x3a)
@@ -493,6 +580,7 @@ func TestUnidirectionalAcknowledgementModeAndPayerReclaim(t *testing.T) {
 	channel := signedUnidirectionalChannel(t, "uni-ack", "1000", payer, receiver, true)
 
 	claim, err := BuildUnidirectionalClaim(UnidirectionalClaim{
+		ChainID:             channel.ChainID,
 		ChannelID:           channel.ChannelID,
 		Payer:               payer,
 		Receiver:            receiver,
@@ -599,6 +687,20 @@ func TestAsyncCheckpointAggregationExposureExpiryAndProof(t *testing.T) {
 	badProof.Deltas = nil
 	badProof.EvidenceHash = HashParts("async-dispute", checkpoint.StateHash, ComputeAsyncDeltaRoot(nil))
 	require.ErrorContains(t, badProof.ValidateForChannel(channel, 30), "signed deltas")
+}
+
+func TestAsyncCheckpointRejectsDuplicateDeltaNonce(t *testing.T) {
+	alice := testAddress(0x57)
+	bob := testAddress(0x58)
+	channel := signedAsyncChannel(t, "async-duplicate-nonce", "1000", []Balance{
+		{Participant: alice, Amount: "1000"},
+		{Participant: bob, Amount: "0"},
+	}, 4, 4, "100", 80, alice, bob)
+
+	first := signedAsyncDelta(t, channel, "first", alice, bob, "10", 2, 2, 70)
+	second := signedAsyncDelta(t, channel, "second", alice, bob, "15", 2, 2, 70)
+	_, err := BuildAsyncCheckpointState(channel, []AsyncPaymentDelta{first, second}, 3, 30)
+	require.ErrorContains(t, err, "duplicate async delta nonce")
 }
 
 func TestPaymentAssetScopeRejectsNonNaetFeesAndPenalties(t *testing.T) {
@@ -1074,6 +1176,7 @@ func signedUnidirectionalClaim(t *testing.T, channel ChannelRecord, claimed stri
 	t.Helper()
 
 	claim, err := BuildUnidirectionalClaim(UnidirectionalClaim{
+		ChainID:             channel.ChainID,
 		ChannelID:           channel.ChannelID,
 		Payer:               channel.Payer,
 		Receiver:            channel.Receiver,
@@ -1148,6 +1251,7 @@ func signedAsyncDelta(t *testing.T, channel ChannelRecord, salt, from, to, amoun
 
 	delta, err := BuildAsyncDelta(AsyncPaymentDelta{
 		UpdateID:     HashParts("async-delta", channel.ChannelID, salt),
+		ChainID:      channel.ChainID,
 		ChannelID:    channel.ChannelID,
 		From:         from,
 		To:           to,

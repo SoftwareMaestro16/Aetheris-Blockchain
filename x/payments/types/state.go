@@ -243,6 +243,9 @@ func SubmitClose(state PaymentsState, channelID string, closingState ChannelStat
 	nextChannel.Status = ChannelStatusPendingClose
 	nextChannel.PendingClose = pending
 	nextChannel.LatestState = pending.State
+	if nextChannel.DisputedNonce < pending.State.Nonce {
+		nextChannel.DisputedNonce = pending.State.Nonce
+	}
 	next := state.Clone()
 	next.Channels[index] = nextChannel.Normalize()
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
@@ -289,6 +292,9 @@ func ForcedClose(state PaymentsState, channelID string, submitter string, curren
 	nextChannel := channel
 	nextChannel.Status = ChannelStatusPendingClose
 	nextChannel.PendingClose = pending
+	if nextChannel.DisputedNonce < pending.State.Nonce {
+		nextChannel.DisputedNonce = pending.State.Nonce
+	}
 	next := state.Clone()
 	next.Channels[index] = nextChannel.Normalize()
 	next.Edges = filterEdgesForSettledChannel(next.Edges, channel.ChannelID)
@@ -535,6 +541,9 @@ func DisputeChannel(state PaymentsState, req ChannelDisputeRequest) (PaymentsSta
 		nextChannel.PendingClose.DisputeCount++
 	}
 	nextChannel.PendingClose.ConditionProofs = mergeConditionResolutions(nextChannel.PendingClose.ConditionProofs, req.ConditionProofs)
+	if nextChannel.DisputedNonce < req.NewerState.Nonce {
+		nextChannel.DisputedNonce = req.NewerState.Nonce
+	}
 	if req.FraudProof.ProofID != "" {
 		if err := req.FraudProof.ValidateForChannel(channel); err != nil {
 			return PaymentsState{}, err
@@ -704,12 +713,6 @@ func OpenVirtualChannel(state PaymentsState, vc VirtualChannel) (PaymentsState, 
 		return PaymentsState{}, err
 	}
 	vc = vc.Normalize()
-	if vc.AnchorCommitment == "" {
-		vc.AnchorCommitment = ComputeVirtualChannelAnchor(vc)
-	}
-	if err := vc.Validate(); err != nil {
-		return PaymentsState{}, err
-	}
 	if _, found := state.VirtualChannelByID(vc.VirtualChannelID); found {
 		return PaymentsState{}, errors.New("payments virtual channel already exists")
 	}
@@ -717,10 +720,16 @@ func OpenVirtualChannel(state PaymentsState, vc VirtualChannel) (PaymentsState, 
 	if err != nil {
 		return PaymentsState{}, err
 	}
+	var parentChainID string
 	for _, parentID := range vc.ParentChannelIDs {
 		channel, found := state.ChannelByID(parentID)
 		if !found || channel.Status != ChannelStatusOpen {
 			return PaymentsState{}, errors.New("payments virtual channel requires open parents")
+		}
+		if parentChainID == "" {
+			parentChainID = channel.ChainID
+		} else if parentChainID != channel.ChainID {
+			return PaymentsState{}, errors.New("payments virtual channel parents must share chain id")
 		}
 		if !containsString(channel.Participants, vc.Endpoints[0]) && !containsString(channel.Participants, vc.Endpoints[1]) {
 			return PaymentsState{}, errors.New("payments virtual channel parent path must touch an endpoint")
@@ -730,6 +739,23 @@ func OpenVirtualChannel(state PaymentsState, vc VirtualChannel) (PaymentsState, 
 		} else if channelCapacity.LT(capacity) {
 			return PaymentsState{}, errors.New("payments virtual channel capacity exceeds parent capacity")
 		}
+	}
+	if vc.ChainID == "" {
+		vc.ChainID = parentChainID
+		vc.AnchorCommitment = ""
+		vc.StateHash = ""
+	}
+	if vc.ChainID != parentChainID {
+		return PaymentsState{}, errors.New("payments virtual channel chain id mismatch")
+	}
+	if vc.AnchorCommitment == "" {
+		vc.AnchorCommitment = ComputeVirtualChannelAnchor(vc)
+	}
+	if vc.StateHash == "" {
+		vc.StateHash = ComputeVirtualChannelStateHash(vc)
+	}
+	if err := vc.Validate(); err != nil {
+		return PaymentsState{}, err
 	}
 	next := state.Clone()
 	next.VirtualChannels = append(next.VirtualChannels, vc)
@@ -922,6 +948,28 @@ func (s PaymentsState) VirtualChannelByID(id string) (VirtualChannel, bool) {
 		}
 	}
 	return VirtualChannel{}, false
+}
+
+func (s PaymentsState) StateHashDebug(channelID string) (StateHashDebug, error) {
+	channel, found := s.Export().ChannelByID(channelID)
+	if !found {
+		return StateHashDebug{}, errors.New("payments channel not found")
+	}
+	debug := StateHashDebug{
+		ChannelID:               channel.ChannelID,
+		Status:                  channel.Status,
+		LatestNonce:             channel.LatestState.Nonce,
+		LatestStateHash:         channel.LatestState.StateHash,
+		ComputedLatestStateHash: ComputeStateHash(channel.LatestState),
+		FinalizedNonce:          channel.FinalizedNonce,
+		DisputedNonce:           channel.DisputedNonce,
+	}
+	if channel.PendingClose.State.StateHash != "" {
+		debug.PendingNonce = channel.PendingClose.State.Nonce
+		debug.PendingStateHash = channel.PendingClose.State.StateHash
+		debug.ComputedPendingStateHash = ComputeStateHash(channel.PendingClose.State)
+	}
+	return debug, nil
 }
 
 func (s PaymentsState) CustodyLockByChannel(channelID string) (CustodyLock, bool) {

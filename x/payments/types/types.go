@@ -13,6 +13,7 @@ import (
 
 const (
 	NativeDenom              = "naet"
+	CanonicalEncodingVersion = byte(1)
 	CurrentAppVersion        = uint32(1)
 	CurrentStateVersion      = uint32(1)
 	SignatureSchemeEd25519   = "ed25519-aetheris-v1"
@@ -47,6 +48,32 @@ const (
 	ChannelStatusPendingClose ChannelStatus = "PENDING_CLOSE"
 	ChannelStatusSettled      ChannelStatus = "SETTLED"
 )
+
+func CanonicalStateRequiredFields() []string {
+	return []string{
+		"chain_id",
+		"app_version",
+		"module_name",
+		"channel_id",
+		"channel_type",
+		"participant_set_hash",
+		"balances",
+		"reserves",
+		"pending_condition_amounts",
+		"accrued_fees",
+		"nonce",
+		"epoch",
+		"previous_state_hash",
+		"timeout_height",
+		"timeout_timestamp",
+		"challenge_period",
+		"condition_root",
+		"condition_count",
+		"required_signer_bitmap",
+		"signature_scheme",
+		"signature_preimage_hash",
+	}
+}
 
 type ConditionType string
 
@@ -181,10 +208,24 @@ type FinalSettlementRequest struct {
 	RoutingFeeClaimHash string
 }
 
+type StateHashDebug struct {
+	ChannelID                string
+	Status                   ChannelStatus
+	LatestNonce              uint64
+	LatestStateHash          string
+	ComputedLatestStateHash  string
+	PendingNonce             uint64
+	PendingStateHash         string
+	ComputedPendingStateHash string
+	FinalizedNonce           uint64
+	DisputedNonce            uint64
+}
+
 type ChannelState struct {
 	ChainID               string
 	AppVersion            uint32
 	ModuleName            string
+	RequiredFields        []string
 	ChannelID             string
 	ChannelType           ChannelType
 	ParticipantSetHash    string
@@ -227,6 +268,7 @@ type ChannelState struct {
 
 type AsyncPaymentDelta struct {
 	UpdateID     string
+	ChainID      string
 	ChannelID    string
 	From         string
 	To           string
@@ -248,6 +290,7 @@ type AsyncDeltaDisputeProof struct {
 }
 
 type UnidirectionalClaim struct {
+	ChainID             string
 	ChannelID           string
 	Payer               string
 	Receiver            string
@@ -332,6 +375,7 @@ type ChannelRecord struct {
 	Status              ChannelStatus
 	OpeningStateHash    string
 	FinalizedNonce      uint64
+	DisputedNonce       uint64
 	LatestState         ChannelState
 	LatestClaim         UnidirectionalClaim
 	PendingClose        PendingClose
@@ -381,12 +425,15 @@ type ChannelEdge struct {
 
 type VirtualChannel struct {
 	VirtualChannelID string
+	ChainID          string
+	Nonce            uint64
 	ParentChannelIDs []string
 	Endpoints        []string
 	Capacity         string
 	ExpiresHeight    uint64
 	Status           VirtualChannelStatus
 	AnchorCommitment string
+	StateHash        string
 }
 
 type SettlementOperation struct {
@@ -844,6 +891,7 @@ func StreamingClaimForChannel(channel ChannelRecord, frame StreamingPaymentFrame
 		claimed = collateral
 	}
 	return BuildUnidirectionalClaim(UnidirectionalClaim{
+		ChainID:             channel.ChainID,
 		ChannelID:           channel.ChannelID,
 		Payer:               channel.Payer,
 		Receiver:            channel.Receiver,
@@ -863,6 +911,10 @@ func (s ChannelState) Normalize() ChannelState {
 	s.ModuleName = strings.TrimSpace(s.ModuleName)
 	if s.ModuleName == "" {
 		s.ModuleName = ModuleName
+	}
+	s.RequiredFields = normalizeRequiredFields(s.RequiredFields)
+	if len(s.RequiredFields) == 0 {
+		s.RequiredFields = CanonicalStateRequiredFields()
 	}
 	s.ChannelID = normalizeHash(s.ChannelID)
 	s.ParticipantSetHash = normalizeOptionalHash(s.ParticipantSetHash)
@@ -1015,6 +1067,7 @@ func (s DeltaSignature) Validate(expectedDeltaHash string) error {
 
 func (d AsyncPaymentDelta) Normalize() AsyncPaymentDelta {
 	d.UpdateID = normalizeHash(d.UpdateID)
+	d.ChainID = strings.TrimSpace(d.ChainID)
 	d.ChannelID = normalizeHash(d.ChannelID)
 	d.From = strings.TrimSpace(d.From)
 	d.To = strings.TrimSpace(d.To)
@@ -1039,6 +1092,9 @@ func (d AsyncPaymentDelta) ValidateForChannel(channel ChannelRecord, currentHeig
 	delta := d.Normalize()
 	if err := validateUnsignedAsyncDelta(delta); err != nil {
 		return err
+	}
+	if delta.ChainID != channel.ChainID {
+		return errors.New("payments async delta chain id mismatch")
 	}
 	if delta.ChannelID != channel.ChannelID {
 		return errors.New("payments async delta channel mismatch")
@@ -1107,6 +1163,7 @@ func (p AsyncDeltaDisputeProof) ValidateForChannel(channel ChannelRecord, curren
 }
 
 func (c UnidirectionalClaim) Normalize() UnidirectionalClaim {
+	c.ChainID = strings.TrimSpace(c.ChainID)
 	c.ChannelID = normalizeHash(c.ChannelID)
 	c.Payer = strings.TrimSpace(c.Payer)
 	c.Receiver = strings.TrimSpace(c.Receiver)
@@ -1134,6 +1191,9 @@ func (c UnidirectionalClaim) ValidateForChannel(channel ChannelRecord) error {
 	claim := c.Normalize()
 	if err := validateUnsignedUnidirectionalClaim(claim); err != nil {
 		return err
+	}
+	if claim.ChainID != channel.ChainID {
+		return errors.New("payments claim chain id mismatch")
 	}
 	if claim.ChannelID != channel.ChannelID {
 		return errors.New("payments claim channel mismatch")
@@ -1429,6 +1489,9 @@ func (c ChannelRecord) Validate() error {
 		if err := channel.PendingClose.ValidateForChannel(channel); err != nil {
 			return err
 		}
+		if channel.DisputedNonce < channel.PendingClose.State.Nonce {
+			return errors.New("payments disputed nonce cannot be below pending close nonce")
+		}
 	case ChannelStatusSettled:
 		if channel.PendingClose.State.StateHash != "" {
 			return errors.New("payments settled channel must not have pending close")
@@ -1497,6 +1560,14 @@ func (f FraudProof) Normalize() FraudProof {
 	f.StateA = f.StateA.Normalize()
 	f.StateB = f.StateB.Normalize()
 	return f
+}
+
+func (f FraudProof) ChannelID() string {
+	proof := f.Normalize()
+	if proof.StateA.ChannelID != "" {
+		return proof.StateA.ChannelID
+	}
+	return proof.StateB.ChannelID
 }
 
 func (f FraudProof) ValidateForChannel(channel ChannelRecord) error {
@@ -1813,12 +1884,17 @@ func (e ChannelEdge) Validate() error {
 
 func (v VirtualChannel) Normalize() VirtualChannel {
 	v.VirtualChannelID = normalizeHash(v.VirtualChannelID)
+	v.ChainID = strings.TrimSpace(v.ChainID)
 	for i := range v.ParentChannelIDs {
 		v.ParentChannelIDs[i] = normalizeHash(v.ParentChannelIDs[i])
 	}
 	v.Endpoints = normalizeAddressSet(v.Endpoints)
 	v.Capacity = strings.TrimSpace(v.Capacity)
+	if v.Nonce == 0 {
+		v.Nonce = 1
+	}
 	v.AnchorCommitment = normalizeOptionalHash(v.AnchorCommitment)
+	v.StateHash = normalizeOptionalHash(v.StateHash)
 	if v.Status == "" {
 		v.Status = VirtualChannelStatusOpen
 	}
@@ -1829,6 +1905,12 @@ func (v VirtualChannel) Validate() error {
 	vc := v.Normalize()
 	if err := ValidateHash("payments virtual channel id", vc.VirtualChannelID); err != nil {
 		return err
+	}
+	if strings.TrimSpace(vc.ChainID) == "" {
+		return errors.New("payments virtual channel chain id is required")
+	}
+	if vc.Nonce == 0 {
+		return errors.New("payments virtual channel nonce must be positive")
 	}
 	if len(vc.ParentChannelIDs) == 0 || len(vc.ParentChannelIDs) > MaxParentChannels {
 		return fmt.Errorf("payments virtual parent channels must be between 1 and %d", MaxParentChannels)
@@ -1860,6 +1942,12 @@ func (v VirtualChannel) Validate() error {
 	}
 	if expected := ComputeVirtualChannelAnchor(vc); vc.AnchorCommitment != expected {
 		return errors.New("payments virtual channel anchor mismatch")
+	}
+	if err := ValidateHash("payments virtual channel state hash", vc.StateHash); err != nil {
+		return err
+	}
+	if expected := ComputeVirtualChannelStateHash(vc); vc.StateHash != expected {
+		return errors.New("payments virtual channel state hash mismatch")
 	}
 	return nil
 }
@@ -2010,6 +2098,9 @@ func validateUnsignedStateShape(state ChannelState) error {
 	}
 	if state.ModuleName != ModuleName {
 		return fmt.Errorf("payments channel state module name must be %s", ModuleName)
+	}
+	if err := validateRequiredFields(state.RequiredFields); err != nil {
+		return err
 	}
 	if err := ValidateHash("payments channel state channel id", state.ChannelID); err != nil {
 		return err
@@ -2237,6 +2328,9 @@ func validateOpeningFeePaid(feePaid string) error {
 }
 
 func validateUnsignedUnidirectionalClaim(claim UnidirectionalClaim) error {
+	if strings.TrimSpace(claim.ChainID) == "" {
+		return errors.New("payments claim chain id is required")
+	}
 	if err := ValidateHash("payments claim channel id", claim.ChannelID); err != nil {
 		return err
 	}
@@ -2270,6 +2364,9 @@ func validateUnsignedUnidirectionalClaim(claim UnidirectionalClaim) error {
 func validateUnsignedAsyncDelta(delta AsyncPaymentDelta) error {
 	if err := ValidateHash("payments async delta update id", delta.UpdateID); err != nil {
 		return err
+	}
+	if strings.TrimSpace(delta.ChainID) == "" {
+		return errors.New("payments async delta chain id is required")
 	}
 	if err := ValidateHash("payments async delta channel id", delta.ChannelID); err != nil {
 		return err
@@ -2814,6 +2911,7 @@ func validateAsyncDeltasForCheckpoint(channel ChannelRecord, base ChannelState, 
 		return err
 	}
 	seen := make(map[string]struct{}, len(deltas))
+	seenNonce := make(map[string]struct{}, len(deltas))
 	exposureBySender := make(map[string]sdkmath.Int, len(channel.Participants))
 	for _, delta := range normalizeAsyncDeltas(deltas) {
 		if _, found := seen[delta.UpdateID]; found {
@@ -2831,6 +2929,16 @@ func validateAsyncDeltasForCheckpoint(channel ChannelRecord, base ChannelState, 
 		}
 		if checkpointNonce-delta.NonceEnd > base.ReceiveWindow {
 			return errors.New("payments async delta is outside receive window")
+		}
+		for nonce := delta.NonceStart; nonce <= delta.NonceEnd; nonce++ {
+			key := fmt.Sprintf("%s/%d", delta.From, nonce)
+			if _, found := seenNonce[key]; found {
+				return errors.New("payments duplicate async delta nonce")
+			}
+			seenNonce[key] = struct{}{}
+			if nonce == ^uint64(0) {
+				break
+			}
 		}
 		amount, err := parsePositiveInt("payments async delta amount", delta.Amount)
 		if err != nil {
@@ -2940,6 +3048,47 @@ func normalizeAddressSet(values []string) []string {
 	}
 	sortStrings(out)
 	return out
+}
+
+func normalizeRequiredFields(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			continue
+		}
+		if _, found := seen[normalized]; found {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	sortStrings(out)
+	return out
+}
+
+func validateRequiredFields(fields []string) error {
+	fields = normalizeRequiredFields(fields)
+	known := normalizeRequiredFields(CanonicalStateRequiredFields())
+	knownSet := make(map[string]struct{}, len(known))
+	for _, field := range known {
+		knownSet[field] = struct{}{}
+	}
+	for _, field := range fields {
+		if _, found := knownSet[field]; !found {
+			return fmt.Errorf("payments channel state unknown required field %q", field)
+		}
+	}
+	if len(fields) != len(known) {
+		return errors.New("payments channel state required fields mismatch")
+	}
+	for i, field := range fields {
+		if field != known[i] {
+			return fmt.Errorf("payments channel state unknown required field %q", field)
+		}
+	}
+	return nil
 }
 
 func normalizeAddress(value string) string {
