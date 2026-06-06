@@ -17,7 +17,9 @@ type ExportManifest struct {
 	StorageRoot            string
 	MessageRoot            string
 	ReceiptsRoot           string
+	RoutingRoot            string
 	PaymentsRoot           string
+	ContractsRoot          string
 	VMRoot                 string
 	ZoneCommitmentCount    uint64
 	ServiceDescriptorCount uint64
@@ -44,7 +46,9 @@ func NewExportManifest(root GlobalStateRoot, appHash string, state AetherCoreSta
 		StorageRoot:            root.StorageRoot,
 		MessageRoot:            root.MessageRoot,
 		ReceiptsRoot:           root.ReceiptsRoot,
+		RoutingRoot:            root.RoutingRoot,
 		PaymentsRoot:           root.PaymentsRoot,
+		ContractsRoot:          root.ContractsRoot,
 		VMRoot:                 root.VMRoot,
 		ZoneCommitmentCount:    uint64(len(state.CommitmentsAtHeight(root.Height))),
 		ServiceDescriptorCount: uint64(len(state.ServiceDescriptors)),
@@ -81,7 +85,13 @@ func (m ExportManifest) ValidateFormat() error {
 	if err := ValidateHash("aethercore export receipts root", m.ReceiptsRoot); err != nil {
 		return err
 	}
+	if err := ValidateHash("aethercore export routing root", m.RoutingRoot); err != nil {
+		return err
+	}
 	if err := ValidateHash("aethercore export payments root", m.PaymentsRoot); err != nil {
+		return err
+	}
+	if err := ValidateHash("aethercore export contracts root", m.ContractsRoot); err != nil {
 		return err
 	}
 	if err := ValidateHash("aethercore export VM root", m.VMRoot); err != nil {
@@ -118,7 +128,9 @@ func ComputeExportManifestHash(m ExportManifest) string {
 	writePart(h, m.StorageRoot)
 	writePart(h, m.MessageRoot)
 	writePart(h, m.ReceiptsRoot)
+	writePart(h, m.RoutingRoot)
 	writePart(h, m.PaymentsRoot)
+	writePart(h, m.ContractsRoot)
 	writePart(h, m.VMRoot)
 	writeUint64(h, m.ZoneCommitmentCount)
 	writeUint64(h, m.ServiceDescriptorCount)

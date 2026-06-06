@@ -204,6 +204,54 @@ func TestRootReplayIdenticalAcrossNodes(t *testing.T) {
 	require.Equal(t, nodeA.Export(), nodeB.Export())
 }
 
+func TestUnifiedStateCommitmentModelCommitsExtendedRootSet(t *testing.T) {
+	state := populatedState(t, []ZoneID{ZoneIDFinancial, ZoneIDContract})
+	root, err := BuildGlobalStateRoot(7, state, testContributions(7))
+	require.NoError(t, err)
+	require.NoError(t, root.ValidateHash())
+
+	rootSet := root.RootSet()
+	require.NoError(t, rootSet.Validate())
+	require.Equal(t, root.ZonesRoot, rootSet.ZonesRoot)
+	require.Equal(t, root.ServicesRoot, rootSet.ServicesRoot)
+	require.Equal(t, root.IdentityRoot, rootSet.IdentityRoot)
+	require.Equal(t, root.StorageRoot, rootSet.StorageRoot)
+	require.Equal(t, root.MessageRoot, rootSet.MessageRoot)
+	require.Equal(t, root.ReceiptsRoot, rootSet.ReceiptsRoot)
+	require.Equal(t, root.RoutingRoot, rootSet.RoutingRoot)
+	require.Equal(t, root.PaymentsRoot, rootSet.PaymentsRoot)
+	require.Equal(t, root.ContractsRoot, rootSet.ContractsRoot)
+
+	rootSetHash, err := ComputeUnifiedStateRootSetHash(rootSet)
+	require.NoError(t, err)
+	require.NoError(t, ValidateHash("test unified root set hash", rootSetHash))
+
+	manifest, err := NewExportManifest(root, testHash("unified/app-hash"), state)
+	require.NoError(t, err)
+	require.Equal(t, root.RoutingRoot, manifest.RoutingRoot)
+	require.Equal(t, root.ContractsRoot, manifest.ContractsRoot)
+	require.NoError(t, manifest.ValidateHash())
+}
+
+func TestUnifiedStateCommitmentRejectsExtendedRootTampering(t *testing.T) {
+	state := populatedState(t, []ZoneID{ZoneIDFinancial, ZoneIDContract})
+	root, err := BuildGlobalStateRoot(7, state, testContributions(7))
+	require.NoError(t, err)
+
+	tamperedRouting := root
+	tamperedRouting.RoutingRoot = testHash("wrong-routing-root")
+	require.ErrorContains(t, tamperedRouting.ValidateHash(), "global root mismatch")
+
+	tamperedContracts := root
+	tamperedContracts.ContractsRoot = testHash("wrong-contracts-root")
+	require.ErrorContains(t, tamperedContracts.ValidateHash(), "global root mismatch")
+
+	invalidSet := root.RootSet()
+	invalidSet.ContractsRoot = "not-a-root"
+	_, err = ComputeUnifiedStateRootSetHash(invalidSet)
+	require.ErrorContains(t, err, "contracts root")
+}
+
 func TestProposalScheduleGroupsByZoneAndShardDeterministically(t *testing.T) {
 	items := []ProposalItem{
 		testProposalItem(ZoneIDContract, "2", "c", 4, 15, 2),
@@ -693,13 +741,15 @@ func testShardLayout(t *testing.T, zoneID ZoneID, epoch uint64, shardIDs []Shard
 
 func testContributions(height uint64) RootContributions {
 	return RootContributions{
-		IdentityRoot: testHash(fmt.Sprintf("%d/identity", height)),
-		StorageRoot:  testHash(fmt.Sprintf("%d/storage", height)),
-		MessageRoot:  testHash(fmt.Sprintf("%d/messages", height)),
-		ReceiptsRoot: testHash(fmt.Sprintf("%d/receipts", height)),
-		PaymentsRoot: testHash(fmt.Sprintf("%d/payments", height)),
-		VMRoot:       testHash(fmt.Sprintf("%d/vm", height)),
-		ParamsHash:   testHash(fmt.Sprintf("%d/params", height)),
+		IdentityRoot:  testHash(fmt.Sprintf("%d/identity", height)),
+		StorageRoot:   testHash(fmt.Sprintf("%d/storage", height)),
+		MessageRoot:   testHash(fmt.Sprintf("%d/messages", height)),
+		ReceiptsRoot:  testHash(fmt.Sprintf("%d/receipts", height)),
+		RoutingRoot:   testHash(fmt.Sprintf("%d/routing", height)),
+		PaymentsRoot:  testHash(fmt.Sprintf("%d/payments", height)),
+		ContractsRoot: testHash(fmt.Sprintf("%d/contracts", height)),
+		VMRoot:        testHash(fmt.Sprintf("%d/vm", height)),
+		ParamsHash:    testHash(fmt.Sprintf("%d/params", height)),
 	}
 }
 
