@@ -50,6 +50,7 @@ import (
 	meshmodule "github.com/sovereign-l1/l1/x/mesh"
 	networkingmodule "github.com/sovereign-l1/l1/x/networking"
 	paymentsmodule "github.com/sovereign-l1/l1/x/payments"
+	reportermodule "github.com/sovereign-l1/l1/x/reporter"
 	routingmodule "github.com/sovereign-l1/l1/x/routing"
 	schedulermodule "github.com/sovereign-l1/l1/x/scheduler"
 	shardingcoordinatormodule "github.com/sovereign-l1/l1/x/sharding-coordinator"
@@ -87,6 +88,7 @@ func (app *L1App) initModules(
 		constitutionmodule.NewAppModule(&app.ConstitutionKeeper),
 		systemregistrymodule.NewAppModule(&app.SystemRegistryKeeper),
 		nativeevidencemodule.NewAppModule(&app.NativeEvidenceKeeper),
+		reportermodule.NewAppModule(&app.ReporterKeeper),
 		validatorelectionmodule.NewAppModule(&app.ValidatorElectionKeeper),
 		validatorregistrymodule.NewAppModule(&app.ValidatorRegistryKeeper),
 		configmodule.NewAppModule(&app.ConfigKeeper),

@@ -88,6 +88,8 @@ import (
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
 	paymentskeeper "github.com/sovereign-l1/l1/x/payments/keeper"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
+	reporterkeeper "github.com/sovereign-l1/l1/x/reporter/keeper"
+	reportertypes "github.com/sovereign-l1/l1/x/reporter/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
 	schedulerkeeper "github.com/sovereign-l1/l1/x/scheduler/keeper"
@@ -205,6 +207,7 @@ type L1App struct {
 	ShardingCoordinatorKeeper shardingcoordinatorkeeper.Keeper
 	SystemRegistryKeeper      systemregistrykeeper.Keeper
 	NativeEvidenceKeeper      nativeevidencekeeper.Keeper
+	ReporterKeeper            reporterkeeper.Keeper
 	ValidatorElectionKeeper   validatorelectionkeeper.Keeper
 	ValidatorRegistryKeeper   validatorregistrykeeper.Keeper
 
@@ -309,6 +312,7 @@ func NewL1App(
 		constitutiontypes.StoreKey,
 		systemregistrytypes.StoreKey,
 		nativeevidencetypes.StoreKey,
+		reportertypes.StoreKey,
 		validatorelectiontypes.StoreKey,
 		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,

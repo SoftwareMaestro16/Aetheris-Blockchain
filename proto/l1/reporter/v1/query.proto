@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package l1.reporter.v1;
+
+import "l1/reporter/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/reporter/v1;reporterv1";
+
+service Query {
+  rpc Reporter(QueryReporterRequest) returns (QueryReporterResponse);
+  rpc Reporters(QueryReportersRequest) returns (QueryReportersResponse);
+  rpc ReporterReports(QueryReporterReportsRequest) returns (QueryReporterReportsResponse);
+  rpc ReporterRewards(QueryReporterRewardsRequest) returns (QueryReporterRewardsResponse);
+}
+
+message QueryReporterRequest {
+  string reporter_address = 1;
+}
+
+message QueryReporterResponse {
+  ReporterRecord reporter = 1;
+}
+
+message QueryReportersRequest {}
+
+message QueryReportersResponse {
+  repeated ReporterRecord reporters = 1;
+}
+
+message QueryReporterReportsRequest {
+  string reporter_address = 1;
+}
+
+message QueryReporterReportsResponse {
+  repeated ReportRecord reports = 1;
+}
+
+message QueryReporterRewardsRequest {
+  string reporter_address = 1;
+}
+
+message QueryReporterRewardsResponse {
+  repeated ReporterReward rewards = 1;
+}

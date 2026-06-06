@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package l1.reporter.v1;
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/reporter/v1;reporterv1";
+
+message Params {
+  string authority = 1;
+  uint64 min_bond_amount = 2;
+  uint32 max_reporters = 3;
+  uint32 max_reports = 4;
+  uint32 max_reward_history = 5;
+  uint32 max_report_id_bytes = 6;
+  uint32 max_report_type_bytes = 7;
+  uint32 max_subject_bytes = 8;
+  uint32 max_payload_hash_bytes = 9;
+  uint32 max_payload_bytes = 10;
+  uint64 challenge_period_blocks = 11;
+  uint32 malicious_slash_bps = 12;
+  int64 initial_score = 13;
+  int64 accepted_score_delta = 14;
+  int64 rejected_score_delta = 15;
+  uint64 max_reward_amount = 16;
+}
+
+message ReporterReward {
+  string report_id = 1;
+  uint64 amount = 2;
+  bool claimed = 3;
+  uint64 created_at = 4;
+  uint64 claimed_at = 5;
+}
+
+message ReporterRecord {
+  string reporter_address = 1;
+  uint64 bonded_amount = 2;
+  int64 reporter_score = 3;
+  uint64 accepted_reports = 4;
+  uint64 rejected_reports = 5;
+  uint64 slashed_reporter_bond = 6;
+  string status = 7;
+  uint64 unbonding_start_height = 8;
+  uint64 unbonding_complete_height = 9;
+  repeated ReporterReward reward_history = 10;
+}
+
+message ReportRecord {
+  string report_id = 1;
+  string reporter_address = 2;
+  string report_type = 3;
+  string subject = 4;
+  string payload_hash = 5;
+  uint32 payload_size_bytes = 6;
+  string status = 7;
+  uint64 submitted_height = 8;
+  uint64 finalized_height = 9;
+  uint64 reward_amount = 10;
+  bool reward_claimed = 11;
+  uint64 slash_amount = 12;
+}
+
+message State {
+  repeated ReporterRecord reporters = 1;
+  repeated ReportRecord reports = 2;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  Params params = 2;
+  State state = 3;
+}
