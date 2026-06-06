@@ -132,6 +132,30 @@ func (k *Keeper) RegisterRoutingEdge(edge paymentstypes.ChannelEdge) error {
 	return nil
 }
 
+func (k *Keeper) ConfigurePaymentFeeSchedule(schedule paymentstypes.PaymentFeeSchedule) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.ConfigurePaymentFeeSchedule(k.genesis.State, schedule)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) SetPaymentFeeMultiplier(multiplier paymentstypes.PaymentFeeMultiplier) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.SetPaymentFeeMultiplier(k.genesis.State, multiplier)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) AcceptSignedState(channelID string, nextState paymentstypes.ChannelState, currentHeight uint64) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err

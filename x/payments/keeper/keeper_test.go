@@ -94,6 +94,34 @@ func TestKeeperStoreV2ParticipantChannelPagination(t *testing.T) {
 	require.NotEqual(t, entries[0].ChannelID, next[0].ChannelID)
 }
 
+func TestKeeperPaymentFeeScheduleBlocksOpenBypass(t *testing.T) {
+	k := NewKeeper()
+	gs := DefaultGenesis()
+	gs.Params = prototype.TestnetParams()
+	require.NoError(t, k.InitGenesis(gs))
+
+	alice := keeperAddress(0x6b)
+	bob := keeperAddress(0x6c)
+	channel := keeperSignedChannel(t, "keeper-fee-open", "100", alice, bob)
+	schedule := paymentstypes.DefaultPaymentFeeSchedule()
+	schedule.ChannelOpenFee = "3"
+	require.NoError(t, k.ConfigurePaymentFeeSchedule(schedule))
+	require.NoError(t, k.SetPaymentFeeMultiplier(paymentstypes.PaymentFeeMultiplier{
+		FeeClass:      paymentstypes.PaymentFeeClassChannelOpen,
+		MultiplierBps: 20_000,
+		CongestionBps: 2_500,
+		UpdatedHeight: channel.OpenHeight,
+	}))
+	err := k.OpenChannel(channel)
+	require.ErrorContains(t, err, "fee below required")
+	channel.OpeningFeePaid = "6"
+	require.NoError(t, k.OpenChannel(channel))
+	exported := k.ExportGenesis()
+	require.Len(t, exported.State.FeeCharges, 1)
+	require.Equal(t, paymentstypes.PaymentFeeClassChannelOpen, exported.State.FeeCharges[0].FeeClass)
+	require.Equal(t, "6", exported.State.FeeCharges[0].RequiredAmount)
+}
+
 func TestKeeperAdaptiveSyncSnapshotRecovery(t *testing.T) {
 	k := NewKeeper()
 	gs := DefaultGenesis()

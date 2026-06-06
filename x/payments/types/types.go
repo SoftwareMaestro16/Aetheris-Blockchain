@@ -212,6 +212,20 @@ const (
 	PenaltyRouteCommunityPool   PenaltyRoute = "COMMUNITY_POOL"
 )
 
+type PaymentFeeClass string
+
+const (
+	PaymentFeeClassChannelOpen                  PaymentFeeClass = "CHANNEL_OPEN"
+	PaymentFeeClassChannelCheckpoint            PaymentFeeClass = "CHANNEL_CHECKPOINT"
+	PaymentFeeClassCooperativeClose             PaymentFeeClass = "COOPERATIVE_CLOSE"
+	PaymentFeeClassUnilateralClose              PaymentFeeClass = "UNILATERAL_CLOSE"
+	PaymentFeeClassDispute                      PaymentFeeClass = "DISPUTE"
+	PaymentFeeClassFraudProofVerification       PaymentFeeClass = "FRAUD_PROOF_VERIFICATION"
+	PaymentFeeClassConditionalPromiseSettlement PaymentFeeClass = "CONDITIONAL_PROMISE_SETTLEMENT"
+	PaymentFeeClassVirtualChannelAnchor         PaymentFeeClass = "VIRTUAL_CHANNEL_ANCHOR"
+	PaymentFeeClassRoutingAdvertisement         PaymentFeeClass = "ROUTING_ADVERTISEMENT"
+)
+
 type Balance struct {
 	Participant string
 	Amount      string
@@ -405,6 +419,7 @@ type ChannelUpdateRequest struct {
 	RegisterCheckpoint   bool
 	Submitter            string
 	CurrentHeight        uint64
+	CheckpointFeePaid    string
 }
 
 type ChannelUpdateResult struct {
@@ -702,11 +717,12 @@ type RouteFeeClaim struct {
 }
 
 type BatchConditionSettlementRequest struct {
-	LinkageProof  ConditionLinkageProof
-	Mode          ConditionSettlementMode
-	Preimage      string
-	Resolver      string
-	CurrentHeight uint64
+	LinkageProof      ConditionLinkageProof
+	Mode              ConditionSettlementMode
+	Preimage          string
+	Resolver          string
+	CurrentHeight     uint64
+	SettlementFeePaid string
 }
 
 type BatchConditionSettlementResult struct {
@@ -733,6 +749,7 @@ type ChannelDisputeRequest struct {
 	ConditionProofs       []ConditionResolution
 	Submitter             string
 	CurrentHeight         uint64
+	DisputeFeePaid        string
 }
 
 type WatchDisputeSubmission struct {
@@ -927,16 +944,17 @@ type PendingClose struct {
 }
 
 type FraudProof struct {
-	ProofID         string
-	ProofType       FraudProofType
-	SubmittedBy     string
-	OffendingSigner string
-	StateA          ChannelState
-	StateB          ChannelState
-	AsyncProof      AsyncDeltaDisputeProof
-	PenaltyDenom    string
-	PenaltyAmount   string
-	EvidenceHash    string
+	ProofID             string
+	ProofType           FraudProofType
+	SubmittedBy         string
+	OffendingSigner     string
+	StateA              ChannelState
+	StateB              ChannelState
+	AsyncProof          AsyncDeltaDisputeProof
+	PenaltyDenom        string
+	PenaltyAmount       string
+	EvidenceHash        string
+	VerificationFeePaid string
 }
 
 type Penalty struct {
@@ -958,6 +976,73 @@ type FraudPenaltyPolicy struct {
 	BurnShareBps            uint32
 	SecurityReserveShareBps uint32
 	CommunityPoolShareBps   uint32
+}
+
+type PaymentFeeSchedule struct {
+	Denom                           string
+	ChannelOpenFee                  string
+	ChannelCheckpointFee            string
+	CooperativeCloseFee             string
+	UnilateralCloseFee              string
+	DisputeFee                      string
+	FraudProofVerificationFee       string
+	ConditionalPromiseSettlementFee string
+	VirtualChannelAnchorFee         string
+	RoutingAdvertisementFee         string
+	StorageByteFee                  string
+	StorageFeeEnabled               bool
+	BaseMultiplierBps               uint32
+	MaxMultiplierBps                uint32
+}
+
+type PaymentFeeMultiplier struct {
+	FeeClass      PaymentFeeClass
+	MultiplierBps uint32
+	CongestionBps uint32
+	UpdatedHeight uint64
+}
+
+type PaymentFeeCharge struct {
+	FeeID          string
+	FeeClass       PaymentFeeClass
+	ChannelID      string
+	ObjectID       string
+	Payer          string
+	Denom          string
+	Amount         string
+	RequiredAmount string
+	StorageBytes   uint64
+	MultiplierBps  uint32
+	Height         uint64
+	Refunded       bool
+}
+
+type PaymentFeeRefund struct {
+	RefundID  string
+	FeeID     string
+	Recipient string
+	Denom     string
+	Amount    string
+	Reason    string
+	Height    uint64
+}
+
+func DefaultPaymentFeeSchedule() PaymentFeeSchedule {
+	return PaymentFeeSchedule{
+		Denom:                           NativeDenom,
+		ChannelOpenFee:                  DefaultOpeningFee,
+		ChannelCheckpointFee:            "0",
+		CooperativeCloseFee:             "0",
+		UnilateralCloseFee:              "0",
+		DisputeFee:                      "0",
+		FraudProofVerificationFee:       "0",
+		ConditionalPromiseSettlementFee: "0",
+		VirtualChannelAnchorFee:         "0",
+		RoutingAdvertisementFee:         "0",
+		StorageByteFee:                  "0",
+		BaseMultiplierBps:               10_000,
+		MaxMultiplierBps:                100_000,
+	}
 }
 
 type ChannelRecord struct {
@@ -1182,14 +1267,15 @@ type AdaptiveSyncRecoveryState struct {
 }
 
 type ChannelEdge struct {
-	ChannelID     string
-	From          string
-	To            string
-	Capacity      string
-	FeeDenom      string
-	FeeAmount     string
-	ExpiresHeight uint64
-	Active        bool
+	ChannelID            string
+	From                 string
+	To                   string
+	Capacity             string
+	FeeDenom             string
+	FeeAmount            string
+	AdvertisementFeePaid string
+	ExpiresHeight        uint64
+	Active               bool
 }
 
 type VirtualChannel struct {
@@ -1208,6 +1294,7 @@ type VirtualChannel struct {
 	BalanceA                 string
 	BalanceB                 string
 	RoutingFeeAmount         string
+	AnchorFeePaid            string
 	ExpiresHeight            uint64
 	Status                   VirtualChannelStatus
 	AnchorCommitment         string
@@ -1609,6 +1696,10 @@ func (r ChannelUpdateRequest) Normalize() ChannelUpdateRequest {
 	r.ConditionCommitments = normalizeConditions(r.ConditionCommitments)
 	r.AsyncDeltas = normalizeAsyncDeltas(r.AsyncDeltas)
 	r.Submitter = strings.TrimSpace(r.Submitter)
+	r.CheckpointFeePaid = strings.TrimSpace(r.CheckpointFeePaid)
+	if r.CheckpointFeePaid == "" {
+		r.CheckpointFeePaid = "0"
+	}
 	return r
 }
 
@@ -1664,6 +1755,10 @@ func (r ChannelDisputeRequest) Normalize() ChannelDisputeRequest {
 	r.FraudProof = r.FraudProof.Normalize()
 	r.ConditionProofs = normalizeConditionResolutions(r.ConditionProofs)
 	r.Submitter = strings.TrimSpace(r.Submitter)
+	r.DisputeFeePaid = strings.TrimSpace(r.DisputeFeePaid)
+	if r.DisputeFeePaid == "" {
+		r.DisputeFeePaid = "0"
+	}
 	return r
 }
 
@@ -3825,6 +3920,10 @@ func (r BatchConditionSettlementRequest) Normalize() BatchConditionSettlementReq
 	r.LinkageProof = r.LinkageProof.Normalize()
 	r.Preimage = strings.TrimSpace(r.Preimage)
 	r.Resolver = strings.TrimSpace(r.Resolver)
+	r.SettlementFeePaid = strings.TrimSpace(r.SettlementFeePaid)
+	if r.SettlementFeePaid == "" {
+		r.SettlementFeePaid = "0"
+	}
 	return r
 }
 
@@ -4541,6 +4640,10 @@ func (f FraudProof) Normalize() FraudProof {
 	f.PenaltyDenom = normalizeAssetDenom(f.PenaltyDenom)
 	f.PenaltyAmount = strings.TrimSpace(f.PenaltyAmount)
 	f.EvidenceHash = normalizeHash(f.EvidenceHash)
+	f.VerificationFeePaid = strings.TrimSpace(f.VerificationFeePaid)
+	if f.VerificationFeePaid == "" {
+		f.VerificationFeePaid = "0"
+	}
 	f.StateA = f.StateA.Normalize()
 	f.StateB = f.StateB.Normalize()
 	f.AsyncProof = f.AsyncProof.Normalize()
@@ -4576,6 +4679,9 @@ func (f FraudProof) ValidateForChannel(channel ChannelRecord) error {
 		return fmt.Errorf("payments fraud penalty denom must be %s", NativeDenom)
 	}
 	if err := validatePositiveInt("payments fraud penalty", proof.PenaltyAmount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments fraud verification fee", proof.VerificationFeePaid); err != nil {
 		return err
 	}
 	if err := ValidateHash("payments fraud evidence hash", proof.EvidenceHash); err != nil {
@@ -4719,6 +4825,181 @@ func (p FraudPenaltyPolicy) Validate() error {
 	total := p.BurnShareBps + p.SecurityReserveShareBps + p.CommunityPoolShareBps
 	if total > MaxPenaltyRouteBps {
 		return errors.New("payments penalty route shares exceed 10000 bps")
+	}
+	return nil
+}
+
+func (s PaymentFeeSchedule) Normalize() PaymentFeeSchedule {
+	defaults := DefaultPaymentFeeSchedule()
+	s.Denom = normalizeAssetDenom(s.Denom)
+	if s.Denom == "" {
+		s.Denom = defaults.Denom
+	}
+	fields := []*string{
+		&s.ChannelOpenFee,
+		&s.ChannelCheckpointFee,
+		&s.CooperativeCloseFee,
+		&s.UnilateralCloseFee,
+		&s.DisputeFee,
+		&s.FraudProofVerificationFee,
+		&s.ConditionalPromiseSettlementFee,
+		&s.VirtualChannelAnchorFee,
+		&s.RoutingAdvertisementFee,
+		&s.StorageByteFee,
+	}
+	for _, field := range fields {
+		*field = strings.TrimSpace(*field)
+		if *field == "" {
+			*field = "0"
+		}
+	}
+	if s.ChannelOpenFee == "0" {
+		s.ChannelOpenFee = defaults.ChannelOpenFee
+	}
+	if s.BaseMultiplierBps == 0 {
+		s.BaseMultiplierBps = defaults.BaseMultiplierBps
+	}
+	if s.MaxMultiplierBps == 0 {
+		s.MaxMultiplierBps = defaults.MaxMultiplierBps
+	}
+	return s
+}
+
+func (s PaymentFeeSchedule) Validate() error {
+	s = s.Normalize()
+	if s.Denom != NativeDenom {
+		return fmt.Errorf("payments fee schedule denom must be %s", NativeDenom)
+	}
+	for _, item := range []struct {
+		name   string
+		amount string
+	}{
+		{"payments channel open fee", s.ChannelOpenFee},
+		{"payments checkpoint fee", s.ChannelCheckpointFee},
+		{"payments cooperative close fee", s.CooperativeCloseFee},
+		{"payments unilateral close fee", s.UnilateralCloseFee},
+		{"payments dispute fee", s.DisputeFee},
+		{"payments fraud proof verification fee", s.FraudProofVerificationFee},
+		{"payments conditional promise settlement fee", s.ConditionalPromiseSettlementFee},
+		{"payments virtual channel anchor fee", s.VirtualChannelAnchorFee},
+		{"payments routing advertisement fee", s.RoutingAdvertisementFee},
+		{"payments storage byte fee", s.StorageByteFee},
+	} {
+		if err := validateNonNegativeInt(item.name, item.amount); err != nil {
+			return err
+		}
+	}
+	if s.BaseMultiplierBps == 0 || s.BaseMultiplierBps > s.MaxMultiplierBps {
+		return errors.New("payments fee multiplier bounds are invalid")
+	}
+	return nil
+}
+
+func (m PaymentFeeMultiplier) Normalize() PaymentFeeMultiplier {
+	return m
+}
+
+func (m PaymentFeeMultiplier) Validate() error {
+	if !IsPaymentFeeClass(m.FeeClass) {
+		return fmt.Errorf("unknown payments fee class %q", m.FeeClass)
+	}
+	if m.MultiplierBps == 0 {
+		return errors.New("payments fee multiplier must be positive")
+	}
+	if m.UpdatedHeight == 0 {
+		return errors.New("payments fee multiplier height must be positive")
+	}
+	return nil
+}
+
+func (c PaymentFeeCharge) Normalize() PaymentFeeCharge {
+	c.FeeID = normalizeOptionalHash(c.FeeID)
+	c.ChannelID = normalizeOptionalHash(c.ChannelID)
+	c.ObjectID = strings.TrimSpace(c.ObjectID)
+	c.Payer = strings.TrimSpace(c.Payer)
+	c.Denom = normalizeAssetDenom(c.Denom)
+	c.Amount = strings.TrimSpace(c.Amount)
+	c.RequiredAmount = strings.TrimSpace(c.RequiredAmount)
+	return c
+}
+
+func (c PaymentFeeCharge) Validate() error {
+	c = c.Normalize()
+	if err := ValidateHash("payments fee id", c.FeeID); err != nil {
+		return err
+	}
+	if !IsPaymentFeeClass(c.FeeClass) {
+		return fmt.Errorf("unknown payments fee class %q", c.FeeClass)
+	}
+	if c.ChannelID != "" {
+		if err := ValidateHash("payments fee channel id", c.ChannelID); err != nil {
+			return err
+		}
+	}
+	if err := addressing.ValidateUserAddress("payments fee payer", c.Payer); err != nil {
+		return err
+	}
+	if c.Denom != NativeDenom {
+		return fmt.Errorf("payments fee denom must be %s", NativeDenom)
+	}
+	if err := validateNonNegativeInt("payments fee amount", c.Amount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments required fee amount", c.RequiredAmount); err != nil {
+		return err
+	}
+	paid, err := parseNonNegativeInt("payments fee amount", c.Amount)
+	if err != nil {
+		return err
+	}
+	required, err := parseNonNegativeInt("payments required fee amount", c.RequiredAmount)
+	if err != nil {
+		return err
+	}
+	if paid.LT(required) {
+		return errors.New("payments fee charge is below required amount")
+	}
+	if c.MultiplierBps == 0 {
+		return errors.New("payments fee charge multiplier must be positive")
+	}
+	if c.Height == 0 {
+		return errors.New("payments fee charge height must be positive")
+	}
+	return nil
+}
+
+func (r PaymentFeeRefund) Normalize() PaymentFeeRefund {
+	r.RefundID = normalizeOptionalHash(r.RefundID)
+	r.FeeID = normalizeOptionalHash(r.FeeID)
+	r.Recipient = strings.TrimSpace(r.Recipient)
+	r.Denom = normalizeAssetDenom(r.Denom)
+	r.Amount = strings.TrimSpace(r.Amount)
+	r.Reason = strings.TrimSpace(r.Reason)
+	return r
+}
+
+func (r PaymentFeeRefund) Validate() error {
+	r = r.Normalize()
+	if err := ValidateHash("payments fee refund id", r.RefundID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments refunded fee id", r.FeeID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments fee refund recipient", r.Recipient); err != nil {
+		return err
+	}
+	if r.Denom != NativeDenom {
+		return fmt.Errorf("payments fee refund denom must be %s", NativeDenom)
+	}
+	if err := validatePositiveInt("payments fee refund amount", r.Amount); err != nil {
+		return err
+	}
+	if r.Reason == "" {
+		return errors.New("payments fee refund reason is required")
+	}
+	if r.Height == 0 {
+		return errors.New("payments fee refund height must be positive")
 	}
 	return nil
 }
@@ -4999,6 +5280,10 @@ func (e ChannelEdge) Normalize() ChannelEdge {
 	e.Capacity = strings.TrimSpace(e.Capacity)
 	e.FeeDenom = normalizeAssetDenom(e.FeeDenom)
 	e.FeeAmount = strings.TrimSpace(e.FeeAmount)
+	e.AdvertisementFeePaid = strings.TrimSpace(e.AdvertisementFeePaid)
+	if e.AdvertisementFeePaid == "" {
+		e.AdvertisementFeePaid = "0"
+	}
 	return e
 }
 
@@ -5022,7 +5307,10 @@ func (e ChannelEdge) Validate() error {
 	if e.FeeDenom != NativeDenom {
 		return fmt.Errorf("payments routing fee denom must be %s", NativeDenom)
 	}
-	return validateNonNegativeInt("payments routing fee", e.FeeAmount)
+	if err := validateNonNegativeInt("payments routing fee", e.FeeAmount); err != nil {
+		return err
+	}
+	return validateNonNegativeInt("payments routing advertisement fee", e.AdvertisementFeePaid)
 }
 
 func BuildVirtualChannel(vc VirtualChannel) (VirtualChannel, error) {
@@ -5769,6 +6057,7 @@ func (v VirtualChannel) Normalize() VirtualChannel {
 	v.BalanceA = strings.TrimSpace(v.BalanceA)
 	v.BalanceB = strings.TrimSpace(v.BalanceB)
 	v.RoutingFeeAmount = strings.TrimSpace(v.RoutingFeeAmount)
+	v.AnchorFeePaid = strings.TrimSpace(v.AnchorFeePaid)
 	if v.Nonce == 0 {
 		v.Nonce = 1
 	}
@@ -5780,6 +6069,9 @@ func (v VirtualChannel) Normalize() VirtualChannel {
 	}
 	if v.RoutingFeeAmount == "" {
 		v.RoutingFeeAmount = "0"
+	}
+	if v.AnchorFeePaid == "" {
+		v.AnchorFeePaid = "0"
 	}
 	v.AnchorCommitment = normalizeOptionalHash(v.AnchorCommitment)
 	v.ConditionRoot = normalizeOptionalHash(v.ConditionRoot)
@@ -5864,6 +6156,9 @@ func (v VirtualChannel) ValidateCore() error {
 		return err
 	}
 	if err := validateNonNegativeInt("payments virtual routing fee", vc.RoutingFeeAmount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments virtual anchor fee", vc.AnchorFeePaid); err != nil {
 		return err
 	}
 	capacity, err := parsePositiveInt("payments virtual capacity", vc.Capacity)
@@ -7242,6 +7537,23 @@ func IsVirtualCloseMode(value VirtualCloseMode) bool {
 func IsPenaltyRoute(value PenaltyRoute) bool {
 	switch value {
 	case PenaltyRouteReporter, PenaltyRouteBurn, PenaltyRouteSecurityReserve, PenaltyRouteCommunityPool:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsPaymentFeeClass(value PaymentFeeClass) bool {
+	switch value {
+	case PaymentFeeClassChannelOpen,
+		PaymentFeeClassChannelCheckpoint,
+		PaymentFeeClassCooperativeClose,
+		PaymentFeeClassUnilateralClose,
+		PaymentFeeClassDispute,
+		PaymentFeeClassFraudProofVerification,
+		PaymentFeeClassConditionalPromiseSettlement,
+		PaymentFeeClassVirtualChannelAnchor,
+		PaymentFeeClassRoutingAdvertisement:
 		return true
 	default:
 		return false

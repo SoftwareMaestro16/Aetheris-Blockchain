@@ -928,6 +928,141 @@ func TestChannelOpenLifecycleLocksFeeAndEmitsEvent(t *testing.T) {
 	require.ErrorContains(t, err, "sum to collateral")
 }
 
+func TestPaymentFeeScheduleChargesStorageAndDynamicMultiplier(t *testing.T) {
+	alice := testAddress(0xa0)
+	bob := testAddress(0xa1)
+	channel := signedChannel(t, "fee-storage-open", "100", alice, bob)
+	schedule := DefaultPaymentFeeSchedule()
+	schedule.ChannelOpenFee = "2"
+	schedule.StorageFeeEnabled = true
+	schedule.StorageByteFee = "1"
+	state, err := ConfigurePaymentFeeSchedule(EmptyState(), schedule)
+	require.NoError(t, err)
+	state, err = SetPaymentFeeMultiplier(state, PaymentFeeMultiplier{
+		FeeClass:      PaymentFeeClassChannelOpen,
+		MultiplierBps: 20_000,
+		CongestionBps: 5_000,
+		UpdatedHeight: channel.OpenHeight,
+	})
+	require.NoError(t, err)
+
+	_, err = OpenChannel(state, channel)
+	require.ErrorContains(t, err, "fee below required")
+	required, storageBytes, multiplier, err := RequiredPaymentFee(state, PaymentFeeClassChannelOpen, channel)
+	require.NoError(t, err)
+	require.NotZero(t, storageBytes)
+	require.Equal(t, uint32(20_000), multiplier)
+	channel.OpeningFeePaid = required
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	require.Len(t, state.FeeCharges, 1)
+	require.Equal(t, PaymentFeeClassChannelOpen, state.FeeCharges[0].FeeClass)
+	require.Equal(t, required, state.FeeCharges[0].RequiredAmount)
+	require.Equal(t, storageBytes, state.FeeCharges[0].StorageBytes)
+}
+
+func TestPaymentFeeScheduleRejectsCloseDisputeAndRoutingBypass(t *testing.T) {
+	alice := testAddress(0xa2)
+	bob := testAddress(0xa3)
+	channel := signedChannel(t, "fee-bypass", "100", alice, bob)
+	schedule := DefaultPaymentFeeSchedule()
+	schedule.UnilateralCloseFee = "3"
+	schedule.DisputeFee = "4"
+	schedule.RoutingAdvertisementFee = "2"
+	state, err := ConfigurePaymentFeeSchedule(EmptyState(), schedule)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+
+	_, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: channel.ChannelID, From: alice, To: bob, Capacity: "50", FeeAmount: "1", Active: true})
+	require.ErrorContains(t, err, "fee below required")
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: channel.ChannelID, From: alice, To: bob, Capacity: "50", FeeAmount: "1", AdvertisementFeePaid: "2", Active: true})
+	require.NoError(t, err)
+
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "50"},
+		{Participant: bob, Amount: "50"},
+	})
+	_, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.ErrorContains(t, err, "fee below required")
+	pending, err := SubmitClose(state, channel.ChannelID, closeState, alice, 20, "3")
+	require.NoError(t, err)
+	newer := signedState(t, channel, 3, closeState.StateHash, []Balance{
+		{Participant: alice, Amount: "45"},
+		{Participant: bob, Amount: "55"},
+	})
+	_, err = DisputeChannel(pending, ChannelDisputeRequest{
+		ChannelID:             channel.ChannelID,
+		ClosingStateReference: closeState.StateHash,
+		NewerState:            newer,
+		Submitter:             bob,
+		CurrentHeight:         21,
+		DisputeFeePaid:        "0",
+	})
+	require.ErrorContains(t, err, "fee below required")
+	pending, err = DisputeChannel(pending, ChannelDisputeRequest{
+		ChannelID:             channel.ChannelID,
+		ClosingStateReference: closeState.StateHash,
+		NewerState:            newer,
+		Submitter:             bob,
+		CurrentHeight:         21,
+		DisputeFeePaid:        "4",
+	})
+	require.NoError(t, err)
+	require.Equal(t, newer.StateHash, pending.Channels[0].PendingClose.State.StateHash)
+}
+
+func TestFraudProofVerificationFeeRefundsWhenAccepted(t *testing.T) {
+	alice := testAddress(0xa4)
+	bob := testAddress(0xa5)
+	channel := signedChannel(t, "fee-fraud-refund", "100", alice, bob)
+	schedule := DefaultPaymentFeeSchedule()
+	schedule.FraudProofVerificationFee = "7"
+	state, err := ConfigurePaymentFeeSchedule(EmptyState(), schedule)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "50"},
+		{Participant: bob, Amount: "50"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "40"},
+		{Participant: bob, Amount: "60"},
+	})
+	proofID := HashParts("fee-fraud-proof", channel.ChannelID)
+	proof := FraudProof{
+		ProofID:             proofID,
+		ProofType:           FraudProofTypeDoubleSign,
+		SubmittedBy:         bob,
+		OffendingSigner:     alice,
+		StateA:              closeState,
+		StateB:              conflicting,
+		EvidenceHash:        ComputeDisputeProofHash(FraudProof{ProofID: proofID, ProofType: FraudProofTypeDoubleSign, StateA: closeState, StateB: conflicting}),
+		PenaltyDenom:        NativeDenom,
+		PenaltyAmount:       "10",
+		VerificationFeePaid: "0",
+	}
+	_, err = SubmitFraudProof(state, channel.ChannelID, proof, 21)
+	require.ErrorContains(t, err, "fee below required")
+	proof.VerificationFeePaid = "7"
+	state, err = SubmitFraudProof(state, channel.ChannelID, proof, 21)
+	require.NoError(t, err)
+	require.Len(t, state.FeeRefunds, 1)
+	require.Equal(t, "7", state.FeeRefunds[0].Amount)
+	require.Equal(t, bob, state.FeeRefunds[0].Recipient)
+	var fraudFee PaymentFeeCharge
+	for _, charge := range state.FeeCharges {
+		if charge.FeeClass == PaymentFeeClassFraudProofVerification {
+			fraudFee = charge
+		}
+	}
+	require.True(t, fraudFee.Refunded)
+	require.Equal(t, state.FeeRefunds[0].FeeID, fraudFee.FeeID)
+}
+
 func TestBidirectionalStateCommitmentIncludesDomainFields(t *testing.T) {
 	alice := testAddress(0x37)
 	bob := testAddress(0x38)
