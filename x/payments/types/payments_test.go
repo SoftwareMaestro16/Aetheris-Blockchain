@@ -572,6 +572,54 @@ func TestPaymentEngineeringBacklogTracksSection19Priorities(t *testing.T) {
 	require.ErrorContains(t, ValidatePaymentEngineeringBacklog(missing), "missing payments engineering backlog item")
 }
 
+func TestPaymentAcceptanceCriteriaCoverInitialProductionHardening(t *testing.T) {
+	report := BuildPaymentAcceptanceReport()
+	require.NoError(t, ValidatePaymentAcceptanceReport(report))
+	require.Equal(t, uint64(14), report.CriterionCount)
+	require.Equal(t, uint64(14), report.SatisfiedCount)
+	require.Equal(t, uint64(9), report.DomainCount)
+	require.Len(t, report.Criteria, 14)
+
+	seen := map[PaymentAcceptanceCriterionID]PaymentAcceptanceCriterion{}
+	domains := map[PaymentAcceptanceDomain]bool{}
+	for _, criterion := range report.Criteria {
+		require.Equal(t, PaymentAcceptanceStatusSatisfied, criterion.Status)
+		require.NotEmpty(t, criterion.Evidence)
+		require.NotEmpty(t, criterion.TestNames)
+		require.NoError(t, ValidateHash("payments acceptance criterion hash", criterion.ItemHash))
+		seen[criterion.CriterionID] = criterion
+		domains[criterion.Domain] = true
+	}
+	for _, domain := range []PaymentAcceptanceDomain{
+		PaymentAcceptanceSettlement,
+		PaymentAcceptanceFraud,
+		PaymentAcceptanceConditional,
+		PaymentAcceptanceVirtual,
+		PaymentAcceptanceExecution,
+		PaymentAcceptanceRecovery,
+		PaymentAcceptanceEconomics,
+		PaymentAcceptanceSecurity,
+		PaymentAcceptanceObservability,
+	} {
+		require.True(t, domains[domain], "missing acceptance domain %s", domain)
+	}
+	require.Contains(t, seen["accept_any_participant_unilateral_close"].Evidence, "MsgUnilateralClose")
+	require.Contains(t, seen["accept_fraud_proofs_deterministic_bounded_tested"].Evidence, "MeterFraudProofVerification")
+	require.Contains(t, seen["accept_observability_liquidity_settlement_dispute_fee_perf"].TestNames, "TestPaymentObservabilityMetricsCoverOperationalSignals")
+
+	duplicate := report
+	duplicate.Criteria = append(duplicate.Criteria, report.Criteria[0])
+	duplicate.ReportHash = ComputePaymentAcceptanceReportHash(duplicate)
+	require.ErrorContains(t, ValidatePaymentAcceptanceReport(duplicate), "duplicate payments acceptance criterion")
+
+	missing := report
+	missing.Criteria = missing.Criteria[:len(missing.Criteria)-1]
+	missing.CriterionCount--
+	missing.SatisfiedCount--
+	missing.ReportHash = ComputePaymentAcceptanceReportHash(missing)
+	require.ErrorContains(t, ValidatePaymentAcceptanceReport(missing), "missing payments acceptance criterion")
+}
+
 func TestRequiredPaymentTestCoverageMatrixCoversUnitAndIntegrationSpecs(t *testing.T) {
 	report := BuildRequiredTestCoverageReport()
 	require.NoError(t, ValidateRequiredTestCoverageReport(report))
