@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package l1.nominatorpool.v1;
+
+import "l1/nominatorpool/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/nominatorpool/v1;nominatorpoolv1";
+
+service Msg {
+  rpc CreateNominatorPool(MsgCreateNominatorPool) returns (MsgCreateNominatorPoolResponse);
+  rpc DepositToPool(MsgDepositToPool) returns (MsgDepositToPoolResponse);
+  rpc RequestPoolWithdrawal(MsgRequestPoolWithdrawal) returns (MsgRequestPoolWithdrawalResponse);
+  rpc CancelPoolWithdrawal(MsgCancelPoolWithdrawal) returns (MsgCancelPoolWithdrawalResponse);
+  rpc ClaimPoolRewards(MsgClaimPoolRewards) returns (MsgClaimPoolRewardsResponse);
+  rpc UpdatePoolCommission(MsgUpdatePoolCommission) returns (MsgUpdatePoolCommissionResponse);
+  rpc ChangePoolValidator(MsgChangePoolValidator) returns (MsgChangePoolValidatorResponse);
+}
+
+message MsgCreateNominatorPool {
+  string authority = 1;
+  string pool_id = 2;
+  string pool_operator = 3;
+  string validator_target = 4;
+  uint32 pool_commission_bps = 5;
+  uint64 height = 6;
+  string validator_status = 7;
+}
+
+message MsgCreateNominatorPoolResponse {
+  NominatorPool pool = 1;
+}
+
+message MsgDepositToPool {
+  string authority = 1;
+  string pool_id = 2;
+  string delegator = 3;
+  uint64 amount = 4;
+  uint64 height = 5;
+}
+
+message MsgDepositToPoolResponse {
+  DelegatorShare delegator = 1;
+}
+
+message MsgRequestPoolWithdrawal {
+  string authority = 1;
+  string pool_id = 2;
+  string withdrawal_id = 3;
+  string delegator = 4;
+  uint64 shares = 5;
+  uint64 height = 6;
+}
+
+message MsgRequestPoolWithdrawalResponse {
+  PendingWithdrawal withdrawal = 1;
+}
+
+message MsgCancelPoolWithdrawal {
+  string authority = 1;
+  string pool_id = 2;
+  string withdrawal_id = 3;
+  string delegator = 4;
+  uint64 height = 5;
+}
+
+message MsgCancelPoolWithdrawalResponse {
+  PendingWithdrawal withdrawal = 1;
+}
+
+message MsgClaimPoolRewards {
+  string authority = 1;
+  string pool_id = 2;
+  string delegator = 3;
+  uint64 height = 4;
+}
+
+message MsgClaimPoolRewardsResponse {
+  uint64 reward_amount = 1;
+}
+
+message MsgUpdatePoolCommission {
+  string authority = 1;
+  string pool_id = 2;
+  string pool_operator = 3;
+  uint32 pool_commission_bps = 4;
+  uint64 height = 5;
+}
+
+message MsgUpdatePoolCommissionResponse {
+  NominatorPool pool = 1;
+}
+
+message MsgChangePoolValidator {
+  string authority = 1;
+  string pool_id = 2;
+  string pool_operator = 3;
+  string validator_target = 4;
+  string validator_status = 5;
+  uint64 height = 6;
+}
+
+message MsgChangePoolValidatorResponse {
+  NominatorPool pool = 1;
+}

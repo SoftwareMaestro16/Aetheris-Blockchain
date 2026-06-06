@@ -50,6 +50,7 @@ import (
 	loadmodule "github.com/sovereign-l1/l1/x/load"
 	meshmodule "github.com/sovereign-l1/l1/x/mesh"
 	networkingmodule "github.com/sovereign-l1/l1/x/networking"
+	nominatorpoolmodule "github.com/sovereign-l1/l1/x/nominator-pool"
 	paymentsmodule "github.com/sovereign-l1/l1/x/payments"
 	reportermodule "github.com/sovereign-l1/l1/x/reporter"
 	routingmodule "github.com/sovereign-l1/l1/x/routing"
@@ -90,6 +91,7 @@ func (app *L1App) initModules(
 		systemregistrymodule.NewAppModule(&app.SystemRegistryKeeper),
 		nativeevidencemodule.NewAppModule(&app.NativeEvidenceKeeper),
 		reportermodule.NewAppModule(&app.ReporterKeeper),
+		nominatorpoolmodule.NewAppModule(&app.NominatorPoolKeeper),
 		validatorelectionmodule.NewAppModule(&app.ValidatorElectionKeeper),
 		validatorregistrymodule.NewAppModule(&app.ValidatorRegistryKeeper),
 		configmodule.NewAppModule(&app.ConfigKeeper),

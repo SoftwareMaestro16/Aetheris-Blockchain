@@ -88,6 +88,8 @@ import (
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
 	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
+	nominatorpoolkeeper "github.com/sovereign-l1/l1/x/nominator-pool/keeper"
+	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	paymentskeeper "github.com/sovereign-l1/l1/x/payments/keeper"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
 	reporterkeeper "github.com/sovereign-l1/l1/x/reporter/keeper"
@@ -212,6 +214,7 @@ type L1App struct {
 	SystemRegistryKeeper      systemregistrykeeper.Keeper
 	NativeEvidenceKeeper      nativeevidencekeeper.Keeper
 	ReporterKeeper            reporterkeeper.Keeper
+	NominatorPoolKeeper       nominatorpoolkeeper.Keeper
 	ValidatorElectionKeeper   validatorelectionkeeper.Keeper
 	ValidatorRegistryKeeper   validatorregistrykeeper.Keeper
 
@@ -317,6 +320,7 @@ func NewL1App(
 		systemregistrytypes.StoreKey,
 		nativeevidencetypes.StoreKey,
 		reportertypes.StoreKey,
+		nominatorpooltypes.StoreKey,
 		validatorelectiontypes.StoreKey,
 		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,

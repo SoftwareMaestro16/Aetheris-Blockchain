@@ -39,6 +39,7 @@ import (
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
+	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
 	reportertypes "github.com/sovereign-l1/l1/x/reporter/types"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
@@ -84,6 +85,7 @@ var aetherCoreSystemModules = []string{
 	systemregistrytypes.ModuleName,
 	nativeevidencetypes.ModuleName,
 	reportertypes.ModuleName,
+	nominatorpooltypes.ModuleName,
 	validatorelectiontypes.ModuleName,
 	validatorregistrytypes.ModuleName,
 	configtypes.ModuleName,
@@ -128,6 +130,7 @@ func AetherCoreSystemStoreKeys() []string {
 		systemregistrytypes.StoreKey,
 		nativeevidencetypes.StoreKey,
 		reportertypes.StoreKey,
+		nominatorpooltypes.StoreKey,
 		validatorelectiontypes.StoreKey,
 		validatorregistrytypes.StoreKey,
 		configtypes.StoreKey,
@@ -153,6 +156,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		systemregistrytypes.ModuleName,
 		nativeevidencetypes.ModuleName,
 		reportertypes.ModuleName,
+		nominatorpooltypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
@@ -187,6 +191,7 @@ func aetherCoreEndBlockerOrder() []string {
 		systemregistrytypes.ModuleName,
 		nativeevidencetypes.ModuleName,
 		reportertypes.ModuleName,
+		nominatorpooltypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
@@ -231,6 +236,7 @@ func aetherCoreInitGenesisOrder() []string {
 		systemregistrytypes.ModuleName,
 		nativeevidencetypes.ModuleName,
 		reportertypes.ModuleName,
+		nominatorpooltypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,
@@ -281,6 +287,7 @@ func aetherCoreExportGenesisOrder() []string {
 		systemregistrytypes.ModuleName,
 		nativeevidencetypes.ModuleName,
 		reportertypes.ModuleName,
+		nominatorpooltypes.ModuleName,
 		validatorelectiontypes.ModuleName,
 		validatorregistrytypes.ModuleName,
 		configtypes.ModuleName,

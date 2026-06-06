@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package l1.nominatorpool.v1;
+
+import "l1/nominatorpool/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/nominatorpool/v1;nominatorpoolv1";
+
+service Query {
+  rpc NominatorPool(QueryNominatorPoolRequest) returns (QueryNominatorPoolResponse);
+  rpc NominatorPools(QueryNominatorPoolsRequest) returns (QueryNominatorPoolsResponse);
+  rpc PoolDelegator(QueryPoolDelegatorRequest) returns (QueryPoolDelegatorResponse);
+  rpc PoolRewards(QueryPoolRewardsRequest) returns (QueryPoolRewardsResponse);
+  rpc PoolUnbondingQueue(QueryPoolUnbondingQueueRequest) returns (QueryPoolUnbondingQueueResponse);
+}
+
+message QueryNominatorPoolRequest {
+  string pool_id = 1;
+}
+
+message QueryNominatorPoolResponse {
+  NominatorPool pool = 1;
+}
+
+message QueryNominatorPoolsRequest {}
+
+message QueryNominatorPoolsResponse {
+  repeated NominatorPool pools = 1;
+}
+
+message QueryPoolDelegatorRequest {
+  string pool_id = 1;
+  string delegator = 2;
+}
+
+message QueryPoolDelegatorResponse {
+  DelegatorShare delegator = 1;
+}
+
+message QueryPoolRewardsRequest {
+  string pool_id = 1;
+  string delegator = 2;
+}
+
+message QueryPoolRewardsResponse {
+  uint64 reward_amount = 1;
+}
+
+message QueryPoolUnbondingQueueRequest {
+  string pool_id = 1;
+}
+
+message QueryPoolUnbondingQueueResponse {
+  repeated UnbondingEntry unbonding_queue = 1;
+}

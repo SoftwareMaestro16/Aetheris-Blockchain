@@ -82,6 +82,8 @@ import (
 	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
 	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
 	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
+	nominatorpoolkeeper "github.com/sovereign-l1/l1/x/nominator-pool/keeper"
+	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	paymentskeeper "github.com/sovereign-l1/l1/x/payments/keeper"
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
 	reporterkeeper "github.com/sovereign-l1/l1/x/reporter/keeper"
@@ -262,6 +264,7 @@ func (app *L1App) initKeepers(
 	app.SystemRegistryKeeper = systemregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[systemregistrytypes.StoreKey]))
 	app.NativeEvidenceKeeper = nativeevidencekeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nativeevidencetypes.StoreKey]))
 	app.ReporterKeeper = reporterkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[reportertypes.StoreKey]))
+	app.NominatorPoolKeeper = nominatorpoolkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nominatorpooltypes.StoreKey]))
 	app.ValidatorElectionKeeper = validatorelectionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorelectiontypes.StoreKey]))
 	app.ValidatorRegistryKeeper = validatorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorregistrytypes.StoreKey]))
 	app.ConfigKeeper = configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey]))

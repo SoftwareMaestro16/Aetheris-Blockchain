@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package l1.nominatorpool.v1;
+
+option go_package = "github.com/sovereign-l1/l1/api/l1/nominatorpool/v1;nominatorpoolv1";
+
+message Params {
+  string authority = 1;
+  uint32 max_pools = 2;
+  uint32 max_delegators = 3;
+  uint32 max_pending_deposits = 4;
+  uint32 max_pending_withdrawals = 5;
+  uint32 max_unbonding_entries = 6;
+  uint32 max_pool_id_bytes = 7;
+  uint32 max_commission_bps = 8;
+  uint64 unbonding_blocks = 9;
+  uint64 validator_change_delay = 10;
+}
+
+message PendingDeposit {
+  string delegator = 1;
+  uint64 amount = 2;
+  uint64 height = 3;
+}
+
+message PendingWithdrawal {
+  string withdrawal_id = 1;
+  string delegator = 2;
+  uint64 shares = 3;
+  uint64 amount = 4;
+  uint64 request_height = 5;
+  uint64 complete_height = 6;
+  string status = 7;
+}
+
+message DelegatorShare {
+  string delegator = 1;
+  uint64 shares = 2;
+  uint64 reward_index_checkpoint = 3;
+  uint64 pending_rewards = 4;
+  uint64 slash_index_checkpoint = 5;
+}
+
+message UnbondingEntry {
+  string withdrawal_id = 1;
+  string delegator = 2;
+  uint64 amount = 3;
+  uint64 complete_height = 4;
+  string status = 5;
+}
+
+message NominatorPool {
+  string pool_id = 1;
+  string pool_operator = 2;
+  string validator_target = 3;
+  string pending_validator_target = 4;
+  uint64 validator_change_height = 5;
+  uint64 total_shares = 6;
+  uint64 total_bonded_stake = 7;
+  repeated PendingDeposit pending_deposits = 8;
+  repeated PendingWithdrawal pending_withdrawals = 9;
+  repeated DelegatorShare delegator_shares = 10;
+  uint64 reward_index = 11;
+  uint64 slash_index = 12;
+  uint32 pool_commission_bps = 13;
+  string status = 14;
+  repeated UnbondingEntry unbonding_queue = 15;
+}
+
+message State {
+  repeated NominatorPool pools = 1;
+}
+
+message GenesisState {
+  uint64 version = 1;
+  Params params = 2;
+  State state = 3;
+}
