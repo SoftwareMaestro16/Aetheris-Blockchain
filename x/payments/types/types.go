@@ -436,6 +436,69 @@ type TopologyStore struct {
 	LastPrunedAt uint64
 }
 
+type EdgeRoutingStats struct {
+	ChannelID              string
+	From                   string
+	To                     string
+	SuccessRateBps         uint32
+	LiquidityUpdatedHeight uint64
+	CongestionBps          uint32
+	NodeAvailabilityBps    uint32
+	FailureCount           uint32
+	TimeoutMargin          uint64
+}
+
+type RoutePolicy struct {
+	MaxHops               int
+	RequiredTimeoutMargin uint64
+	StaleLiquidityAfter   uint64
+	HopPenalty            string
+	CongestionPenalty     string
+	StaleLiquidityPenalty string
+	FailurePenalty        string
+	TimeoutPenalty        string
+	SuccessPenalty        string
+	AvailabilityPenalty   string
+	ProportionalFeeBps    uint32
+	MaxFeeAmount          string
+	EnableMultiPath       bool
+	MaxSplits             int
+	ExcludedNodes         []string
+	ExcludedChannels      []string
+	EdgeStats             []EdgeRoutingStats
+}
+
+type RouteSelectionRequest struct {
+	From          string
+	To            string
+	Amount        string
+	CurrentHeight uint64
+	Policy        RoutePolicy
+}
+
+type ScoredRoute struct {
+	Edges       []ChannelEdge
+	Amount      string
+	TotalFee    string
+	TotalCost   string
+	MinCapacity string
+	ScoreHash   string
+}
+
+type RouteSimulationResult struct {
+	Route       ScoredRoute
+	Attemptable bool
+	Reason      string
+	TotalFee    string
+}
+
+type MultiPathRoute struct {
+	Parts       []ScoredRoute
+	TotalAmount string
+	TotalFee    string
+	ScoreHash   string
+}
+
 type ChannelCloseRequest struct {
 	ChannelID     string
 	ClosingState  ChannelState
@@ -1843,6 +1906,217 @@ func (s TopologyStore) Validate() error {
 			return errors.New("payments duplicate gossip reputation")
 		}
 		seenReputation[reputation.NodeID] = struct{}{}
+	}
+	return nil
+}
+
+func (s EdgeRoutingStats) Normalize() EdgeRoutingStats {
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.From = strings.TrimSpace(s.From)
+	s.To = strings.TrimSpace(s.To)
+	return s
+}
+
+func (s EdgeRoutingStats) Validate() error {
+	stats := s.Normalize()
+	if err := ValidateHash("payments route stats channel id", stats.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments route stats from", stats.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments route stats to", stats.To); err != nil {
+		return err
+	}
+	if stats.SuccessRateBps > 10_000 || stats.CongestionBps > 10_000 || stats.NodeAvailabilityBps > 10_000 {
+		return errors.New("payments route stats bps must be <= 10000")
+	}
+	return nil
+}
+
+func DefaultRoutePolicy() RoutePolicy {
+	return RoutePolicy{
+		MaxHops:               MaxRoutingHops,
+		RequiredTimeoutMargin: DefaultTimeoutMargin,
+		StaleLiquidityAfter:   DefaultGossipTTL,
+		HopPenalty:            "1",
+		CongestionPenalty:     "10",
+		StaleLiquidityPenalty: "25",
+		FailurePenalty:        "25",
+		TimeoutPenalty:        "50",
+		SuccessPenalty:        "25",
+		AvailabilityPenalty:   "25",
+		MaxSplits:             1,
+	}
+}
+
+func (p RoutePolicy) Normalize() RoutePolicy {
+	defaults := DefaultRoutePolicy()
+	if p.MaxHops <= 0 || p.MaxHops > MaxRoutingHops {
+		p.MaxHops = defaults.MaxHops
+	}
+	if p.RequiredTimeoutMargin == 0 {
+		p.RequiredTimeoutMargin = defaults.RequiredTimeoutMargin
+	}
+	if p.StaleLiquidityAfter == 0 {
+		p.StaleLiquidityAfter = defaults.StaleLiquidityAfter
+	}
+	if strings.TrimSpace(p.HopPenalty) == "" {
+		p.HopPenalty = defaults.HopPenalty
+	}
+	if strings.TrimSpace(p.CongestionPenalty) == "" {
+		p.CongestionPenalty = defaults.CongestionPenalty
+	}
+	if strings.TrimSpace(p.StaleLiquidityPenalty) == "" {
+		p.StaleLiquidityPenalty = defaults.StaleLiquidityPenalty
+	}
+	if strings.TrimSpace(p.FailurePenalty) == "" {
+		p.FailurePenalty = defaults.FailurePenalty
+	}
+	if strings.TrimSpace(p.TimeoutPenalty) == "" {
+		p.TimeoutPenalty = defaults.TimeoutPenalty
+	}
+	if strings.TrimSpace(p.SuccessPenalty) == "" {
+		p.SuccessPenalty = defaults.SuccessPenalty
+	}
+	if strings.TrimSpace(p.AvailabilityPenalty) == "" {
+		p.AvailabilityPenalty = defaults.AvailabilityPenalty
+	}
+	if strings.TrimSpace(p.MaxFeeAmount) != "" {
+		p.MaxFeeAmount = strings.TrimSpace(p.MaxFeeAmount)
+	}
+	if p.MaxSplits <= 0 {
+		p.MaxSplits = defaults.MaxSplits
+	}
+	if p.MaxSplits > MaxRoutingHops {
+		p.MaxSplits = MaxRoutingHops
+	}
+	for i := range p.ExcludedNodes {
+		p.ExcludedNodes[i] = strings.TrimSpace(p.ExcludedNodes[i])
+	}
+	sort.Strings(p.ExcludedNodes)
+	for i := range p.ExcludedChannels {
+		p.ExcludedChannels[i] = normalizeHash(p.ExcludedChannels[i])
+	}
+	sort.Strings(p.ExcludedChannels)
+	for i := range p.EdgeStats {
+		p.EdgeStats[i] = p.EdgeStats[i].Normalize()
+	}
+	sort.SliceStable(p.EdgeStats, func(i, j int) bool {
+		return routeStatsKey(p.EdgeStats[i]) < routeStatsKey(p.EdgeStats[j])
+	})
+	return p
+}
+
+func (p RoutePolicy) Validate() error {
+	policy := p.Normalize()
+	for _, value := range []struct {
+		field string
+		text  string
+	}{
+		{"payments route hop penalty", policy.HopPenalty},
+		{"payments route congestion penalty", policy.CongestionPenalty},
+		{"payments route stale liquidity penalty", policy.StaleLiquidityPenalty},
+		{"payments route failure penalty", policy.FailurePenalty},
+		{"payments route timeout penalty", policy.TimeoutPenalty},
+		{"payments route success penalty", policy.SuccessPenalty},
+		{"payments route availability penalty", policy.AvailabilityPenalty},
+	} {
+		if err := validateNonNegativeInt(value.field, value.text); err != nil {
+			return err
+		}
+	}
+	if policy.MaxFeeAmount != "" {
+		if err := validateNonNegativeInt("payments route max fee", policy.MaxFeeAmount); err != nil {
+			return err
+		}
+	}
+	if policy.ProportionalFeeBps > 100_000 {
+		return errors.New("payments route proportional fee bps is too high")
+	}
+	for _, node := range policy.ExcludedNodes {
+		if err := addressing.ValidateUserAddress("payments route excluded node", node); err != nil {
+			return err
+		}
+	}
+	for _, channelID := range policy.ExcludedChannels {
+		if err := ValidateHash("payments route excluded channel", channelID); err != nil {
+			return err
+		}
+	}
+	seenStats := make(map[string]struct{}, len(policy.EdgeStats))
+	for _, stats := range policy.EdgeStats {
+		if err := stats.Validate(); err != nil {
+			return err
+		}
+		key := routeStatsKey(stats)
+		if _, found := seenStats[key]; found {
+			return errors.New("payments duplicate route stats")
+		}
+		seenStats[key] = struct{}{}
+	}
+	return nil
+}
+
+func (r RouteSelectionRequest) Normalize() RouteSelectionRequest {
+	r.From = strings.TrimSpace(r.From)
+	r.To = strings.TrimSpace(r.To)
+	r.Amount = strings.TrimSpace(r.Amount)
+	r.Policy = r.Policy.Normalize()
+	return r
+}
+
+func (r RouteSelectionRequest) Validate() error {
+	req := r.Normalize()
+	if err := addressing.ValidateUserAddress("payments route request from", req.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments route request to", req.To); err != nil {
+		return err
+	}
+	if req.From == req.To {
+		return errors.New("payments route endpoints must differ")
+	}
+	if _, err := parsePositiveInt("payments route request amount", req.Amount); err != nil {
+		return err
+	}
+	if req.CurrentHeight == 0 {
+		return errors.New("payments route request height must be positive")
+	}
+	return req.Policy.Validate()
+}
+
+func (r ScoredRoute) Normalize() ScoredRoute {
+	for i, edge := range r.Edges {
+		r.Edges[i] = edge.Normalize()
+	}
+	r.Amount = strings.TrimSpace(r.Amount)
+	r.TotalFee = strings.TrimSpace(r.TotalFee)
+	r.TotalCost = strings.TrimSpace(r.TotalCost)
+	r.MinCapacity = strings.TrimSpace(r.MinCapacity)
+	r.ScoreHash = normalizeOptionalHash(r.ScoreHash)
+	return r
+}
+
+func (r ScoredRoute) Validate() error {
+	route := r.Normalize()
+	if len(route.Edges) == 0 {
+		return errors.New("payments scored route requires edges")
+	}
+	if _, err := parsePositiveInt("payments scored route amount", route.Amount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments scored route total fee", route.TotalFee); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments scored route total cost", route.TotalCost); err != nil {
+		return err
+	}
+	if _, err := parsePositiveInt("payments scored route min capacity", route.MinCapacity); err != nil {
+		return err
+	}
+	if route.ScoreHash != "" {
+		return ValidateHash("payments scored route hash", route.ScoreHash)
 	}
 	return nil
 }

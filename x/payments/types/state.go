@@ -1290,6 +1290,139 @@ func RoutePayment(state PaymentsState, from, to, amountText string, currentHeigh
 	return nil, errors.New("payments route not found")
 }
 
+func SelectPaymentRoute(state PaymentsState, store TopologyStore, req RouteSelectionRequest) (ScoredRoute, error) {
+	state = state.Export()
+	if err := state.Validate(); err != nil {
+		return ScoredRoute{}, err
+	}
+	store = store.Normalize()
+	if err := store.Validate(); err != nil {
+		return ScoredRoute{}, err
+	}
+	req = req.Normalize()
+	if err := req.Validate(); err != nil {
+		return ScoredRoute{}, err
+	}
+	amount, err := parsePositiveInt("payments scored route amount", req.Amount)
+	if err != nil {
+		return ScoredRoute{}, err
+	}
+	route, err := selectPaymentRouteWithPolicy(state, store, req, amount)
+	if err != nil {
+		return ScoredRoute{}, err
+	}
+	sim, err := SimulateRoute(route, req)
+	if err != nil {
+		return ScoredRoute{}, err
+	}
+	if !sim.Attemptable {
+		return ScoredRoute{}, errors.New(sim.Reason)
+	}
+	return route, nil
+}
+
+func SimulateRoute(route ScoredRoute, req RouteSelectionRequest) (RouteSimulationResult, error) {
+	route = route.Normalize()
+	req = req.Normalize()
+	if err := route.Validate(); err != nil {
+		return RouteSimulationResult{}, err
+	}
+	if err := req.Validate(); err != nil {
+		return RouteSimulationResult{}, err
+	}
+	amount, err := parsePositiveInt("payments route simulation amount", route.Amount)
+	if err != nil {
+		return RouteSimulationResult{}, err
+	}
+	if route.Edges[0].From != req.From {
+		return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation source mismatch", TotalFee: route.TotalFee}, nil
+	}
+	if route.Edges[len(route.Edges)-1].To != req.To {
+		return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation destination mismatch", TotalFee: route.TotalFee}, nil
+	}
+	for i, edge := range route.Edges {
+		edge = edge.Normalize()
+		if i > 0 && route.Edges[i-1].To != edge.From {
+			return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation discontinuity", TotalFee: route.TotalFee}, nil
+		}
+		capacity, err := parsePositiveInt("payments route simulation capacity", edge.Capacity)
+		if err != nil {
+			return RouteSimulationResult{}, err
+		}
+		if !edge.Active || capacity.LT(amount) {
+			return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation capacity below amount", TotalFee: route.TotalFee}, nil
+		}
+		if edge.ExpiresHeight > 0 && req.CurrentHeight > edge.ExpiresHeight {
+			return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation edge expired", TotalFee: route.TotalFee}, nil
+		}
+	}
+	totalFee, err := parseNonNegativeInt("payments route simulation total fee", route.TotalFee)
+	if err != nil {
+		return RouteSimulationResult{}, err
+	}
+	if strings.TrimSpace(req.Policy.MaxFeeAmount) != "" {
+		maxFee, err := parseNonNegativeInt("payments route simulation max fee", req.Policy.MaxFeeAmount)
+		if err != nil {
+			return RouteSimulationResult{}, err
+		}
+		if totalFee.GT(maxFee) {
+			return RouteSimulationResult{Route: route, Attemptable: false, Reason: "payments route simulation fee exceeds policy", TotalFee: route.TotalFee}, nil
+		}
+	}
+	return RouteSimulationResult{Route: route, Attemptable: true, TotalFee: route.TotalFee}, nil
+}
+
+func SplitPaymentRoute(state PaymentsState, store TopologyStore, req RouteSelectionRequest) (MultiPathRoute, error) {
+	req = req.Normalize()
+	if err := req.Validate(); err != nil {
+		return MultiPathRoute{}, err
+	}
+	if !req.Policy.EnableMultiPath {
+		route, err := SelectPaymentRoute(state, store, req)
+		if err != nil {
+			return MultiPathRoute{}, err
+		}
+		return buildMultiPathRoute([]ScoredRoute{route})
+	}
+	amount, err := parsePositiveInt("payments multipath amount", req.Amount)
+	if err != nil {
+		return MultiPathRoute{}, err
+	}
+	maxSplits := req.Policy.Normalize().MaxSplits
+	remaining := amount
+	parts := make([]ScoredRoute, 0, maxSplits)
+	excludedChannels := append([]string(nil), req.Policy.ExcludedChannels...)
+	for split := 0; split < maxSplits && remaining.IsPositive(); split++ {
+		splitsLeft := maxSplits - split
+		chunk := remaining.Quo(sdkmath.NewInt(int64(splitsLeft)))
+		if chunk.IsZero() {
+			chunk = remaining
+		}
+		if remaining.Mod(sdkmath.NewInt(int64(splitsLeft))).IsPositive() {
+			chunk = chunk.Add(sdkmath.NewInt(1))
+		}
+		partReq := req
+		partReq.Amount = chunk.String()
+		partReq.Policy.ExcludedChannels = append([]string(nil), excludedChannels...)
+		route, err := SelectPaymentRoute(state, store, partReq)
+		if err != nil {
+			if len(parts) == 0 {
+				return MultiPathRoute{}, err
+			}
+			break
+		}
+		parts = append(parts, route)
+		remaining = remaining.Sub(chunk)
+		for _, edge := range route.Edges {
+			excludedChannels = append(excludedChannels, edge.ChannelID)
+		}
+	}
+	if remaining.IsPositive() {
+		return MultiPathRoute{}, errors.New("payments multipath route capacity insufficient")
+	}
+	return buildMultiPathRoute(parts)
+}
+
 func ImportState(state PaymentsState) (PaymentsState, error) {
 	state = state.Export()
 	if err := state.Validate(); err != nil {
@@ -2023,6 +2156,276 @@ func activeEdgesForAmount(edges []ChannelEdge, amount sdkmath.Int, currentHeight
 		out = append(out, edge)
 	}
 	return out
+}
+
+type routeSearchPath struct {
+	node  string
+	edges []ChannelEdge
+	cost  sdkmath.Int
+	fee   sdkmath.Int
+}
+
+func selectPaymentRouteWithPolicy(state PaymentsState, store TopologyStore, req RouteSelectionRequest, amount sdkmath.Int) (ScoredRoute, error) {
+	policy := req.Policy.Normalize()
+	candidates := candidateRoutingEdges(state, store, amount, req.CurrentHeight, policy)
+	if len(candidates) == 0 {
+		return ScoredRoute{}, errors.New("payments scored route has no eligible edges")
+	}
+	sortEdges(candidates)
+	queue := []routeSearchPath{{node: req.From, cost: sdkmath.ZeroInt(), fee: sdkmath.ZeroInt()}}
+	bestByNode := map[string]sdkmath.Int{req.From: sdkmath.ZeroInt()}
+	for len(queue) > 0 {
+		sortRouteQueue(queue)
+		current := queue[0]
+		queue = queue[1:]
+		if current.node == req.To && len(current.edges) > 0 {
+			return buildScoredRoute(current.edges, amount, current.fee, current.cost)
+		}
+		if len(current.edges) >= policy.MaxHops {
+			continue
+		}
+		for _, edge := range candidates {
+			edge = edge.Normalize()
+			if edge.From != current.node || routeContainsNode(current.edges, edge.To) {
+				continue
+			}
+			weight, fee, err := routeEdgeWeight(store, edge, amount, req.CurrentHeight, policy)
+			if err != nil {
+				return ScoredRoute{}, err
+			}
+			nextCost := current.cost.Add(weight)
+			nextFee := current.fee.Add(fee)
+			if policy.MaxFeeAmount != "" {
+				maxFee, err := parseNonNegativeInt("payments route policy max fee", policy.MaxFeeAmount)
+				if err != nil {
+					return ScoredRoute{}, err
+				}
+				if nextFee.GT(maxFee) {
+					continue
+				}
+			}
+			nextEdges := append([]ChannelEdge(nil), current.edges...)
+			nextEdges = append(nextEdges, edge)
+			if best, found := bestByNode[edge.To]; found && !nextCost.LT(best) {
+				continue
+			}
+			bestByNode[edge.To] = nextCost
+			queue = append(queue, routeSearchPath{node: edge.To, edges: nextEdges, cost: nextCost, fee: nextFee})
+		}
+	}
+	return ScoredRoute{}, errors.New("payments scored route not found")
+}
+
+func candidateRoutingEdges(state PaymentsState, store TopologyStore, amount sdkmath.Int, currentHeight uint64, policy RoutePolicy) []ChannelEdge {
+	combined := make([]ChannelEdge, 0, len(state.Edges)+len(store.Edges))
+	for _, edge := range state.Edges {
+		combined = upsertTopologyEdge(combined, edge)
+	}
+	for _, edge := range store.Edges {
+		combined = upsertTopologyEdge(combined, edge)
+	}
+	active := activeEdgesForAmount(combined, amount, currentHeight)
+	out := make([]ChannelEdge, 0, len(active))
+	for _, edge := range active {
+		edge = edge.Normalize()
+		if routePolicyExcludesEdge(policy, edge) {
+			continue
+		}
+		channel, found := state.ChannelByID(edge.ChannelID)
+		if !found || channel.Status != ChannelStatusOpen {
+			continue
+		}
+		if !containsString(channel.Participants, edge.From) || !containsString(channel.Participants, edge.To) {
+			continue
+		}
+		out = append(out, edge)
+	}
+	sortEdges(out)
+	return out
+}
+
+func routeEdgeWeight(store TopologyStore, edge ChannelEdge, amount sdkmath.Int, currentHeight uint64, policy RoutePolicy) (sdkmath.Int, sdkmath.Int, error) {
+	fee, err := parseNonNegativeInt("payments route edge fee", edge.FeeAmount)
+	if err != nil {
+		return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+	}
+	if policy.ProportionalFeeBps > 0 {
+		fee = fee.Add(amount.Mul(sdkmath.NewInt(int64(policy.ProportionalFeeBps))).Quo(sdkmath.NewInt(10_000)))
+	}
+	cost := fee
+	for _, penaltyText := range []string{policy.HopPenalty} {
+		penalty, err := parseNonNegativeInt("payments route fixed penalty", penaltyText)
+		if err != nil {
+			return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+		}
+		cost = cost.Add(penalty)
+	}
+	stats, hasStats := routeStatsForEdge(policy, edge)
+	if hasStats {
+		if stats.CongestionBps > 0 {
+			cost = cost.Add(routeScaledPenalty(policy.CongestionPenalty, stats.CongestionBps))
+		}
+		if stats.FailureCount > 0 {
+			penalty, err := parseNonNegativeInt("payments route failure penalty", policy.FailurePenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty.Mul(sdkmath.NewInt(int64(stats.FailureCount))))
+		}
+		if stats.SuccessRateBps > 0 && stats.SuccessRateBps < 10_000 {
+			cost = cost.Add(routeScaledPenalty(policy.SuccessPenalty, 10_000-stats.SuccessRateBps))
+		}
+		if stats.NodeAvailabilityBps > 0 && stats.NodeAvailabilityBps < 10_000 {
+			cost = cost.Add(routeScaledPenalty(policy.AvailabilityPenalty, 10_000-stats.NodeAvailabilityBps))
+		}
+		if stats.LiquidityUpdatedHeight > 0 && currentHeight > stats.LiquidityUpdatedHeight+policy.StaleLiquidityAfter {
+			penalty, err := parseNonNegativeInt("payments stale liquidity penalty", policy.StaleLiquidityPenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty)
+		}
+		if stats.TimeoutMargin > 0 && stats.TimeoutMargin < policy.RequiredTimeoutMargin {
+			penalty, err := parseNonNegativeInt("payments timeout margin penalty", policy.TimeoutPenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty)
+		}
+	}
+	reputation := RoutingScoreForEdge(store, edge)
+	if reputation < 0 {
+		cost = cost.Add(sdkmath.NewInt(-reputation))
+	}
+	return cost, fee, nil
+}
+
+func routeScaledPenalty(penaltyText string, multiplier uint32) sdkmath.Int {
+	penalty, err := parseNonNegativeInt("payments route scaled penalty", penaltyText)
+	if err != nil {
+		return sdkmath.ZeroInt()
+	}
+	return penalty.Mul(sdkmath.NewInt(int64(multiplier))).Quo(sdkmath.NewInt(10_000))
+}
+
+func routePolicyExcludesEdge(policy RoutePolicy, edge ChannelEdge) bool {
+	policy = policy.Normalize()
+	edge = edge.Normalize()
+	if containsString(policy.ExcludedChannels, edge.ChannelID) {
+		return true
+	}
+	return containsString(policy.ExcludedNodes, edge.From) || containsString(policy.ExcludedNodes, edge.To)
+}
+
+func routeStatsForEdge(policy RoutePolicy, edge ChannelEdge) (EdgeRoutingStats, bool) {
+	key := routeStatsKey(EdgeRoutingStats{ChannelID: edge.ChannelID, From: edge.From, To: edge.To})
+	for _, stats := range policy.Normalize().EdgeStats {
+		if routeStatsKey(stats) == key {
+			return stats.Normalize(), true
+		}
+	}
+	return EdgeRoutingStats{}, false
+}
+
+func routeStatsKey(stats EdgeRoutingStats) string {
+	stats = stats.Normalize()
+	return fmt.Sprintf("%s/%s/%s", stats.ChannelID, stats.From, stats.To)
+}
+
+func routeContainsNode(edges []ChannelEdge, node string) bool {
+	node = strings.TrimSpace(node)
+	for _, edge := range edges {
+		edge = edge.Normalize()
+		if edge.From == node || edge.To == node {
+			return true
+		}
+	}
+	return false
+}
+
+func sortRouteQueue(queue []routeSearchPath) {
+	sort.SliceStable(queue, func(i, j int) bool {
+		if !queue[i].cost.Equal(queue[j].cost) {
+			return queue[i].cost.LT(queue[j].cost)
+		}
+		return routePathKey(queue[i].edges) < routePathKey(queue[j].edges)
+	})
+}
+
+func routePathKey(edges []ChannelEdge) string {
+	if len(edges) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(edges))
+	for _, edge := range edges {
+		parts = append(parts, edgeKey(edge.Normalize()))
+	}
+	return strings.Join(parts, "|")
+}
+
+func buildScoredRoute(edges []ChannelEdge, amount, totalFee, totalCost sdkmath.Int) (ScoredRoute, error) {
+	if len(edges) == 0 {
+		return ScoredRoute{}, errors.New("payments scored route requires edges")
+	}
+	minCapacity, err := parsePositiveInt("payments scored route capacity", edges[0].Capacity)
+	if err != nil {
+		return ScoredRoute{}, err
+	}
+	parts := []string{"scored-route", amount.String(), totalFee.String(), totalCost.String()}
+	for _, edge := range edges {
+		edge = edge.Normalize()
+		capacity, err := parsePositiveInt("payments scored route capacity", edge.Capacity)
+		if err != nil {
+			return ScoredRoute{}, err
+		}
+		if capacity.LT(minCapacity) {
+			minCapacity = capacity
+		}
+		parts = append(parts, edgeKey(edge), edge.Capacity, edge.FeeAmount, fmt.Sprintf("%020d", edge.ExpiresHeight))
+	}
+	route := ScoredRoute{
+		Edges:       append([]ChannelEdge(nil), edges...),
+		Amount:      amount.String(),
+		TotalFee:    totalFee.String(),
+		TotalCost:   totalCost.String(),
+		MinCapacity: minCapacity.String(),
+	}
+	route.ScoreHash = HashParts(parts...)
+	route = route.Normalize()
+	return route, route.Validate()
+}
+
+func buildMultiPathRoute(parts []ScoredRoute) (MultiPathRoute, error) {
+	if len(parts) == 0 {
+		return MultiPathRoute{}, errors.New("payments multipath route requires parts")
+	}
+	totalAmount := sdkmath.ZeroInt()
+	totalFee := sdkmath.ZeroInt()
+	hashParts := []string{"multipath-route"}
+	for _, part := range parts {
+		part = part.Normalize()
+		if err := part.Validate(); err != nil {
+			return MultiPathRoute{}, err
+		}
+		amount, err := parsePositiveInt("payments multipath part amount", part.Amount)
+		if err != nil {
+			return MultiPathRoute{}, err
+		}
+		fee, err := parseNonNegativeInt("payments multipath part fee", part.TotalFee)
+		if err != nil {
+			return MultiPathRoute{}, err
+		}
+		totalAmount = totalAmount.Add(amount)
+		totalFee = totalFee.Add(fee)
+		hashParts = append(hashParts, part.ScoreHash)
+	}
+	out := MultiPathRoute{
+		Parts:       append([]ScoredRoute(nil), parts...),
+		TotalAmount: totalAmount.String(),
+		TotalFee:    totalFee.String(),
+		ScoreHash:   HashParts(hashParts...),
+	}
+	return out, nil
 }
 
 func gossipPenaltyNode(envelope SignedGossipEnvelope) string {

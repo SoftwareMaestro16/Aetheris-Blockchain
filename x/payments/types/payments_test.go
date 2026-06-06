@@ -1795,6 +1795,126 @@ func TestRoutePaymentAndVirtualChannelUseExistingLiquidity(t *testing.T) {
 	require.Len(t, state.VirtualChannels, 1)
 }
 
+func TestScoredRouteSelectionPenalizesFeeStaleLiquidityAndFailures(t *testing.T) {
+	alice := testAddress(0x37)
+	router := testAddress(0x38)
+	bob := testAddress(0x39)
+	direct := signedChannel(t, "score-direct", "1000", alice, bob)
+	first := signedChannel(t, "score-first", "1000", alice, router)
+	second := signedChannel(t, "score-second", "1000", router, bob)
+	state := EmptyState()
+	var err error
+	for _, channel := range []ChannelRecord{direct, first, second} {
+		state, err = OpenChannel(state, channel)
+		require.NoError(t, err)
+	}
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: direct.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "20", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: first.ChannelID, From: alice, To: router, Capacity: "500", FeeAmount: "1", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: second.ChannelID, From: router, To: bob, Capacity: "500", FeeAmount: "1", Active: true})
+	require.NoError(t, err)
+
+	policy := DefaultRoutePolicy()
+	policy.HopPenalty = "1"
+	policy.StaleLiquidityAfter = 10
+	policy.EdgeStats = []EdgeRoutingStats{
+		{ChannelID: direct.ChannelID, From: alice, To: bob, SuccessRateBps: 3_000, LiquidityUpdatedHeight: 1, FailureCount: 4, CongestionBps: 7_500, NodeAvailabilityBps: 5_000, TimeoutMargin: 4},
+		{ChannelID: first.ChannelID, From: alice, To: router, SuccessRateBps: 10_000, LiquidityUpdatedHeight: 95, NodeAvailabilityBps: 10_000, TimeoutMargin: DefaultTimeoutMargin},
+		{ChannelID: second.ChannelID, From: router, To: bob, SuccessRateBps: 10_000, LiquidityUpdatedHeight: 95, NodeAvailabilityBps: 10_000, TimeoutMargin: DefaultTimeoutMargin},
+	}
+	route, err := SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{
+		From:          alice,
+		To:            bob,
+		Amount:        "100",
+		CurrentHeight: 100,
+		Policy:        policy,
+	})
+	require.NoError(t, err)
+	require.Len(t, route.Edges, 2)
+	require.Equal(t, []string{first.ChannelID, second.ChannelID}, []string{route.Edges[0].ChannelID, route.Edges[1].ChannelID})
+	require.Equal(t, "2", route.TotalFee)
+	require.NotEmpty(t, route.ScoreHash)
+
+	again, err := SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 100, Policy: policy})
+	require.NoError(t, err)
+	require.Equal(t, route.ScoreHash, again.ScoreHash)
+	sim, err := SimulateRoute(route, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 100, Policy: policy})
+	require.NoError(t, err)
+	require.True(t, sim.Attemptable)
+}
+
+func TestScoredRouteSelectionExcludesInsufficientCapacityAndMaxFee(t *testing.T) {
+	alice := testAddress(0x3a)
+	router := testAddress(0x3b)
+	bob := testAddress(0x3c)
+	low := signedChannel(t, "score-low-capacity", "1000", alice, bob)
+	first := signedChannel(t, "score-cap-first", "1000", alice, router)
+	second := signedChannel(t, "score-cap-second", "1000", router, bob)
+	state := EmptyState()
+	var err error
+	for _, channel := range []ChannelRecord{low, first, second} {
+		state, err = OpenChannel(state, channel)
+		require.NoError(t, err)
+	}
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: low.ChannelID, From: alice, To: bob, Capacity: "50", FeeAmount: "0", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: first.ChannelID, From: alice, To: router, Capacity: "150", FeeAmount: "4", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: second.ChannelID, From: router, To: bob, Capacity: "150", FeeAmount: "4", Active: true})
+	require.NoError(t, err)
+
+	policy := DefaultRoutePolicy()
+	policy.MaxFeeAmount = "10"
+	route, err := SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 20, Policy: policy})
+	require.NoError(t, err)
+	require.Len(t, route.Edges, 2)
+	require.Equal(t, "8", route.TotalFee)
+
+	policy.MaxFeeAmount = "3"
+	_, err = SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 20, Policy: policy})
+	require.ErrorContains(t, err, "not found")
+}
+
+func TestMultiPathSplittingUsesIndependentCapacityAwareRoutes(t *testing.T) {
+	alice := testAddress(0x3d)
+	r1 := testAddress(0x3e)
+	r2 := testAddress(0x3f)
+	bob := testAddress(0x40)
+	channels := []ChannelRecord{
+		signedChannel(t, "split-a", "1000", alice, r1),
+		signedChannel(t, "split-b", "1000", r1, bob),
+		signedChannel(t, "split-c", "1000", alice, r2),
+		signedChannel(t, "split-d", "1000", r2, bob),
+	}
+	state := EmptyState()
+	var err error
+	for _, channel := range channels {
+		state, err = OpenChannel(state, channel)
+		require.NoError(t, err)
+	}
+	edges := []ChannelEdge{
+		{ChannelID: channels[0].ChannelID, From: alice, To: r1, Capacity: "60", FeeAmount: "1", Active: true},
+		{ChannelID: channels[1].ChannelID, From: r1, To: bob, Capacity: "60", FeeAmount: "1", Active: true},
+		{ChannelID: channels[2].ChannelID, From: alice, To: r2, Capacity: "60", FeeAmount: "2", Active: true},
+		{ChannelID: channels[3].ChannelID, From: r2, To: bob, Capacity: "60", FeeAmount: "2", Active: true},
+	}
+	for _, edge := range edges {
+		state, err = RegisterRoutingEdge(state, edge)
+		require.NoError(t, err)
+	}
+	policy := DefaultRoutePolicy()
+	policy.EnableMultiPath = true
+	policy.MaxSplits = 2
+	result, err := SplitPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 30, Policy: policy})
+	require.NoError(t, err)
+	require.Len(t, result.Parts, 2)
+	require.Equal(t, "100", result.TotalAmount)
+	require.Equal(t, "6", result.TotalFee)
+	require.NotEqual(t, result.Parts[0].Edges[0].ChannelID, result.Parts[1].Edges[0].ChannelID)
+	require.NotEmpty(t, result.ScoreHash)
+}
+
 func TestUntrustedTopologyIsRejectedBeforeRouteUse(t *testing.T) {
 	alice := testAddress(0x49)
 	router := testAddress(0x4a)
