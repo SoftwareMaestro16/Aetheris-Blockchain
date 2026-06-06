@@ -334,6 +334,85 @@ func ExpireConditionalPromises(state PaymentsState, req PromiseExpiryRequest) (P
 	return next, normalizeConditionResolutions(resolutions), update, next.Validate()
 }
 
+func BatchSettleLinkedPromises(state PaymentsState, req BatchConditionSettlementRequest) (PaymentsState, BatchConditionSettlementResult, error) {
+	state = state.Export()
+	req = req.Normalize()
+	if err := req.ValidateForState(state, state.ConditionClaims); err != nil {
+		return PaymentsState{}, BatchConditionSettlementResult{}, err
+	}
+	proof := req.LinkageProof.Normalize()
+	evidenceHash := proof.EvidenceHash
+	if evidenceHash == "" {
+		evidenceHash = HashParts("batch-condition-settlement", proof.RouteID, string(req.Mode), fmt.Sprintf("%020d", req.CurrentHeight))
+	}
+	preimageHash := ""
+	if req.Mode == ConditionSettlementModePreimage {
+		preimageHash = HashParts(req.Preimage)
+	}
+	updates, err := conditionRootUpdatesForPromises(state, proof.Promises)
+	if err != nil {
+		return PaymentsState{}, BatchConditionSettlementResult{}, err
+	}
+	next := state.Clone()
+	resolutions := make([]ConditionResolution, 0, len(proof.Promises))
+	feeClaims := make([]RouteFeeClaim, 0, len(proof.Promises)-1)
+	for i, promise := range proof.Promises {
+		channel, _ := state.ChannelByID(promise.ChannelID)
+		resolution := ConditionResolution{
+			ConditionID:  promise.PromiseID,
+			Resolver:     req.Resolver,
+			Recipient:    promise.Destination,
+			Amount:       promise.Amount,
+			Expired:      false,
+			EvidenceHash: HashParts("batch-condition-resolution", evidenceHash, promise.PromiseID),
+		}
+		if req.Mode == ConditionSettlementModeExpiry {
+			resolution.Recipient = promise.Source
+			resolution.Expired = true
+		}
+		resolution = resolution.Normalize()
+		resolutions = append(resolutions, resolution)
+		next.ConditionClaims = append(next.ConditionClaims, ConditionClaimRecord{
+			ChainID:        channel.ChainID,
+			ChannelID:      channel.ChannelID,
+			ConditionID:    promise.PromiseID,
+			EvidenceHash:   resolution.EvidenceHash,
+			PreimageHash:   preimageHash,
+			ResolvedHeight: req.CurrentHeight,
+			ExpiresHeight:  req.CurrentHeight + DefaultReplayHorizon,
+		}.Normalize())
+		if req.Mode != ConditionSettlementModePreimage || i == 0 {
+			continue
+		}
+		fee, err := parseNonNegativeInt("payments route fee claim amount", promise.Fee)
+		if err != nil {
+			return PaymentsState{}, BatchConditionSettlementResult{}, err
+		}
+		if fee.IsZero() {
+			continue
+		}
+		feeClaims = append(feeClaims, RouteFeeClaim{
+			ChannelID:    promise.ChannelID,
+			PromiseID:    promise.PromiseID,
+			Recipient:    promise.Source,
+			Amount:       promise.Fee,
+			EvidenceHash: HashParts("route-fee-claim", evidenceHash, promise.PromiseID, promise.Source),
+		}.Normalize())
+	}
+	sortConditionClaimRecords(next.ConditionClaims)
+	result := BatchConditionSettlementResult{
+		RouteID:              proof.RouteID,
+		Resolutions:          resolutions,
+		FeeClaims:            feeClaims,
+		ConditionRootUpdates: updates,
+		EvidenceHash:         evidenceHash,
+	}.Normalize()
+	if err := result.Validate(); err != nil {
+		return PaymentsState{}, BatchConditionSettlementResult{}, err
+	}
+	return next, result, next.Validate()
+}
+
 func SubmitClose(state PaymentsState, channelID string, closingState ChannelState, submitter string, currentHeight uint64, settlementFee string) (PaymentsState, error) {
 	return SubmitCloseWithRequest(state, ChannelCloseRequest{
 		ChannelID:     channelID,
@@ -1784,6 +1863,34 @@ func appendSettlementReplayRecords(state *PaymentsState, channel ChannelRecord, 
 			ExpiresHeight:  height + DefaultReplayHorizon,
 		}.Normalize())
 	}
+}
+
+func conditionRootUpdatesForPromises(state PaymentsState, promises []ConditionalPromise) ([]ConditionRootUpdate, error) {
+	grouped := make(map[string][]ConditionalPromise)
+	for _, promise := range normalizeConditionalPromises(promises) {
+		grouped[promise.ChannelID] = append(grouped[promise.ChannelID], promise)
+	}
+	channelIDs := make([]string, 0, len(grouped))
+	for channelID := range grouped {
+		channelIDs = append(channelIDs, channelID)
+	}
+	sort.Strings(channelIDs)
+	updates := make([]ConditionRootUpdate, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		channel, found := state.ChannelByID(channelID)
+		if !found {
+			return nil, errors.New("payments condition root update channel not found")
+		}
+		if len(channel.LatestState.Conditions) == 0 {
+			continue
+		}
+		_, update, err := BuildConditionRootAfterExpiry(channel.LatestState, grouped[channelID])
+		if err != nil {
+			return nil, err
+		}
+		updates = append(updates, update)
+	}
+	return normalizeConditionRootUpdates(updates), nil
 }
 
 func upsertClosedChannelTombstone(tombstones []ClosedChannelTombstone, next ClosedChannelTombstone) []ClosedChannelTombstone {

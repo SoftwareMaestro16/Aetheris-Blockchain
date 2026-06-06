@@ -521,6 +521,251 @@ func TestTimeoutOrderingAndExpiryResolutionReleaseConditionRoot(t *testing.T) {
 	require.ErrorContains(t, err, "timed out")
 }
 
+func TestBatchConditionSettlementAtomicallyResolvesChainedPromises(t *testing.T) {
+	alice := testAddress(0x28)
+	router := testAddress(0x29)
+	bob := testAddress(0x2a)
+	routeID := HashParts("route", alice, router, bob)
+	hashLock := HashParts("atomic-preimage")
+	firstChannel := signedChannel(t, "chain-first", "1000", alice, router)
+	secondChannel := signedChannel(t, "chain-second", "1000", router, bob)
+	firstID := HashParts("promise", routeID, "first")
+	secondID := HashParts("promise", routeID, "second")
+
+	firstBase := signedReserveState(t, firstChannel, 2, firstChannel.OpeningStateHash, "80", "0", []Balance{
+		{Participant: alice, Amount: "900"},
+		{Participant: router, Amount: "20"},
+	})
+	secondBase := signedReserveState(t, secondChannel, 2, secondChannel.OpeningStateHash, "80", "0", []Balance{
+		{Participant: router, Amount: "900"},
+		{Participant: bob, Amount: "20"},
+	})
+	firstPromiseChannel := firstChannel
+	firstPromiseChannel.LatestState = firstBase
+	secondPromiseChannel := secondChannel
+	secondPromiseChannel.LatestState = secondBase
+	first := signedRoutePromise(t, firstPromiseChannel, firstID, routeID, alice, router, "31", "0", 9, 70, hashLock, "", secondID)
+	second := signedRoutePromise(t, secondPromiseChannel, secondID, routeID, router, bob, "30", "1", 10, 40, hashLock, firstID, "")
+
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, firstChannel)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, secondChannel)
+	require.NoError(t, err)
+	firstConditioned, firstRoot, err := BuildConditionRootUpdateFromPromises(firstPromiseChannel, firstBase, []ConditionalPromise{first}, nil)
+	require.NoError(t, err)
+	secondConditioned, secondRoot, err := BuildConditionRootUpdateFromPromises(secondPromiseChannel, secondBase, []ConditionalPromise{second}, nil)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, firstChannel.ChannelID, resignState(t, firstChannel, firstConditioned), 20)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, secondChannel.ChannelID, resignState(t, secondChannel, secondConditioned), 20)
+	require.NoError(t, err)
+
+	proof := ConditionLinkageProof{
+		RouteID:       routeID,
+		Promises:      []ConditionalPromise{first, second},
+		Sender:        alice,
+		Receiver:      bob,
+		Amount:        "30",
+		TotalFees:     "1",
+		HashLock:      hashLock,
+		TimeoutMargin: DefaultTimeoutMargin,
+	}
+	state, result, err := BatchSettleLinkedPromises(state, BatchConditionSettlementRequest{
+		LinkageProof:  proof,
+		Mode:          ConditionSettlementModePreimage,
+		Preimage:      "atomic-preimage",
+		Resolver:      bob,
+		CurrentHeight: 30,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Resolutions, 2)
+	require.Len(t, result.FeeClaims, 1)
+	require.Equal(t, router, result.FeeClaims[0].Recipient)
+	require.Equal(t, "1", result.FeeClaims[0].Amount)
+	require.Len(t, result.ConditionRootUpdates, 2)
+	require.NotContains(t, []string{firstRoot.ConditionRoot, secondRoot.ConditionRoot}, result.ConditionRootUpdates[0].ConditionRoot)
+	require.Len(t, state.ConditionClaims, 2)
+	require.Equal(t, hashLock, state.ConditionClaims[0].PreimageHash)
+	require.Equal(t, hashLock, state.ConditionClaims[1].PreimageHash)
+
+	_, _, err = BatchSettleLinkedPromises(state, BatchConditionSettlementRequest{
+		LinkageProof:  proof,
+		Mode:          ConditionSettlementModePreimage,
+		Preimage:      "atomic-preimage",
+		Resolver:      bob,
+		CurrentHeight: 31,
+	})
+	require.ErrorContains(t, err, "already been settled")
+}
+
+func TestBatchConditionSettlementRejectsBrokenRouteInvariants(t *testing.T) {
+	alice := testAddress(0x2b)
+	router := testAddress(0x2c)
+	bob := testAddress(0x2d)
+	routeID := HashParts("route-bad", alice, router, bob)
+	hashLock := HashParts("bad-route-preimage")
+	firstChannel := signedChannel(t, "chain-bad-first", "1000", alice, router)
+	secondChannel := signedChannel(t, "chain-bad-second", "1000", router, bob)
+	openFirst := firstChannel
+	openSecond := secondChannel
+	firstBase := signedReserveState(t, firstChannel, 2, firstChannel.OpeningStateHash, "80", "0", []Balance{
+		{Participant: alice, Amount: "900"},
+		{Participant: router, Amount: "20"},
+	})
+	secondBase := signedReserveState(t, secondChannel, 2, secondChannel.OpeningStateHash, "80", "0", []Balance{
+		{Participant: router, Amount: "900"},
+		{Participant: bob, Amount: "20"},
+	})
+	firstChannel.LatestState = firstBase
+	secondChannel.LatestState = secondBase
+	firstID := HashParts("promise", routeID, "first")
+	secondID := HashParts("promise", routeID, "second")
+	first := signedRoutePromise(t, firstChannel, firstID, routeID, alice, router, "30", "0", 9, 70, hashLock, "", secondID)
+	second := signedRoutePromise(t, secondChannel, secondID, routeID, router, bob, "30", "1", 10, 40, hashLock, firstID, "")
+
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, openFirst)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, openSecond)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, openFirst.ChannelID, firstBase, 20)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, openSecond.ChannelID, secondBase, 20)
+	require.NoError(t, err)
+	require.ErrorContains(t, ConditionLinkageProof{
+		RouteID:       routeID,
+		Promises:      []ConditionalPromise{first, second},
+		Sender:        alice,
+		Receiver:      bob,
+		Amount:        "30",
+		TotalFees:     "1",
+		HashLock:      hashLock,
+		TimeoutMargin: DefaultTimeoutMargin,
+	}.ValidateForState(state, nil), "amount conservation")
+
+	firstConservedID := HashParts("promise", routeID, "first-conserved")
+	badTimeoutID := HashParts("promise", routeID, "bad-timeout")
+	firstConserved := signedRoutePromise(t, firstChannel, firstConservedID, routeID, alice, router, "31", "0", 12, 70, hashLock, "", badTimeoutID)
+	badTimeout := signedRoutePromise(t, secondChannel, badTimeoutID, routeID, router, bob, "30", "1", 11, 60, hashLock, firstConservedID, "")
+	require.ErrorContains(t, ConditionLinkageProof{
+		RouteID:       routeID,
+		Promises:      []ConditionalPromise{firstConserved, badTimeout},
+		Sender:        alice,
+		Receiver:      bob,
+		Amount:        "30",
+		TotalFees:     "1",
+		HashLock:      hashLock,
+		TimeoutMargin: DefaultTimeoutMargin,
+	}.ValidateForState(state, nil), "downstream timeout")
+
+	partialState, partialResult, err := BatchSettleLinkedPromises(state, BatchConditionSettlementRequest{
+		LinkageProof: ConditionLinkageProof{
+			RouteID:                    routeID,
+			Promises:                   []ConditionalPromise{second},
+			Sender:                     router,
+			Receiver:                   bob,
+			Amount:                     "30",
+			TotalFees:                  "0",
+			HashLock:                   hashLock,
+			TimeoutMargin:              DefaultTimeoutMargin,
+			PartialDispute:             true,
+			OffchainResolvedPromiseIDs: []string{firstID},
+		},
+		Mode:          ConditionSettlementModePreimage,
+		Preimage:      "bad-route-preimage",
+		Resolver:      bob,
+		CurrentHeight: 30,
+	})
+	require.NoError(t, err)
+	require.Len(t, partialResult.Resolutions, 1)
+	require.Empty(t, partialResult.FeeClaims)
+	require.Len(t, partialState.ConditionClaims, 1)
+}
+
+func TestBatchConditionSettlementExpiryIsAtomicWithoutFees(t *testing.T) {
+	alice := testAddress(0x2e)
+	router := testAddress(0x2f)
+	bob := testAddress(0x30)
+	routeID := HashParts("route-expiry", alice, router, bob)
+	hashLock := HashParts("expiry-preimage")
+	firstChannel := signedChannel(t, "chain-expiry-first", "1000", alice, router)
+	secondChannel := signedChannel(t, "chain-expiry-second", "1000", router, bob)
+	firstID := HashParts("promise", routeID, "first")
+	secondID := HashParts("promise", routeID, "second")
+	firstBase := signedReserveState(t, firstChannel, 2, firstChannel.OpeningStateHash, "80", "0", []Balance{
+		{Participant: alice, Amount: "900"},
+		{Participant: router, Amount: "20"},
+	})
+	secondBase := signedReserveState(t, secondChannel, 2, secondChannel.OpeningStateHash, "80", "0", []Balance{
+		{Participant: router, Amount: "900"},
+		{Participant: bob, Amount: "20"},
+	})
+	firstPromiseChannel := firstChannel
+	firstPromiseChannel.LatestState = firstBase
+	secondPromiseChannel := secondChannel
+	secondPromiseChannel.LatestState = secondBase
+	first := signedRoutePromise(t, firstPromiseChannel, firstID, routeID, alice, router, "31", "0", 9, 70, hashLock, "", secondID)
+	second := signedRoutePromise(t, secondPromiseChannel, secondID, routeID, router, bob, "30", "1", 10, 40, hashLock, firstID, "")
+
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, firstChannel)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, secondChannel)
+	require.NoError(t, err)
+	firstConditioned, _, err := BuildConditionRootUpdateFromPromises(firstPromiseChannel, firstBase, []ConditionalPromise{first}, nil)
+	require.NoError(t, err)
+	secondConditioned, _, err := BuildConditionRootUpdateFromPromises(secondPromiseChannel, secondBase, []ConditionalPromise{second}, nil)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, firstChannel.ChannelID, resignState(t, firstChannel, firstConditioned), 20)
+	require.NoError(t, err)
+	state, err = AcceptSignedState(state, secondChannel.ChannelID, resignState(t, secondChannel, secondConditioned), 20)
+	require.NoError(t, err)
+
+	_, _, err = BatchSettleLinkedPromises(state, BatchConditionSettlementRequest{
+		LinkageProof: ConditionLinkageProof{
+			RouteID:       routeID,
+			Promises:      []ConditionalPromise{first, second},
+			Sender:        alice,
+			Receiver:      bob,
+			Amount:        "30",
+			TotalFees:     "1",
+			HashLock:      hashLock,
+			TimeoutMargin: DefaultTimeoutMargin,
+		},
+		Mode:          ConditionSettlementModeExpiry,
+		Resolver:      alice,
+		CurrentHeight: 70,
+	})
+	require.ErrorContains(t, err, "has not expired")
+
+	state, result, err := BatchSettleLinkedPromises(state, BatchConditionSettlementRequest{
+		LinkageProof: ConditionLinkageProof{
+			RouteID:       routeID,
+			Promises:      []ConditionalPromise{first, second},
+			Sender:        alice,
+			Receiver:      bob,
+			Amount:        "30",
+			TotalFees:     "1",
+			HashLock:      hashLock,
+			TimeoutMargin: DefaultTimeoutMargin,
+		},
+		Mode:          ConditionSettlementModeExpiry,
+		Resolver:      alice,
+		CurrentHeight: 71,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Resolutions, 2)
+	require.Empty(t, result.FeeClaims)
+	require.True(t, result.Resolutions[0].Expired)
+	require.True(t, result.Resolutions[1].Expired)
+	require.Len(t, result.ConditionRootUpdates, 2)
+	require.Len(t, state.ConditionClaims, 2)
+}
+
 func TestDisputeRequestEmitsEventAndAppliesOptionalFraudProof(t *testing.T) {
 	alice := testAddress(0x14)
 	bob := testAddress(0x15)
@@ -1967,6 +2212,12 @@ func signedPromiseWithHashLock(t *testing.T, channel ChannelRecord, salt, source
 func signedLinkedPromise(t *testing.T, channel ChannelRecord, promiseID, source, destination, amount, fee string, nonce, timeoutHeight uint64, hashLock, previousID, nextID string) ConditionalPromise {
 	t.Helper()
 
+	return signedRoutePromise(t, channel, promiseID, "", source, destination, amount, fee, nonce, timeoutHeight, hashLock, previousID, nextID)
+}
+
+func signedRoutePromise(t *testing.T, channel ChannelRecord, promiseID, routeID, source, destination, amount, fee string, nonce, timeoutHeight uint64, hashLock, previousID, nextID string) ConditionalPromise {
+	t.Helper()
+
 	promise, err := BuildConditionalPromise(ConditionalPromise{
 		PromiseID:                 promiseID,
 		ChannelID:                 channel.ChannelID,
@@ -1978,6 +2229,7 @@ func signedLinkedPromise(t *testing.T, channel ChannelRecord, promiseID, source,
 		TimeoutHeight:             timeoutHeight,
 		TimeoutTimestamp:          int64(timeoutHeight * 10),
 		ConditionType:             ConditionTypeHashLock,
+		RouteIDOptional:           routeID,
 		PreviousPromiseIDOptional: previousID,
 		NextPromiseIDOptional:     nextID,
 		Nonce:                     nonce,

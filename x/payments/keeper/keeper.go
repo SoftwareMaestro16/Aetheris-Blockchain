@@ -192,6 +192,18 @@ func (k *Keeper) ExpireConditionalPromises(req paymentstypes.PromiseExpiryReques
 	return resolutions, update, nil
 }
 
+func (k *Keeper) BatchSettleLinkedPromises(req paymentstypes.BatchConditionSettlementRequest) (paymentstypes.BatchConditionSettlementResult, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.BatchConditionSettlementResult{}, err
+	}
+	next, result, err := paymentstypes.BatchSettleLinkedPromises(k.genesis.State, req)
+	if err != nil {
+		return paymentstypes.BatchConditionSettlementResult{}, err
+	}
+	k.genesis.State = next
+	return result, nil
+}
+
 func (k *Keeper) SubmitClose(channelID string, closingState paymentstypes.ChannelState, submitter string, currentHeight uint64, settlementFee string) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err

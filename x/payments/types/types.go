@@ -149,6 +149,13 @@ const (
 	SettlementArbitrationReplayProtection    SettlementArbitrationOperation = "REPLAY_PROTECTION"
 )
 
+type ConditionSettlementMode string
+
+const (
+	ConditionSettlementModePreimage ConditionSettlementMode = "PREIMAGE"
+	ConditionSettlementModeExpiry   ConditionSettlementMode = "EXPIRY"
+)
+
 type VirtualChannelStatus string
 
 const (
@@ -409,6 +416,44 @@ type PromiseExpiryRequest struct {
 	Promises      []ConditionalPromise
 	Resolver      string
 	CurrentHeight uint64
+}
+
+type ConditionLinkageProof struct {
+	RouteID                    string
+	Promises                   []ConditionalPromise
+	Sender                     string
+	Receiver                   string
+	Amount                     string
+	TotalFees                  string
+	HashLock                   string
+	TimeoutMargin              uint64
+	PartialDispute             bool
+	OffchainResolvedPromiseIDs []string
+	EvidenceHash               string
+}
+
+type RouteFeeClaim struct {
+	ChannelID    string
+	PromiseID    string
+	Recipient    string
+	Amount       string
+	EvidenceHash string
+}
+
+type BatchConditionSettlementRequest struct {
+	LinkageProof  ConditionLinkageProof
+	Mode          ConditionSettlementMode
+	Preimage      string
+	Resolver      string
+	CurrentHeight uint64
+}
+
+type BatchConditionSettlementResult struct {
+	RouteID              string
+	Resolutions          []ConditionResolution
+	FeeClaims            []RouteFeeClaim
+	ConditionRootUpdates []ConditionRootUpdate
+	EvidenceHash         string
 }
 
 type ConditionRootUpdate struct {
@@ -2066,6 +2111,239 @@ func (r PromiseExpiryRequest) ValidateForChannel(channel ChannelRecord, settledC
 		}
 	}
 	return nil
+}
+
+func (p ConditionLinkageProof) Normalize() ConditionLinkageProof {
+	p.RouteID = normalizeHash(p.RouteID)
+	p.Promises = normalizePromiseRoute(p.Promises)
+	p.Sender = strings.TrimSpace(p.Sender)
+	p.Receiver = strings.TrimSpace(p.Receiver)
+	p.Amount = strings.TrimSpace(p.Amount)
+	p.TotalFees = strings.TrimSpace(p.TotalFees)
+	p.HashLock = normalizeHash(p.HashLock)
+	p.EvidenceHash = normalizeOptionalHash(p.EvidenceHash)
+	for i, id := range p.OffchainResolvedPromiseIDs {
+		p.OffchainResolvedPromiseIDs[i] = normalizeHash(id)
+	}
+	sort.Strings(p.OffchainResolvedPromiseIDs)
+	return p
+}
+
+func (p ConditionLinkageProof) ValidateForState(state PaymentsState, settledClaims []ConditionClaimRecord) error {
+	proof := p.Normalize()
+	state = state.Export()
+	if err := ValidateHash("payments condition linkage route id", proof.RouteID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments condition linkage sender", proof.Sender); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments condition linkage receiver", proof.Receiver); err != nil {
+		return err
+	}
+	if proof.Sender == proof.Receiver {
+		return errors.New("payments condition linkage endpoints must differ")
+	}
+	if err := validatePositiveInt("payments condition linkage amount", proof.Amount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments condition linkage total fees", proof.TotalFees); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments condition linkage hash lock", proof.HashLock); err != nil {
+		return err
+	}
+	if proof.EvidenceHash != "" {
+		if err := ValidateHash("payments condition linkage evidence hash", proof.EvidenceHash); err != nil {
+			return err
+		}
+	}
+	if len(proof.Promises) == 0 {
+		return errors.New("payments condition linkage requires promises")
+	}
+	if len(proof.Promises) < 2 && !proof.PartialDispute {
+		return errors.New("payments condition linkage requires at least two promises")
+	}
+	if proof.TimeoutMargin == 0 {
+		proof.TimeoutMargin = DefaultTimeoutMargin
+	}
+	seen := make(map[string]struct{}, len(proof.Promises)+len(proof.OffchainResolvedPromiseIDs))
+	for _, id := range proof.OffchainResolvedPromiseIDs {
+		if err := ValidateHash("payments offchain resolved promise id", id); err != nil {
+			return err
+		}
+		if _, found := seen[id]; found {
+			return errors.New("payments duplicate offchain resolved promise id")
+		}
+		seen[id] = struct{}{}
+	}
+	if !proof.PartialDispute && len(proof.OffchainResolvedPromiseIDs) > 0 {
+		return errors.New("payments offchain resolved promises require partial dispute proof")
+	}
+	if proof.PartialDispute && len(proof.OffchainResolvedPromiseIDs) == 0 {
+		return errors.New("payments partial dispute requires offchain resolved promise ids")
+	}
+	channels := make([]ChannelRecord, len(proof.Promises))
+	for i, promise := range proof.Promises {
+		if _, found := seen[promise.PromiseID]; found {
+			return errors.New("payments duplicate linked promise id")
+		}
+		seen[promise.PromiseID] = struct{}{}
+		channel, found := state.ChannelByID(promise.ChannelID)
+		if !found {
+			return errors.New("payments linked promise channel not found")
+		}
+		channel = channel.Normalize()
+		if channel.Status != ChannelStatusOpen {
+			return errors.New("payments linked promise channel must be open")
+		}
+		if !channel.ConditionalPayments {
+			return errors.New("payments linked promise channel must support conditions")
+		}
+		if err := promise.ValidateForChannel(channel); err != nil {
+			return err
+		}
+		if promise.ConditionType != ConditionTypeHashLock {
+			return errors.New("payments linked promise must be hash-lock")
+		}
+		if promise.HashLock != proof.HashLock {
+			return errors.New("payments linked promises must share hash lock")
+		}
+		if promise.RouteIDOptional != "" && promise.RouteIDOptional != proof.RouteID {
+			return errors.New("payments linked promise route id mismatch")
+		}
+		if promiseWasSettled(channel, promise.PromiseID, settledClaims) {
+			return errors.New("payments linked promise has already been settled")
+		}
+		channels[i] = channel
+	}
+	if proof.Promises[0].Source != proof.Sender {
+		return errors.New("payments linked route sender mismatch")
+	}
+	if proof.Promises[len(proof.Promises)-1].Destination != proof.Receiver {
+		return errors.New("payments linked route receiver mismatch")
+	}
+	if err := validateLinkedPromiseConservation(proof.Promises, proof.Amount, proof.TotalFees); err != nil {
+		return err
+	}
+	for i := 0; i < len(proof.Promises)-1; i++ {
+		upstream := proof.Promises[i]
+		downstream := proof.Promises[i+1]
+		if upstream.Destination != downstream.Source {
+			return errors.New("payments linked promise hop mismatch")
+		}
+		if upstream.NextPromiseIDOptional != "" && upstream.NextPromiseIDOptional != downstream.PromiseID {
+			return errors.New("payments linked promise next id mismatch")
+		}
+		if downstream.PreviousPromiseIDOptional != "" && downstream.PreviousPromiseIDOptional != upstream.PromiseID {
+			return errors.New("payments linked promise previous id mismatch")
+		}
+		if err := ValidateCrossChannelPromiseTimeoutOrdering(channels[i], channels[i+1], upstream, downstream, proof.TimeoutMargin); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c RouteFeeClaim) Normalize() RouteFeeClaim {
+	c.ChannelID = normalizeHash(c.ChannelID)
+	c.PromiseID = normalizeHash(c.PromiseID)
+	c.Recipient = strings.TrimSpace(c.Recipient)
+	c.Amount = strings.TrimSpace(c.Amount)
+	c.EvidenceHash = normalizeHash(c.EvidenceHash)
+	return c
+}
+
+func (c RouteFeeClaim) Validate() error {
+	c = c.Normalize()
+	if err := ValidateHash("payments route fee claim channel id", c.ChannelID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments route fee claim promise id", c.PromiseID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments route fee recipient", c.Recipient); err != nil {
+		return err
+	}
+	if err := validatePositiveInt("payments route fee amount", c.Amount); err != nil {
+		return err
+	}
+	return ValidateHash("payments route fee evidence hash", c.EvidenceHash)
+}
+
+func (r BatchConditionSettlementRequest) Normalize() BatchConditionSettlementRequest {
+	r.LinkageProof = r.LinkageProof.Normalize()
+	r.Preimage = strings.TrimSpace(r.Preimage)
+	r.Resolver = strings.TrimSpace(r.Resolver)
+	return r
+}
+
+func (r BatchConditionSettlementRequest) ValidateForState(state PaymentsState, settledClaims []ConditionClaimRecord) error {
+	req := r.Normalize()
+	if req.Mode != ConditionSettlementModePreimage && req.Mode != ConditionSettlementModeExpiry {
+		return errors.New("payments batch condition settlement mode is invalid")
+	}
+	if err := addressing.ValidateUserAddress("payments batch condition resolver", req.Resolver); err != nil {
+		return err
+	}
+	if req.CurrentHeight == 0 {
+		return errors.New("payments batch condition settlement height must be positive")
+	}
+	if err := req.LinkageProof.ValidateForState(state, settledClaims); err != nil {
+		return err
+	}
+	proof := req.LinkageProof.Normalize()
+	if req.Mode == ConditionSettlementModePreimage && req.Resolver != proof.Receiver {
+		return errors.New("payments batch preimage resolver must be route receiver")
+	}
+	for _, promise := range req.LinkageProof.Normalize().Promises {
+		if req.Mode == ConditionSettlementModePreimage {
+			if req.CurrentHeight > promise.TimeoutHeight {
+				return errors.New("payments batch preimage promise has timed out")
+			}
+			if err := VerifyPromisePreimage(promise, req.Preimage); err != nil {
+				return err
+			}
+			continue
+		}
+		if req.CurrentHeight <= promise.TimeoutHeight {
+			return errors.New("payments batch expiry promise has not expired")
+		}
+	}
+	return nil
+}
+
+func (r BatchConditionSettlementResult) Normalize() BatchConditionSettlementResult {
+	r.RouteID = normalizeHash(r.RouteID)
+	r.Resolutions = normalizeConditionResolutions(r.Resolutions)
+	r.ConditionRootUpdates = normalizeConditionRootUpdates(r.ConditionRootUpdates)
+	for i, claim := range r.FeeClaims {
+		r.FeeClaims[i] = claim.Normalize()
+	}
+	sort.SliceStable(r.FeeClaims, func(i, j int) bool {
+		if r.FeeClaims[i].ChannelID == r.FeeClaims[j].ChannelID {
+			return r.FeeClaims[i].PromiseID < r.FeeClaims[j].PromiseID
+		}
+		return r.FeeClaims[i].ChannelID < r.FeeClaims[j].ChannelID
+	})
+	r.EvidenceHash = normalizeHash(r.EvidenceHash)
+	return r
+}
+
+func (r BatchConditionSettlementResult) Validate() error {
+	result := r.Normalize()
+	if err := ValidateHash("payments batch condition result route id", result.RouteID); err != nil {
+		return err
+	}
+	if len(result.Resolutions) == 0 {
+		return errors.New("payments batch condition result requires resolutions")
+	}
+	for _, claim := range result.FeeClaims {
+		if err := claim.Validate(); err != nil {
+			return err
+		}
+	}
+	return ValidateHash("payments batch condition result evidence hash", result.EvidenceHash)
 }
 
 func (s DeltaSignature) Normalize() DeltaSignature {
@@ -4342,6 +4620,35 @@ func ValidatePromiseTimeoutOrdering(channel ChannelRecord, upstream, downstream 
 	return nil
 }
 
+func ValidateCrossChannelPromiseTimeoutOrdering(upstreamChannel, downstreamChannel ChannelRecord, upstream, downstream ConditionalPromise, margin uint64) error {
+	upstreamChannel = upstreamChannel.Normalize()
+	downstreamChannel = downstreamChannel.Normalize()
+	upstream = upstream.Normalize()
+	downstream = downstream.Normalize()
+	if margin == 0 {
+		margin = DefaultTimeoutMargin
+	}
+	upstreamLatency := upstreamChannel.CloseDelay + upstreamChannel.DisputePeriod
+	downstreamLatency := downstreamChannel.CloseDelay + downstreamChannel.DisputePeriod
+	minMargin := upstreamLatency
+	if downstreamLatency > minMargin {
+		minMargin = downstreamLatency
+	}
+	if margin < minMargin {
+		return errors.New("payments cross-channel timeout margin must cover dispute and settlement latency")
+	}
+	if upstream.ChannelID != upstreamChannel.ChannelID || downstream.ChannelID != downstreamChannel.ChannelID {
+		return errors.New("payments cross-channel timeout ordering channel mismatch")
+	}
+	if upstream.HashLock != downstream.HashLock {
+		return errors.New("payments cross-channel timeout ordering requires compatible hash locks")
+	}
+	if downstream.TimeoutHeight+margin < downstream.TimeoutHeight || downstream.TimeoutHeight+margin > upstream.TimeoutHeight {
+		return errors.New("payments downstream timeout must expire before upstream by margin")
+	}
+	return nil
+}
+
 func ValidatePromiseTimeoutChain(channel ChannelRecord, promises []ConditionalPromise, margin uint64) error {
 	byID := make(map[string]ConditionalPromise, len(promises))
 	for _, promise := range normalizeConditionalPromises(promises) {
@@ -4358,6 +4665,64 @@ func ValidatePromiseTimeoutChain(channel ChannelRecord, promises []ConditionalPr
 		if err := ValidatePromiseTimeoutOrdering(channel, upstream, downstream, margin); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateLinkedPromiseConservation(promises []ConditionalPromise, amount, totalFees string) error {
+	if len(promises) == 0 {
+		return errors.New("payments linked promise conservation requires promises")
+	}
+	finalAmount, err := parsePositiveInt("payments linked promise final amount", amount)
+	if err != nil {
+		return err
+	}
+	expectedFees, err := parseNonNegativeInt("payments linked promise total fees", totalFees)
+	if err != nil {
+		return err
+	}
+	accumulatedFees := sdkmath.ZeroInt()
+	for i := 1; i < len(promises); i++ {
+		fee, err := parseNonNegativeInt("payments linked promise hop fee", promises[i].Fee)
+		if err != nil {
+			return err
+		}
+		accumulatedFees = accumulatedFees.Add(fee)
+		incoming, err := parsePositiveInt("payments linked promise incoming amount", promises[i-1].Amount)
+		if err != nil {
+			return err
+		}
+		outgoing, err := parsePositiveInt("payments linked promise outgoing amount", promises[i].Amount)
+		if err != nil {
+			return err
+		}
+		if !incoming.Equal(outgoing.Add(fee)) {
+			return errors.New("payments linked promise amount conservation failed")
+		}
+	}
+	if !accumulatedFees.Equal(expectedFees) {
+		return errors.New("payments linked promise total fee mismatch")
+	}
+	lastAmount, err := parsePositiveInt("payments linked promise receiver amount", promises[len(promises)-1].Amount)
+	if err != nil {
+		return err
+	}
+	if !lastAmount.Equal(finalAmount) {
+		return errors.New("payments linked promise final amount mismatch")
+	}
+	firstAmount, err := parsePositiveInt("payments linked promise sender amount", promises[0].Amount)
+	if err != nil {
+		return err
+	}
+	if !firstAmount.Equal(finalAmount.Add(expectedFees)) {
+		return errors.New("payments linked promise route total mismatch")
+	}
+	finalFee, err := parseNonNegativeInt("payments linked final promise fee", promises[len(promises)-1].Fee)
+	if err != nil {
+		return err
+	}
+	if len(promises) > 1 && finalFee.IsZero() && !expectedFees.IsZero() {
+		return errors.New("payments linked final hop fee must pay forwarding intermediary")
 	}
 	return nil
 }
@@ -4703,6 +5068,14 @@ func normalizeConditionalPromises(promises []ConditionalPromise) []ConditionalPr
 	return out
 }
 
+func normalizePromiseRoute(promises []ConditionalPromise) []ConditionalPromise {
+	out := make([]ConditionalPromise, len(promises))
+	for i, promise := range promises {
+		out[i] = promise.Normalize()
+	}
+	return out
+}
+
 func normalizeConditionResolutions(resolutions []ConditionResolution) []ConditionResolution {
 	out := make([]ConditionResolution, len(resolutions))
 	for i, resolution := range resolutions {
@@ -4710,6 +5083,20 @@ func normalizeConditionResolutions(resolutions []ConditionResolution) []Conditio
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].ConditionID < out[j].ConditionID
+	})
+	return out
+}
+
+func normalizeConditionRootUpdates(updates []ConditionRootUpdate) []ConditionRootUpdate {
+	out := make([]ConditionRootUpdate, len(updates))
+	for i, update := range updates {
+		update.ChannelID = normalizeHash(update.ChannelID)
+		update.ConditionRoot = normalizeHash(update.ConditionRoot)
+		update.Conditions = normalizeConditions(update.Conditions)
+		out[i] = update
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].ChannelID < out[j].ChannelID
 	})
 	return out
 }
