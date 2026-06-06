@@ -135,20 +135,106 @@ func TestCrossZoneReceiptAndTombstoneHashesValidate(t *testing.T) {
 	require.Equal(t, ComputeCrossZoneReplayTombstoneHash(tombstone), tombstone.TombstoneHash)
 }
 
-func receiptFromCrossZoneMessage(msg CrossZoneMessageEnvelope, height uint64) CrossZoneMessageReceipt {
-	return CrossZoneMessageReceipt{
-		MessageID:       msg.MessageID,
-		SourceZone:      msg.SourceZone,
-		DestinationZone: msg.DestinationZone,
-		Sender:          msg.Sender,
-		Recipient:       msg.Recipient,
-		Status:          CrossZoneReceiptSuccess,
-		GasUsed:         msg.GasLimit,
-		ResultHash:      hashCrossZoneQueueParts("result", hex.EncodeToString(msg.MessageID)),
-		Height:          height,
-		SourceSequence:  msg.SourceSequence,
-		Nonce:           msg.Nonce,
+func TestCrossZoneMessageReceiptFieldsMatchSpec(t *testing.T) {
+	params := testCrossZoneParams()
+	msg := testCrossZoneMessage(t, params, 3, 3, []byte("payload"))
+	returnHash := ComputeCrossZonePayloadHash([]byte("return"))
+	errorCode := uint32(42)
+
+	receipt, err := NewCrossZoneMessageReceipt(ReceiptFromCrossZoneMessage(
+		msg,
+		CrossZoneReceiptFailed,
+		77,
+		sdkmath.NewInt(5),
+		returnHash,
+		&errorCode,
+		44,
+	))
+	require.NoError(t, err)
+	require.Equal(t, "failed", string(receipt.Status))
+	require.Equal(t, sdkmath.NewInt(5), receipt.FeeCharged)
+	require.Equal(t, returnHash, receipt.ReturnPayloadHash)
+	require.True(t, receipt.HasErrorCode)
+	require.Equal(t, uint32(42), receipt.ErrorCode)
+	require.Equal(t, uint64(44), receipt.ExecutedHeight)
+	require.Equal(t, receipt.ExecutedHeight, receipt.EffectiveHeight())
+	require.Equal(t, ComputeCrossZoneReceiptHash(receipt), receipt.ReceiptHash)
+
+	for _, status := range []CrossZoneReceiptStatus{
+		CrossZoneReceiptQueued,
+		CrossZoneReceiptExecuted,
+		CrossZoneReceiptFailed,
+		CrossZoneReceiptExpired,
+		CrossZoneReceiptBounced,
+		CrossZoneReceiptRejected,
+	} {
+		require.True(t, IsCrossZoneReceiptStatus(status))
 	}
+}
+
+func TestCrossZoneRoutingRulesExpiryAndBounce(t *testing.T) {
+	params := testCrossZoneParams()
+	msg := testCrossZoneMessage(t, params, 1, 1, []byte("payload"))
+	state, err := EnqueueCrossZoneOutbox(CrossZoneQueueState{}, msg, params)
+	require.NoError(t, err)
+	require.NoError(t, DefaultCrossZoneRoutingRules().Validate())
+
+	result, err := RouteCrossZoneOutboxViaKernel(state, msg.MessageID, msg.Deadline+1, params, DefaultCrossZoneRoutingRules())
+	require.NoError(t, err)
+	require.Len(t, result.Receipts, 1)
+	require.Equal(t, CrossZoneReceiptExpired, result.Receipts[0].Status)
+	require.Len(t, result.State.Outbox, 0)
+	require.Len(t, result.State.Replay, 1)
+
+	bounce, err := BuildCrossZoneBounceMessage(msg, result.Receipts[0], 10, 10, msg.Deadline+1, params)
+	require.NoError(t, err)
+	require.Equal(t, msg.DestinationZone, bounce.SourceZone)
+	require.Equal(t, msg.SourceZone, bounce.DestinationZone)
+	require.Equal(t, msg.Value, bounce.Value)
+	require.Equal(t, "aether.bounce", bounce.Opcode)
+	require.False(t, bounce.Bounce)
+	require.Contains(t, string(bounce.Payload), "status=expired")
+
+	broken := DefaultCrossZoneRoutingRules()
+	broken.KernelMediated = false
+	_, err = RouteCrossZoneOutboxViaKernel(state, msg.MessageID, 21, params, broken)
+	require.ErrorContains(t, err, "Aether Core kernel")
+}
+
+func TestCrossZoneExpiryQueueSkipsAndReceiptsExpiredMessages(t *testing.T) {
+	params := testCrossZoneParams()
+	first := testCrossZoneMessage(t, params, 1, 1, []byte("payload-1"))
+	second := testCrossZoneMessage(t, params, 2, 2, []byte("payload-2"))
+	second.Deadline = first.Deadline + 50
+	second.MessageID = nil
+	second.PayloadHash = nil
+	second, err := NewCrossZoneMessageEnvelope(second, params)
+	require.NoError(t, err)
+	state := CrossZoneQueueState{}
+	state, err = EnqueueCrossZoneOutbox(state, first, params)
+	require.NoError(t, err)
+	state, err = EnqueueCrossZoneOutbox(state, second, params)
+	require.NoError(t, err)
+
+	result, err := ApplyCrossZoneExpiryQueue(state, first.Deadline, 1, params)
+	require.NoError(t, err)
+	require.Len(t, result.Receipts, 1)
+	require.Equal(t, first.MessageID, result.Receipts[0].MessageID)
+	require.Equal(t, CrossZoneReceiptExpired, result.Receipts[0].Status)
+	require.Len(t, result.State.Outbox, 1)
+	require.Equal(t, second.MessageID, result.State.Outbox[0].Message.MessageID)
+}
+
+func receiptFromCrossZoneMessage(msg CrossZoneMessageEnvelope, height uint64) CrossZoneMessageReceipt {
+	return ReceiptFromCrossZoneMessage(
+		msg,
+		CrossZoneReceiptExecuted,
+		msg.GasLimit,
+		sdkmath.NewInt(1),
+		ComputeCrossZonePayloadHash([]byte("result:"+hex.EncodeToString(msg.MessageID))),
+		nil,
+		height,
+	)
 }
 
 func TestCrossZoneQueueRejectsLowFeeMessage(t *testing.T) {

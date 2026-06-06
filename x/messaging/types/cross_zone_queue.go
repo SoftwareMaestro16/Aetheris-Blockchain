@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
@@ -29,12 +30,15 @@ const (
 	CrossZoneQueueOutbox CrossZoneQueueKind = "OUTBOX"
 	CrossZoneQueueInbox  CrossZoneQueueKind = "INBOX"
 
-	CrossZoneReceiptPending  CrossZoneReceiptStatus = "PENDING"
-	CrossZoneReceiptSuccess  CrossZoneReceiptStatus = "SUCCESS"
-	CrossZoneReceiptFailed   CrossZoneReceiptStatus = "FAILED"
-	CrossZoneReceiptExpired  CrossZoneReceiptStatus = "EXPIRED"
-	CrossZoneReceiptBounced  CrossZoneReceiptStatus = "BOUNCED"
-	CrossZoneReceiptRejected CrossZoneReceiptStatus = "REJECTED"
+	CrossZoneReceiptQueued   CrossZoneReceiptStatus = "queued"
+	CrossZoneReceiptExecuted CrossZoneReceiptStatus = "executed"
+	CrossZoneReceiptFailed   CrossZoneReceiptStatus = "failed"
+	CrossZoneReceiptExpired  CrossZoneReceiptStatus = "expired"
+	CrossZoneReceiptBounced  CrossZoneReceiptStatus = "bounced"
+	CrossZoneReceiptRejected CrossZoneReceiptStatus = "rejected"
+
+	CrossZoneReceiptPending CrossZoneReceiptStatus = CrossZoneReceiptQueued
+	CrossZoneReceiptSuccess CrossZoneReceiptStatus = CrossZoneReceiptExecuted
 )
 
 type CrossZoneQueueItem struct {
@@ -44,18 +48,23 @@ type CrossZoneQueueItem struct {
 }
 
 type CrossZoneMessageReceipt struct {
-	MessageID       []byte
-	SourceZone      zonestypes.ZoneID
-	DestinationZone zonestypes.ZoneID
-	Sender          sdk.AccAddress
-	Recipient       sdk.AccAddress
-	Status          CrossZoneReceiptStatus
-	GasUsed         uint64
-	ResultHash      string
-	Height          uint64
-	SourceSequence  uint64
-	Nonce           uint64
-	ReceiptHash     string
+	MessageID         []byte
+	SourceZone        zonestypes.ZoneID
+	DestinationZone   zonestypes.ZoneID
+	Sender            sdk.AccAddress
+	Recipient         sdk.AccAddress
+	Status            CrossZoneReceiptStatus
+	GasUsed           uint64
+	FeeCharged        sdkmath.Int
+	ReturnPayloadHash []byte
+	ErrorCode         uint32
+	HasErrorCode      bool
+	ExecutedHeight    uint64
+	ResultHash        string
+	Height            uint64
+	SourceSequence    uint64
+	Nonce             uint64
+	ReceiptHash       string
 }
 
 type CrossZoneSenderNonce struct {
@@ -101,6 +110,33 @@ type CrossZoneQueueRoots struct {
 	ReplayRoot  string
 	ExpiryRoot  string
 	StateRoot   string
+}
+
+type CrossZoneRoutingRules struct {
+	KernelMediated            bool
+	MessageDrivenStateOnly    bool
+	NonceScopedBySourceSender bool
+	SenderOrderedDestination  bool
+	ReceiptExpiredMessages    bool
+	BounceFailures            bool
+}
+
+type CrossZoneRoutingResult struct {
+	State          CrossZoneQueueState
+	Routed         []CrossZoneQueueItem
+	Receipts       []CrossZoneMessageReceipt
+	BounceMessages []CrossZoneMessageEnvelope
+}
+
+func DefaultCrossZoneRoutingRules() CrossZoneRoutingRules {
+	return CrossZoneRoutingRules{
+		KernelMediated:            true,
+		MessageDrivenStateOnly:    true,
+		NonceScopedBySourceSender: true,
+		SenderOrderedDestination:  true,
+		ReceiptExpiredMessages:    true,
+		BounceFailures:            true,
+	}
 }
 
 func CrossZoneOutboxKey(sourceZone zonestypes.ZoneID, sender sdk.AccAddress, sequence uint64) (string, error) {
@@ -209,6 +245,122 @@ func RouteCrossZoneOutboxToInbox(state CrossZoneQueueState, messageID []byte, he
 	return next, routed, err
 }
 
+func RouteCrossZoneOutboxViaKernel(state CrossZoneQueueState, messageID []byte, height uint64, params CrossZoneMessageParams, rules CrossZoneRoutingRules) (CrossZoneRoutingResult, error) {
+	if err := rules.Validate(); err != nil {
+		return CrossZoneRoutingResult{}, err
+	}
+	if height == 0 {
+		return CrossZoneRoutingResult{}, errors.New("cross-zone kernel route height must be positive")
+	}
+	next := state.Normalize()
+	item, found := findCrossZoneQueueMessage(next.Outbox, messageID)
+	if !found {
+		return CrossZoneRoutingResult{}, errors.New("cross-zone kernel route message not found")
+	}
+	if height > item.Message.Deadline {
+		receipt := ExpiredCrossZoneReceiptFromMessage(item.Message, height)
+		next, err := RecordCrossZoneReceipt(next, receipt, params)
+		if err != nil {
+			return CrossZoneRoutingResult{}, err
+		}
+		next.Outbox = removeCrossZoneQueueMessage(next.Outbox, messageID)
+		next.Expiry = removeCrossZoneExpiry(next.Expiry, messageID)
+		next, err = next.WithRoot(params)
+		if err != nil {
+			return CrossZoneRoutingResult{}, err
+		}
+		return CrossZoneRoutingResult{State: next, Receipts: []CrossZoneMessageReceipt{next.Receipts[len(next.Receipts)-1]}}, nil
+	}
+	next, routed, err := RouteCrossZoneOutboxToInbox(next, messageID, height, params)
+	if err != nil {
+		return CrossZoneRoutingResult{}, err
+	}
+	return CrossZoneRoutingResult{State: next, Routed: []CrossZoneQueueItem{routed}}, nil
+}
+
+func ApplyCrossZoneExpiryQueue(state CrossZoneQueueState, height uint64, max uint32, params CrossZoneMessageParams) (CrossZoneRoutingResult, error) {
+	if height == 0 {
+		return CrossZoneRoutingResult{}, errors.New("cross-zone expiry height must be positive")
+	}
+	if max == 0 {
+		return CrossZoneRoutingResult{}, errors.New("cross-zone expiry max must be positive")
+	}
+	next := state.Normalize()
+	receipts := make([]CrossZoneMessageReceipt, 0)
+	for _, expiry := range next.Expiry {
+		if uint32(len(receipts)) >= max || expiry.Deadline > height {
+			continue
+		}
+		item, found := findCrossZoneQueueMessage(next.Inbox, expiry.MessageID)
+		if !found {
+			item, found = findCrossZoneQueueMessage(next.Outbox, expiry.MessageID)
+		}
+		if !found {
+			next.Expiry = removeCrossZoneExpiry(next.Expiry, expiry.MessageID)
+			continue
+		}
+		receipt := ExpiredCrossZoneReceiptFromMessage(item.Message, height)
+		var err error
+		next, err = RecordCrossZoneReceipt(next, receipt, params)
+		if err != nil {
+			return CrossZoneRoutingResult{}, err
+		}
+		next.Outbox = removeCrossZoneQueueMessage(next.Outbox, expiry.MessageID)
+		next.Inbox = removeCrossZoneQueueMessage(next.Inbox, expiry.MessageID)
+		next.Expiry = removeCrossZoneExpiry(next.Expiry, expiry.MessageID)
+		receipts = append(receipts, next.Receipts[len(next.Receipts)-1])
+	}
+	next, err := next.WithRoot(params)
+	if err != nil {
+		return CrossZoneRoutingResult{}, err
+	}
+	return CrossZoneRoutingResult{State: next, Receipts: receipts}, nil
+}
+
+func BuildCrossZoneBounceMessage(original CrossZoneMessageEnvelope, receipt CrossZoneMessageReceipt, nonce uint64, sourceSequence uint64, height uint64, params CrossZoneMessageParams) (CrossZoneMessageEnvelope, error) {
+	if err := original.Validate(params); err != nil {
+		return CrossZoneMessageEnvelope{}, err
+	}
+	if err := receipt.Validate(); err != nil {
+		return CrossZoneMessageEnvelope{}, err
+	}
+	if !bytesEqual(original.MessageID, receipt.MessageID) {
+		return CrossZoneMessageEnvelope{}, errors.New("cross-zone bounce receipt message mismatch")
+	}
+	if height == 0 || nonce == 0 || sourceSequence == 0 {
+		return CrossZoneMessageEnvelope{}, errors.New("cross-zone bounce height, nonce, and sequence must be positive")
+	}
+	payload := []byte(fmt.Sprintf(
+		"message_id=%s;status=%s;error_code=%s;return_payload_hash=%s",
+		hex.EncodeToString(original.MessageID),
+		receipt.Status,
+		receiptErrorCodeString(receipt),
+		hex.EncodeToString(receipt.ReturnPayloadHash),
+	))
+	bounce := CrossZoneMessageEnvelope{
+		SourceZone:      original.DestinationZone,
+		DestinationZone: original.SourceZone,
+		Sender:          append(sdk.AccAddress(nil), original.Recipient...),
+		Recipient:       append(sdk.AccAddress(nil), original.Sender...),
+		Value:           original.Value,
+		Opcode:          "aether.bounce",
+		Payload:         payload,
+		GasLimit:        original.GasLimit,
+		Deadline:        original.Deadline,
+		Nonce:           nonce,
+		SourceSequence:  sourceSequence,
+		RouteID:         "bounce/" + hex.EncodeToString(original.MessageID),
+		Bounce:          false,
+		FeeLimit:        original.FeeLimit,
+		CreatedHeight:   height,
+		AuthScope:       "bounce",
+	}
+	if bounce.Deadline < height {
+		bounce.Deadline = height
+	}
+	return NewCrossZoneMessageEnvelope(bounce, params)
+}
+
 func RecordCrossZoneReceipt(state CrossZoneQueueState, receipt CrossZoneMessageReceipt, params CrossZoneMessageParams) (CrossZoneQueueState, error) {
 	next := state.Normalize()
 	receipt, err := NewCrossZoneMessageReceipt(receipt)
@@ -225,9 +377,9 @@ func RecordCrossZoneReceipt(state CrossZoneQueueState, receipt CrossZoneMessageR
 		Sender:          receipt.Sender,
 		Nonce:           receipt.Nonce,
 		SourceSequence:  receipt.SourceSequence,
-		TombstoneHeight: receipt.Height,
-		CreatedHeight:   receipt.Height,
-		ExpiryHeight:    receipt.Height,
+		TombstoneHeight: receipt.EffectiveHeight(),
+		CreatedHeight:   receipt.EffectiveHeight(),
+		ExpiryHeight:    receipt.EffectiveHeight(),
 	})
 	if err != nil {
 		return CrossZoneQueueState{}, err
@@ -247,6 +399,39 @@ func NewCrossZoneMessageReceipt(receipt CrossZoneMessageReceipt) (CrossZoneMessa
 	}
 	receipt.ReceiptHash = ComputeCrossZoneReceiptHash(receipt)
 	return receipt, receipt.Validate()
+}
+
+func ReceiptFromCrossZoneMessage(msg CrossZoneMessageEnvelope, status CrossZoneReceiptStatus, gasUsed uint64, feeCharged sdkmath.Int, returnPayloadHash []byte, errorCode *uint32, executedHeight uint64) CrossZoneMessageReceipt {
+	receipt := CrossZoneMessageReceipt{
+		MessageID:         append([]byte(nil), msg.MessageID...),
+		SourceZone:        msg.SourceZone,
+		DestinationZone:   msg.DestinationZone,
+		Sender:            append(sdk.AccAddress(nil), msg.Sender...),
+		Recipient:         append(sdk.AccAddress(nil), msg.Recipient...),
+		Status:            status,
+		GasUsed:           gasUsed,
+		FeeCharged:        feeCharged,
+		ReturnPayloadHash: append([]byte(nil), returnPayloadHash...),
+		ExecutedHeight:    executedHeight,
+		Height:            executedHeight,
+		SourceSequence:    msg.SourceSequence,
+		Nonce:             msg.Nonce,
+	}
+	if errorCode != nil {
+		receipt.ErrorCode = *errorCode
+		receipt.HasErrorCode = true
+	}
+	if len(receipt.ReturnPayloadHash) != 0 {
+		receipt.ResultHash = hex.EncodeToString(receipt.ReturnPayloadHash)
+	} else {
+		receipt.ResultHash = hashCrossZoneQueueParts("empty-return-payload")
+	}
+	return receipt
+}
+
+func ExpiredCrossZoneReceiptFromMessage(msg CrossZoneMessageEnvelope, executedHeight uint64) CrossZoneMessageReceipt {
+	code := uint32(1)
+	return ReceiptFromCrossZoneMessage(msg, CrossZoneReceiptExpired, 0, sdkmath.ZeroInt(), nil, &code, executedHeight)
 }
 
 func NewCrossZoneReplayTombstone(tombstone CrossZoneReplayTombstone) (CrossZoneReplayTombstone, error) {
@@ -318,6 +503,9 @@ func (s CrossZoneQueueState) Validate(params CrossZoneMessageParams) error {
 	if normalized.ParamsHash != "" {
 		return zonestypes.ValidateHash("cross-zone queue params hash", normalized.ParamsHash)
 	}
+	if err := validateCrossZoneDestinationOrdering(normalized.Inbox); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -355,16 +543,35 @@ func (r CrossZoneMessageReceipt) ValidateFormat() error {
 	if !IsCrossZoneReceiptStatus(r.Status) {
 		return fmt.Errorf("unknown cross-zone receipt status %q", r.Status)
 	}
+	if r.FeeCharged.IsNil() {
+		r.FeeCharged = sdkmath.ZeroInt()
+	}
+	if r.FeeCharged.IsNegative() {
+		return errors.New("cross-zone receipt fee charged must be non-negative")
+	}
+	if len(r.ReturnPayloadHash) != 0 && len(r.ReturnPayloadHash) != sha256.Size {
+		return fmt.Errorf("cross-zone return payload hash must be %d bytes", sha256.Size)
+	}
 	if err := zonestypes.ValidateHash("cross-zone receipt result hash", r.ResultHash); err != nil {
 		return err
 	}
-	if r.Height == 0 || r.SourceSequence == 0 || r.Nonce == 0 {
+	if r.EffectiveHeight() == 0 || r.SourceSequence == 0 || r.Nonce == 0 {
 		return errors.New("cross-zone receipt height, source sequence, and nonce must be positive")
+	}
+	if r.Height != 0 && r.ExecutedHeight != 0 && r.Height != r.ExecutedHeight {
+		return errors.New("cross-zone receipt height and executed height mismatch")
 	}
 	if r.ReceiptHash != "" {
 		return zonestypes.ValidateHash("cross-zone receipt hash", r.ReceiptHash)
 	}
 	return nil
+}
+
+func (r CrossZoneMessageReceipt) EffectiveHeight() uint64 {
+	if r.ExecutedHeight != 0 {
+		return r.ExecutedHeight
+	}
+	return r.Height
 }
 
 func (r CrossZoneMessageReceipt) Validate() error {
@@ -429,11 +636,33 @@ func (e CrossZoneExpiryItem) Validate() error {
 
 func IsCrossZoneReceiptStatus(status CrossZoneReceiptStatus) bool {
 	switch status {
-	case CrossZoneReceiptPending, CrossZoneReceiptSuccess, CrossZoneReceiptFailed, CrossZoneReceiptExpired, CrossZoneReceiptBounced, CrossZoneReceiptRejected:
+	case CrossZoneReceiptQueued, CrossZoneReceiptExecuted, CrossZoneReceiptFailed, CrossZoneReceiptExpired, CrossZoneReceiptBounced, CrossZoneReceiptRejected:
 		return true
 	default:
 		return false
 	}
+}
+
+func (r CrossZoneRoutingRules) Validate() error {
+	if !r.KernelMediated {
+		return errors.New("cross-zone routing must be mediated by Aether Core kernel")
+	}
+	if !r.MessageDrivenStateOnly {
+		return errors.New("cross-zone routing must not perform direct state writes across zones")
+	}
+	if !r.NonceScopedBySourceSender {
+		return errors.New("cross-zone nonces must be scoped by source zone and sender")
+	}
+	if !r.SenderOrderedDestination {
+		return errors.New("cross-zone destination queues must apply sender order")
+	}
+	if !r.ReceiptExpiredMessages {
+		return errors.New("cross-zone expired messages must be receipted")
+	}
+	if !r.BounceFailures {
+		return errors.New("cross-zone failures must be bounce-capable")
+	}
+	return nil
 }
 
 func ComputeCrossZoneReceiptHash(receipt CrossZoneMessageReceipt) string {
@@ -446,11 +675,21 @@ func ComputeCrossZoneReceiptHash(receipt CrossZoneMessageReceipt) string {
 		hex.EncodeToString(receipt.Recipient),
 		string(receipt.Status),
 		fmt.Sprint(receipt.GasUsed),
+		receipt.FeeChargedString(),
+		hex.EncodeToString(receipt.ReturnPayloadHash),
+		receiptErrorCodeString(receipt),
 		receipt.ResultHash,
-		fmt.Sprint(receipt.Height),
+		fmt.Sprint(receipt.EffectiveHeight()),
 		fmt.Sprint(receipt.SourceSequence),
 		fmt.Sprint(receipt.Nonce),
 	)
+}
+
+func (r CrossZoneMessageReceipt) FeeChargedString() string {
+	if r.FeeCharged.IsNil() {
+		return sdkmath.ZeroInt().String()
+	}
+	return r.FeeCharged.String()
 }
 
 func ComputeCrossZoneReplayTombstoneHash(tombstone CrossZoneReplayTombstone) string {
@@ -599,6 +838,21 @@ func compareCrossZoneQueueItems(left, right CrossZoneQueueItem) int {
 	return compareCrossZoneMessages(left.Message, right.Message)
 }
 
+func validateCrossZoneDestinationOrdering(inbox []CrossZoneQueueItem) error {
+	ordered := normalizeCrossZoneQueueItems(inbox, CrossZoneQueueInbox)
+	for i, item := range ordered {
+		if i == 0 {
+			continue
+		}
+		prev := ordered[i-1].Message
+		cur := item.Message
+		if prev.DestinationZone == cur.DestinationZone && bytesEqual(prev.Sender, cur.Sender) && prev.SourceSequence >= cur.SourceSequence {
+			return errors.New("cross-zone destination inbox must be sender ordered")
+		}
+	}
+	return nil
+}
+
 func upsertCrossZoneNonce(nonces []CrossZoneSenderNonce, update CrossZoneSenderNonce) []CrossZoneSenderNonce {
 	out := append([]CrossZoneSenderNonce(nil), nonces...)
 	for i := range out {
@@ -627,6 +881,15 @@ func hasCrossZoneQueueMessage(items []CrossZoneQueueItem, messageID []byte) bool
 		}
 	}
 	return false
+}
+
+func findCrossZoneQueueMessage(items []CrossZoneQueueItem, messageID []byte) (CrossZoneQueueItem, bool) {
+	for _, item := range items {
+		if bytesEqual(item.Message.MessageID, messageID) {
+			return item.Clone(), true
+		}
+	}
+	return CrossZoneQueueItem{}, false
 }
 
 func removeCrossZoneQueueMessage(items []CrossZoneQueueItem, messageID []byte) []CrossZoneQueueItem {
@@ -685,4 +948,11 @@ func hashCrossZoneQueueParts(parts ...string) string {
 		writeCrossZoneString(h.Write, part)
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func receiptErrorCodeString(receipt CrossZoneMessageReceipt) string {
+	if !receipt.HasErrorCode {
+		return ""
+	}
+	return fmt.Sprint(receipt.ErrorCode)
 }
