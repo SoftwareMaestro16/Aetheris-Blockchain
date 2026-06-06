@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultServiceImplementationRoadmapCoversPhases0To2(t *testing.T) {
+func TestDefaultServiceImplementationRoadmapCoversPhases0To4(t *testing.T) {
 	roadmap, err := DefaultServiceImplementationRoadmap()
 	require.NoError(t, err)
 	require.NoError(t, roadmap.Validate())
@@ -44,6 +44,28 @@ func TestDefaultServiceImplementationRoadmapCoversPhases0To2(t *testing.T) {
 	require.Contains(t, phase2.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddSDKInterfaceVerifier, ServiceModuleInterface, "SDKInterfaceVerifier"))
 	require.NoError(t, roadmap.ReadyForPhase(ServiceRoadmapPhaseInterfaceSystem))
 	require.NoError(t, ValidateServiceRoadmapExitCriteria(phase2))
+
+	phase3, found := roadmap.PhaseByID(ServiceRoadmapPhaseUnifiedCallsReceipts)
+	require.True(t, found)
+	require.Contains(t, phase3.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskImplementServiceCallsModule, ServiceModuleCalls, "XServiceCallsModuleBreakdown"))
+	require.Contains(t, phase3.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskImplementServiceReceiptsModule, ServiceModuleReceipts, "XServiceReceiptsModuleBreakdown"))
+	require.Contains(t, phase3.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddCallEnvelopeValidation, ServiceModuleCalls, "ValidateUnifiedServiceCallForDescriptor"))
+	require.Contains(t, phase3.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddNoncesIdempotency, ServiceModuleCalls, "ServiceCallReplayIndex"))
+	require.Contains(t, phase3.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddCallbacksRetries, ServiceModuleCalls, "UnifiedServiceCallback/ServiceRetryPolicy"))
+	require.Contains(t, phase3.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddDeterministicReceipts, ServiceModuleReceipts, "ReceiptRoot"))
+	require.NoError(t, roadmap.ReadyForPhase(ServiceRoadmapPhaseUnifiedCallsReceipts))
+	require.NoError(t, ValidateServiceRoadmapExitCriteria(phase3))
+
+	phase4, found := roadmap.PhaseByID(ServiceRoadmapPhasePayments)
+	require.True(t, found)
+	require.Contains(t, phase4.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskImplementServicePaymentsModule, ServiceModulePayments, "XServicePaymentsModuleBreakdown"))
+	require.Contains(t, phase4.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddPerCallPayment, ServiceModulePayments, "QuotePerCallPayment"))
+	require.Contains(t, phase4.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddEscrowSettlement, ServiceModulePayments, "ServiceEscrow/PaymentSettlement"))
+	require.Contains(t, phase4.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddMeteredUsageReceipt, ServiceModulePayments, "MeteredUsage"))
+	require.Contains(t, phase4.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskAddPaymentModelQuery, ServiceModulePayments, "QueryPaymentModel"))
+	require.Contains(t, phase4.Tasks, newServiceRoadmapTask(ServiceRoadmapTaskIntegrateBankFinancialZone, ServiceModulePayments, "BuildFinancialZonePaymentRoute"))
+	require.NoError(t, roadmap.ReadyForPhase(ServiceRoadmapPhasePayments))
+	require.NoError(t, ValidateServiceRoadmapExitCriteria(phase4))
 }
 
 func TestServiceImplementationRoadmapRejectsMissingPhaseSurface(t *testing.T) {
@@ -51,7 +73,7 @@ func TestServiceImplementationRoadmapRejectsMissingPhaseSurface(t *testing.T) {
 	require.NoError(t, err)
 	roadmap.Phases = roadmap.Phases[:2]
 	roadmap.RoadmapHash = ComputeServiceImplementationRoadmapHash(roadmap)
-	require.ErrorContains(t, roadmap.Validate(), "phases 0, 1, and 2")
+	require.ErrorContains(t, roadmap.Validate(), "phases 0, 1, 2, 3, and 4")
 
 	roadmap, err = DefaultServiceImplementationRoadmap()
 	require.NoError(t, err)
@@ -61,6 +83,15 @@ func TestServiceImplementationRoadmapRejectsMissingPhaseSurface(t *testing.T) {
 	phase1, err = NewServiceRoadmapPhase(phase1)
 	require.NoError(t, err)
 	require.ErrorContains(t, ValidateServiceRoadmapExitCriteria(phase1), "missing task")
+
+	roadmap, err = DefaultServiceImplementationRoadmap()
+	require.NoError(t, err)
+	phase4, found := roadmap.PhaseByID(ServiceRoadmapPhasePayments)
+	require.True(t, found)
+	phase4.Tasks = removeServiceRoadmapTaskForTest(phase4.Tasks, ServiceRoadmapTaskAddEscrowSettlement)
+	phase4, err = NewServiceRoadmapPhase(phase4)
+	require.NoError(t, err)
+	require.ErrorContains(t, ValidateServiceRoadmapExitCriteria(phase4), "missing task")
 }
 
 func TestServiceRoadmapPhase0ExitCriteriaEnforceCompatibilityArtifacts(t *testing.T) {

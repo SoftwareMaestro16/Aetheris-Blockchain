@@ -17,14 +17,24 @@ const (
 	ServiceRoadmapPhaseSpecificationCompatibility ServiceRoadmapPhaseID = "phase_0_specification_and_compatibility"
 	ServiceRoadmapPhaseCoreRegistry               ServiceRoadmapPhaseID = "phase_1_core_registry"
 	ServiceRoadmapPhaseInterfaceSystem            ServiceRoadmapPhaseID = "phase_2_interface_system"
+	ServiceRoadmapPhaseUnifiedCallsReceipts       ServiceRoadmapPhaseID = "phase_3_unified_calls_and_receipts"
+	ServiceRoadmapPhasePayments                   ServiceRoadmapPhaseID = "phase_4_payments"
 
+	ServiceRoadmapTaskAddCallbacksRetries             ServiceRoadmapTaskID = "add_callbacks_and_retries"
+	ServiceRoadmapTaskAddCallEnvelopeValidation       ServiceRoadmapTaskID = "add_call_envelope_validation"
+	ServiceRoadmapTaskAddDeterministicReceipts        ServiceRoadmapTaskID = "add_deterministic_receipts"
+	ServiceRoadmapTaskAddEscrowSettlement             ServiceRoadmapTaskID = "add_escrow_settlement"
 	ServiceRoadmapTaskAddExportImport                 ServiceRoadmapTaskID = "add_export_and_import"
 	ServiceRoadmapTaskAddIdentityBindingPlaceholder   ServiceRoadmapTaskID = "add_identity_binding_placeholder"
 	ServiceRoadmapTaskAddInterfaceHashValidation      ServiceRoadmapTaskID = "add_interface_hash_validation"
 	ServiceRoadmapTaskAddInterfaceProofQuery          ServiceRoadmapTaskID = "add_interface_proof_query"
 	ServiceRoadmapTaskAddInterfaceRegistration        ServiceRoadmapTaskID = "add_interface_registration"
+	ServiceRoadmapTaskAddMeteredUsageReceipt          ServiceRoadmapTaskID = "add_metered_usage_receipt"
 	ServiceRoadmapTaskAddMethodSchema                 ServiceRoadmapTaskID = "add_method_schema"
 	ServiceRoadmapTaskAddNameOwnerIndexes             ServiceRoadmapTaskID = "add_service_name_and_owner_indexes"
+	ServiceRoadmapTaskAddNoncesIdempotency            ServiceRoadmapTaskID = "add_nonces_and_idempotency"
+	ServiceRoadmapTaskAddPaymentModelQuery            ServiceRoadmapTaskID = "add_payment_model_query"
+	ServiceRoadmapTaskAddPerCallPayment               ServiceRoadmapTaskID = "add_per_call_payment"
 	ServiceRoadmapTaskAddProofQuery                   ServiceRoadmapTaskID = "add_service_proof_query"
 	ServiceRoadmapTaskAddSDKInterfaceVerifier         ServiceRoadmapTaskID = "add_sdk_interface_verifier"
 	ServiceRoadmapTaskAddServiceRegistrationUpdate    ServiceRoadmapTaskID = "add_service_registration_and_update"
@@ -34,17 +44,27 @@ const (
 	ServiceRoadmapTaskDefineTrustVerificationEnums    ServiceRoadmapTaskID = "define_trust_and_verification_model_enums"
 	ServiceRoadmapTaskFinalizeDescriptorSchema        ServiceRoadmapTaskID = "finalize_service_descriptor_schema"
 	ServiceRoadmapTaskFinalizeInterfaceSchema         ServiceRoadmapTaskID = "finalize_interface_schema_format"
+	ServiceRoadmapTaskImplementServiceCallsModule     ServiceRoadmapTaskID = "implement_x_servicecalls"
 	ServiceRoadmapTaskImplementServiceInterfaceModule ServiceRoadmapTaskID = "implement_x_serviceinterface"
+	ServiceRoadmapTaskImplementServicePaymentsModule  ServiceRoadmapTaskID = "implement_x_servicepayments"
+	ServiceRoadmapTaskImplementServiceReceiptsModule  ServiceRoadmapTaskID = "implement_x_servicereceipts"
 	ServiceRoadmapTaskImplementServicesModule         ServiceRoadmapTaskID = "implement_x_services"
+	ServiceRoadmapTaskIntegrateBankFinancialZone      ServiceRoadmapTaskID = "integrate_with_bank_or_financial_zone"
 	ServiceRoadmapTaskMapExistingModules              ServiceRoadmapTaskID = "map_existing_aetheris_modules_to_on_chain_services"
 
 	ServiceRoadmapExitClientsFetchVerifyInterfaces ServiceRoadmapExitCriterionID = "clients_can_fetch_and_verify_formal_service_interfaces"
+	ServiceRoadmapExitCallsRequireSettlePayments   ServiceRoadmapExitCriterionID = "calls_can_require_and_settle_service_payments"
 	ServiceRoadmapExitCoreObjectsProto             ServiceRoadmapExitCriterionID = "all_core_objects_have_protobuf_definitions"
 	ServiceRoadmapExitDescriptorProofQueryable     ServiceRoadmapExitCriterionID = "descriptors_are_proof_queryable"
 	ServiceRoadmapExitExistingDescriptors          ServiceRoadmapExitCriterionID = "existing_modules_can_expose_service_descriptors"
 	ServiceRoadmapExitInterfaceVersioning          ServiceRoadmapExitCriterionID = "interface_versioning_is_enforced"
 	ServiceRoadmapExitMethodSchemasPublished       ServiceRoadmapExitCriterionID = "existing_modules_can_publish_method_schemas"
+	ServiceRoadmapExitOnChainUnifiedEnvelope       ServiceRoadmapExitCriterionID = "on_chain_services_can_be_called_through_unified_call_envelope"
+	ServiceRoadmapExitPaymentModelKnownBeforeSign  ServiceRoadmapExitCriterionID = "payment_model_is_known_before_signing"
+	ServiceRoadmapExitPaymentTestCoverage          ServiceRoadmapExitCriterionID = "escrow_and_metered_usage_are_test_covered"
+	ServiceRoadmapExitReceiptsCommittedProof       ServiceRoadmapExitCriterionID = "receipts_are_committed_and_proof_queryable"
 	ServiceRoadmapExitRegistryReproducible         ServiceRoadmapExitCriterionID = "registry_state_is_reproducible"
+	ServiceRoadmapExitReplayAttemptsRejected       ServiceRoadmapExitCriterionID = "replay_attempts_are_rejected"
 	ServiceRoadmapExitServiceDiscovery             ServiceRoadmapExitCriterionID = "services_are_discoverable_by_id_owner_and_name"
 	ServiceRoadmapExitSignableVectors              ServiceRoadmapExitCriterionID = "all_signable_objects_have_canonical_encoding_test_vectors"
 )
@@ -171,7 +191,49 @@ func DefaultServiceImplementationRoadmap() (ServiceImplementationRoadmap, error)
 	if err != nil {
 		return ServiceImplementationRoadmap{}, err
 	}
-	return NewServiceImplementationRoadmap([]ServiceRoadmapPhase{phase0, phase1, phase2})
+	phase3, err := NewServiceRoadmapPhase(ServiceRoadmapPhase{
+		PhaseID: ServiceRoadmapPhaseUnifiedCallsReceipts,
+		Title:   "Unified Calls and Receipts",
+		Tasks: []ServiceRoadmapTask{
+			newServiceRoadmapTask(ServiceRoadmapTaskAddCallbacksRetries, ServiceModuleCalls, "UnifiedServiceCallback/ServiceRetryPolicy"),
+			newServiceRoadmapTask(ServiceRoadmapTaskAddCallEnvelopeValidation, ServiceModuleCalls, "ValidateUnifiedServiceCallForDescriptor"),
+			newServiceRoadmapTask(ServiceRoadmapTaskAddDeterministicReceipts, ServiceModuleReceipts, "ReceiptRoot"),
+			newServiceRoadmapTask(ServiceRoadmapTaskAddNoncesIdempotency, ServiceModuleCalls, "ServiceCallReplayIndex"),
+			newServiceRoadmapTask(ServiceRoadmapTaskImplementServiceCallsModule, ServiceModuleCalls, "XServiceCallsModuleBreakdown"),
+			newServiceRoadmapTask(ServiceRoadmapTaskImplementServiceReceiptsModule, ServiceModuleReceipts, "XServiceReceiptsModuleBreakdown"),
+		},
+		ExitCriteria: []ServiceRoadmapExitCriterion{
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitOnChainUnifiedEnvelope, "ValidateUnifiedServiceCallForDescriptor", true),
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitReceiptsCommittedProof, "QueryReceiptProof", true),
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitReplayAttemptsRejected, "ServiceCallReplayIndex", true),
+		},
+		DependsOn: []ServiceRoadmapPhaseID{ServiceRoadmapPhaseInterfaceSystem},
+	})
+	if err != nil {
+		return ServiceImplementationRoadmap{}, err
+	}
+	phase4, err := NewServiceRoadmapPhase(ServiceRoadmapPhase{
+		PhaseID: ServiceRoadmapPhasePayments,
+		Title:   "Payments",
+		Tasks: []ServiceRoadmapTask{
+			newServiceRoadmapTask(ServiceRoadmapTaskAddEscrowSettlement, ServiceModulePayments, "ServiceEscrow/PaymentSettlement"),
+			newServiceRoadmapTask(ServiceRoadmapTaskAddMeteredUsageReceipt, ServiceModulePayments, "MeteredUsage"),
+			newServiceRoadmapTask(ServiceRoadmapTaskAddPaymentModelQuery, ServiceModulePayments, "QueryPaymentModel"),
+			newServiceRoadmapTask(ServiceRoadmapTaskAddPerCallPayment, ServiceModulePayments, "QuotePerCallPayment"),
+			newServiceRoadmapTask(ServiceRoadmapTaskImplementServicePaymentsModule, ServiceModulePayments, "XServicePaymentsModuleBreakdown"),
+			newServiceRoadmapTask(ServiceRoadmapTaskIntegrateBankFinancialZone, ServiceModulePayments, "BuildFinancialZonePaymentRoute"),
+		},
+		ExitCriteria: []ServiceRoadmapExitCriterion{
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitCallsRequireSettlePayments, "PaymentSettlement", true),
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitPaymentModelKnownBeforeSign, "ServicePaymentSignedModelSnapshot", true),
+			newServiceRoadmapExitCriterion(ServiceRoadmapExitPaymentTestCoverage, "servicepayments_module_breakdown_test", true),
+		},
+		DependsOn: []ServiceRoadmapPhaseID{ServiceRoadmapPhaseUnifiedCallsReceipts},
+	})
+	if err != nil {
+		return ServiceImplementationRoadmap{}, err
+	}
+	return NewServiceImplementationRoadmap([]ServiceRoadmapPhase{phase0, phase1, phase2, phase3, phase4})
 }
 
 func NewServiceImplementationRoadmap(phases []ServiceRoadmapPhase) (ServiceImplementationRoadmap, error) {
@@ -215,6 +277,10 @@ func ValidateServiceRoadmapExitCriteria(phase ServiceRoadmapPhase) error {
 		return phase.requireTasks(ServiceRoadmapTaskImplementServicesModule, ServiceRoadmapTaskAddServiceRegistrationUpdate, ServiceRoadmapTaskAddNameOwnerIndexes, ServiceRoadmapTaskAddProofQuery, ServiceRoadmapTaskAddExportImport)
 	case ServiceRoadmapPhaseInterfaceSystem:
 		return phase.requireTasks(ServiceRoadmapTaskImplementServiceInterfaceModule, ServiceRoadmapTaskAddInterfaceRegistration, ServiceRoadmapTaskAddMethodSchema, ServiceRoadmapTaskAddInterfaceHashValidation, ServiceRoadmapTaskAddInterfaceProofQuery, ServiceRoadmapTaskAddSDKInterfaceVerifier)
+	case ServiceRoadmapPhaseUnifiedCallsReceipts:
+		return phase.requireTasks(ServiceRoadmapTaskImplementServiceCallsModule, ServiceRoadmapTaskImplementServiceReceiptsModule, ServiceRoadmapTaskAddCallEnvelopeValidation, ServiceRoadmapTaskAddNoncesIdempotency, ServiceRoadmapTaskAddCallbacksRetries, ServiceRoadmapTaskAddDeterministicReceipts)
+	case ServiceRoadmapPhasePayments:
+		return phase.requireTasks(ServiceRoadmapTaskImplementServicePaymentsModule, ServiceRoadmapTaskAddPerCallPayment, ServiceRoadmapTaskAddEscrowSettlement, ServiceRoadmapTaskAddMeteredUsageReceipt, ServiceRoadmapTaskAddPaymentModelQuery, ServiceRoadmapTaskIntegrateBankFinancialZone)
 	default:
 		return fmt.Errorf("services roadmap unknown phase %q", phase.PhaseID)
 	}
@@ -517,7 +583,7 @@ func ComputeAetherisModuleServiceMappingHash(mapping AetherisModuleServiceMappin
 
 func IsServiceRoadmapPhaseID(phaseID ServiceRoadmapPhaseID) bool {
 	switch phaseID {
-	case ServiceRoadmapPhaseSpecificationCompatibility, ServiceRoadmapPhaseCoreRegistry, ServiceRoadmapPhaseInterfaceSystem:
+	case ServiceRoadmapPhaseSpecificationCompatibility, ServiceRoadmapPhaseCoreRegistry, ServiceRoadmapPhaseInterfaceSystem, ServiceRoadmapPhaseUnifiedCallsReceipts, ServiceRoadmapPhasePayments:
 		return true
 	default:
 		return false
@@ -526,13 +592,16 @@ func IsServiceRoadmapPhaseID(phaseID ServiceRoadmapPhaseID) bool {
 
 func IsServiceRoadmapTaskID(taskID ServiceRoadmapTaskID) bool {
 	switch taskID {
-	case ServiceRoadmapTaskAddExportImport, ServiceRoadmapTaskAddIdentityBindingPlaceholder, ServiceRoadmapTaskAddInterfaceHashValidation,
+	case ServiceRoadmapTaskAddCallbacksRetries, ServiceRoadmapTaskAddCallEnvelopeValidation, ServiceRoadmapTaskAddDeterministicReceipts,
+		ServiceRoadmapTaskAddEscrowSettlement, ServiceRoadmapTaskAddExportImport, ServiceRoadmapTaskAddIdentityBindingPlaceholder, ServiceRoadmapTaskAddInterfaceHashValidation,
 		ServiceRoadmapTaskAddInterfaceProofQuery, ServiceRoadmapTaskAddInterfaceRegistration, ServiceRoadmapTaskAddMethodSchema,
-		ServiceRoadmapTaskAddNameOwnerIndexes, ServiceRoadmapTaskAddProofQuery, ServiceRoadmapTaskAddSDKInterfaceVerifier,
+		ServiceRoadmapTaskAddMeteredUsageReceipt, ServiceRoadmapTaskAddNameOwnerIndexes, ServiceRoadmapTaskAddNoncesIdempotency,
+		ServiceRoadmapTaskAddPaymentModelQuery, ServiceRoadmapTaskAddPerCallPayment, ServiceRoadmapTaskAddProofQuery, ServiceRoadmapTaskAddSDKInterfaceVerifier,
 		ServiceRoadmapTaskAddServiceRegistrationUpdate, ServiceRoadmapTaskDefineCallEnvelope, ServiceRoadmapTaskDefinePaymentModelEnum,
 		ServiceRoadmapTaskDefineReceiptFormat, ServiceRoadmapTaskDefineTrustVerificationEnums, ServiceRoadmapTaskFinalizeDescriptorSchema,
-		ServiceRoadmapTaskFinalizeInterfaceSchema, ServiceRoadmapTaskImplementServiceInterfaceModule, ServiceRoadmapTaskImplementServicesModule,
-		ServiceRoadmapTaskMapExistingModules:
+		ServiceRoadmapTaskFinalizeInterfaceSchema, ServiceRoadmapTaskImplementServiceCallsModule, ServiceRoadmapTaskImplementServiceInterfaceModule,
+		ServiceRoadmapTaskImplementServicePaymentsModule, ServiceRoadmapTaskImplementServiceReceiptsModule, ServiceRoadmapTaskImplementServicesModule,
+		ServiceRoadmapTaskIntegrateBankFinancialZone, ServiceRoadmapTaskMapExistingModules:
 		return true
 	default:
 		return false
@@ -541,9 +610,11 @@ func IsServiceRoadmapTaskID(taskID ServiceRoadmapTaskID) bool {
 
 func IsServiceRoadmapExitCriterionID(criterionID ServiceRoadmapExitCriterionID) bool {
 	switch criterionID {
-	case ServiceRoadmapExitClientsFetchVerifyInterfaces, ServiceRoadmapExitCoreObjectsProto, ServiceRoadmapExitDescriptorProofQueryable,
+	case ServiceRoadmapExitClientsFetchVerifyInterfaces, ServiceRoadmapExitCallsRequireSettlePayments, ServiceRoadmapExitCoreObjectsProto, ServiceRoadmapExitDescriptorProofQueryable,
 		ServiceRoadmapExitExistingDescriptors, ServiceRoadmapExitInterfaceVersioning, ServiceRoadmapExitMethodSchemasPublished,
-		ServiceRoadmapExitRegistryReproducible, ServiceRoadmapExitServiceDiscovery, ServiceRoadmapExitSignableVectors:
+		ServiceRoadmapExitOnChainUnifiedEnvelope, ServiceRoadmapExitPaymentModelKnownBeforeSign, ServiceRoadmapExitPaymentTestCoverage,
+		ServiceRoadmapExitReceiptsCommittedProof, ServiceRoadmapExitRegistryReproducible, ServiceRoadmapExitReplayAttemptsRejected,
+		ServiceRoadmapExitServiceDiscovery, ServiceRoadmapExitSignableVectors:
 		return true
 	default:
 		return false
@@ -637,8 +708,8 @@ func canonicalServiceRoadmapPhase(phase ServiceRoadmapPhase) ServiceRoadmapPhase
 }
 
 func validateServiceRoadmapPhases(phases []ServiceRoadmapPhase) error {
-	if len(phases) != 3 {
-		return errors.New("services roadmap requires phases 0, 1, and 2")
+	if len(phases) != 5 {
+		return errors.New("services roadmap requires phases 0, 1, 2, 3, and 4")
 	}
 	seen := map[ServiceRoadmapPhaseID]struct{}{}
 	previous := ""
@@ -653,7 +724,7 @@ func validateServiceRoadmapPhases(phases []ServiceRoadmapPhase) error {
 		previous = current
 		seen[phase.PhaseID] = struct{}{}
 	}
-	for _, required := range []ServiceRoadmapPhaseID{ServiceRoadmapPhaseSpecificationCompatibility, ServiceRoadmapPhaseCoreRegistry, ServiceRoadmapPhaseInterfaceSystem} {
+	for _, required := range []ServiceRoadmapPhaseID{ServiceRoadmapPhaseSpecificationCompatibility, ServiceRoadmapPhaseCoreRegistry, ServiceRoadmapPhaseInterfaceSystem, ServiceRoadmapPhaseUnifiedCallsReceipts, ServiceRoadmapPhasePayments} {
 		if _, found := seen[required]; !found {
 			return fmt.Errorf("services roadmap missing phase %s", required)
 		}
