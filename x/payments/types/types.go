@@ -20,6 +20,7 @@ const (
 	SignatureObjectState     = "channel_state"
 	SignatureObjectClaim     = "unidirectional_claim"
 	SignatureObjectDelta     = "async_delta"
+	SignatureObjectPromise   = "conditional_promise"
 	DefaultDisputePeriod     = uint64(16)
 	DefaultOpeningFee        = "1"
 	MaxDisputeExtensions     = uint32(2)
@@ -178,6 +179,39 @@ type ConditionalPayment struct {
 	TimeoutHeight uint64
 	NonceStart    uint64
 	NonceEnd      uint64
+}
+
+type ConditionalPromise struct {
+	PromiseID                 string
+	ChannelID                 string
+	Source                    string
+	Destination               string
+	Amount                    string
+	Fee                       string
+	HashLock                  string
+	TimeoutHeight             uint64
+	TimeoutTimestamp          int64
+	ConditionType             ConditionType
+	RouteIDOptional           string
+	PreviousPromiseIDOptional string
+	NextPromiseIDOptional     string
+	Nonce                     uint64
+	PromiseHash               string
+	Signature                 PromiseSignature
+}
+
+type PromiseSignature struct {
+	Signer           string
+	ChainID          string
+	ChannelID        string
+	ObjectType       string
+	Version          uint32
+	Nonce            uint64
+	ObjectID         string
+	ExpirationHeight uint64
+	CommitmentHash   string
+	PromiseHash      string
+	SignatureHash    string
 }
 
 type StateSignature struct {
@@ -1011,6 +1045,197 @@ func (r FinalSettlementRequest) Normalize() FinalSettlementRequest {
 	r.FeeAccountingState = strings.TrimSpace(r.FeeAccountingState)
 	r.RoutingFeeClaimHash = normalizeOptionalHash(r.RoutingFeeClaimHash)
 	return r
+}
+
+func BuildConditionalPromise(promise ConditionalPromise) (ConditionalPromise, error) {
+	promise = promise.Normalize()
+	if err := promise.ValidateBasic(); err != nil {
+		return ConditionalPromise{}, err
+	}
+	promise.PromiseHash = ComputeConditionalTransferPromiseHash(promise)
+	return promise, nil
+}
+
+func SignatureForPromise(channel ChannelRecord, promise ConditionalPromise, signer string) (PromiseSignature, error) {
+	channel = channel.Normalize()
+	if promise.PromiseHash == "" {
+		var err error
+		promise, err = BuildConditionalPromise(promise)
+		if err != nil {
+			return PromiseSignature{}, err
+		}
+	}
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments promise signer", signer); err != nil {
+		return PromiseSignature{}, err
+	}
+	return PromiseSignature{
+		Signer:           signer,
+		ChainID:          channel.ChainID,
+		ChannelID:        promise.ChannelID,
+		ObjectType:       SignatureObjectPromise,
+		Version:          CurrentStateVersion,
+		Nonce:            promise.Nonce,
+		ObjectID:         promise.PromiseHash,
+		ExpirationHeight: promise.TimeoutHeight,
+		CommitmentHash:   promise.PromiseHash,
+		PromiseHash:      promise.PromiseHash,
+		SignatureHash: ComputeSignatureEnvelopeHash(
+			signer,
+			channel.ChainID,
+			promise.ChannelID,
+			SignatureObjectPromise,
+			CurrentStateVersion,
+			promise.Nonce,
+			promise.PromiseHash,
+			promise.TimeoutHeight,
+			promise.PromiseHash,
+		),
+	}, nil
+}
+
+func (p ConditionalPromise) Normalize() ConditionalPromise {
+	p.PromiseID = normalizeHash(p.PromiseID)
+	p.ChannelID = normalizeHash(p.ChannelID)
+	p.Source = strings.TrimSpace(p.Source)
+	p.Destination = strings.TrimSpace(p.Destination)
+	p.Amount = strings.TrimSpace(p.Amount)
+	p.Fee = strings.TrimSpace(p.Fee)
+	p.HashLock = normalizeOptionalHash(p.HashLock)
+	p.RouteIDOptional = normalizeOptionalHash(p.RouteIDOptional)
+	p.PreviousPromiseIDOptional = normalizeOptionalHash(p.PreviousPromiseIDOptional)
+	p.NextPromiseIDOptional = normalizeOptionalHash(p.NextPromiseIDOptional)
+	p.PromiseHash = normalizeOptionalHash(p.PromiseHash)
+	p.Signature = p.Signature.Normalize()
+	return p
+}
+
+func (p ConditionalPromise) ValidateBasic() error {
+	promise := p.Normalize()
+	if err := ValidateHash("payments promise id", promise.PromiseID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments promise channel id", promise.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments promise source", promise.Source); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments promise destination", promise.Destination); err != nil {
+		return err
+	}
+	if promise.Source == promise.Destination {
+		return errors.New("payments promise parties must differ")
+	}
+	if err := validatePositiveInt("payments promise amount", promise.Amount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments promise fee", promise.Fee); err != nil {
+		return err
+	}
+	if promise.TimeoutHeight == 0 {
+		return errors.New("payments promise timeout height must be positive")
+	}
+	if promise.TimeoutTimestamp < 0 {
+		return errors.New("payments promise timeout timestamp must be non-negative")
+	}
+	if promise.Nonce == 0 {
+		return errors.New("payments promise nonce must be positive")
+	}
+	if !IsConditionType(promise.ConditionType) {
+		return fmt.Errorf("unknown payments promise condition type %q", promise.ConditionType)
+	}
+	if promise.ConditionType == ConditionTypeHashLock {
+		if err := ValidateHash("payments promise hash lock", promise.HashLock); err != nil {
+			return err
+		}
+	} else if promise.HashLock != "" {
+		return errors.New("payments time-lock promise must not include hash lock")
+	}
+	return nil
+}
+
+func (p ConditionalPromise) ValidateForChannel(channel ChannelRecord) error {
+	promise := p.Normalize()
+	channel = channel.Normalize()
+	if err := promise.ValidateBasic(); err != nil {
+		return err
+	}
+	if promise.ChannelID != channel.ChannelID {
+		return errors.New("payments promise channel mismatch")
+	}
+	if !containsString(channel.Participants, promise.Source) || !containsString(channel.Participants, promise.Destination) {
+		return errors.New("payments promise parties must be channel participants")
+	}
+	if !channel.ConditionalPayments {
+		return errors.New("payments channel does not support conditional promises")
+	}
+	if err := validatePromiseTimeoutWindow(channel, promise); err != nil {
+		return err
+	}
+	if promise.PromiseHash == "" {
+		return errors.New("payments promise hash is required")
+	}
+	if expected := ComputeConditionalTransferPromiseHash(promise); promise.PromiseHash != expected {
+		return errors.New("payments promise hash mismatch")
+	}
+	if err := promise.Signature.Validate(promise.PromiseHash); err != nil {
+		return err
+	}
+	return validatePromiseSignatureEnvelope(channel, promise.Signature, promise)
+}
+
+func (p ConditionalPromise) ToConditionalPayment() ConditionalPayment {
+	promise := p.Normalize()
+	return ConditionalPayment{
+		ConditionID:   promise.PromiseID,
+		ConditionType: promise.ConditionType,
+		Payer:         promise.Source,
+		Payee:         promise.Destination,
+		Amount:        promise.Amount,
+		HashLock:      promise.HashLock,
+		TimeoutHeight: promise.TimeoutHeight,
+		NonceStart:    promise.Nonce,
+		NonceEnd:      promise.Nonce,
+	}.Normalize()
+}
+
+func (s PromiseSignature) Normalize() PromiseSignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ObjectType = strings.TrimSpace(s.ObjectType)
+	s.ObjectID = normalizeOptionalHash(s.ObjectID)
+	s.CommitmentHash = normalizeOptionalHash(s.CommitmentHash)
+	s.PromiseHash = normalizeOptionalHash(s.PromiseHash)
+	s.SignatureHash = normalizeOptionalHash(s.SignatureHash)
+	return s
+}
+
+func (s PromiseSignature) Validate(expectedPromiseHash string) error {
+	s = s.Normalize()
+	if err := addressing.ValidateUserAddress("payments promise signature signer", s.Signer); err != nil {
+		return err
+	}
+	if s.PromiseHash != expectedPromiseHash {
+		return errors.New("payments promise signature hash mismatch")
+	}
+	if s.ObjectType != SignatureObjectPromise {
+		return errors.New("payments promise signature object type mismatch")
+	}
+	if s.ObjectID != s.PromiseHash {
+		return errors.New("payments promise signature object id mismatch")
+	}
+	if s.CommitmentHash != s.PromiseHash {
+		return errors.New("payments promise signature commitment mismatch")
+	}
+	if err := ValidateHash("payments promise signature hash", s.SignatureHash); err != nil {
+		return err
+	}
+	if expected := ComputeSignatureEnvelopeHash(s.Signer, s.ChainID, s.ChannelID, s.ObjectType, s.Version, s.Nonce, s.ObjectID, s.ExpirationHeight, s.CommitmentHash); s.SignatureHash != expected {
+		return errors.New("payments promise signature hash mismatch")
+	}
+	return nil
 }
 
 func (i SettlementArbitrationInput) Normalize() SettlementArbitrationInput {
@@ -3894,6 +4119,116 @@ func validateConditions(conditions []ConditionalPayment) error {
 	return nil
 }
 
+func ValidateConditionalPromisesForChannel(channel ChannelRecord, promises []ConditionalPromise, settledClaims []ConditionClaimRecord) error {
+	channel = channel.Normalize()
+	if len(promises) > MaxConditionsPerState {
+		return fmt.Errorf("payments promises must be <= %d", MaxConditionsPerState)
+	}
+	seen := make(map[string]struct{}, len(promises))
+	reservedBySource := make(map[string]sdkmath.Int, len(channel.Participants))
+	for _, promise := range normalizeConditionalPromises(promises) {
+		if err := promise.ValidateForChannel(channel); err != nil {
+			return err
+		}
+		if _, found := seen[promise.PromiseID]; found {
+			return errors.New("payments duplicate promise id")
+		}
+		seen[promise.PromiseID] = struct{}{}
+		if promiseWasSettled(channel, promise.PromiseID, settledClaims) {
+			return errors.New("payments promise has already been settled")
+		}
+		amount, err := parsePositiveInt("payments promise amount", promise.Amount)
+		if err != nil {
+			return err
+		}
+		fee, err := parseNonNegativeInt("payments promise fee", promise.Fee)
+		if err != nil {
+			return err
+		}
+		current, found := reservedBySource[promise.Source]
+		if !found {
+			current = sdkmath.ZeroInt()
+		}
+		reservedBySource[promise.Source] = current.Add(amount).Add(fee)
+	}
+	for source, reserved := range reservedBySource {
+		available, err := availablePromiseReserve(channel, source)
+		if err != nil {
+			return err
+		}
+		if reserved.GT(available) {
+			return errors.New("payments promises exceed available reserve")
+		}
+	}
+	return nil
+}
+
+func validatePromiseTimeoutWindow(channel ChannelRecord, promise ConditionalPromise) error {
+	if promise.TimeoutHeight <= channel.OpenHeight {
+		return errors.New("payments promise timeout must be after channel open height")
+	}
+	maxHeight := channel.LatestState.TimeoutHeight
+	if maxHeight == 0 {
+		maxHeight = channel.OpenHeight + channel.CloseDelay + channel.DisputePeriod
+	}
+	if promise.TimeoutHeight > maxHeight {
+		return errors.New("payments promise timeout exceeds channel timeout")
+	}
+	if promise.TimeoutHeight+channel.DisputePeriod < promise.TimeoutHeight || promise.TimeoutHeight+channel.DisputePeriod > maxHeight {
+		return errors.New("payments promise timeout must fit dispute window")
+	}
+	return nil
+}
+
+func validatePromiseSignatureEnvelope(channel ChannelRecord, sig PromiseSignature, promise ConditionalPromise) error {
+	sig = sig.Normalize()
+	promise = promise.Normalize()
+	if sig.ChainID != channel.ChainID {
+		return errors.New("payments promise signature chain id mismatch")
+	}
+	if sig.ChannelID != promise.ChannelID {
+		return errors.New("payments promise signature channel id mismatch")
+	}
+	if sig.Version != CurrentStateVersion {
+		return errors.New("payments promise signature version mismatch")
+	}
+	if sig.Nonce != promise.Nonce {
+		return errors.New("payments promise signature nonce mismatch")
+	}
+	if sig.ExpirationHeight != promise.TimeoutHeight {
+		return errors.New("payments promise signature expiration height mismatch")
+	}
+	if sig.Signer != promise.Source {
+		return errors.New("payments promise signature signer must be source")
+	}
+	return nil
+}
+
+func availablePromiseReserve(channel ChannelRecord, source string) (sdkmath.Int, error) {
+	state := channel.Normalize().LatestState.Normalize()
+	if channel.ChannelType == ChannelTypeBidirectional {
+		if source == state.ParticipantA {
+			return parseNonNegativeInt("payments promise reserve a", state.ReserveA)
+		}
+		if source == state.ParticipantB {
+			return parseNonNegativeInt("payments promise reserve b", state.ReserveB)
+		}
+	}
+	return sdkmath.Int{}, errors.New("payments promise source reserve not found")
+}
+
+func promiseWasSettled(channel ChannelRecord, promiseID string, settledClaims []ConditionClaimRecord) bool {
+	channel = channel.Normalize()
+	promiseID = normalizeHash(promiseID)
+	for _, claim := range settledClaims {
+		claim = claim.Normalize()
+		if claim.ChannelID == channel.ChannelID && claim.ConditionID == promiseID {
+			return true
+		}
+	}
+	return false
+}
+
 func (c ConditionalPayment) Normalize() ConditionalPayment {
 	c.ConditionID = normalizeHash(c.ConditionID)
 	c.Payer = strings.TrimSpace(c.Payer)
@@ -4090,6 +4425,17 @@ func normalizeConditions(conditions []ConditionalPayment) []ConditionalPayment {
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].ConditionID < out[j].ConditionID
+	})
+	return out
+}
+
+func normalizeConditionalPromises(promises []ConditionalPromise) []ConditionalPromise {
+	out := make([]ConditionalPromise, len(promises))
+	for i, promise := range promises {
+		out[i] = promise.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].PromiseID < out[j].PromiseID
 	})
 	return out
 }

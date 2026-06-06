@@ -361,6 +361,28 @@ func ComputeConditionalPromiseHash(condition ConditionalPayment) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+func ComputeConditionalTransferPromiseHash(promise ConditionalPromise) string {
+	promise = promise.Normalize()
+	h := sha256.New()
+	writeString(h, domainConditionalPromise)
+	writeByte(h, CanonicalEncodingVersion)
+	writeString(h, promise.PromiseID)
+	writeString(h, promise.ChannelID)
+	writeString(h, promise.Source)
+	writeString(h, promise.Destination)
+	writeString(h, promise.Amount)
+	writeString(h, promise.Fee)
+	writeString(h, promise.HashLock)
+	writeUint64(h, promise.TimeoutHeight)
+	writeInt64(h, promise.TimeoutTimestamp)
+	writeString(h, string(promise.ConditionType))
+	writeString(h, promise.RouteIDOptional)
+	writeString(h, promise.PreviousPromiseIDOptional)
+	writeString(h, promise.NextPromiseIDOptional)
+	writeUint64(h, promise.Nonce)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func SignaturePreimage(signer, stateHash string) []byte {
 	var buf bytes.Buffer
 	writeString(&buf, "aetheris-payment-state-signature-preimage-v1")

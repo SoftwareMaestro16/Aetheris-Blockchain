@@ -347,6 +347,48 @@ func TestLockedCollateralInvariantForEveryFinalityState(t *testing.T) {
 	require.ErrorContains(t, ValidateLockedCollateralForFinality(PaymentsState{Channels: []ChannelRecord{missing}}), "retain custody")
 }
 
+func TestConditionalPromiseObjectSignatureReserveAndReplayRules(t *testing.T) {
+	alice := testAddress(0x22)
+	bob := testAddress(0x23)
+	channel := signedChannel(t, "promise-object", "1000", alice, bob)
+	channel.LatestState = signedReserveState(t, channel, 2, channel.OpeningStateHash, "40", "0", []Balance{
+		{Participant: alice, Amount: "900"},
+		{Participant: bob, Amount: "60"},
+	})
+	require.NoError(t, channel.Validate())
+
+	promise := signedPromise(t, channel, "promise-a", alice, bob, "25", "5", 7, 40)
+	require.NoError(t, promise.ValidateForChannel(channel))
+	require.Equal(t, promise.PromiseID, promise.ToConditionalPayment().ConditionID)
+	require.Equal(t, promise.Amount, promise.ToConditionalPayment().Amount)
+	require.NoError(t, ValidateConditionalPromisesForChannel(channel, []ConditionalPromise{promise}, nil))
+
+	duplicate := signedPromise(t, channel, "promise-a", alice, bob, "1", "0", 8, 40)
+	require.ErrorContains(t, ValidateConditionalPromisesForChannel(channel, []ConditionalPromise{promise, duplicate}, nil), "duplicate promise")
+
+	overReserve := signedPromise(t, channel, "promise-b", alice, bob, "10", "1", 9, 40)
+	require.ErrorContains(t, ValidateConditionalPromisesForChannel(channel, []ConditionalPromise{promise, overReserve}, nil), "reserve")
+
+	settled := []ConditionClaimRecord{{
+		ChainID:        channel.ChainID,
+		ChannelID:      channel.ChannelID,
+		ConditionID:    promise.PromiseID,
+		EvidenceHash:   HashParts("promise-settled", promise.PromiseID),
+		ResolvedHeight: 50,
+		ExpiresHeight:  100,
+	}}
+	require.ErrorContains(t, ValidateConditionalPromisesForChannel(channel, []ConditionalPromise{promise}, settled), "already been settled")
+
+	late := signedPromise(t, channel, "promise-late", alice, bob, "1", "0", 10, channel.LatestState.TimeoutHeight)
+	require.ErrorContains(t, late.ValidateForChannel(channel), "dispute window")
+
+	wrongSigner := promise
+	sig, err := SignatureForPromise(channel, wrongSigner, bob)
+	require.NoError(t, err)
+	wrongSigner.Signature = sig
+	require.ErrorContains(t, wrongSigner.ValidateForChannel(channel), "signer must be source")
+}
+
 func TestDisputeRequestEmitsEventAndAppliesOptionalFraudProof(t *testing.T) {
 	alice := testAddress(0x14)
 	bob := testAddress(0x15)
@@ -1738,6 +1780,59 @@ func signedState(t *testing.T, channel ChannelRecord, nonce uint64, previous str
 	state = state.Normalize()
 	require.NoError(t, state.ValidateForChannel(channel, true))
 	return state
+}
+
+func signedReserveState(t *testing.T, channel ChannelRecord, nonce uint64, previous, reserveA, reserveB string, balances []Balance) ChannelState {
+	t.Helper()
+
+	state, err := BuildState(ChannelState{
+		ChainID:           channel.ChainID,
+		ChannelID:         channel.ChannelID,
+		ChannelType:       channel.ChannelType,
+		Denom:             channel.Denom,
+		Version:           CurrentStateVersion,
+		Epoch:             1,
+		Nonce:             nonce,
+		Balances:          balances,
+		ReserveA:          reserveA,
+		ReserveB:          reserveB,
+		PreviousStateHash: previous,
+		TimeoutHeight:     channel.OpenHeight + channel.DisputePeriod + 70,
+		CloseDelay:        channel.DisputePeriod,
+		FeePolicyID:       NativeDenom,
+	})
+	require.NoError(t, err)
+	for _, signer := range channel.Normalize().Participants {
+		sig, err := SignatureForState(state, signer)
+		require.NoError(t, err)
+		state.Signatures = append(state.Signatures, sig)
+	}
+	state = state.Normalize()
+	require.NoError(t, state.ValidateForChannel(channel, true))
+	return state
+}
+
+func signedPromise(t *testing.T, channel ChannelRecord, salt, source, destination, amount, fee string, nonce, timeoutHeight uint64) ConditionalPromise {
+	t.Helper()
+
+	promise, err := BuildConditionalPromise(ConditionalPromise{
+		PromiseID:        HashParts("promise", channel.ChannelID, salt),
+		ChannelID:        channel.ChannelID,
+		Source:           source,
+		Destination:      destination,
+		Amount:           amount,
+		Fee:              fee,
+		HashLock:         HashParts("promise-preimage", salt),
+		TimeoutHeight:    timeoutHeight,
+		TimeoutTimestamp: int64(timeoutHeight * 10),
+		ConditionType:    ConditionTypeHashLock,
+		Nonce:            nonce,
+	})
+	require.NoError(t, err)
+	promise.Signature, err = SignatureForPromise(channel, promise, source)
+	require.NoError(t, err)
+	promise = promise.Normalize()
+	return promise
 }
 
 func mutateCanonicalState(state ChannelState, mutate func(*ChannelState)) ChannelState {
