@@ -420,6 +420,18 @@ func (k *Keeper) SubmitVirtualChannelDispute(proof paymentstypes.VirtualChannelD
 	return nil
 }
 
+func (k *Keeper) CloseVirtualChannelWithProof(proof paymentstypes.VirtualCloseProof, currentHeight uint64) (paymentstypes.VirtualChannel, []paymentstypes.VirtualReserveRelease, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.VirtualChannel{}, nil, err
+	}
+	next, closed, releases, err := paymentstypes.CloseVirtualChannelWithProof(k.genesis.State, proof, currentHeight)
+	if err != nil {
+		return paymentstypes.VirtualChannel{}, nil, err
+	}
+	k.genesis.State = next
+	return closed, releases, nil
+}
+
 func (k *Keeper) CloseVirtualChannel(virtualChannelID string, currentHeight uint64) (paymentstypes.VirtualChannel, error) {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return paymentstypes.VirtualChannel{}, err

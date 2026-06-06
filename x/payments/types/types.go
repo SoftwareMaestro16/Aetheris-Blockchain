@@ -24,6 +24,7 @@ const (
 	SignatureObjectGossip         = "payment_gossip"
 	SignatureObjectVirtual        = "virtual_channel"
 	SignatureObjectVirtualReserve = "virtual_reservation"
+	SignatureObjectVirtualClose   = "virtual_close"
 	DefaultDisputePeriod          = uint64(16)
 	DefaultOpeningFee             = "1"
 	MaxDisputeExtensions          = uint32(2)
@@ -178,6 +179,15 @@ type VirtualChannelStatus string
 const (
 	VirtualChannelStatusOpen    VirtualChannelStatus = "OPEN"
 	VirtualChannelStatusSettled VirtualChannelStatus = "SETTLED"
+)
+
+type VirtualCloseMode string
+
+const (
+	VirtualCloseModeCooperative      VirtualCloseMode = "COOPERATIVE_ENDPOINT"
+	VirtualCloseModeExpired          VirtualCloseMode = "EXPIRED"
+	VirtualCloseModeIntermediaryRisk VirtualCloseMode = "INTERMEDIARY_RISK"
+	VirtualCloseModeDisputed         VirtualCloseMode = "DISPUTED"
 )
 
 type PenaltyRoute string
@@ -1013,6 +1023,7 @@ type VirtualReservationSignature struct {
 	ObjectType       string
 	Version          uint32
 	Capacity         string
+	SplitAmount      string
 	FeeAmount        string
 	ExpirationHeight uint64
 	CommitmentHash   string
@@ -1020,9 +1031,11 @@ type VirtualReservationSignature struct {
 }
 
 type VirtualParentReserve struct {
+	SegmentID         string
 	ParentChannelID   string
 	ReservedBy        string
 	Capacity          string
+	SplitAmount       string
 	FeeAmount         string
 	ReserveCommitment string
 	Signature         VirtualReservationSignature
@@ -1032,7 +1045,33 @@ type VirtualActivationProof struct {
 	VirtualChannel     VirtualChannel
 	ParentReserves     []VirtualParentReserve
 	RouteTimeoutHeight uint64
+	AggregatedCapacity bool
 	ProofHash          string
+}
+
+type VirtualReserveRelease struct {
+	SegmentID         string
+	VirtualChannelID  string
+	ParentChannelID   string
+	ReserveCommitment string
+	Capacity          string
+	BalanceA          string
+	BalanceB          string
+	FeeAmount         string
+	ReleaseHeight     uint64
+	ReleaseHash       string
+}
+
+type VirtualCloseProof struct {
+	VirtualChannelID         string
+	ParentRouteID            string
+	CloseMode                VirtualCloseMode
+	FinalState               VirtualChannel
+	ParentReserveCommitments []string
+	SubmittedBy              string
+	CloseHeight              uint64
+	ReleaseHeight            uint64
+	ProofHash                string
 }
 
 type VirtualChannelDisputeProof struct {
@@ -1042,6 +1081,37 @@ type VirtualChannelDisputeProof struct {
 	ParentReserveCommitments []string
 	SubmittedBy              string
 	EvidenceHash             string
+}
+
+type VirtualReserveSegment struct {
+	SegmentID         string
+	VirtualChannelID  string
+	ParentChannelID   string
+	ReserveCommitment string
+	Capacity          string
+	BalanceA          string
+	BalanceB          string
+	FeeAmount         string
+	SegmentHash       string
+}
+
+type VirtualSegmentSettlementProof struct {
+	SegmentID         string
+	VirtualChannelID  string
+	ParentChannelID   string
+	FinalStateHash    string
+	ReserveCommitment string
+	BalanceA          string
+	BalanceB          string
+	SettlementHash    string
+}
+
+type VirtualPartialActivationFailure struct {
+	VirtualChannelID  string
+	FailedSegmentID   string
+	Reason            string
+	RefundCommitments []string
+	FailureHash       string
 }
 
 type SettlementOperation struct {
@@ -4683,8 +4753,14 @@ func BuildVirtualParentReserve(vc VirtualChannel, reserve VirtualParentReserve, 
 	if reserve.Capacity == "" {
 		reserve.Capacity = vc.Capacity
 	}
+	if reserve.SplitAmount == "" {
+		reserve.SplitAmount = reserve.Capacity
+	}
 	if reserve.FeeAmount == "" {
 		reserve.FeeAmount = "0"
+	}
+	if reserve.SegmentID == "" {
+		reserve.SegmentID = HashParts("virtual-reserve-segment", vc.VirtualChannelID, reserve.ParentChannelID, reserve.ReservedBy, reserve.SplitAmount)
 	}
 	if signer != "" {
 		reserve.ReservedBy = signer
@@ -4709,9 +4785,11 @@ func ComputeVirtualReserveCommitment(vc VirtualChannel, reserve VirtualParentRes
 		vc.ChainID,
 		vc.VirtualChannelID,
 		vc.ParentRouteID,
+		reserve.SegmentID,
 		reserve.ParentChannelID,
 		reserve.ReservedBy,
 		reserve.Capacity,
+		reserve.SplitAmount,
 		reserve.FeeAmount,
 		fmt.Sprintf("%020d", vc.ExpiresHeight),
 	)
@@ -4737,6 +4815,7 @@ func SignatureForVirtualReservation(vc VirtualChannel, reserve VirtualParentRese
 		ObjectType:       SignatureObjectVirtualReserve,
 		Version:          CurrentStateVersion,
 		Capacity:         reserve.Capacity,
+		SplitAmount:      reserve.SplitAmount,
 		FeeAmount:        reserve.FeeAmount,
 		ExpirationHeight: vc.ExpiresHeight,
 		CommitmentHash:   reserve.ReserveCommitment,
@@ -4781,6 +4860,9 @@ func ValidateVirtualReservationSignature(sig VirtualReservationSignature, vc Vir
 	}
 	if sig.Capacity != reserve.Capacity || sig.FeeAmount != reserve.FeeAmount {
 		return errors.New("payments virtual reservation signature amount mismatch")
+	}
+	if sig.SplitAmount != reserve.SplitAmount {
+		return errors.New("payments virtual reservation signature split amount mismatch")
 	}
 	if sig.ExpirationHeight != vc.ExpiresHeight {
 		return errors.New("payments virtual reservation signature expiration mismatch")
@@ -4827,9 +4909,10 @@ func ComputeVirtualActivationProofHash(proof VirtualActivationProof) string {
 		proof.VirtualChannel.StateHash,
 		proof.VirtualChannel.ParentRouteID,
 		fmt.Sprintf("%020d", proof.RouteTimeoutHeight),
+		fmt.Sprintf("%t", proof.AggregatedCapacity),
 	}
 	for _, reserve := range proof.ParentReserves {
-		parts = append(parts, reserve.ParentChannelID, reserve.ReservedBy, reserve.ReserveCommitment)
+		parts = append(parts, reserve.SegmentID, reserve.ParentChannelID, reserve.ReservedBy, reserve.SplitAmount, reserve.ReserveCommitment)
 	}
 	return HashParts(parts...)
 }
@@ -4846,22 +4929,35 @@ func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
 	if proof.RouteTimeoutHeight <= vc.ExpiresHeight {
 		return errors.New("payments virtual activation proof route timeout must exceed virtual expiry")
 	}
-	if len(proof.ParentReserves) != len(vc.ParentChannelIDs) {
+	if !proof.AggregatedCapacity && len(proof.ParentReserves) != len(vc.ParentChannelIDs) {
 		return errors.New("payments virtual activation proof requires one reserve per parent")
+	}
+	if proof.AggregatedCapacity {
+		if err := ValidateVirtualReserveSegments(vc, VirtualReserveSegmentsFromProof(proof)); err != nil {
+			return err
+		}
 	}
 	parentSet := make(map[string]struct{}, len(vc.ParentChannelIDs))
 	for _, parentID := range vc.ParentChannelIDs {
 		parentSet[parentID] = struct{}{}
 	}
 	seenParents := make(map[string]struct{}, len(proof.ParentReserves))
+	coveredParents := make(map[string]struct{}, len(proof.ParentReserves))
 	for _, reserve := range proof.ParentReserves {
 		if _, found := parentSet[reserve.ParentChannelID]; !found {
 			return errors.New("payments virtual activation proof reserve references unknown parent")
 		}
-		if _, found := seenParents[reserve.ParentChannelID]; found {
+		if !proof.AggregatedCapacity {
+			if _, found := seenParents[reserve.ParentChannelID]; found {
+				return errors.New("payments virtual activation proof duplicate parent reserve")
+			}
+			seenParents[reserve.ParentChannelID] = struct{}{}
+		}
+		if _, found := seenParents[reserve.SegmentID]; found {
 			return errors.New("payments virtual activation proof duplicate parent reserve")
 		}
-		seenParents[reserve.ParentChannelID] = struct{}{}
+		seenParents[reserve.SegmentID] = struct{}{}
+		coveredParents[reserve.ParentChannelID] = struct{}{}
 		if !containsString(vc.Intermediaries, reserve.ReservedBy) && !containsString(vc.Endpoints, reserve.ReservedBy) {
 			return errors.New("payments virtual reserve signer must be route participant")
 		}
@@ -4874,10 +4970,24 @@ func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
 			return err
 		}
 		if reserved.LT(capacity) {
-			return errors.New("payments virtual reserve capacity below virtual capacity")
+			if !proof.AggregatedCapacity {
+				return errors.New("payments virtual reserve capacity below virtual capacity")
+			}
+			split, err := parsePositiveInt("payments virtual reserve split amount", reserve.SplitAmount)
+			if err != nil {
+				return err
+			}
+			if reserved.LT(split) {
+				return errors.New("payments virtual reserve capacity below split amount")
+			}
 		}
 		if err := ValidateVirtualReservationSignature(reserve.Signature, vc, reserve); err != nil {
 			return err
+		}
+	}
+	for parentID := range parentSet {
+		if _, found := coveredParents[parentID]; !found {
+			return errors.New("payments virtual activation proof missing parent reserve")
 		}
 	}
 	expected := ComputeVirtualActivationProofHash(proof)
@@ -4885,6 +4995,231 @@ func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
 		return errors.New("payments virtual activation proof hash mismatch")
 	}
 	return nil
+}
+
+func BuildVirtualCloseProof(final VirtualChannel, mode VirtualCloseMode, commitments []string, submittedBy string, closeHeight uint64) (VirtualCloseProof, error) {
+	final = final.Normalize()
+	if final.StateHash == "" || final.AnchorCommitment == "" {
+		built, err := BuildVirtualChannel(final)
+		if err != nil {
+			return VirtualCloseProof{}, err
+		}
+		built.Signatures = final.Signatures
+		final = built.Normalize()
+	}
+	proof := VirtualCloseProof{
+		VirtualChannelID:         final.VirtualChannelID,
+		ParentRouteID:            final.ParentRouteID,
+		CloseMode:                mode,
+		FinalState:               final,
+		ParentReserveCommitments: normalizeHashSlice(commitments),
+		SubmittedBy:              strings.TrimSpace(submittedBy),
+		CloseHeight:              closeHeight,
+		ReleaseHeight:            VirtualCloseReleaseHeight(mode, closeHeight, final.ExpiresHeight),
+	}
+	proof.ProofHash = ComputeVirtualCloseProofHash(proof)
+	return proof.Normalize(), nil
+}
+
+func VirtualCloseReleaseHeight(mode VirtualCloseMode, closeHeight, expiresHeight uint64) uint64 {
+	switch mode {
+	case VirtualCloseModeCooperative, VirtualCloseModeExpired:
+		return closeHeight
+	case VirtualCloseModeIntermediaryRisk, VirtualCloseModeDisputed:
+		return closeHeight + DefaultDisputePeriod
+	default:
+		return 0
+	}
+}
+
+func ComputeVirtualCloseProofHash(proof VirtualCloseProof) string {
+	proof = proof.Normalize()
+	parts := []string{
+		"virtual-close-proof",
+		proof.VirtualChannelID,
+		proof.ParentRouteID,
+		string(proof.CloseMode),
+		proof.FinalState.StateHash,
+		proof.SubmittedBy,
+		fmt.Sprintf("%020d", proof.CloseHeight),
+		fmt.Sprintf("%020d", proof.ReleaseHeight),
+	}
+	parts = append(parts, proof.ParentReserveCommitments...)
+	return HashParts(parts...)
+}
+
+func ValidateVirtualCloseProof(proof VirtualCloseProof, current VirtualChannel, currentHeight uint64) error {
+	proof = proof.Normalize()
+	current = current.Normalize()
+	if currentHeight == 0 || proof.CloseHeight != currentHeight {
+		return errors.New("payments virtual close proof height mismatch")
+	}
+	if !IsVirtualCloseMode(proof.CloseMode) {
+		return fmt.Errorf("unknown payments virtual close mode %q", proof.CloseMode)
+	}
+	if proof.VirtualChannelID != current.VirtualChannelID || proof.FinalState.VirtualChannelID != current.VirtualChannelID {
+		return errors.New("payments virtual close proof channel mismatch")
+	}
+	if proof.ParentRouteID != current.ParentRouteID || proof.FinalState.ParentRouteID != current.ParentRouteID {
+		return errors.New("payments virtual close proof route mismatch")
+	}
+	if !containsString(current.Endpoints, proof.SubmittedBy) && !containsString(current.Intermediaries, proof.SubmittedBy) {
+		return errors.New("payments virtual close submitter must be route participant")
+	}
+	if len(current.ParentReserveCommitments) > 0 && strings.Join(proof.ParentReserveCommitments, "/") != strings.Join(current.ParentReserveCommitments, "/") {
+		return errors.New("payments virtual close reserve commitment mismatch")
+	}
+	if proof.ReleaseHeight != VirtualCloseReleaseHeight(proof.CloseMode, proof.CloseHeight, current.ExpiresHeight) {
+		return errors.New("payments virtual close release height mismatch")
+	}
+	switch proof.CloseMode {
+	case VirtualCloseModeCooperative:
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual cooperative close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	case VirtualCloseModeExpired:
+		if currentHeight < current.ExpiresHeight+DefaultDisputePeriod {
+			return errors.New("payments virtual expired close before finalization")
+		}
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual expired close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	case VirtualCloseModeIntermediaryRisk:
+		if !containsString(current.Intermediaries, proof.SubmittedBy) {
+			return errors.New("payments virtual intermediary-risk close requires intermediary submitter")
+		}
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual intermediary-risk close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	case VirtualCloseModeDisputed:
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual disputed close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	}
+	expected := ComputeVirtualCloseProofHash(proof)
+	if proof.ProofHash != expected {
+		return errors.New("payments virtual close proof hash mismatch")
+	}
+	return nil
+}
+
+func VirtualReserveSegmentsFromProof(proof VirtualActivationProof) []VirtualReserveSegment {
+	proof = proof.Normalize()
+	out := make([]VirtualReserveSegment, 0, len(proof.ParentReserves))
+	for _, reserve := range proof.ParentReserves {
+		segment := VirtualReserveSegment{
+			SegmentID:         reserve.SegmentID,
+			VirtualChannelID:  proof.VirtualChannel.VirtualChannelID,
+			ParentChannelID:   reserve.ParentChannelID,
+			ReserveCommitment: reserve.ReserveCommitment,
+			Capacity:          reserve.SplitAmount,
+			BalanceA:          reserve.SplitAmount,
+			BalanceB:          "0",
+			FeeAmount:         reserve.FeeAmount,
+		}
+		segment.SegmentHash = ComputeVirtualReserveSegmentHash(segment)
+		out = append(out, segment.Normalize())
+	}
+	return normalizeVirtualReserveSegments(out)
+}
+
+func ComputeVirtualReserveSegmentHash(segment VirtualReserveSegment) string {
+	segment = segment.Normalize()
+	return HashParts("virtual-reserve-segment", segment.SegmentID, segment.VirtualChannelID, segment.ParentChannelID, segment.ReserveCommitment, segment.Capacity, segment.BalanceA, segment.BalanceB, segment.FeeAmount)
+}
+
+func ValidateVirtualReserveSegments(vc VirtualChannel, segments []VirtualReserveSegment) error {
+	vc = vc.Normalize()
+	segments = normalizeVirtualReserveSegments(segments)
+	if len(segments) == 0 {
+		return errors.New("payments virtual reserve segments are required")
+	}
+	total := sdkmath.ZeroInt()
+	seen := make(map[string]struct{}, len(segments))
+	for _, segment := range segments {
+		if err := segment.ValidateForVirtualChannel(vc); err != nil {
+			return err
+		}
+		if _, found := seen[segment.SegmentID]; found {
+			return errors.New("payments virtual reserve segments must be unique")
+		}
+		seen[segment.SegmentID] = struct{}{}
+		capacity, err := parsePositiveInt("payments virtual reserve segment capacity", segment.Capacity)
+		if err != nil {
+			return err
+		}
+		total = total.Add(capacity)
+	}
+	capacity, err := parsePositiveInt("payments virtual capacity", vc.Capacity)
+	if err != nil {
+		return err
+	}
+	if !total.Equal(capacity) {
+		return errors.New("payments virtual reserve segment split amount must equal capacity")
+	}
+	return nil
+}
+
+func BuildVirtualSegmentSettlementProofs(vc VirtualChannel, segments []VirtualReserveSegment) ([]VirtualSegmentSettlementProof, error) {
+	vc = vc.Normalize()
+	if err := ValidateVirtualReserveSegments(vc, segments); err != nil {
+		return nil, err
+	}
+	segments = normalizeVirtualReserveSegments(segments)
+	out := make([]VirtualSegmentSettlementProof, 0, len(segments))
+	for _, segment := range segments {
+		proof := VirtualSegmentSettlementProof{
+			SegmentID:         segment.SegmentID,
+			VirtualChannelID:  vc.VirtualChannelID,
+			ParentChannelID:   segment.ParentChannelID,
+			FinalStateHash:    vc.StateHash,
+			ReserveCommitment: segment.ReserveCommitment,
+			BalanceA:          segment.BalanceA,
+			BalanceB:          segment.BalanceB,
+		}
+		proof.SettlementHash = ComputeVirtualSegmentSettlementHash(proof)
+		out = append(out, proof.Normalize())
+	}
+	return normalizeVirtualSegmentSettlementProofs(out), nil
+}
+
+func ComputeVirtualSegmentSettlementHash(proof VirtualSegmentSettlementProof) string {
+	proof = proof.Normalize()
+	return HashParts("virtual-segment-settlement", proof.SegmentID, proof.VirtualChannelID, proof.ParentChannelID, proof.FinalStateHash, proof.ReserveCommitment, proof.BalanceA, proof.BalanceB)
+}
+
+func BuildVirtualPartialActivationFailure(vc VirtualChannel, failedSegmentID, reason string, refundCommitments []string) (VirtualPartialActivationFailure, error) {
+	vc = vc.Normalize()
+	failure := VirtualPartialActivationFailure{
+		VirtualChannelID:  vc.VirtualChannelID,
+		FailedSegmentID:   normalizeHash(failedSegmentID),
+		Reason:            strings.TrimSpace(reason),
+		RefundCommitments: normalizeHashSlice(refundCommitments),
+	}
+	failure.FailureHash = ComputeVirtualPartialActivationFailureHash(failure)
+	if err := failure.ValidateForVirtualChannel(vc); err != nil {
+		return VirtualPartialActivationFailure{}, err
+	}
+	return failure.Normalize(), nil
+}
+
+func ComputeVirtualPartialActivationFailureHash(failure VirtualPartialActivationFailure) string {
+	failure = failure.Normalize()
+	parts := []string{"virtual-partial-activation-failure", failure.VirtualChannelID, failure.FailedSegmentID, failure.Reason}
+	parts = append(parts, failure.RefundCommitments...)
+	return HashParts(parts...)
 }
 
 func BuildVirtualChannelDisputeProof(latest VirtualChannel, commitments []string, submittedBy string) (VirtualChannelDisputeProof, error) {
@@ -5249,6 +5584,7 @@ func (s VirtualReservationSignature) Normalize() VirtualReservationSignature {
 	s.ParentRouteID = normalizeHash(s.ParentRouteID)
 	s.ParentChannelID = normalizeHash(s.ParentChannelID)
 	s.Capacity = strings.TrimSpace(s.Capacity)
+	s.SplitAmount = strings.TrimSpace(s.SplitAmount)
 	s.FeeAmount = strings.TrimSpace(s.FeeAmount)
 	s.CommitmentHash = normalizeHash(s.CommitmentHash)
 	s.SignatureHash = normalizeHash(s.SignatureHash)
@@ -5256,9 +5592,14 @@ func (s VirtualReservationSignature) Normalize() VirtualReservationSignature {
 }
 
 func (r VirtualParentReserve) Normalize() VirtualParentReserve {
+	r.SegmentID = normalizeOptionalHash(r.SegmentID)
 	r.ParentChannelID = normalizeHash(r.ParentChannelID)
 	r.ReservedBy = strings.TrimSpace(r.ReservedBy)
 	r.Capacity = strings.TrimSpace(r.Capacity)
+	if r.SplitAmount == "" {
+		r.SplitAmount = r.Capacity
+	}
+	r.SplitAmount = strings.TrimSpace(r.SplitAmount)
 	if r.FeeAmount == "" {
 		r.FeeAmount = "0"
 	}
@@ -5283,6 +5624,142 @@ func (p VirtualChannelDisputeProof) Normalize() VirtualChannelDisputeProof {
 	p.SubmittedBy = strings.TrimSpace(p.SubmittedBy)
 	p.EvidenceHash = normalizeOptionalHash(p.EvidenceHash)
 	return p
+}
+
+func (r VirtualReserveRelease) Normalize() VirtualReserveRelease {
+	r.SegmentID = normalizeOptionalHash(r.SegmentID)
+	r.VirtualChannelID = normalizeHash(r.VirtualChannelID)
+	r.ParentChannelID = normalizeHash(r.ParentChannelID)
+	r.ReserveCommitment = normalizeHash(r.ReserveCommitment)
+	r.Capacity = strings.TrimSpace(r.Capacity)
+	r.BalanceA = strings.TrimSpace(r.BalanceA)
+	r.BalanceB = strings.TrimSpace(r.BalanceB)
+	r.FeeAmount = strings.TrimSpace(r.FeeAmount)
+	r.ReleaseHash = normalizeOptionalHash(r.ReleaseHash)
+	return r
+}
+
+func (p VirtualCloseProof) Normalize() VirtualCloseProof {
+	p.VirtualChannelID = normalizeHash(p.VirtualChannelID)
+	p.ParentRouteID = normalizeHash(p.ParentRouteID)
+	p.FinalState = p.FinalState.Normalize()
+	p.ParentReserveCommitments = normalizeHashSlice(p.ParentReserveCommitments)
+	p.SubmittedBy = strings.TrimSpace(p.SubmittedBy)
+	p.ProofHash = normalizeOptionalHash(p.ProofHash)
+	return p
+}
+
+func (s VirtualReserveSegment) Normalize() VirtualReserveSegment {
+	s.SegmentID = normalizeHash(s.SegmentID)
+	s.VirtualChannelID = normalizeHash(s.VirtualChannelID)
+	s.ParentChannelID = normalizeHash(s.ParentChannelID)
+	s.ReserveCommitment = normalizeHash(s.ReserveCommitment)
+	s.Capacity = strings.TrimSpace(s.Capacity)
+	s.BalanceA = strings.TrimSpace(s.BalanceA)
+	s.BalanceB = strings.TrimSpace(s.BalanceB)
+	s.FeeAmount = strings.TrimSpace(s.FeeAmount)
+	s.SegmentHash = normalizeOptionalHash(s.SegmentHash)
+	return s
+}
+
+func (s VirtualReserveSegment) ValidateForVirtualChannel(vc VirtualChannel) error {
+	s = s.Normalize()
+	vc = vc.Normalize()
+	if err := ValidateHash("payments virtual reserve segment id", s.SegmentID); err != nil {
+		return err
+	}
+	if s.VirtualChannelID != vc.VirtualChannelID {
+		return errors.New("payments virtual reserve segment channel mismatch")
+	}
+	if !containsString(vc.ParentChannelIDs, s.ParentChannelID) {
+		return errors.New("payments virtual reserve segment references unknown parent")
+	}
+	if err := ValidateHash("payments virtual reserve segment commitment", s.ReserveCommitment); err != nil {
+		return err
+	}
+	capacity, err := parsePositiveInt("payments virtual reserve segment capacity", s.Capacity)
+	if err != nil {
+		return err
+	}
+	balanceA, err := parseNonNegativeInt("payments virtual reserve segment balance a", s.BalanceA)
+	if err != nil {
+		return err
+	}
+	balanceB, err := parseNonNegativeInt("payments virtual reserve segment balance b", s.BalanceB)
+	if err != nil {
+		return err
+	}
+	if !balanceA.Add(balanceB).Equal(capacity) {
+		return errors.New("payments virtual reserve segment balances must equal capacity")
+	}
+	if err := validateNonNegativeInt("payments virtual reserve segment fee", s.FeeAmount); err != nil {
+		return err
+	}
+	if expected := ComputeVirtualReserveSegmentHash(s); s.SegmentHash != expected {
+		return errors.New("payments virtual reserve segment hash mismatch")
+	}
+	return nil
+}
+
+func (p VirtualSegmentSettlementProof) Normalize() VirtualSegmentSettlementProof {
+	p.SegmentID = normalizeHash(p.SegmentID)
+	p.VirtualChannelID = normalizeHash(p.VirtualChannelID)
+	p.ParentChannelID = normalizeHash(p.ParentChannelID)
+	p.FinalStateHash = normalizeHash(p.FinalStateHash)
+	p.ReserveCommitment = normalizeHash(p.ReserveCommitment)
+	p.BalanceA = strings.TrimSpace(p.BalanceA)
+	p.BalanceB = strings.TrimSpace(p.BalanceB)
+	p.SettlementHash = normalizeOptionalHash(p.SettlementHash)
+	return p
+}
+
+func (p VirtualSegmentSettlementProof) ValidateForSegment(segment VirtualReserveSegment, vc VirtualChannel) error {
+	p = p.Normalize()
+	segment = segment.Normalize()
+	vc = vc.Normalize()
+	if p.SegmentID != segment.SegmentID || p.VirtualChannelID != vc.VirtualChannelID || p.ParentChannelID != segment.ParentChannelID {
+		return errors.New("payments virtual segment settlement proof domain mismatch")
+	}
+	if p.FinalStateHash != vc.StateHash || p.ReserveCommitment != segment.ReserveCommitment {
+		return errors.New("payments virtual segment settlement proof commitment mismatch")
+	}
+	if p.BalanceA != segment.BalanceA || p.BalanceB != segment.BalanceB {
+		return errors.New("payments virtual segment settlement proof balance mismatch")
+	}
+	if expected := ComputeVirtualSegmentSettlementHash(p); p.SettlementHash != expected {
+		return errors.New("payments virtual segment settlement proof hash mismatch")
+	}
+	return nil
+}
+
+func (f VirtualPartialActivationFailure) Normalize() VirtualPartialActivationFailure {
+	f.VirtualChannelID = normalizeHash(f.VirtualChannelID)
+	f.FailedSegmentID = normalizeHash(f.FailedSegmentID)
+	f.Reason = strings.TrimSpace(f.Reason)
+	f.RefundCommitments = normalizeHashSlice(f.RefundCommitments)
+	f.FailureHash = normalizeOptionalHash(f.FailureHash)
+	return f
+}
+
+func (f VirtualPartialActivationFailure) ValidateForVirtualChannel(vc VirtualChannel) error {
+	f = f.Normalize()
+	vc = vc.Normalize()
+	if f.VirtualChannelID != vc.VirtualChannelID {
+		return errors.New("payments virtual partial activation failure channel mismatch")
+	}
+	if err := ValidateHash("payments virtual failed segment id", f.FailedSegmentID); err != nil {
+		return err
+	}
+	if f.Reason == "" {
+		return errors.New("payments virtual partial activation failure reason is required")
+	}
+	if len(f.RefundCommitments) == 0 {
+		return errors.New("payments virtual partial activation failure refund commitments are required")
+	}
+	if expected := ComputeVirtualPartialActivationFailureHash(f); f.FailureHash != expected {
+		return errors.New("payments virtual partial activation failure hash mismatch")
+	}
+	return nil
 }
 
 func (op SettlementOperation) Normalize() SettlementOperation {
@@ -5444,6 +5921,18 @@ func IsCloseReason(value CloseReason) bool {
 func IsVirtualChannelStatus(value VirtualChannelStatus) bool {
 	switch value {
 	case VirtualChannelStatusOpen, VirtualChannelStatusSettled:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsVirtualCloseMode(value VirtualCloseMode) bool {
+	switch value {
+	case VirtualCloseModeCooperative,
+		VirtualCloseModeExpired,
+		VirtualCloseModeIntermediaryRisk,
+		VirtualCloseModeDisputed:
 		return true
 	default:
 		return false
@@ -7082,10 +7571,35 @@ func normalizeVirtualParentReserves(reserves []VirtualParentReserve) []VirtualPa
 		out[i] = reserve.Normalize()
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SegmentID != out[j].SegmentID {
+			return out[i].SegmentID < out[j].SegmentID
+		}
 		if out[i].ParentChannelID != out[j].ParentChannelID {
 			return out[i].ParentChannelID < out[j].ParentChannelID
 		}
 		return out[i].ReservedBy < out[j].ReservedBy
+	})
+	return out
+}
+
+func normalizeVirtualReserveSegments(segments []VirtualReserveSegment) []VirtualReserveSegment {
+	out := make([]VirtualReserveSegment, len(segments))
+	for i, segment := range segments {
+		out[i] = segment.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].SegmentID < out[j].SegmentID
+	})
+	return out
+}
+
+func normalizeVirtualSegmentSettlementProofs(proofs []VirtualSegmentSettlementProof) []VirtualSegmentSettlementProof {
+	out := make([]VirtualSegmentSettlementProof, len(proofs))
+	for i, proof := range proofs {
+		out[i] = proof.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].SegmentID < out[j].SegmentID
 	})
 	return out
 }

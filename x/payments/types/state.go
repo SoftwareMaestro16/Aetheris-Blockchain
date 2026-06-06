@@ -1192,12 +1192,8 @@ func OpenVirtualChannel(state PaymentsState, vc VirtualChannel) (PaymentsState, 
 		} else if reserved.LT(capacity) {
 			return PaymentsState{}, errors.New("payments virtual channel capacity exceeds parent reserved capacity")
 		}
-		parentSafetyHeight := channel.LatestState.TimeoutHeight
-		if parentSafetyHeight == 0 {
-			parentSafetyHeight = channel.OpenHeight + channel.CloseDelay + channel.DisputePeriod
-		}
-		if vc.ExpiresHeight+channel.CloseDelay+channel.DisputePeriod < vc.ExpiresHeight || vc.ExpiresHeight+channel.CloseDelay+channel.DisputePeriod >= parentSafetyHeight {
-			return PaymentsState{}, errors.New("payments virtual channel expiry must be earlier than parent safety timeout")
+		if err := validateVirtualParentTimeout(vc, channel, 0); err != nil {
+			return PaymentsState{}, err
 		}
 	}
 	if vc.ChainID == "" {
@@ -1237,7 +1233,7 @@ func OpenVirtualChannelWithProof(state PaymentsState, proof VirtualActivationPro
 	if _, found := state.VirtualChannelByID(vc.VirtualChannelID); found {
 		return PaymentsState{}, errors.New("payments virtual channel already exists")
 	}
-	parentChainID, err := validateVirtualParentAccounting(state, vc, proof.RouteTimeoutHeight)
+	parentChainID, err := validateVirtualParentAccounting(state, vc, proof.RouteTimeoutHeight, proof.AggregatedCapacity, proof.ParentReserves)
 	if err != nil {
 		return PaymentsState{}, err
 	}
@@ -1272,7 +1268,7 @@ func OpenVirtualChannelWithProof(state PaymentsState, proof VirtualActivationPro
 		if err != nil {
 			return PaymentsState{}, err
 		}
-		reserveCapacity, err := parsePositiveInt("payments virtual reserve capacity", reserve.Capacity)
+		reserveCapacity, err := virtualReserveAccountingAmount(reserve, proof.AggregatedCapacity)
 		if err != nil {
 			return PaymentsState{}, err
 		}
@@ -1288,6 +1284,41 @@ func OpenVirtualChannelWithProof(state PaymentsState, proof VirtualActivationPro
 	next.VirtualChannels = append(next.VirtualChannels, proof.VirtualChannel)
 	sortVirtualChannels(next.VirtualChannels)
 	return next, next.Validate()
+}
+
+func CloseVirtualChannelWithProof(state PaymentsState, proof VirtualCloseProof, currentHeight uint64) (PaymentsState, VirtualChannel, []VirtualReserveRelease, error) {
+	state = state.Export()
+	if err := state.Validate(); err != nil {
+		return PaymentsState{}, VirtualChannel{}, nil, err
+	}
+	if currentHeight == 0 {
+		return PaymentsState{}, VirtualChannel{}, nil, errors.New("payments virtual close height must be positive")
+	}
+	index, current, found := state.VirtualChannelIndex(proof.VirtualChannelID)
+	if !found {
+		return PaymentsState{}, VirtualChannel{}, nil, errors.New("payments virtual channel not found")
+	}
+	finalState, err := buildVirtualUpdateForCurrent(current, proof.FinalState)
+	if err != nil {
+		return PaymentsState{}, VirtualChannel{}, nil, err
+	}
+	proof.FinalState = finalState
+	if proof.ProofHash == "" {
+		proof.ProofHash = ComputeVirtualCloseProofHash(proof)
+	}
+	if err := ValidateVirtualCloseProof(proof, current, currentHeight); err != nil {
+		return PaymentsState{}, VirtualChannel{}, nil, err
+	}
+	closed := finalState.Normalize()
+	closed.Status = VirtualChannelStatusSettled
+	releases, err := virtualReserveReleasesFromClose(proof, current)
+	if err != nil {
+		return PaymentsState{}, VirtualChannel{}, nil, err
+	}
+	next := state.Clone()
+	next.VirtualChannels = append(next.VirtualChannels[:index], next.VirtualChannels[index+1:]...)
+	sortVirtualChannels(next.VirtualChannels)
+	return next, closed.Normalize(), releases, next.Validate()
 }
 
 func AcceptVirtualChannelUpdate(state PaymentsState, nextVC VirtualChannel, currentHeight uint64) (PaymentsState, error) {
@@ -2602,11 +2633,25 @@ func parentReservedCapacity(channel ChannelRecord) (sdkmath.Int, error) {
 	return reserveA.Add(reserveB), nil
 }
 
-func validateVirtualParentAccounting(state PaymentsState, vc VirtualChannel, routeTimeoutHeight uint64) (string, error) {
+func validateVirtualParentAccounting(state PaymentsState, vc VirtualChannel, routeTimeoutHeight uint64, aggregated bool, reserves []VirtualParentReserve) (string, error) {
 	vc = vc.Normalize()
 	capacity, err := parsePositiveInt("payments virtual capacity", vc.Capacity)
 	if err != nil {
 		return "", err
+	}
+	requiredByParent := map[string]sdkmath.Int{}
+	if aggregated {
+		for _, reserve := range normalizeVirtualParentReserves(reserves) {
+			amount, err := virtualReserveAccountingAmount(reserve, true)
+			if err != nil {
+				return "", err
+			}
+			current := requiredByParent[reserve.ParentChannelID]
+			if current.IsNil() {
+				current = sdkmath.ZeroInt()
+			}
+			requiredByParent[reserve.ParentChannelID] = current.Add(amount)
+		}
 	}
 	var parentChainID string
 	for _, parentID := range vc.ParentChannelIDs {
@@ -2626,27 +2671,51 @@ func validateVirtualParentAccounting(state PaymentsState, vc VirtualChannel, rou
 		if err != nil {
 			return "", err
 		}
-		if reserved.LT(capacity) {
+		required := capacity
+		if aggregated {
+			required = requiredByParent[parentID]
+			if required.IsNil() || !required.IsPositive() {
+				return "", errors.New("payments virtual aggregated reserve missing parent split")
+			}
+		}
+		if reserved.LT(required) {
 			return "", errors.New("payments virtual channel capacity exceeds parent reserved capacity")
 		}
-		parentSafetyHeight := channel.LatestState.TimeoutHeight
-		if parentSafetyHeight == 0 {
-			parentSafetyHeight = channel.OpenHeight + channel.CloseDelay + channel.DisputePeriod
-		}
-		safetyExpiry := vc.ExpiresHeight + channel.CloseDelay + channel.DisputePeriod
-		if safetyExpiry < vc.ExpiresHeight || safetyExpiry >= parentSafetyHeight {
-			return "", errors.New("payments virtual channel expiry must be earlier than parent safety timeout")
-		}
-		if routeTimeoutHeight > 0 {
-			if routeTimeoutHeight > parentSafetyHeight {
-				return "", errors.New("payments virtual route timeout exceeds parent safety timeout")
-			}
-			if safetyExpiry >= routeTimeoutHeight {
-				return "", errors.New("payments virtual channel expiry must be earlier than route timeout")
-			}
+		if err := validateVirtualParentTimeout(vc, channel, routeTimeoutHeight); err != nil {
+			return "", err
 		}
 	}
 	return parentChainID, nil
+}
+
+func validateVirtualParentTimeout(vc VirtualChannel, channel ChannelRecord, routeTimeoutHeight uint64) error {
+	vc = vc.Normalize()
+	channel = channel.Normalize()
+	parentSafetyHeight := channel.LatestState.TimeoutHeight
+	if parentSafetyHeight == 0 {
+		parentSafetyHeight = channel.OpenHeight + channel.CloseDelay + channel.DisputePeriod
+	}
+	safetyExpiry := vc.ExpiresHeight + channel.CloseDelay + channel.DisputePeriod
+	if safetyExpiry < vc.ExpiresHeight || safetyExpiry >= parentSafetyHeight {
+		return errors.New("payments virtual channel expiry must be earlier than parent safety timeout")
+	}
+	if routeTimeoutHeight > 0 {
+		if routeTimeoutHeight > parentSafetyHeight {
+			return errors.New("payments virtual route timeout exceeds parent safety timeout")
+		}
+		if safetyExpiry >= routeTimeoutHeight {
+			return errors.New("payments virtual channel expiry must be earlier than route timeout")
+		}
+	}
+	return nil
+}
+
+func virtualReserveAccountingAmount(reserve VirtualParentReserve, aggregated bool) (sdkmath.Int, error) {
+	reserve = reserve.Normalize()
+	if aggregated {
+		return parsePositiveInt("payments virtual reserve split amount", reserve.SplitAmount)
+	}
+	return parsePositiveInt("payments virtual reserve capacity", reserve.Capacity)
 }
 
 func buildVirtualUpdateForCurrent(current VirtualChannel, nextVC VirtualChannel) (VirtualChannel, error) {
@@ -2678,6 +2747,13 @@ func buildVirtualUpdateForCurrent(current VirtualChannel, nextVC VirtualChannel)
 }
 
 func validateVirtualEndpointUpdate(current VirtualChannel, nextVC VirtualChannel) error {
+	if nextVC.Normalize().Nonce <= current.Normalize().Nonce {
+		return errors.New("payments virtual update nonce must strictly increase")
+	}
+	return validateVirtualEndpointSignedState(current, nextVC, true)
+}
+
+func validateVirtualEndpointSignedState(current VirtualChannel, nextVC VirtualChannel, requireNewer bool) error {
 	current = current.Normalize()
 	nextVC = nextVC.Normalize()
 	if nextVC.VirtualChannelID != current.VirtualChannelID {
@@ -2698,8 +2774,11 @@ func validateVirtualEndpointUpdate(current VirtualChannel, nextVC VirtualChannel
 	if nextVC.Capacity != current.Capacity || nextVC.RoutingFeeAmount != current.RoutingFeeAmount || nextVC.ExpiresHeight != current.ExpiresHeight {
 		return errors.New("payments virtual update immutable field mismatch")
 	}
-	if nextVC.Nonce <= current.Nonce {
+	if requireNewer && nextVC.Nonce <= current.Nonce {
 		return errors.New("payments virtual update nonce must strictly increase")
+	}
+	if !requireNewer && nextVC.Nonce < current.Nonce {
+		return errors.New("payments virtual signed state nonce is stale")
 	}
 	if err := nextVC.ValidateCore(); err != nil {
 		return err
@@ -2721,6 +2800,55 @@ func validateVirtualEndpointUpdate(current VirtualChannel, nextVC VirtualChannel
 		}
 	}
 	return nil
+}
+
+func virtualReserveReleasesFromClose(proof VirtualCloseProof, current VirtualChannel) ([]VirtualReserveRelease, error) {
+	proof = proof.Normalize()
+	current = current.Normalize()
+	commitments := proof.ParentReserveCommitments
+	if len(commitments) == 0 {
+		commitments = current.ParentReserveCommitments
+	}
+	if len(commitments) == 0 {
+		for _, parentID := range current.ParentChannelIDs {
+			commitments = append(commitments, HashParts("virtual-reserve-release", current.VirtualChannelID, parentID))
+		}
+	}
+	capacity, err := parsePositiveInt("payments virtual capacity", current.Capacity)
+	if err != nil {
+		return nil, err
+	}
+	releases := make([]VirtualReserveRelease, 0, len(commitments))
+	for i, commitment := range commitments {
+		parentID := ""
+		if i < len(current.ParentChannelIDs) {
+			parentID = current.ParentChannelIDs[i]
+		} else {
+			parentID = current.ParentChannelIDs[len(current.ParentChannelIDs)-1]
+		}
+		amount := current.Capacity
+		if len(commitments) > len(current.ParentChannelIDs) {
+			share := capacity.QuoRaw(int64(len(commitments)))
+			amount = share.String()
+		}
+		release := VirtualReserveRelease{
+			SegmentID:         HashParts("virtual-release-segment", current.VirtualChannelID, commitment),
+			VirtualChannelID:  current.VirtualChannelID,
+			ParentChannelID:   parentID,
+			ReserveCommitment: commitment,
+			Capacity:          amount,
+			BalanceA:          proof.FinalState.BalanceA,
+			BalanceB:          proof.FinalState.BalanceB,
+			FeeAmount:         current.RoutingFeeAmount,
+			ReleaseHeight:     proof.ReleaseHeight,
+		}
+		release.ReleaseHash = HashParts("virtual-reserve-release", release.SegmentID, release.VirtualChannelID, release.ParentChannelID, release.ReserveCommitment, release.Capacity, release.BalanceA, release.BalanceB, fmt.Sprintf("%020d", release.ReleaseHeight))
+		releases = append(releases, release.Normalize())
+	}
+	sort.SliceStable(releases, func(i, j int) bool {
+		return releases[i].SegmentID < releases[j].SegmentID
+	})
+	return releases, nil
 }
 
 func sharesAny(left, right []string) bool {
