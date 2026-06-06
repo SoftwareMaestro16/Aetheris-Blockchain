@@ -2593,6 +2593,161 @@ func TestBlockHeaderFirstPropagationVerifiesChunksProofsAndReconstructs(t *testi
 	require.ErrorContains(t, err, "proof set root")
 }
 
+func TestStreamSessionFromSpecOpensAndAccountsFlowControl(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	local := signedNodeRecord(t, 0x72, salt, 100, NodeRoleFull, NodeRoleStateSync)
+	remote := signedNodeRecord(t, 0x73, salt, 100, NodeRoleService, NodeRoleStorageProvider)
+	session, err := NegotiateVerifiedSession(local, remote, testSessionRequest(local, remote, 10, 80, "stream-session", []ChannelClass{
+		ChannelConsensus,
+		ChannelStateSync,
+		ChannelData,
+	}), salt, 10)
+	require.NoError(t, err)
+
+	var dataStream StreamSpec
+	for _, stream := range session.Streams {
+		if stream.Channel == ChannelData {
+			dataStream = stream
+			break
+		}
+	}
+	require.NotEmpty(t, dataStream.StreamID)
+
+	stream, err := StreamSessionFromSpec(session, dataStream, StreamingPayloadStateSync, 512, 4)
+	require.NoError(t, err)
+	require.Equal(t, StreamStateOpening, stream.State)
+	require.Equal(t, ComputeStreamSessionID(stream), stream.StreamID)
+
+	stream, err = OpenStreamSession(stream)
+	require.NoError(t, err)
+	plan, err := PlanStreamChunks(stream, 4096)
+	require.NoError(t, err)
+	require.Equal(t, uint64(512), plan.ChunkSize)
+	require.Equal(t, uint32(4), plan.MaxInFlightChunks)
+	require.False(t, plan.Backpressure)
+
+	stream, window, err := RecordStreamBytesSent(stream, stream.FlowControlWindow)
+	require.NoError(t, err)
+	require.True(t, window.Backpressure)
+	require.Zero(t, window.AvailableWindow)
+
+	_, _, err = RecordStreamBytesSent(stream, 1)
+	require.ErrorContains(t, err, "flow control")
+
+	stream, window, err = AcknowledgeStreamBytes(stream, stream.FlowControlWindow/2)
+	require.NoError(t, err)
+	require.Equal(t, stream.FlowControlWindow/2, window.AvailableWindow)
+	require.False(t, window.Backpressure)
+}
+
+func TestStreamSessionPauseResumeDrainCloseAndFail(t *testing.T) {
+	stream, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("parent-session"),
+		PayloadType:       StreamingPayloadStorageObject,
+		Priority:          PriorityForChannel(ChannelData),
+		FlowControlWindow: 2048,
+		ChunkSize:         512,
+		Parallelism:       2,
+	})
+	require.NoError(t, err)
+
+	stream, err = OpenStreamSession(stream)
+	require.NoError(t, err)
+	stream, _, err = RecordStreamBytesSent(stream, 1024)
+	require.NoError(t, err)
+
+	paused, err := PauseStreamSession(stream)
+	require.NoError(t, err)
+	_, err = PlanStreamChunks(paused, 1024)
+	require.ErrorContains(t, err, "active or draining")
+
+	stream, err = ResumeStreamSession(paused)
+	require.NoError(t, err)
+	_, err = CloseStreamSession(stream)
+	require.ErrorContains(t, err, "draining")
+
+	stream, err = DrainStreamSession(stream)
+	require.NoError(t, err)
+	_, err = CloseStreamSession(stream)
+	require.ErrorContains(t, err, "unacknowledged")
+
+	stream, _, err = AcknowledgeStreamBytes(stream, stream.BytesSent)
+	require.NoError(t, err)
+	stream, err = CloseStreamSession(stream)
+	require.NoError(t, err)
+	require.Equal(t, StreamStateClosed, stream.State)
+
+	failing, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("parent-session-fail"),
+		PayloadType:       StreamingPayloadProofBundle,
+		Priority:          PriorityForChannel(ChannelData),
+		FlowControlWindow: 1024,
+		ChunkSize:         256,
+	})
+	require.NoError(t, err)
+	failing, err = OpenStreamSession(failing)
+	require.NoError(t, err)
+	failing, err = FailStreamSession(failing)
+	require.NoError(t, err)
+	require.Equal(t, StreamStateFailed, failing.State)
+}
+
+func TestStreamPayloadTypeMapsToRL2AndRejectsInvalidBounds(t *testing.T) {
+	cases := map[StreamingPayloadType]struct {
+		rl2     RL2PayloadType
+		channel ChannelClass
+	}{
+		StreamingPayloadStateSync:            {rl2: RL2PayloadStateSyncStream, channel: ChannelStateSync},
+		StreamingPayloadZoneSnapshot:         {rl2: RL2PayloadZoneSnapshot, channel: ChannelData},
+		StreamingPayloadBlockPropagation:     {rl2: RL2PayloadLargeBlock, channel: ChannelBlock},
+		StreamingPayloadExecutionReceipts:    {rl2: RL2PayloadExecutionResult, channel: ChannelExecution},
+		StreamingPayloadStorageObject:        {rl2: RL2PayloadStorageObject, channel: ChannelData},
+		StreamingPayloadProofBundle:          {rl2: RL2PayloadProofSet, channel: ChannelData},
+		StreamingPayloadHistoricalQueryRange: {rl2: RL2PayloadStorageObject, channel: ChannelData},
+	}
+
+	for payloadType, expected := range cases {
+		rl2Type, err := StreamingPayloadRL2Type(payloadType)
+		require.NoError(t, err)
+		require.Equal(t, expected.rl2, rl2Type)
+
+		channel, err := StreamingPayloadChannel(payloadType)
+		require.NoError(t, err)
+		require.Equal(t, expected.channel, channel)
+	}
+
+	_, err := NewStreamSession(StreamSession{
+		SessionID:         HashParts("invalid-stream-window"),
+		PayloadType:       StreamingPayloadBlockPropagation,
+		Priority:          PriorityForChannel(ChannelBlock),
+		FlowControlWindow: 128,
+		ChunkSize:         256,
+	})
+	require.ErrorContains(t, err, "chunk size exceeds")
+
+	_, err = NewStreamSession(StreamSession{
+		SessionID:         HashParts("invalid-stream-ack"),
+		PayloadType:       StreamingPayloadExecutionReceipts,
+		Priority:          PriorityForChannel(ChannelExecution),
+		FlowControlWindow: 1024,
+		ChunkSize:         256,
+		BytesSent:         1,
+		BytesAcknowledged: 2,
+		State:             StreamStateActive,
+	})
+	require.ErrorContains(t, err, "acknowledged bytes exceed")
+
+	_, err = NewStreamSession(StreamSession{
+		SessionID:         HashParts("invalid-stream-opening"),
+		PayloadType:       StreamingPayloadProofBundle,
+		Priority:          PriorityForChannel(ChannelData),
+		FlowControlWindow: 1024,
+		ChunkSize:         256,
+		BytesSent:         1,
+	})
+	require.ErrorContains(t, err, "opening")
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
