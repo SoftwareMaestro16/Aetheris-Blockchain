@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -2931,6 +2932,157 @@ func TestSettlementBatchRequiresIndependentChannels(t *testing.T) {
 	})
 	batch.RootHash = ComputeBatchRoot(batch.Operations)
 	require.ErrorContains(t, batch.Validate(), "independent")
+}
+
+func TestBlockSTMAccessPlanUsesPerChannelKeysAndDefersAccounting(t *testing.T) {
+	alice := testAddress(0x81)
+	bob := testAddress(0x82)
+	first := signedChannel(t, "blockstm-first", "100", alice, bob)
+	second := signedChannel(t, "blockstm-second", "100", alice, bob)
+	firstOp := SettlementOperation{OperationID: HashParts("blockstm-op", "first"), OperationType: BatchOperationSettle, ChannelID: first.ChannelID, Nonce: 1, StateHash: first.LatestState.StateHash}
+	secondOp := SettlementOperation{OperationID: HashParts("blockstm-op", "second"), OperationType: BatchOperationSettle, ChannelID: second.ChannelID, Nonce: 1, StateHash: second.LatestState.StateHash}
+
+	firstPlan, err := AccessPlanForSettlementOperation(firstOp, 100)
+	require.NoError(t, err)
+	secondPlan, err := AccessPlanForSettlementOperation(secondOp, 100)
+	require.NoError(t, err)
+	require.Contains(t, firstPlan.WriteKeys, PaymentChannelKey(first.ChannelID))
+	require.NotContains(t, firstPlan.WriteKeys, PaymentBlockAccumulatorKey(100))
+	require.Equal(t, []string{PaymentBlockAccumulatorKey(100)}, firstPlan.AccumulatorKeys)
+
+	profile := ProfileBlockSTMConflicts([]BlockSTMAccessPlan{firstPlan, secondPlan})
+	require.True(t, profile.ConflictFree)
+	require.True(t, profile.GlobalAccountingDeferred)
+	require.Len(t, profile.ParallelizableGroups, 1)
+	require.ElementsMatch(t, []string{firstOp.OperationID, secondOp.OperationID}, profile.ParallelizableGroups[0])
+}
+
+func TestBlockSTMConflictProfileDetectsSameChannelConflicts(t *testing.T) {
+	alice := testAddress(0x83)
+	bob := testAddress(0x84)
+	channel := signedChannel(t, "blockstm-conflict", "100", alice, bob)
+	closeOp := SettlementOperation{OperationID: HashParts("blockstm-conflict", "close"), OperationType: BatchOperationClose, ChannelID: channel.ChannelID, Nonce: 1, StateHash: channel.LatestState.StateHash}
+	disputeOp := SettlementOperation{OperationID: HashParts("blockstm-conflict", "dispute"), OperationType: BatchOperationDispute, ChannelID: channel.ChannelID, Nonce: 2, StateHash: channel.LatestState.StateHash}
+	closePlan, err := AccessPlanForSettlementOperation(closeOp, 101)
+	require.NoError(t, err)
+	disputePlan, err := AccessPlanForSettlementOperation(disputeOp, 101)
+	require.NoError(t, err)
+
+	profile := ProfileBlockSTMConflicts([]BlockSTMAccessPlan{closePlan, disputePlan})
+	require.False(t, profile.ConflictFree)
+	require.NotEmpty(t, profile.Conflicts)
+	require.Contains(t, blockSTMConflictKeys(profile.Conflicts), PaymentChannelKey(channel.ChannelID))
+	require.Len(t, profile.ParallelizableGroups, 2)
+}
+
+func TestSettlementBatchGroupingByChannelKey(t *testing.T) {
+	alice := testAddress(0x85)
+	bob := testAddress(0x86)
+	first := signedChannel(t, "batch-group-first", "100", alice, bob)
+	second := signedChannel(t, "batch-group-second", "100", alice, bob)
+	ops := []SettlementOperation{
+		{OperationID: HashParts("batch-group", "first-close"), OperationType: BatchOperationClose, ChannelID: first.ChannelID, Nonce: 1, StateHash: first.LatestState.StateHash},
+		{OperationID: HashParts("batch-group", "first-settle"), OperationType: BatchOperationSettle, ChannelID: first.ChannelID, Nonce: 2, StateHash: first.LatestState.StateHash},
+		{OperationID: HashParts("batch-group", "second-settle"), OperationType: BatchOperationSettle, ChannelID: second.ChannelID, Nonce: 1, StateHash: second.LatestState.StateHash},
+	}
+
+	groups, err := GroupSettlementOperationsByChannelKey("blockstm-group", ops)
+	require.NoError(t, err)
+	require.Len(t, groups, 2)
+	for _, group := range groups {
+		require.NoError(t, group.Validate())
+		seen := map[string]struct{}{}
+		for _, op := range group.Operations {
+			_, duplicate := seen[op.ChannelID]
+			require.False(t, duplicate)
+			seen[op.ChannelID] = struct{}{}
+		}
+	}
+}
+
+func TestPaymentBlockAccumulatorAggregatesAfterSettlementHotPath(t *testing.T) {
+	alice := testAddress(0x87)
+	bob := testAddress(0x88)
+	channel := signedChannel(t, "block-accumulator", "100", alice, bob)
+	settlement := SettlementRecord{
+		ChainID:            channel.ChainID,
+		ChannelID:          channel.ChannelID,
+		StateHash:          channel.LatestState.StateHash,
+		Nonce:              channel.LatestState.Nonce,
+		FinalBalances:      channel.LatestState.Balances,
+		SettlementFeeDenom: NativeDenom,
+		SettlementFee:      "3",
+		PenaltyAllocations: []PenaltyAllocation{{Offender: alice, Route: PenaltyRouteCommunityPool, Denom: NativeDenom, Amount: "7"}},
+		SettledHeight:      100,
+	}
+	settlement.SettlementHash = ComputeSettlementHash(settlement)
+	acc := PaymentBlockAccumulator{BlockHeight: 100}
+	acc, err := AccumulatePaymentBlockAccounting(acc, settlement)
+	require.NoError(t, err)
+	require.NoError(t, acc.Validate())
+	require.Equal(t, "3", acc.FeeAmount)
+	require.Equal(t, "7", acc.PenaltyAmount)
+	require.Equal(t, uint64(1), acc.OperationCount)
+}
+
+func BenchmarkPaymentChannelOpenAccessPlan(b *testing.B) {
+	op := benchmarkSettlementOperation("bench-open", BatchOperationOpen, 1)
+	for i := 0; i < b.N; i++ {
+		if _, err := AccessPlanForSettlementOperation(op, 100); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPaymentChannelCloseAccessPlan(b *testing.B) {
+	op := benchmarkSettlementOperation("bench-close", BatchOperationClose, 1)
+	for i := 0; i < b.N; i++ {
+		if _, err := AccessPlanForSettlementOperation(op, 100); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPaymentChannelDisputeAccessPlan(b *testing.B) {
+	op := benchmarkSettlementOperation("bench-dispute", BatchOperationDispute, 1)
+	for i := 0; i < b.N; i++ {
+		if _, err := AccessPlanForSettlementOperation(op, 100); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPaymentBatchSettlementGrouping(b *testing.B) {
+	ops := make([]SettlementOperation, 128)
+	for i := range ops {
+		ops[i] = benchmarkSettlementOperation("bench-batch", BatchOperationSettle, uint64(i+1))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := GroupSettlementOperationsByChannelKey("bench-batch", ops); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchmarkSettlementOperation(seed string, opType BatchOperationType, nonce uint64) SettlementOperation {
+	channelID := HashParts(seed, "channel", fmt.Sprintf("%020d", nonce))
+	stateHash := HashParts(seed, "state", fmt.Sprintf("%020d", nonce))
+	return SettlementOperation{
+		OperationID:   HashParts(seed, "op", fmt.Sprintf("%020d", nonce), string(opType)),
+		OperationType: opType,
+		ChannelID:     channelID,
+		Nonce:         nonce,
+		StateHash:     stateHash,
+	}
+}
+
+func blockSTMConflictKeys(conflicts []BlockSTMConflict) []string {
+	out := make([]string, 0, len(conflicts))
+	for _, conflict := range conflicts {
+		out = append(out, conflict.Key)
+	}
+	return out
 }
 
 func signedChannel(t *testing.T, salt, collateral, left, right string) ChannelRecord {

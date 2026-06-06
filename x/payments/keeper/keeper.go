@@ -456,6 +456,25 @@ func (k *Keeper) AddSettlementBatch(batch paymentstypes.SettlementBatch) error {
 	return nil
 }
 
+func (k Keeper) GroupSettlementOperationsByChannelKey(seed string, operations []paymentstypes.SettlementOperation) ([]paymentstypes.SettlementBatch, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return nil, err
+	}
+	return paymentstypes.GroupSettlementOperationsByChannelKey(seed, operations)
+}
+
+func (k Keeper) ProfileBlockSTMConflicts(plans []paymentstypes.BlockSTMAccessPlan) (paymentstypes.BlockSTMConflictProfile, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.BlockSTMConflictProfile{}, err
+	}
+	for _, plan := range plans {
+		if err := plan.Validate(); err != nil {
+			return paymentstypes.BlockSTMConflictProfile{}, err
+		}
+	}
+	return paymentstypes.ProfileBlockSTMConflicts(plans), nil
+}
+
 func (k Keeper) QueryStateHash(channelID string) (paymentstypes.StateHashDebug, error) {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return paymentstypes.StateHashDebug{}, err
