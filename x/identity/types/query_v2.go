@@ -45,34 +45,37 @@ type IdentityQueryServiceV2 struct {
 }
 
 type IdentityQueryResponseV2 struct {
-	Code           IdentityQueryCodeV2
-	FailureCode    IdentityLightClientFailureCodeV2
-	Error          string
-	Height         uint64
-	RecordVersion  uint64
-	Page           IdentityQueryPageResponseV2
-	Proof          *IdentityResolutionProof
-	RecursiveProof *RecursiveResolutionProofV2
-	PathCommitment *IdentityPathCommitmentV2
-	AbsenceProof   *IdentityAbsenceProof
-	Domain         *DomainRecordV2
-	Domains        []DomainRecordV2
-	Binding        *DomainNFTBinding
-	Resolver       *UnifiedResolutionRecordV2
-	Address        sdk.AccAddress
-	Target         *NamedExecutionTarget
-	ContractTarget *ContractTargetV2
-	Service        *ServiceEndpointV2
-	Services       []ServiceEndpointV2
-	Interface      *InterfaceDescriptorV2
-	Route          *RoutingMetadataV2
-	Reverse        *ReverseResolutionRecordV2
-	Subdomains     []SubdomainRecord
-	Delegations    []DelegationRecordV2
-	Auction        *AuctionRecordV2
-	ProofResult    *IdentityResolution
-	Lifecycle      DomainLifecycleStatus
-	Params         *IdentityParams
+	Code              IdentityQueryCodeV2
+	FailureCode       IdentityLightClientFailureCodeV2
+	Error             string
+	Height            uint64
+	RecordVersion     uint64
+	Page              IdentityQueryPageResponseV2
+	Proof             *IdentityResolutionProof
+	RecursiveProof    *RecursiveResolutionProofV2
+	PathCommitment    *IdentityPathCommitmentV2
+	AbsenceProof      *IdentityAbsenceProof
+	Domain            *DomainRecordV2
+	Domains           []DomainRecordV2
+	Binding           *DomainNFTBinding
+	Resolver          *UnifiedResolutionRecordV2
+	Address           sdk.AccAddress
+	Target            *NamedExecutionTarget
+	ContractTarget    *ContractTargetV2
+	Service           *ServiceEndpointV2
+	Services          []ServiceEndpointV2
+	Interface         *InterfaceDescriptorV2
+	Route             *RoutingMetadataV2
+	Reverse           *ReverseResolutionRecordV2
+	Subdomains        []SubdomainRecord
+	Delegations       []DelegationRecordV2
+	Auction           *AuctionRecordV2
+	Consistency       *IdentityConsistencyAuditResultV2
+	ProofResult       *IdentityResolution
+	Lifecycle         DomainLifecycleStatus
+	Params            *IdentityParams
+	RegistrationPrice *IdentityDomainPriceQuoteV2
+	RenewalPrice      *IdentityDomainPriceQuoteV2
 }
 
 func NewIdentityQueryServiceV2(ctx IdentityQueryContextV2) IdentityQueryServiceV2 {
@@ -414,6 +417,52 @@ func (q IdentityQueryServiceV2) QueryIdentityParams() IdentityQueryResponseV2 {
 	resp := q.ok()
 	resp.Params = &params
 	resp.RecordVersion = 1
+	return resp
+}
+
+func (q IdentityQueryServiceV2) QueryRegistrationPrice(name string, durationBlocks uint64, demandClass IdentityDemandClassV2, auction bool, resolverPayloadBytes uint64, subdomainMode IdentitySubdomainModeV2) IdentityQueryResponseV2 {
+	quote, err := QuoteIdentityDomainPriceV2(IdentityDomainPriceRequestV2{
+		Name:                 name,
+		DurationBlocks:       durationBlocks,
+		DemandClass:          demandClass,
+		Auction:              auction,
+		ResolverPayloadBytes: resolverPayloadBytes,
+		SubdomainMode:        subdomainMode,
+	}, DefaultIdentityPricingParamsV2())
+	if err != nil {
+		return q.failure(IdentityQueryInvalidRequest, err)
+	}
+	resp := q.ok()
+	resp.RegistrationPrice = &quote
+	resp.RecordVersion = quote.DurationBlocks
+	return resp
+}
+
+func (q IdentityQueryServiceV2) QueryRenewalPrice(name string, periods uint32, resolverPayloadBytes uint64) IdentityQueryResponseV2 {
+	quote, err := QuoteIdentityRenewalPriceV2(name, periods, resolverPayloadBytes, DefaultIdentityPricingParamsV2())
+	if err != nil {
+		return q.failure(IdentityQueryInvalidRequest, err)
+	}
+	resp := q.ok()
+	resp.RenewalPrice = &quote
+	resp.RecordVersion = uint64(quote.RenewalPeriods)
+	return resp
+}
+
+func (q IdentityQueryServiceV2) QueryPeriodicConsistencyAudit() IdentityQueryResponseV2 {
+	audit := QueryIdentityPeriodicConsistencyAuditV2(IdentityConsistencyAuditRequestV2{
+		State:       q.ctx.State,
+		Height:      q.ctx.Height,
+		Delegations: q.ctx.Delegations,
+	})
+	resp := q.ok()
+	resp.Consistency = &audit
+	if !audit.Valid {
+		resp.Code = IdentityQueryVerificationFailed
+		if len(audit.Issues) > 0 {
+			resp.Error = audit.Issues[0].Message
+		}
+	}
 	return resp
 }
 

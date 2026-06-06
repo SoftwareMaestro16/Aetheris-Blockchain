@@ -22,8 +22,11 @@ const (
 	SignatureObjectDelta          = "async_delta"
 	SignatureObjectPromise        = "conditional_promise"
 	SignatureObjectGossip         = "payment_gossip"
+	SignatureObjectLiquidity      = "liquidity_reservation"
+	SignatureObjectRoutingFee     = "routing_fee_policy"
 	SignatureObjectVirtual        = "virtual_channel"
 	SignatureObjectVirtualReserve = "virtual_reservation"
+	SignatureObjectVirtualClose   = "virtual_close"
 	DefaultDisputePeriod          = uint64(16)
 	DefaultOpeningFee             = "1"
 	MaxDisputeExtensions          = uint32(2)
@@ -130,6 +133,19 @@ const (
 	BatchOperationSettle  BatchOperationType = "SETTLE"
 )
 
+type BlockSTMTransactionClass string
+
+const (
+	BlockSTMClassOpenChannel       BlockSTMTransactionClass = "OPEN_CHANNEL"
+	BlockSTMClassUpdateCheckpoint  BlockSTMTransactionClass = "UPDATE_CHECKPOINT"
+	BlockSTMClassCloseChannel      BlockSTMTransactionClass = "CLOSE_CHANNEL"
+	BlockSTMClassDisputeChannel    BlockSTMTransactionClass = "DISPUTE_CHANNEL"
+	BlockSTMClassSettleChannel     BlockSTMTransactionClass = "SETTLE_CHANNEL"
+	BlockSTMClassResolveCondition  BlockSTMTransactionClass = "RESOLVE_CONDITION"
+	BlockSTMClassBatchConditions   BlockSTMTransactionClass = "BATCH_CONDITIONS"
+	BlockSTMClassPenaltyAccounting BlockSTMTransactionClass = "PENALTY_ACCOUNTING"
+)
+
 type CloseReason string
 
 const (
@@ -180,13 +196,49 @@ const (
 	VirtualChannelStatusSettled VirtualChannelStatus = "SETTLED"
 )
 
+type VirtualCloseMode string
+
+const (
+	VirtualCloseModeCooperative      VirtualCloseMode = "COOPERATIVE_ENDPOINT"
+	VirtualCloseModeExpired          VirtualCloseMode = "EXPIRED"
+	VirtualCloseModeIntermediaryRisk VirtualCloseMode = "INTERMEDIARY_RISK"
+	VirtualCloseModeDisputed         VirtualCloseMode = "DISPUTED"
+)
+
 type PenaltyRoute string
 
 const (
 	PenaltyRouteReporter        PenaltyRoute = "REPORTER"
+	PenaltyRouteCounterparty    PenaltyRoute = "COUNTERPARTY"
 	PenaltyRouteBurn            PenaltyRoute = "BURN"
 	PenaltyRouteSecurityReserve PenaltyRoute = "SECURITY_RESERVE"
 	PenaltyRouteCommunityPool   PenaltyRoute = "COMMUNITY_POOL"
+)
+
+type PaymentPenaltyClass string
+
+const (
+	PenaltyClassInvalidClose      PaymentPenaltyClass = "INVALID_CLOSE_SUBMISSION"
+	PenaltyClassStaleClose        PaymentPenaltyClass = "STALE_CLOSE"
+	PenaltyClassDoubleSign        PaymentPenaltyClass = "SAME_NONCE_DOUBLE_SIGN"
+	PenaltyClassInvalidCondition  PaymentPenaltyClass = "INVALID_CONDITION_CLAIM"
+	PenaltyClassReplayAttempt     PaymentPenaltyClass = "REPLAY_ATTEMPT"
+	PenaltyClassAsyncOverexposure PaymentPenaltyClass = "ASYNC_OVEREXPOSURE"
+	PenaltyClassInvalidFraudProof PaymentPenaltyClass = "INVALID_FRAUD_PROOF"
+)
+
+type PaymentFeeClass string
+
+const (
+	PaymentFeeClassChannelOpen                  PaymentFeeClass = "CHANNEL_OPEN"
+	PaymentFeeClassChannelCheckpoint            PaymentFeeClass = "CHANNEL_CHECKPOINT"
+	PaymentFeeClassCooperativeClose             PaymentFeeClass = "COOPERATIVE_CLOSE"
+	PaymentFeeClassUnilateralClose              PaymentFeeClass = "UNILATERAL_CLOSE"
+	PaymentFeeClassDispute                      PaymentFeeClass = "DISPUTE"
+	PaymentFeeClassFraudProofVerification       PaymentFeeClass = "FRAUD_PROOF_VERIFICATION"
+	PaymentFeeClassConditionalPromiseSettlement PaymentFeeClass = "CONDITIONAL_PROMISE_SETTLEMENT"
+	PaymentFeeClassVirtualChannelAnchor         PaymentFeeClass = "VIRTUAL_CHANNEL_ANCHOR"
+	PaymentFeeClassRoutingAdvertisement         PaymentFeeClass = "ROUTING_ADVERTISEMENT"
 )
 
 type Balance struct {
@@ -382,6 +434,7 @@ type ChannelUpdateRequest struct {
 	RegisterCheckpoint   bool
 	Submitter            string
 	CurrentHeight        uint64
+	CheckpointFeePaid    string
 }
 
 type ChannelUpdateResult struct {
@@ -481,6 +534,61 @@ type RoutePolicy struct {
 	ExcludedNodes           []string
 	ExcludedChannels        []string
 	EdgeStats               []EdgeRoutingStats
+}
+
+type RoutingFeePolicyUpdate struct {
+	PolicyID                string
+	ChainID                 string
+	ChannelID               string
+	From                    string
+	To                      string
+	FeeDenom                string
+	BaseHopFee              string
+	ProportionalFeeBps      uint32
+	LiquidityReservationFee string
+	VirtualChannelSetupFee  string
+	CongestionSurcharge     string
+	FailurePenalty          string
+	MaxHopFee               string
+	ValidAfterHeight        uint64
+	ValidUntilHeight        uint64
+	Sequence                uint64
+	PolicyHash              string
+	Signature               RoutingFeePolicySignature
+}
+
+type RoutingFeePolicySignature struct {
+	Signer           string
+	ChainID          string
+	ChannelID        string
+	ObjectType       string
+	Version          uint32
+	Sequence         uint64
+	ObjectID         string
+	ExpirationHeight uint64
+	CommitmentHash   string
+	SignatureHash    string
+}
+
+type HopFeeCalculationRequest struct {
+	Amount                  string
+	Policy                  RoutingFeePolicyUpdate
+	CurrentHeight           uint64
+	IncludeVirtualSetup     bool
+	RepeatedInvalidAttempts uint32
+}
+
+type RoutingHopFee struct {
+	Denom                   string
+	BaseHopFee              string
+	ProportionalFee         string
+	LiquidityReservationFee string
+	VirtualChannelSetupFee  string
+	CongestionSurcharge     string
+	FailurePenalty          string
+	RepeatedInvalidAttempts uint32
+	TotalFee                string
+	PolicyHash              string
 }
 
 type RouteFailureClass string
@@ -641,6 +749,53 @@ type ConditionClaimRecord struct {
 	ExpiresHeight  uint64
 }
 
+type AsyncFinalizationJob struct {
+	JobID           string
+	ChannelID       string
+	FinalizeHeight  uint64
+	EnqueuedHeight  uint64
+	Attempts        uint32
+	LastRunHeight   uint64
+	LastError       string
+	Completed       bool
+	CompletedHeight uint64
+	SettlementHash  string
+}
+
+type AsyncPromiseExpiryJob struct {
+	JobID             string
+	ChannelID         string
+	PromiseID         string
+	Promise           ConditionalPromise
+	Resolver          string
+	ExpireAfterHeight uint64
+	EnqueuedHeight    uint64
+	Attempts          uint32
+	LastRunHeight     uint64
+	LastError         string
+	Completed         bool
+	CompletedHeight   uint64
+	ResolutionHash    string
+}
+
+type AsyncSettlementCompletion struct {
+	CompletionID string
+	JobID        string
+	JobType      string
+	ChannelID    string
+	ObjectID     string
+	ResultHash   string
+	Height       uint64
+}
+
+type AsyncExecutionResult struct {
+	ProcessedFinalizations   uint64
+	ProcessedPromiseExpiries uint64
+	CompletedJobIDs          []string
+	FailedJobIDs             []string
+	EmittedCompletionIDs     []string
+}
+
 type PreimageRevealRequest struct {
 	ChannelID     string
 	Promises      []ConditionalPromise
@@ -679,11 +834,12 @@ type RouteFeeClaim struct {
 }
 
 type BatchConditionSettlementRequest struct {
-	LinkageProof  ConditionLinkageProof
-	Mode          ConditionSettlementMode
-	Preimage      string
-	Resolver      string
-	CurrentHeight uint64
+	LinkageProof      ConditionLinkageProof
+	Mode              ConditionSettlementMode
+	Preimage          string
+	Resolver          string
+	CurrentHeight     uint64
+	SettlementFeePaid string
 }
 
 type BatchConditionSettlementResult struct {
@@ -710,10 +866,44 @@ type ChannelDisputeRequest struct {
 	ConditionProofs       []ConditionResolution
 	Submitter             string
 	CurrentHeight         uint64
+	DisputeFeePaid        string
 }
 
 type WatchDisputeSubmission struct {
 	WatchService          string
+	Delegator             string
+	ChannelID             string
+	ClosingStateReference string
+	NewerState            ChannelState
+	CurrentHeight         uint64
+	EvidenceHash          string
+}
+
+type ValidatorPaymentServiceMetadata struct {
+	ValidatorAddress string
+	ServiceAddress   string
+	WatchEndpoint    string
+	RoutingEndpoint  string
+	PublicKey        string
+	MinDelegation    string
+	CommissionBps    uint32
+	Active           bool
+	UpdatedHeight    uint64
+	MetadataHash     string
+}
+
+type ValidatorWatchRegistration struct {
+	ValidatorAddress string
+	ServiceAddress   string
+	Delegator        string
+	MinDelegation    string
+	RegisteredHeight uint64
+	MetadataHash     string
+}
+
+type ValidatorAssistedDisputeSubmission struct {
+	ValidatorAddress      string
+	ServiceAddress        string
 	Delegator             string
 	ChannelID             string
 	ClosingStateReference string
@@ -871,16 +1061,17 @@ type PendingClose struct {
 }
 
 type FraudProof struct {
-	ProofID         string
-	ProofType       FraudProofType
-	SubmittedBy     string
-	OffendingSigner string
-	StateA          ChannelState
-	StateB          ChannelState
-	AsyncProof      AsyncDeltaDisputeProof
-	PenaltyDenom    string
-	PenaltyAmount   string
-	EvidenceHash    string
+	ProofID             string
+	ProofType           FraudProofType
+	SubmittedBy         string
+	OffendingSigner     string
+	StateA              ChannelState
+	StateB              ChannelState
+	AsyncProof          AsyncDeltaDisputeProof
+	PenaltyDenom        string
+	PenaltyAmount       string
+	EvidenceHash        string
+	VerificationFeePaid string
 }
 
 type Penalty struct {
@@ -899,9 +1090,251 @@ type PenaltyAllocation struct {
 
 type FraudPenaltyPolicy struct {
 	ReporterRewardCap       string
+	CounterpartyRewardCap   string
+	CounterpartyRewardBps   uint32
 	BurnShareBps            uint32
 	SecurityReserveShareBps uint32
 	CommunityPoolShareBps   uint32
+	SecurityReserveHook     bool
+}
+
+type PenaltySource string
+
+const (
+	PenaltySourceChannelBalance              PenaltySource = "CHANNEL_BALANCE"
+	PenaltySourceParticipantBond             PenaltySource = "PARTICIPANT_BOND"
+	PenaltySourceRoutingAdvertisementDeposit PenaltySource = "ROUTING_ADVERTISEMENT_DEPOSIT"
+	PenaltySourceFraudProofDeposit           PenaltySource = "FRAUD_PROOF_DEPOSIT"
+)
+
+type PenaltyMatrixEntry struct {
+	Class                    PaymentPenaltyClass
+	ProofType                FraudProofType
+	Source                   PenaltySource
+	BasePenalty              string
+	ReporterRewardCap        string
+	CounterpartyCompensation string
+	BurnShareBps             uint32
+	SecurityReserveShareBps  uint32
+	CommunityPoolShareBps    uint32
+	InvalidProofVerifierCost string
+	Bounded                  bool
+}
+
+type PenaltyRouteAccounting struct {
+	Class            PaymentPenaltyClass
+	Source           PenaltySource
+	TotalPenalty     string
+	ReporterReward   string
+	CounterpartyComp string
+	Allocations      []PenaltyAllocation
+	Penalties        []Penalty
+}
+
+type InvalidFraudProofSubmissionPenalty struct {
+	Submitter        string
+	Denom            string
+	DepositAmount    string
+	VerificationCost string
+	ForfeitedAmount  string
+	RefundAmount     string
+}
+
+type LiquidityAdvertisement struct {
+	AdvertisementID     string
+	ChannelID           string
+	Advertiser          string
+	Counterparty        string
+	Capacity            string
+	FeeDenom            string
+	BaseFee             string
+	ReservationFee      string
+	VirtualSetupFee     string
+	ReliabilityBps      uint32
+	ValidUntilHeight    uint64
+	DepositAmount       string
+	BackedByReservation bool
+	AdvertisementHash   string
+}
+
+type LiquidityReservationSignature struct {
+	Signer           string
+	ChainID          string
+	ChannelID        string
+	ObjectType       string
+	Version          uint32
+	Nonce            uint64
+	ObjectID         string
+	ExpirationHeight uint64
+	CommitmentHash   string
+	SignatureHash    string
+}
+
+type SignedLiquidityReservation struct {
+	ReservationID    string
+	AdvertisementID  string
+	ChainID          string
+	ChannelID        string
+	Reserver         string
+	Counterparty     string
+	Capacity         string
+	FeeAmount        string
+	ExpirationHeight uint64
+	Nonce            uint64
+	CommitmentHash   string
+	Signature        LiquidityReservationSignature
+}
+
+type PaymentFeeSchedule struct {
+	Denom                           string
+	ChannelOpenFee                  string
+	ChannelOpenPerParticipantFee    string
+	ChannelCheckpointFee            string
+	CooperativeCloseFee             string
+	UnilateralCloseFee              string
+	DisputeFee                      string
+	FraudProofVerificationFee       string
+	ConditionalPromiseSettlementFee string
+	VirtualChannelAnchorFee         string
+	RoutingAdvertisementFee         string
+	RoutingAdvertisementDeposit     string
+	ConditionalCapabilitySurcharge  string
+	VirtualChannelAnchorSurcharge   string
+	StorageByteFee                  string
+	StorageFeeEnabled               bool
+	OpenFeeMin                      string
+	OpenFeeMax                      string
+	StorageRentPerBlock             string
+	RenewalPeriod                   uint64
+	BaseMultiplierBps               uint32
+	MaxMultiplierBps                uint32
+}
+
+type PaymentFeeMultiplier struct {
+	FeeClass      PaymentFeeClass
+	MultiplierBps uint32
+	CongestionBps uint32
+	UpdatedHeight uint64
+}
+
+type PaymentFeeCharge struct {
+	FeeID          string
+	FeeClass       PaymentFeeClass
+	ChannelID      string
+	ObjectID       string
+	Payer          string
+	Denom          string
+	Amount         string
+	RequiredAmount string
+	StorageBytes   uint64
+	MultiplierBps  uint32
+	Height         uint64
+	Refunded       bool
+}
+
+type PaymentFeeRefund struct {
+	RefundID  string
+	FeeID     string
+	Recipient string
+	Denom     string
+	Amount    string
+	Reason    string
+	Height    uint64
+}
+
+type SecurityReserveAllocationHook struct {
+	HookID     string
+	ChannelID  string
+	ProofID    string
+	Offender   string
+	Denom      string
+	Amount     string
+	Height     uint64
+	Route      PenaltyRoute
+	Allocation string
+}
+
+type SettlementInclusionLatency struct {
+	RecordID        string
+	OperationID     string
+	ChannelID       string
+	Operation       SettlementArbitrationOperation
+	SubmittedHeight uint64
+	IncludedHeight  uint64
+	LatencyBlocks   uint64
+	SLOThreshold    uint64
+	Breached        bool
+}
+
+type SettlementGasCostSchedule struct {
+	OpenGas                 uint64
+	CooperativeCloseGas     uint64
+	UnilateralCloseGas      uint64
+	DisputeGas              uint64
+	FraudProofGas           uint64
+	ConditionResolutionGas  uint64
+	PenaltyRoutingGas       uint64
+	FinalSettlementGas      uint64
+	ReplayProtectionGas     uint64
+	PerSignatureGas         uint64
+	PerConditionGas         uint64
+	PerFraudProofGas        uint64
+	PerPenaltyAllocationGas uint64
+	PerStateByteGas         uint64
+}
+
+type SettlementGasEstimate struct {
+	Operation            SettlementArbitrationOperation
+	BaseGas              uint64
+	SignatureGas         uint64
+	ConditionGas         uint64
+	FraudProofGas        uint64
+	PenaltyAllocationGas uint64
+	StateByteGas         uint64
+	TotalGas             uint64
+}
+
+type ChannelOpenFeeFormula struct {
+	Denom                  string
+	BaseFee                string
+	ParticipantFee         string
+	ParticipantCount       uint64
+	StorageByteFee         string
+	StorageBytes           uint64
+	StorageFee             string
+	ConditionalSurcharge   string
+	VirtualAnchorSurcharge string
+	RoutingDeposit         string
+	RentReserve            string
+	MultiplierBps          uint32
+	MinFee                 string
+	MaxFee                 string
+	TotalFee               string
+}
+
+func DefaultPaymentFeeSchedule() PaymentFeeSchedule {
+	return PaymentFeeSchedule{
+		Denom:                           NativeDenom,
+		ChannelOpenFee:                  DefaultOpeningFee,
+		ChannelOpenPerParticipantFee:    "0",
+		ChannelCheckpointFee:            "0",
+		CooperativeCloseFee:             "0",
+		UnilateralCloseFee:              "0",
+		DisputeFee:                      "0",
+		FraudProofVerificationFee:       "0",
+		ConditionalPromiseSettlementFee: "0",
+		VirtualChannelAnchorFee:         "0",
+		RoutingAdvertisementFee:         "0",
+		RoutingAdvertisementDeposit:     "0",
+		ConditionalCapabilitySurcharge:  "0",
+		VirtualChannelAnchorSurcharge:   "0",
+		StorageByteFee:                  "0",
+		OpenFeeMin:                      DefaultOpeningFee,
+		OpenFeeMax:                      "0",
+		StorageRentPerBlock:             "0",
+		BaseMultiplierBps:               10_000,
+		MaxMultiplierBps:                100_000,
+	}
 }
 
 type ChannelRecord struct {
@@ -969,15 +1402,172 @@ type PaymentEvent struct {
 	Attributes []PaymentEventAttribute
 }
 
-type ChannelEdge struct {
+type StoreV2ChannelRecord struct {
+	Key                     string
+	Version                 uint64
+	ChannelID               string
+	Channel                 ChannelRecord
+	LatestStateHash         string
+	LatestStateNonce        uint64
+	PendingCloseKey         string
+	ParticipantIndexKeys    []string
+	RoutingAdvertisementKey string
+}
+
+type StoreV2ChannelStateRecord struct {
+	Key              string
+	Version          uint64
+	ChannelID        string
+	Nonce            uint64
+	StateHash        string
+	FullState        ChannelState
+	SubmittedOnChain bool
+	CheckpointHeight uint64
+}
+
+type StoreV2PendingCloseRecord struct {
+	Key       string
+	Version   uint64
+	ChannelID string
+	Close     PendingClose
+}
+
+type StoreV2ConditionRecord struct {
+	Key           string
+	Version       uint64
+	ConditionID   string
 	ChannelID     string
-	From          string
-	To            string
-	Capacity      string
-	FeeDenom      string
-	FeeAmount     string
+	Promise       ConditionalPromise
 	ExpiresHeight uint64
-	Active        bool
+	Settled       bool
+	ClaimEvidence string
+}
+
+type StoreV2VirtualChannelRecord struct {
+	Key              string
+	Version          uint64
+	VirtualChannelID string
+	Channel          VirtualChannel
+	AnchorHash       string
+}
+
+type StoreV2ParticipantChannelRecord struct {
+	Key         string
+	Version     uint64
+	Participant string
+	ChannelID   string
+}
+
+type StoreV2SettlementTombstoneRecord struct {
+	Key              string
+	Version          uint64
+	ChannelID        string
+	Tombstone        ClosedChannelTombstone
+	PruneAfterHeight uint64
+}
+
+type StoreV2FeeAccumulatorRecord struct {
+	Key          string
+	Version      uint64
+	BlockOrEpoch string
+	Bucket       string
+	Amount       string
+}
+
+type StoreV2FraudProofRecord struct {
+	Key       string
+	Version   uint64
+	ProofID   string
+	ChannelID string
+	Proof     FraudProof
+}
+
+type StoreV2Layout struct {
+	Version              uint64
+	Channels             []StoreV2ChannelRecord
+	ChannelStates        []StoreV2ChannelStateRecord
+	PendingCloses        []StoreV2PendingCloseRecord
+	Conditions           []StoreV2ConditionRecord
+	VirtualChannels      []StoreV2VirtualChannelRecord
+	ParticipantChannels  []StoreV2ParticipantChannelRecord
+	SettlementTombstones []StoreV2SettlementTombstoneRecord
+	FeeAccumulators      []StoreV2FeeAccumulatorRecord
+	FraudProofs          []StoreV2FraudProofRecord
+}
+
+type ParticipantChannelPageRequest struct {
+	Address string
+	Offset  uint64
+	Limit   uint64
+}
+
+type ParticipantChannelPageResponse struct {
+	Entries    []StoreV2ParticipantChannelRecord
+	NextOffset uint64
+	Total      uint64
+}
+
+type AdaptiveSyncSnapshot struct {
+	Key                     string
+	Version                 uint64
+	Height                  uint64
+	Layout                  StoreV2Layout
+	ActiveDisputes          []AdaptiveSyncActiveDisputeIndex
+	PendingFinalizations    []AdaptiveSyncPendingFinalizationIndex
+	WatcherReplayEvents     []AdaptiveSyncWatcherReplayEvent
+	SnapshotHash            string
+	ConsensusOnly           bool
+	RoutingTopologyExcluded bool
+}
+
+type AdaptiveSyncActiveDisputeIndex struct {
+	Key               string
+	ChannelID         string
+	PendingStateHash  string
+	PendingNonce      uint64
+	SubmittedHeight   uint64
+	SettleAfterHeight uint64
+	DisputeCount      uint32
+	Submitter         string
+}
+
+type AdaptiveSyncPendingFinalizationIndex struct {
+	Key              string
+	ChannelID        string
+	PendingHeight    uint64
+	Finality         ChannelFinality
+	PendingStateHash string
+	PendingNonce     uint64
+}
+
+type AdaptiveSyncWatcherReplayEvent struct {
+	Key       string
+	Event     PaymentEvent
+	EventHash string
+}
+
+type AdaptiveSyncRecoveryState struct {
+	ActiveChannelIDs          []string
+	PendingCloseChannelIDs    []string
+	UnresolvedConditionIDs    []string
+	VirtualChannelIDs         []string
+	SettlementTombstoneIDs    []string
+	ActiveDisputeChannelIDs   []string
+	PendingFinalizationIDs    []string
+	WatcherReplayEventIDs     []string
+	RecoveredFromSnapshotHash string
+}
+
+type ChannelEdge struct {
+	ChannelID            string
+	From                 string
+	To                   string
+	Capacity             string
+	FeeDenom             string
+	FeeAmount            string
+	AdvertisementFeePaid string
+	ExpiresHeight        uint64
+	Active               bool
 }
 
 type VirtualChannel struct {
@@ -996,6 +1586,7 @@ type VirtualChannel struct {
 	BalanceA                 string
 	BalanceB                 string
 	RoutingFeeAmount         string
+	AnchorFeePaid            string
 	ExpiresHeight            uint64
 	Status                   VirtualChannelStatus
 	AnchorCommitment         string
@@ -1013,6 +1604,7 @@ type VirtualReservationSignature struct {
 	ObjectType       string
 	Version          uint32
 	Capacity         string
+	SplitAmount      string
 	FeeAmount        string
 	ExpirationHeight uint64
 	CommitmentHash   string
@@ -1020,9 +1612,11 @@ type VirtualReservationSignature struct {
 }
 
 type VirtualParentReserve struct {
+	SegmentID         string
 	ParentChannelID   string
 	ReservedBy        string
 	Capacity          string
+	SplitAmount       string
 	FeeAmount         string
 	ReserveCommitment string
 	Signature         VirtualReservationSignature
@@ -1032,7 +1626,33 @@ type VirtualActivationProof struct {
 	VirtualChannel     VirtualChannel
 	ParentReserves     []VirtualParentReserve
 	RouteTimeoutHeight uint64
+	AggregatedCapacity bool
 	ProofHash          string
+}
+
+type VirtualReserveRelease struct {
+	SegmentID         string
+	VirtualChannelID  string
+	ParentChannelID   string
+	ReserveCommitment string
+	Capacity          string
+	BalanceA          string
+	BalanceB          string
+	FeeAmount         string
+	ReleaseHeight     uint64
+	ReleaseHash       string
+}
+
+type VirtualCloseProof struct {
+	VirtualChannelID         string
+	ParentRouteID            string
+	CloseMode                VirtualCloseMode
+	FinalState               VirtualChannel
+	ParentReserveCommitments []string
+	SubmittedBy              string
+	CloseHeight              uint64
+	ReleaseHeight            uint64
+	ProofHash                string
 }
 
 type VirtualChannelDisputeProof struct {
@@ -1044,12 +1664,79 @@ type VirtualChannelDisputeProof struct {
 	EvidenceHash             string
 }
 
+type VirtualReserveSegment struct {
+	SegmentID         string
+	VirtualChannelID  string
+	ParentChannelID   string
+	ReserveCommitment string
+	Capacity          string
+	BalanceA          string
+	BalanceB          string
+	FeeAmount         string
+	SegmentHash       string
+}
+
+type VirtualSegmentSettlementProof struct {
+	SegmentID         string
+	VirtualChannelID  string
+	ParentChannelID   string
+	FinalStateHash    string
+	ReserveCommitment string
+	BalanceA          string
+	BalanceB          string
+	SettlementHash    string
+}
+
+type VirtualPartialActivationFailure struct {
+	VirtualChannelID  string
+	FailedSegmentID   string
+	Reason            string
+	RefundCommitments []string
+	FailureHash       string
+}
+
 type SettlementOperation struct {
 	OperationID   string
 	OperationType BatchOperationType
 	ChannelID     string
 	Nonce         uint64
 	StateHash     string
+}
+
+type BlockSTMAccessPlan struct {
+	OperationID        string
+	TxClass            BlockSTMTransactionClass
+	ChannelID          string
+	ConditionIDs       []string
+	ReadKeys           []string
+	WriteKeys          []string
+	AccumulatorKeys    []string
+	ConflictDomain     string
+	DeterministicGroup string
+}
+
+type BlockSTMConflict struct {
+	LeftOperationID  string
+	RightOperationID string
+	Key              string
+	Reason           string
+}
+
+type BlockSTMConflictProfile struct {
+	Plans                    []BlockSTMAccessPlan
+	Conflicts                []BlockSTMConflict
+	ParallelizableGroups     [][]string
+	ConflictFree             bool
+	GlobalAccountingDeferred bool
+}
+
+type PaymentBlockAccumulator struct {
+	BlockHeight    uint64
+	FeeAmount      string
+	BurnAmount     string
+	PenaltyAmount  string
+	OperationCount uint64
+	AccumulatorKey string
 }
 
 type SettlementBatch struct {
@@ -1301,6 +1988,10 @@ func (r ChannelUpdateRequest) Normalize() ChannelUpdateRequest {
 	r.ConditionCommitments = normalizeConditions(r.ConditionCommitments)
 	r.AsyncDeltas = normalizeAsyncDeltas(r.AsyncDeltas)
 	r.Submitter = strings.TrimSpace(r.Submitter)
+	r.CheckpointFeePaid = strings.TrimSpace(r.CheckpointFeePaid)
+	if r.CheckpointFeePaid == "" {
+		r.CheckpointFeePaid = "0"
+	}
 	return r
 }
 
@@ -1356,6 +2047,10 @@ func (r ChannelDisputeRequest) Normalize() ChannelDisputeRequest {
 	r.FraudProof = r.FraudProof.Normalize()
 	r.ConditionProofs = normalizeConditionResolutions(r.ConditionProofs)
 	r.Submitter = strings.TrimSpace(r.Submitter)
+	r.DisputeFeePaid = strings.TrimSpace(r.DisputeFeePaid)
+	if r.DisputeFeePaid == "" {
+		r.DisputeFeePaid = "0"
+	}
 	return r
 }
 
@@ -1396,6 +2091,126 @@ func (w WatchDisputeSubmission) ValidateForChannel(channel ChannelRecord) error 
 		}
 	}
 	return w.NewerState.ValidateForChannel(channel, false)
+}
+
+func (m ValidatorPaymentServiceMetadata) Normalize() ValidatorPaymentServiceMetadata {
+	m.ValidatorAddress = strings.TrimSpace(m.ValidatorAddress)
+	m.ServiceAddress = strings.TrimSpace(m.ServiceAddress)
+	m.WatchEndpoint = strings.TrimSpace(m.WatchEndpoint)
+	m.RoutingEndpoint = strings.TrimSpace(m.RoutingEndpoint)
+	m.PublicKey = strings.TrimSpace(m.PublicKey)
+	m.MinDelegation = strings.TrimSpace(m.MinDelegation)
+	if m.MinDelegation == "" {
+		m.MinDelegation = "0"
+	}
+	m.MetadataHash = normalizeOptionalHash(m.MetadataHash)
+	return m
+}
+
+func (m ValidatorPaymentServiceMetadata) Validate() error {
+	m = m.Normalize()
+	if err := addressing.ValidateUserAddress("payments validator service validator", m.ValidatorAddress); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments validator service address", m.ServiceAddress); err != nil {
+		return err
+	}
+	if m.WatchEndpoint == "" && m.RoutingEndpoint == "" {
+		return errors.New("payments validator service requires watch or routing endpoint")
+	}
+	if err := validateNonNegativeInt("payments validator service minimum delegation", m.MinDelegation); err != nil {
+		return err
+	}
+	if m.CommissionBps > MaxPenaltyRouteBps {
+		return errors.New("payments validator service commission exceeds 10000 bps")
+	}
+	if m.UpdatedHeight == 0 {
+		return errors.New("payments validator service update height must be positive")
+	}
+	expected := ComputeValidatorPaymentServiceMetadataHash(m)
+	if m.MetadataHash != "" && m.MetadataHash != expected {
+		return errors.New("payments validator service metadata hash mismatch")
+	}
+	return nil
+}
+
+func (r ValidatorWatchRegistration) Normalize() ValidatorWatchRegistration {
+	r.ValidatorAddress = strings.TrimSpace(r.ValidatorAddress)
+	r.ServiceAddress = strings.TrimSpace(r.ServiceAddress)
+	r.Delegator = strings.TrimSpace(r.Delegator)
+	r.MinDelegation = strings.TrimSpace(r.MinDelegation)
+	if r.MinDelegation == "" {
+		r.MinDelegation = "0"
+	}
+	r.MetadataHash = normalizeOptionalHash(r.MetadataHash)
+	return r
+}
+
+func (r ValidatorWatchRegistration) Validate(metadata ValidatorPaymentServiceMetadata) error {
+	r = r.Normalize()
+	metadata = metadata.Normalize()
+	if err := metadata.Validate(); err != nil {
+		return err
+	}
+	if !metadata.Active || metadata.WatchEndpoint == "" {
+		return errors.New("payments validator watch service is not active")
+	}
+	if r.ValidatorAddress != metadata.ValidatorAddress || r.ServiceAddress != metadata.ServiceAddress {
+		return errors.New("payments validator watch registration service mismatch")
+	}
+	if err := addressing.ValidateUserAddress("payments validator watch delegator", r.Delegator); err != nil {
+		return err
+	}
+	if r.RegisteredHeight == 0 {
+		return errors.New("payments validator watch registration height must be positive")
+	}
+	if r.RegisteredHeight < metadata.UpdatedHeight {
+		return errors.New("payments validator watch registration predates metadata")
+	}
+	if r.MetadataHash != "" && r.MetadataHash != metadata.MetadataHash {
+		return errors.New("payments validator watch registration metadata hash mismatch")
+	}
+	return validateNonNegativeInt("payments validator watch minimum delegation", r.MinDelegation)
+}
+
+func (s ValidatorAssistedDisputeSubmission) Normalize() ValidatorAssistedDisputeSubmission {
+	s.ValidatorAddress = strings.TrimSpace(s.ValidatorAddress)
+	s.ServiceAddress = strings.TrimSpace(s.ServiceAddress)
+	s.Delegator = strings.TrimSpace(s.Delegator)
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ClosingStateReference = normalizeHash(s.ClosingStateReference)
+	s.NewerState = s.NewerState.Normalize()
+	s.EvidenceHash = normalizeOptionalHash(s.EvidenceHash)
+	return s
+}
+
+func (s ValidatorAssistedDisputeSubmission) ValidateForChannel(channel ChannelRecord, metadata ValidatorPaymentServiceMetadata) error {
+	s = s.Normalize()
+	metadata = metadata.Normalize()
+	if err := metadata.Validate(); err != nil {
+		return err
+	}
+	if !metadata.Active || metadata.WatchEndpoint == "" {
+		return errors.New("payments validator watch service is not active")
+	}
+	if s.ValidatorAddress != metadata.ValidatorAddress {
+		return errors.New("payments validator assisted dispute validator mismatch")
+	}
+	if s.ServiceAddress == "" {
+		s.ServiceAddress = metadata.ServiceAddress
+	}
+	if s.ServiceAddress != metadata.ServiceAddress {
+		return errors.New("payments validator assisted dispute service mismatch")
+	}
+	return (WatchDisputeSubmission{
+		WatchService:          metadata.ServiceAddress,
+		Delegator:             s.Delegator,
+		ChannelID:             s.ChannelID,
+		ClosingStateReference: s.ClosingStateReference,
+		NewerState:            s.NewerState,
+		CurrentHeight:         s.CurrentHeight,
+		EvidenceHash:          s.EvidenceHash,
+	}).ValidateForChannel(channel)
 }
 
 func (r FinalSettlementRequest) Normalize() FinalSettlementRequest {
@@ -2298,6 +3113,209 @@ func (p RoutePolicy) Validate() error {
 	return nil
 }
 
+func BuildRoutingFeePolicyUpdate(update RoutingFeePolicyUpdate, signer string) (RoutingFeePolicyUpdate, error) {
+	update = update.Normalize()
+	if update.PolicyID == "" {
+		update.PolicyID = HashParts("routing-fee-policy-id", update.ChainID, update.ChannelID, update.From, update.To, fmt.Sprintf("%020d", update.Sequence))
+	}
+	update.PolicyHash = ""
+	update.Signature = RoutingFeePolicySignature{}
+	update.PolicyHash = ComputeRoutingFeePolicyHash(update)
+	signature, err := SignatureForRoutingFeePolicy(update, signer)
+	if err != nil {
+		return RoutingFeePolicyUpdate{}, err
+	}
+	update.Signature = signature
+	if err := update.ValidateAtHeight(update.ValidAfterHeight); err != nil {
+		return RoutingFeePolicyUpdate{}, err
+	}
+	return update.Normalize(), nil
+}
+
+func ComputeRoutingFeePolicyHash(update RoutingFeePolicyUpdate) string {
+	update = update.Normalize()
+	return HashParts(
+		"routing-fee-policy",
+		update.PolicyID,
+		update.ChainID,
+		update.ChannelID,
+		update.From,
+		update.To,
+		update.FeeDenom,
+		update.BaseHopFee,
+		fmt.Sprintf("%010d", update.ProportionalFeeBps),
+		update.LiquidityReservationFee,
+		update.VirtualChannelSetupFee,
+		update.CongestionSurcharge,
+		update.FailurePenalty,
+		update.MaxHopFee,
+		fmt.Sprintf("%020d", update.ValidAfterHeight),
+		fmt.Sprintf("%020d", update.ValidUntilHeight),
+		fmt.Sprintf("%020d", update.Sequence),
+	)
+}
+
+func SignatureForRoutingFeePolicy(update RoutingFeePolicyUpdate, signer string) (RoutingFeePolicySignature, error) {
+	update = update.Normalize()
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments routing fee policy signer", signer); err != nil {
+		return RoutingFeePolicySignature{}, err
+	}
+	if update.PolicyHash == "" {
+		update.PolicyHash = ComputeRoutingFeePolicyHash(update)
+	}
+	return RoutingFeePolicySignature{
+		Signer:           signer,
+		ChainID:          update.ChainID,
+		ChannelID:        update.ChannelID,
+		ObjectType:       SignatureObjectRoutingFee,
+		Version:          CurrentStateVersion,
+		Sequence:         update.Sequence,
+		ObjectID:         update.PolicyHash,
+		ExpirationHeight: update.ValidUntilHeight,
+		CommitmentHash:   update.PolicyHash,
+		SignatureHash: ComputeSignatureEnvelopeHash(
+			signer,
+			update.ChainID,
+			update.ChannelID,
+			SignatureObjectRoutingFee,
+			CurrentStateVersion,
+			update.Sequence,
+			update.PolicyHash,
+			update.ValidUntilHeight,
+			update.PolicyHash,
+		),
+	}, nil
+}
+
+func (u RoutingFeePolicyUpdate) Normalize() RoutingFeePolicyUpdate {
+	u.PolicyID = normalizeOptionalHash(u.PolicyID)
+	u.ChainID = strings.TrimSpace(u.ChainID)
+	u.ChannelID = normalizeHash(u.ChannelID)
+	u.From = strings.TrimSpace(u.From)
+	u.To = strings.TrimSpace(u.To)
+	u.FeeDenom = normalizeAssetDenom(u.FeeDenom)
+	u.BaseHopFee = strings.TrimSpace(u.BaseHopFee)
+	u.LiquidityReservationFee = strings.TrimSpace(u.LiquidityReservationFee)
+	u.VirtualChannelSetupFee = strings.TrimSpace(u.VirtualChannelSetupFee)
+	u.CongestionSurcharge = strings.TrimSpace(u.CongestionSurcharge)
+	u.FailurePenalty = strings.TrimSpace(u.FailurePenalty)
+	u.MaxHopFee = strings.TrimSpace(u.MaxHopFee)
+	for _, field := range []*string{&u.BaseHopFee, &u.LiquidityReservationFee, &u.VirtualChannelSetupFee, &u.CongestionSurcharge, &u.FailurePenalty, &u.MaxHopFee} {
+		if *field == "" {
+			*field = "0"
+		}
+	}
+	u.PolicyHash = normalizeOptionalHash(u.PolicyHash)
+	u.Signature = u.Signature.Normalize()
+	return u
+}
+
+func (u RoutingFeePolicyUpdate) ValidateAtHeight(currentHeight uint64) error {
+	update := u.Normalize()
+	if update.PolicyID == "" {
+		return errors.New("payments routing fee policy id is required")
+	}
+	if err := ValidateHash("payments routing fee policy id", update.PolicyID); err != nil {
+		return err
+	}
+	if update.ChainID == "" {
+		return errors.New("payments routing fee policy chain id is required")
+	}
+	if err := ValidateHash("payments routing fee policy channel id", update.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments routing fee policy from", update.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments routing fee policy to", update.To); err != nil {
+		return err
+	}
+	if update.From == update.To {
+		return errors.New("payments routing fee policy endpoints must differ")
+	}
+	if update.FeeDenom != NativeDenom {
+		return fmt.Errorf("payments routing fee policy denom must be %s", NativeDenom)
+	}
+	for _, value := range []struct {
+		field string
+		text  string
+	}{
+		{"payments routing base hop fee", update.BaseHopFee},
+		{"payments routing liquidity reservation fee", update.LiquidityReservationFee},
+		{"payments routing virtual setup fee", update.VirtualChannelSetupFee},
+		{"payments routing congestion surcharge", update.CongestionSurcharge},
+		{"payments routing failure penalty", update.FailurePenalty},
+		{"payments routing max hop fee", update.MaxHopFee},
+	} {
+		if err := validateNonNegativeInt(value.field, value.text); err != nil {
+			return err
+		}
+	}
+	if update.ProportionalFeeBps > 100_000 {
+		return errors.New("payments routing proportional fee bps is too high")
+	}
+	if update.ValidAfterHeight == 0 || update.ValidUntilHeight == 0 || update.ValidUntilHeight < update.ValidAfterHeight {
+		return errors.New("payments routing fee policy validity window is invalid")
+	}
+	if currentHeight != 0 && (currentHeight < update.ValidAfterHeight || currentHeight > update.ValidUntilHeight) {
+		return errors.New("payments routing fee policy is outside validity window")
+	}
+	if update.Sequence == 0 {
+		return errors.New("payments routing fee policy sequence must be positive")
+	}
+	expectedHash := ComputeRoutingFeePolicyHash(update)
+	if update.PolicyHash != expectedHash {
+		return errors.New("payments routing fee policy hash mismatch")
+	}
+	return update.Signature.Validate(update)
+}
+
+func (s RoutingFeePolicySignature) Normalize() RoutingFeePolicySignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ObjectType = strings.TrimSpace(s.ObjectType)
+	s.ObjectID = normalizeOptionalHash(s.ObjectID)
+	s.CommitmentHash = normalizeOptionalHash(s.CommitmentHash)
+	s.SignatureHash = normalizeOptionalHash(s.SignatureHash)
+	return s
+}
+
+func (s RoutingFeePolicySignature) Validate(update RoutingFeePolicyUpdate) error {
+	sig := s.Normalize()
+	update = update.Normalize()
+	if err := addressing.ValidateUserAddress("payments routing fee policy signature signer", sig.Signer); err != nil {
+		return err
+	}
+	if sig.Signer != update.From {
+		return errors.New("payments routing fee policy signer must be forwarding node")
+	}
+	if sig.ChainID != update.ChainID || sig.ChannelID != update.ChannelID {
+		return errors.New("payments routing fee policy signature domain mismatch")
+	}
+	if sig.ObjectType != SignatureObjectRoutingFee {
+		return errors.New("payments routing fee policy signature object type mismatch")
+	}
+	if sig.Version != CurrentStateVersion || sig.Sequence != update.Sequence {
+		return errors.New("payments routing fee policy signature version or sequence mismatch")
+	}
+	if sig.ObjectID != update.PolicyHash || sig.CommitmentHash != update.PolicyHash {
+		return errors.New("payments routing fee policy signature commitment mismatch")
+	}
+	if sig.ExpirationHeight != update.ValidUntilHeight {
+		return errors.New("payments routing fee policy signature expiration mismatch")
+	}
+	if err := ValidateHash("payments routing fee policy signature hash", sig.SignatureHash); err != nil {
+		return err
+	}
+	expected := ComputeSignatureEnvelopeHash(sig.Signer, sig.ChainID, sig.ChannelID, sig.ObjectType, sig.Version, sig.Sequence, sig.ObjectID, sig.ExpirationHeight, sig.CommitmentHash)
+	if sig.SignatureHash != expected {
+		return errors.New("payments routing fee policy signature value mismatch")
+	}
+	return nil
+}
+
 func (r RouteSelectionRequest) Normalize() RouteSelectionRequest {
 	r.From = strings.TrimSpace(r.From)
 	r.To = strings.TrimSpace(r.To)
@@ -3131,6 +4149,111 @@ func (r ConditionClaimRecord) Validate() error {
 	return nil
 }
 
+func (j AsyncFinalizationJob) Normalize() AsyncFinalizationJob {
+	j.JobID = normalizeOptionalHash(j.JobID)
+	j.ChannelID = normalizeHash(j.ChannelID)
+	j.LastError = strings.TrimSpace(j.LastError)
+	j.SettlementHash = normalizeOptionalHash(j.SettlementHash)
+	return j
+}
+
+func (j AsyncFinalizationJob) Validate() error {
+	job := j.Normalize()
+	if err := ValidateHash("payments async finalization job id", job.JobID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async finalization channel id", job.ChannelID); err != nil {
+		return err
+	}
+	if job.FinalizeHeight == 0 || job.EnqueuedHeight == 0 {
+		return errors.New("payments async finalization heights must be positive")
+	}
+	if job.Completed {
+		if job.CompletedHeight == 0 {
+			return errors.New("payments async finalization completed height must be positive")
+		}
+		if err := ValidateHash("payments async finalization settlement hash", job.SettlementHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (j AsyncPromiseExpiryJob) Normalize() AsyncPromiseExpiryJob {
+	j.JobID = normalizeOptionalHash(j.JobID)
+	j.ChannelID = normalizeHash(j.ChannelID)
+	j.PromiseID = normalizeHash(j.PromiseID)
+	j.Promise = j.Promise.Normalize()
+	j.Resolver = strings.TrimSpace(j.Resolver)
+	j.LastError = strings.TrimSpace(j.LastError)
+	j.ResolutionHash = normalizeOptionalHash(j.ResolutionHash)
+	return j
+}
+
+func (j AsyncPromiseExpiryJob) Validate() error {
+	job := j.Normalize()
+	if err := ValidateHash("payments async promise expiry job id", job.JobID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async promise expiry channel id", job.ChannelID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async promise id", job.PromiseID); err != nil {
+		return err
+	}
+	if job.Promise.ChannelID != job.ChannelID || job.Promise.PromiseID != job.PromiseID {
+		return errors.New("payments async promise expiry job promise mismatch")
+	}
+	if err := addressing.ValidateUserAddress("payments async promise resolver", job.Resolver); err != nil {
+		return err
+	}
+	if job.ExpireAfterHeight == 0 || job.EnqueuedHeight == 0 {
+		return errors.New("payments async promise expiry heights must be positive")
+	}
+	if job.Completed {
+		if job.CompletedHeight == 0 {
+			return errors.New("payments async promise expiry completed height must be positive")
+		}
+		if err := ValidateHash("payments async promise expiry resolution hash", job.ResolutionHash); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c AsyncSettlementCompletion) Normalize() AsyncSettlementCompletion {
+	c.CompletionID = normalizeOptionalHash(c.CompletionID)
+	c.JobID = normalizeHash(c.JobID)
+	c.JobType = strings.TrimSpace(c.JobType)
+	c.ChannelID = normalizeHash(c.ChannelID)
+	c.ObjectID = strings.TrimSpace(c.ObjectID)
+	c.ResultHash = normalizeHash(c.ResultHash)
+	return c
+}
+
+func (c AsyncSettlementCompletion) Validate() error {
+	completion := c.Normalize()
+	if err := ValidateHash("payments async completion id", completion.CompletionID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async completion job id", completion.JobID); err != nil {
+		return err
+	}
+	if completion.JobType == "" {
+		return errors.New("payments async completion job type is required")
+	}
+	if err := ValidateHash("payments async completion channel id", completion.ChannelID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments async completion result hash", completion.ResultHash); err != nil {
+		return err
+	}
+	if completion.Height == 0 {
+		return errors.New("payments async completion height must be positive")
+	}
+	return nil
+}
+
 func (r PreimageRevealRequest) Normalize() PreimageRevealRequest {
 	r.ChannelID = normalizeHash(r.ChannelID)
 	r.Promises = normalizeConditionalPromises(r.Promises)
@@ -3397,6 +4520,10 @@ func (r BatchConditionSettlementRequest) Normalize() BatchConditionSettlementReq
 	r.LinkageProof = r.LinkageProof.Normalize()
 	r.Preimage = strings.TrimSpace(r.Preimage)
 	r.Resolver = strings.TrimSpace(r.Resolver)
+	r.SettlementFeePaid = strings.TrimSpace(r.SettlementFeePaid)
+	if r.SettlementFeePaid == "" {
+		r.SettlementFeePaid = "0"
+	}
 	return r
 }
 
@@ -4113,6 +5240,10 @@ func (f FraudProof) Normalize() FraudProof {
 	f.PenaltyDenom = normalizeAssetDenom(f.PenaltyDenom)
 	f.PenaltyAmount = strings.TrimSpace(f.PenaltyAmount)
 	f.EvidenceHash = normalizeHash(f.EvidenceHash)
+	f.VerificationFeePaid = strings.TrimSpace(f.VerificationFeePaid)
+	if f.VerificationFeePaid == "" {
+		f.VerificationFeePaid = "0"
+	}
 	f.StateA = f.StateA.Normalize()
 	f.StateB = f.StateB.Normalize()
 	f.AsyncProof = f.AsyncProof.Normalize()
@@ -4148,6 +5279,9 @@ func (f FraudProof) ValidateForChannel(channel ChannelRecord) error {
 		return fmt.Errorf("payments fraud penalty denom must be %s", NativeDenom)
 	}
 	if err := validatePositiveInt("payments fraud penalty", proof.PenaltyAmount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments fraud verification fee", proof.VerificationFeePaid); err != nil {
 		return err
 	}
 	if err := ValidateHash("payments fraud evidence hash", proof.EvidenceHash); err != nil {
@@ -4267,7 +5401,7 @@ func (p PenaltyAllocation) ValidateForChannel(channel ChannelRecord) error {
 	if !containsString(channel.Participants, allocation.Offender) {
 		return errors.New("payments penalty allocation offender must be channel participant")
 	}
-	if !IsPenaltyRoute(allocation.Route) || allocation.Route == PenaltyRouteReporter {
+	if !IsPenaltyRoute(allocation.Route) || allocation.Route == PenaltyRouteReporter || allocation.Route == PenaltyRouteCounterparty {
 		return errors.New("payments penalty allocation route must be burn, security reserve, or community pool")
 	}
 	if allocation.Denom != NativeDenom {
@@ -4278,6 +5412,7 @@ func (p PenaltyAllocation) ValidateForChannel(channel ChannelRecord) error {
 
 func (p FraudPenaltyPolicy) Normalize() FraudPenaltyPolicy {
 	p.ReporterRewardCap = strings.TrimSpace(p.ReporterRewardCap)
+	p.CounterpartyRewardCap = strings.TrimSpace(p.CounterpartyRewardCap)
 	return p
 }
 
@@ -4288,9 +5423,456 @@ func (p FraudPenaltyPolicy) Validate() error {
 			return err
 		}
 	}
+	if p.CounterpartyRewardCap != "" {
+		if err := validateNonNegativeInt("payments counterparty reward cap", p.CounterpartyRewardCap); err != nil {
+			return err
+		}
+	}
+	if p.CounterpartyRewardBps > MaxPenaltyRouteBps {
+		return errors.New("payments counterparty reward bps exceeds 10000")
+	}
 	total := p.BurnShareBps + p.SecurityReserveShareBps + p.CommunityPoolShareBps
 	if total > MaxPenaltyRouteBps {
 		return errors.New("payments penalty route shares exceed 10000 bps")
+	}
+	return nil
+}
+
+func (e PenaltyMatrixEntry) Normalize() PenaltyMatrixEntry {
+	e.BasePenalty = strings.TrimSpace(e.BasePenalty)
+	e.ReporterRewardCap = strings.TrimSpace(e.ReporterRewardCap)
+	e.CounterpartyCompensation = strings.TrimSpace(e.CounterpartyCompensation)
+	e.InvalidProofVerifierCost = strings.TrimSpace(e.InvalidProofVerifierCost)
+	if e.BasePenalty == "" {
+		e.BasePenalty = "0"
+	}
+	if e.ReporterRewardCap == "" {
+		e.ReporterRewardCap = "0"
+	}
+	if e.CounterpartyCompensation == "" {
+		e.CounterpartyCompensation = "0"
+	}
+	if e.InvalidProofVerifierCost == "" {
+		e.InvalidProofVerifierCost = "0"
+	}
+	return e
+}
+
+func (e PenaltyMatrixEntry) Validate() error {
+	entry := e.Normalize()
+	if !IsPaymentPenaltyClass(entry.Class) {
+		return fmt.Errorf("unknown payments penalty class %q", entry.Class)
+	}
+	if entry.ProofType != "" && !IsFraudProofType(entry.ProofType) {
+		return fmt.Errorf("unknown payments penalty matrix proof type %q", entry.ProofType)
+	}
+	if !IsPenaltySource(entry.Source) {
+		return fmt.Errorf("unknown payments penalty source %q", entry.Source)
+	}
+	for _, item := range []struct {
+		name   string
+		amount string
+	}{
+		{"payments penalty matrix base", entry.BasePenalty},
+		{"payments penalty reporter cap", entry.ReporterRewardCap},
+		{"payments penalty counterparty compensation", entry.CounterpartyCompensation},
+		{"payments invalid proof verifier cost", entry.InvalidProofVerifierCost},
+	} {
+		if err := validateNonNegativeInt(item.name, item.amount); err != nil {
+			return err
+		}
+	}
+	if entry.BurnShareBps+entry.SecurityReserveShareBps+entry.CommunityPoolShareBps > MaxPenaltyRouteBps {
+		return errors.New("payments penalty matrix route shares exceed 10000 bps")
+	}
+	return nil
+}
+
+func (s PaymentFeeSchedule) Normalize() PaymentFeeSchedule {
+	defaults := DefaultPaymentFeeSchedule()
+	s.Denom = normalizeAssetDenom(s.Denom)
+	if s.Denom == "" {
+		s.Denom = defaults.Denom
+	}
+	fields := []*string{
+		&s.ChannelOpenFee,
+		&s.ChannelOpenPerParticipantFee,
+		&s.ChannelCheckpointFee,
+		&s.CooperativeCloseFee,
+		&s.UnilateralCloseFee,
+		&s.DisputeFee,
+		&s.FraudProofVerificationFee,
+		&s.ConditionalPromiseSettlementFee,
+		&s.VirtualChannelAnchorFee,
+		&s.RoutingAdvertisementFee,
+		&s.RoutingAdvertisementDeposit,
+		&s.ConditionalCapabilitySurcharge,
+		&s.VirtualChannelAnchorSurcharge,
+		&s.StorageByteFee,
+		&s.OpenFeeMin,
+		&s.OpenFeeMax,
+		&s.StorageRentPerBlock,
+	}
+	for _, field := range fields {
+		*field = strings.TrimSpace(*field)
+		if *field == "" {
+			*field = "0"
+		}
+	}
+	if s.ChannelOpenFee == "0" {
+		s.ChannelOpenFee = defaults.ChannelOpenFee
+	}
+	if s.OpenFeeMin == "0" {
+		s.OpenFeeMin = defaults.OpenFeeMin
+	}
+	if s.BaseMultiplierBps == 0 {
+		s.BaseMultiplierBps = defaults.BaseMultiplierBps
+	}
+	if s.MaxMultiplierBps == 0 {
+		s.MaxMultiplierBps = defaults.MaxMultiplierBps
+	}
+	return s
+}
+
+func (s PaymentFeeSchedule) Validate() error {
+	s = s.Normalize()
+	if s.Denom != NativeDenom {
+		return fmt.Errorf("payments fee schedule denom must be %s", NativeDenom)
+	}
+	for _, item := range []struct {
+		name   string
+		amount string
+	}{
+		{"payments channel open fee", s.ChannelOpenFee},
+		{"payments channel open per participant fee", s.ChannelOpenPerParticipantFee},
+		{"payments checkpoint fee", s.ChannelCheckpointFee},
+		{"payments cooperative close fee", s.CooperativeCloseFee},
+		{"payments unilateral close fee", s.UnilateralCloseFee},
+		{"payments dispute fee", s.DisputeFee},
+		{"payments fraud proof verification fee", s.FraudProofVerificationFee},
+		{"payments conditional promise settlement fee", s.ConditionalPromiseSettlementFee},
+		{"payments virtual channel anchor fee", s.VirtualChannelAnchorFee},
+		{"payments routing advertisement fee", s.RoutingAdvertisementFee},
+		{"payments routing advertisement deposit", s.RoutingAdvertisementDeposit},
+		{"payments conditional capability surcharge", s.ConditionalCapabilitySurcharge},
+		{"payments virtual channel anchor surcharge", s.VirtualChannelAnchorSurcharge},
+		{"payments storage byte fee", s.StorageByteFee},
+		{"payments open fee minimum", s.OpenFeeMin},
+		{"payments open fee maximum", s.OpenFeeMax},
+		{"payments storage rent per block", s.StorageRentPerBlock},
+	} {
+		if err := validateNonNegativeInt(item.name, item.amount); err != nil {
+			return err
+		}
+	}
+	if s.OpenFeeMax != "0" {
+		minFee, err := parseNonNegativeInt("payments open fee minimum", s.OpenFeeMin)
+		if err != nil {
+			return err
+		}
+		maxFee, err := parseNonNegativeInt("payments open fee maximum", s.OpenFeeMax)
+		if err != nil {
+			return err
+		}
+		if maxFee.LT(minFee) {
+			return errors.New("payments open fee maximum cannot be below minimum")
+		}
+	}
+	if s.BaseMultiplierBps == 0 || s.BaseMultiplierBps > s.MaxMultiplierBps {
+		return errors.New("payments fee multiplier bounds are invalid")
+	}
+	return nil
+}
+
+func (m PaymentFeeMultiplier) Normalize() PaymentFeeMultiplier {
+	return m
+}
+
+func (m PaymentFeeMultiplier) Validate() error {
+	if !IsPaymentFeeClass(m.FeeClass) {
+		return fmt.Errorf("unknown payments fee class %q", m.FeeClass)
+	}
+	if m.MultiplierBps == 0 {
+		return errors.New("payments fee multiplier must be positive")
+	}
+	if m.UpdatedHeight == 0 {
+		return errors.New("payments fee multiplier height must be positive")
+	}
+	return nil
+}
+
+func (c PaymentFeeCharge) Normalize() PaymentFeeCharge {
+	c.FeeID = normalizeOptionalHash(c.FeeID)
+	c.ChannelID = normalizeOptionalHash(c.ChannelID)
+	c.ObjectID = strings.TrimSpace(c.ObjectID)
+	c.Payer = strings.TrimSpace(c.Payer)
+	c.Denom = normalizeAssetDenom(c.Denom)
+	c.Amount = strings.TrimSpace(c.Amount)
+	c.RequiredAmount = strings.TrimSpace(c.RequiredAmount)
+	return c
+}
+
+func (c PaymentFeeCharge) Validate() error {
+	c = c.Normalize()
+	if err := ValidateHash("payments fee id", c.FeeID); err != nil {
+		return err
+	}
+	if !IsPaymentFeeClass(c.FeeClass) {
+		return fmt.Errorf("unknown payments fee class %q", c.FeeClass)
+	}
+	if c.ChannelID != "" {
+		if err := ValidateHash("payments fee channel id", c.ChannelID); err != nil {
+			return err
+		}
+	}
+	if err := addressing.ValidateUserAddress("payments fee payer", c.Payer); err != nil {
+		return err
+	}
+	if c.Denom != NativeDenom {
+		return fmt.Errorf("payments fee denom must be %s", NativeDenom)
+	}
+	if err := validateNonNegativeInt("payments fee amount", c.Amount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments required fee amount", c.RequiredAmount); err != nil {
+		return err
+	}
+	paid, err := parseNonNegativeInt("payments fee amount", c.Amount)
+	if err != nil {
+		return err
+	}
+	required, err := parseNonNegativeInt("payments required fee amount", c.RequiredAmount)
+	if err != nil {
+		return err
+	}
+	if paid.LT(required) {
+		return errors.New("payments fee charge is below required amount")
+	}
+	if c.MultiplierBps == 0 {
+		return errors.New("payments fee charge multiplier must be positive")
+	}
+	if c.Height == 0 {
+		return errors.New("payments fee charge height must be positive")
+	}
+	return nil
+}
+
+func (r PaymentFeeRefund) Normalize() PaymentFeeRefund {
+	r.RefundID = normalizeOptionalHash(r.RefundID)
+	r.FeeID = normalizeOptionalHash(r.FeeID)
+	r.Recipient = strings.TrimSpace(r.Recipient)
+	r.Denom = normalizeAssetDenom(r.Denom)
+	r.Amount = strings.TrimSpace(r.Amount)
+	r.Reason = strings.TrimSpace(r.Reason)
+	return r
+}
+
+func (r PaymentFeeRefund) Validate() error {
+	r = r.Normalize()
+	if err := ValidateHash("payments fee refund id", r.RefundID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments refunded fee id", r.FeeID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments fee refund recipient", r.Recipient); err != nil {
+		return err
+	}
+	if r.Denom != NativeDenom {
+		return fmt.Errorf("payments fee refund denom must be %s", NativeDenom)
+	}
+	if err := validatePositiveInt("payments fee refund amount", r.Amount); err != nil {
+		return err
+	}
+	if r.Reason == "" {
+		return errors.New("payments fee refund reason is required")
+	}
+	if r.Height == 0 {
+		return errors.New("payments fee refund height must be positive")
+	}
+	return nil
+}
+
+func DefaultSettlementGasCostSchedule() SettlementGasCostSchedule {
+	return SettlementGasCostSchedule{
+		OpenGas:                 30_000,
+		CooperativeCloseGas:     22_000,
+		UnilateralCloseGas:      35_000,
+		DisputeGas:              45_000,
+		FraudProofGas:           60_000,
+		ConditionResolutionGas:  40_000,
+		PenaltyRoutingGas:       20_000,
+		FinalSettlementGas:      50_000,
+		ReplayProtectionGas:     10_000,
+		PerSignatureGas:         2_000,
+		PerConditionGas:         3_000,
+		PerFraudProofGas:        8_000,
+		PerPenaltyAllocationGas: 1_500,
+		PerStateByteGas:         8,
+	}
+}
+
+func (s SettlementGasCostSchedule) Normalize() SettlementGasCostSchedule {
+	defaults := DefaultSettlementGasCostSchedule()
+	if s.OpenGas == 0 {
+		s.OpenGas = defaults.OpenGas
+	}
+	if s.CooperativeCloseGas == 0 {
+		s.CooperativeCloseGas = defaults.CooperativeCloseGas
+	}
+	if s.UnilateralCloseGas == 0 {
+		s.UnilateralCloseGas = defaults.UnilateralCloseGas
+	}
+	if s.DisputeGas == 0 {
+		s.DisputeGas = defaults.DisputeGas
+	}
+	if s.FraudProofGas == 0 {
+		s.FraudProofGas = defaults.FraudProofGas
+	}
+	if s.ConditionResolutionGas == 0 {
+		s.ConditionResolutionGas = defaults.ConditionResolutionGas
+	}
+	if s.PenaltyRoutingGas == 0 {
+		s.PenaltyRoutingGas = defaults.PenaltyRoutingGas
+	}
+	if s.FinalSettlementGas == 0 {
+		s.FinalSettlementGas = defaults.FinalSettlementGas
+	}
+	if s.ReplayProtectionGas == 0 {
+		s.ReplayProtectionGas = defaults.ReplayProtectionGas
+	}
+	if s.PerSignatureGas == 0 {
+		s.PerSignatureGas = defaults.PerSignatureGas
+	}
+	if s.PerConditionGas == 0 {
+		s.PerConditionGas = defaults.PerConditionGas
+	}
+	if s.PerFraudProofGas == 0 {
+		s.PerFraudProofGas = defaults.PerFraudProofGas
+	}
+	if s.PerPenaltyAllocationGas == 0 {
+		s.PerPenaltyAllocationGas = defaults.PerPenaltyAllocationGas
+	}
+	if s.PerStateByteGas == 0 {
+		s.PerStateByteGas = defaults.PerStateByteGas
+	}
+	return s
+}
+
+func (s SettlementGasCostSchedule) Validate() error {
+	schedule := s.Normalize()
+	values := []uint64{
+		schedule.OpenGas,
+		schedule.CooperativeCloseGas,
+		schedule.UnilateralCloseGas,
+		schedule.DisputeGas,
+		schedule.FraudProofGas,
+		schedule.ConditionResolutionGas,
+		schedule.PenaltyRoutingGas,
+		schedule.FinalSettlementGas,
+		schedule.ReplayProtectionGas,
+		schedule.PerSignatureGas,
+		schedule.PerConditionGas,
+		schedule.PerFraudProofGas,
+		schedule.PerPenaltyAllocationGas,
+		schedule.PerStateByteGas,
+	}
+	for _, value := range values {
+		if value == 0 {
+			return errors.New("payments settlement gas cost schedule must be positive")
+		}
+	}
+	return nil
+}
+
+func (h SecurityReserveAllocationHook) Normalize() SecurityReserveAllocationHook {
+	h.HookID = normalizeOptionalHash(h.HookID)
+	h.ChannelID = normalizeHash(h.ChannelID)
+	h.ProofID = normalizeHash(h.ProofID)
+	h.Offender = strings.TrimSpace(h.Offender)
+	h.Denom = normalizeAssetDenom(h.Denom)
+	h.Amount = strings.TrimSpace(h.Amount)
+	h.Allocation = normalizeOptionalHash(h.Allocation)
+	if h.Route == "" {
+		h.Route = PenaltyRouteSecurityReserve
+	}
+	return h
+}
+
+func (h SecurityReserveAllocationHook) ValidateForChannel(channel ChannelRecord) error {
+	hook := h.Normalize()
+	channel = channel.Normalize()
+	if err := ValidateHash("payments security reserve hook id", hook.HookID); err != nil {
+		return err
+	}
+	if hook.ChannelID != channel.ChannelID {
+		return errors.New("payments security reserve hook channel mismatch")
+	}
+	if err := ValidateHash("payments security reserve proof id", hook.ProofID); err != nil {
+		return err
+	}
+	if !containsString(channel.Participants, hook.Offender) {
+		return errors.New("payments security reserve hook offender must be channel participant")
+	}
+	if hook.Denom != NativeDenom {
+		return fmt.Errorf("payments security reserve hook denom must be %s", NativeDenom)
+	}
+	if hook.Route != PenaltyRouteSecurityReserve {
+		return errors.New("payments security reserve hook route mismatch")
+	}
+	if err := validatePositiveInt("payments security reserve hook amount", hook.Amount); err != nil {
+		return err
+	}
+	if hook.Height == 0 {
+		return errors.New("payments security reserve hook height must be positive")
+	}
+	if err := ValidateHash("payments security reserve allocation commitment", hook.Allocation); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l SettlementInclusionLatency) Normalize() SettlementInclusionLatency {
+	l.RecordID = normalizeOptionalHash(l.RecordID)
+	l.OperationID = normalizeOptionalHash(l.OperationID)
+	l.ChannelID = normalizeHash(l.ChannelID)
+	if l.IncludedHeight >= l.SubmittedHeight && l.SubmittedHeight != 0 {
+		l.LatencyBlocks = l.IncludedHeight - l.SubmittedHeight
+	}
+	if l.SLOThreshold > 0 {
+		l.Breached = l.LatencyBlocks > l.SLOThreshold
+	}
+	return l
+}
+
+func (l SettlementInclusionLatency) Validate(channels []ChannelRecord) error {
+	record := l.Normalize()
+	if err := ValidateHash("payments settlement inclusion latency id", record.RecordID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments settlement inclusion operation id", record.OperationID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments settlement inclusion channel id", record.ChannelID); err != nil {
+		return err
+	}
+	if !IsSettlementArbitrationOperation(record.Operation) {
+		return fmt.Errorf("unknown payments settlement inclusion operation %q", record.Operation)
+	}
+	if record.SubmittedHeight == 0 || record.IncludedHeight == 0 || record.IncludedHeight < record.SubmittedHeight {
+		return errors.New("payments settlement inclusion heights are invalid")
+	}
+	if record.LatencyBlocks != record.IncludedHeight-record.SubmittedHeight {
+		return errors.New("payments settlement inclusion latency mismatch")
+	}
+	if record.SLOThreshold == 0 {
+		return errors.New("payments settlement inclusion SLO threshold must be positive")
+	}
+	if record.Breached != (record.LatencyBlocks > record.SLOThreshold) {
+		return errors.New("payments settlement inclusion breach marker mismatch")
+	}
+	if _, found := channelMap(channels)[record.ChannelID]; !found {
+		return errors.New("payments settlement inclusion channel not found")
 	}
 	return nil
 }
@@ -4338,6 +5920,171 @@ func BuildFraudPenaltyRouting(channel ChannelRecord, proof FraudProof, policy Fr
 		}
 	}
 	return normalizePenalties(penalties), normalizePenaltyAllocations(allocations), nil
+}
+
+func DefaultPenaltyMatrix() []PenaltyMatrixEntry {
+	return []PenaltyMatrixEntry{
+		{Class: PenaltyClassInvalidClose, ProofType: FraudProofTypeInvalidClose, Source: PenaltySourceChannelBalance, BasePenalty: "10", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassInvalidClose, ProofType: FraudProofTypeInvalidBalance, Source: PenaltySourceChannelBalance, BasePenalty: "10", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassStaleClose, ProofType: FraudProofTypeStaleClose, Source: PenaltySourceChannelBalance, BasePenalty: "10", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassDoubleSign, ProofType: FraudProofTypeDoubleSign, Source: PenaltySourceParticipantBond, BasePenalty: "20", ReporterRewardCap: "8", CounterpartyCompensation: "6", BurnShareBps: 3_000, SecurityReserveShareBps: 4_000, CommunityPoolShareBps: 3_000, Bounded: true},
+		{Class: PenaltyClassInvalidCondition, ProofType: FraudProofTypeInvalidCondition, Source: PenaltySourceChannelBalance, BasePenalty: "8", ReporterRewardCap: "4", CounterpartyCompensation: "4", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassReplayAttempt, ProofType: FraudProofTypeReplayAttempt, Source: PenaltySourceChannelBalance, BasePenalty: "8", ReporterRewardCap: "4", CounterpartyCompensation: "4", BurnShareBps: 3_000, SecurityReserveShareBps: 3_000, CommunityPoolShareBps: 4_000, Bounded: true},
+		{Class: PenaltyClassAsyncOverexposure, ProofType: FraudProofTypeAsyncOverexposure, Source: PenaltySourceParticipantBond, BasePenalty: "12", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 3_000, SecurityReserveShareBps: 3_000, CommunityPoolShareBps: 4_000, Bounded: true},
+		{Class: PenaltyClassInvalidFraudProof, Source: PenaltySourceFraudProofDeposit, BasePenalty: "0", InvalidProofVerifierCost: "1", Bounded: true},
+	}
+}
+
+func PenaltyClassForFraudProofType(proofType FraudProofType) (PaymentPenaltyClass, error) {
+	switch proofType {
+	case FraudProofTypeInvalidClose:
+		return PenaltyClassInvalidClose, nil
+	case FraudProofTypeStaleClose:
+		return PenaltyClassStaleClose, nil
+	case FraudProofTypeDoubleSign:
+		return PenaltyClassDoubleSign, nil
+	case FraudProofTypeInvalidCondition:
+		return PenaltyClassInvalidCondition, nil
+	case FraudProofTypeReplayAttempt:
+		return PenaltyClassReplayAttempt, nil
+	case FraudProofTypeAsyncOverexposure:
+		return PenaltyClassAsyncOverexposure, nil
+	case FraudProofTypeInvalidBalance:
+		return PenaltyClassInvalidClose, nil
+	default:
+		return "", fmt.Errorf("unknown payments fraud proof type %q", proofType)
+	}
+}
+
+func PenaltyMatrixEntryForProof(proofType FraudProofType, matrix []PenaltyMatrixEntry) (PenaltyMatrixEntry, error) {
+	class, err := PenaltyClassForFraudProofType(proofType)
+	if err != nil {
+		return PenaltyMatrixEntry{}, err
+	}
+	for _, entry := range normalizePenaltyMatrix(matrix) {
+		if entry.Class == class && (entry.ProofType == "" || entry.ProofType == proofType) {
+			return entry, nil
+		}
+	}
+	return PenaltyMatrixEntry{}, errors.New("payments penalty matrix entry not found")
+}
+
+func BuildPenaltyRouteAccounting(channel ChannelRecord, proof FraudProof, matrix []PenaltyMatrixEntry, policy FraudPenaltyPolicy) (PenaltyRouteAccounting, error) {
+	channel = channel.Normalize()
+	proof = proof.Normalize()
+	if err := proof.ValidateForChannel(channel); err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	entry, err := PenaltyMatrixEntryForProof(proof.ProofType, matrix)
+	if err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	if err := entry.Validate(); err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	policy = policy.Normalize()
+	if policy.ReporterRewardCap == "" {
+		policy.ReporterRewardCap = entry.ReporterRewardCap
+	}
+	if policy.CounterpartyRewardCap == "" {
+		policy.CounterpartyRewardCap = entry.CounterpartyCompensation
+	}
+	if policy.BurnShareBps == 0 && policy.SecurityReserveShareBps == 0 && policy.CommunityPoolShareBps == 0 {
+		policy.BurnShareBps = entry.BurnShareBps
+		policy.SecurityReserveShareBps = entry.SecurityReserveShareBps
+		policy.CommunityPoolShareBps = entry.CommunityPoolShareBps
+	}
+	if err := policy.Validate(); err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	penaltyAmount, err := parsePositiveInt("payments penalty accounting amount", proof.PenaltyAmount)
+	if err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	if entry.BasePenalty != "" {
+		basePenalty, err := parseNonNegativeInt("payments penalty matrix base", entry.BasePenalty)
+		if err != nil {
+			return PenaltyRouteAccounting{}, err
+		}
+		if penaltyAmount.LT(basePenalty) {
+			return PenaltyRouteAccounting{}, errors.New("payments fraud penalty below matrix minimum")
+		}
+	}
+	remaining := penaltyAmount
+	penalties := []Penalty{}
+	counterpartyComp := sdkmath.ZeroInt()
+	if proof.OffendingSigner == channel.PendingClose.Submitter {
+		counterparty := channelCounterparty(channel, proof.OffendingSigner)
+		if counterparty != "" {
+			counterpartyComp, err = cappedPenaltyPortion(remaining, policy.CounterpartyRewardCap, policy.CounterpartyRewardBps)
+			if err != nil {
+				return PenaltyRouteAccounting{}, err
+			}
+			if counterpartyComp.IsPositive() {
+				penalty := Penalty{Offender: proof.OffendingSigner, Recipient: counterparty, Denom: NativeDenom, Amount: counterpartyComp.String()}.Normalize()
+				if err := penalty.ValidateForChannel(channel); err != nil {
+					return PenaltyRouteAccounting{}, err
+				}
+				penalties = append(penalties, penalty)
+				remaining = remaining.Sub(counterpartyComp)
+			}
+		}
+	}
+	reporterReward := sdkmath.ZeroInt()
+	if remaining.IsPositive() {
+		reporterReward, err = cappedPenaltyPortion(remaining, policy.ReporterRewardCap, 0)
+		if err != nil {
+			return PenaltyRouteAccounting{}, err
+		}
+		if reporterReward.IsPositive() {
+			penalty := Penalty{Offender: proof.OffendingSigner, Recipient: proof.SubmittedBy, Denom: NativeDenom, Amount: reporterReward.String()}.Normalize()
+			if err := penalty.ValidateForChannel(channel); err != nil {
+				return PenaltyRouteAccounting{}, err
+			}
+			penalties = append(penalties, penalty)
+			remaining = remaining.Sub(reporterReward)
+		}
+	}
+	allocations, err := splitPenaltyRemainder(proof.OffendingSigner, remaining, policy)
+	if err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	return PenaltyRouteAccounting{
+		Class:            entry.Class,
+		Source:           entry.Source,
+		TotalPenalty:     penaltyAmount.String(),
+		ReporterReward:   reporterReward.String(),
+		CounterpartyComp: counterpartyComp.String(),
+		Allocations:      allocations,
+		Penalties:        normalizePenalties(penalties),
+	}, nil
+}
+
+func ComputeInvalidFraudProofSubmissionPenalty(submitter, depositAmount, verificationCost string) (InvalidFraudProofSubmissionPenalty, error) {
+	submitter = strings.TrimSpace(submitter)
+	if err := addressing.ValidateUserAddress("payments invalid fraud proof submitter", submitter); err != nil {
+		return InvalidFraudProofSubmissionPenalty{}, err
+	}
+	deposit, err := parseNonNegativeInt("payments invalid fraud proof deposit", strings.TrimSpace(depositAmount))
+	if err != nil {
+		return InvalidFraudProofSubmissionPenalty{}, err
+	}
+	cost, err := parseNonNegativeInt("payments invalid fraud proof verification cost", strings.TrimSpace(verificationCost))
+	if err != nil {
+		return InvalidFraudProofSubmissionPenalty{}, err
+	}
+	forfeited := cost
+	if forfeited.GT(deposit) {
+		forfeited = deposit
+	}
+	return InvalidFraudProofSubmissionPenalty{
+		Submitter:        submitter,
+		Denom:            NativeDenom,
+		DepositAmount:    deposit.String(),
+		VerificationCost: cost.String(),
+		ForfeitedAmount:  forfeited.String(),
+		RefundAmount:     deposit.Sub(forfeited).String(),
+	}, nil
 }
 
 func (s SettlementRecord) Normalize() SettlementRecord {
@@ -4526,6 +6273,24 @@ func ChannelDisputeEvent(channel ChannelRecord, submitter string, height uint64)
 	return event.Normalize()
 }
 
+func ValidatorAssistedDisputeEvent(metadata ValidatorPaymentServiceMetadata, channel ChannelRecord, delegator string, height uint64) PaymentEvent {
+	metadata = metadata.Normalize()
+	channel = channel.Normalize()
+	event := PaymentEvent{
+		EventID:   HashParts("validator-assisted-dispute", metadata.ValidatorAddress, channel.ChannelID, delegator, fmt.Sprintf("%d", height)),
+		EventType: "validator-assisted-dispute",
+		ChannelID: channel.ChannelID,
+		Height:    height,
+		Attributes: []PaymentEventAttribute{
+			{Key: "validator", Value: metadata.ValidatorAddress},
+			{Key: "watch_service", Value: metadata.ServiceAddress},
+			{Key: "delegator", Value: strings.TrimSpace(delegator)},
+			{Key: "metadata_hash", Value: metadata.MetadataHash},
+		},
+	}
+	return event.Normalize()
+}
+
 func ChannelFinalityTransitionEvent(channel ChannelRecord, previous, next ChannelFinality, height uint64) PaymentEvent {
 	channel = channel.Normalize()
 	attrs := []PaymentEventAttribute{
@@ -4546,6 +6311,23 @@ func ChannelFinalityTransitionEvent(channel ChannelRecord, previous, next Channe
 	return event.Normalize()
 }
 
+func AsyncSettlementCompletionEvent(completion AsyncSettlementCompletion) PaymentEvent {
+	completion = completion.Normalize()
+	event := PaymentEvent{
+		EventID:   HashParts("async-settlement-completion-event", completion.CompletionID),
+		EventType: "async-settlement-completion",
+		ChannelID: completion.ChannelID,
+		Height:    completion.Height,
+		Attributes: []PaymentEventAttribute{
+			{Key: "job_id", Value: completion.JobID},
+			{Key: "job_type", Value: completion.JobType},
+			{Key: "object_id", Value: completion.ObjectID},
+			{Key: "result_hash", Value: completion.ResultHash},
+		},
+	}
+	return event.Normalize()
+}
+
 func (e ChannelEdge) Normalize() ChannelEdge {
 	e.ChannelID = normalizeHash(e.ChannelID)
 	e.From = strings.TrimSpace(e.From)
@@ -4553,6 +6335,10 @@ func (e ChannelEdge) Normalize() ChannelEdge {
 	e.Capacity = strings.TrimSpace(e.Capacity)
 	e.FeeDenom = normalizeAssetDenom(e.FeeDenom)
 	e.FeeAmount = strings.TrimSpace(e.FeeAmount)
+	e.AdvertisementFeePaid = strings.TrimSpace(e.AdvertisementFeePaid)
+	if e.AdvertisementFeePaid == "" {
+		e.AdvertisementFeePaid = "0"
+	}
 	return e
 }
 
@@ -4576,7 +6362,329 @@ func (e ChannelEdge) Validate() error {
 	if e.FeeDenom != NativeDenom {
 		return fmt.Errorf("payments routing fee denom must be %s", NativeDenom)
 	}
-	return validateNonNegativeInt("payments routing fee", e.FeeAmount)
+	if err := validateNonNegativeInt("payments routing fee", e.FeeAmount); err != nil {
+		return err
+	}
+	return validateNonNegativeInt("payments routing advertisement fee", e.AdvertisementFeePaid)
+}
+
+func BuildLiquidityAdvertisement(ad LiquidityAdvertisement, requiredDeposit string) (LiquidityAdvertisement, error) {
+	ad = ad.Normalize()
+	if ad.AdvertisementID == "" {
+		ad.AdvertisementID = HashParts("liquidity-advertisement", ad.ChannelID, ad.Advertiser, ad.Counterparty, ad.Capacity, fmt.Sprintf("%020d", ad.ValidUntilHeight))
+	}
+	ad.AdvertisementHash = ""
+	ad.AdvertisementHash = ComputeLiquidityAdvertisementHash(ad)
+	if err := ad.Validate(requiredDeposit); err != nil {
+		return LiquidityAdvertisement{}, err
+	}
+	return ad.Normalize(), nil
+}
+
+func ComputeLiquidityAdvertisementHash(ad LiquidityAdvertisement) string {
+	ad = ad.Normalize()
+	return HashParts(
+		"liquidity-advertisement",
+		ad.AdvertisementID,
+		ad.ChannelID,
+		ad.Advertiser,
+		ad.Counterparty,
+		ad.Capacity,
+		ad.FeeDenom,
+		ad.BaseFee,
+		ad.ReservationFee,
+		ad.VirtualSetupFee,
+		fmt.Sprintf("%010d", ad.ReliabilityBps),
+		fmt.Sprintf("%020d", ad.ValidUntilHeight),
+		ad.DepositAmount,
+		fmt.Sprintf("%t", ad.BackedByReservation),
+	)
+}
+
+func (ad LiquidityAdvertisement) Normalize() LiquidityAdvertisement {
+	ad.AdvertisementID = normalizeOptionalHash(ad.AdvertisementID)
+	ad.ChannelID = normalizeHash(ad.ChannelID)
+	ad.Advertiser = strings.TrimSpace(ad.Advertiser)
+	ad.Counterparty = strings.TrimSpace(ad.Counterparty)
+	ad.Capacity = strings.TrimSpace(ad.Capacity)
+	ad.FeeDenom = normalizeAssetDenom(ad.FeeDenom)
+	ad.BaseFee = strings.TrimSpace(ad.BaseFee)
+	ad.ReservationFee = strings.TrimSpace(ad.ReservationFee)
+	ad.VirtualSetupFee = strings.TrimSpace(ad.VirtualSetupFee)
+	ad.DepositAmount = strings.TrimSpace(ad.DepositAmount)
+	for _, field := range []*string{&ad.BaseFee, &ad.ReservationFee, &ad.VirtualSetupFee, &ad.DepositAmount} {
+		if *field == "" {
+			*field = "0"
+		}
+	}
+	ad.AdvertisementHash = normalizeOptionalHash(ad.AdvertisementHash)
+	return ad
+}
+
+func (ad LiquidityAdvertisement) Validate(requiredDeposit string) error {
+	ad = ad.Normalize()
+	if err := ValidateHash("payments liquidity advertisement id", ad.AdvertisementID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments liquidity advertisement channel id", ad.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity advertiser", ad.Advertiser); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity counterparty", ad.Counterparty); err != nil {
+		return err
+	}
+	if ad.Advertiser == ad.Counterparty {
+		return errors.New("payments liquidity advertisement parties must differ")
+	}
+	if err := validatePositiveInt("payments liquidity advertised capacity", ad.Capacity); err != nil {
+		return err
+	}
+	if ad.FeeDenom != NativeDenom {
+		return fmt.Errorf("payments liquidity advertisement fee denom must be %s", NativeDenom)
+	}
+	for _, item := range []struct {
+		name   string
+		amount string
+	}{
+		{"payments liquidity base fee", ad.BaseFee},
+		{"payments liquidity reservation fee", ad.ReservationFee},
+		{"payments liquidity virtual setup fee", ad.VirtualSetupFee},
+		{"payments liquidity advertisement deposit", ad.DepositAmount},
+	} {
+		if err := validateNonNegativeInt(item.name, item.amount); err != nil {
+			return err
+		}
+	}
+	if ad.ReliabilityBps > MaxPenaltyRouteBps {
+		return errors.New("payments liquidity reliability bps exceeds 10000")
+	}
+	if ad.ValidUntilHeight == 0 {
+		return errors.New("payments liquidity advertisement validity height must be positive")
+	}
+	requiredDeposit = strings.TrimSpace(requiredDeposit)
+	if requiredDeposit != "" {
+		required, err := parseNonNegativeInt("payments liquidity required deposit", requiredDeposit)
+		if err != nil {
+			return err
+		}
+		deposit, err := parseNonNegativeInt("payments liquidity advertisement deposit", ad.DepositAmount)
+		if err != nil {
+			return err
+		}
+		if deposit.LT(required) {
+			return errors.New("payments liquidity advertisement deposit below required")
+		}
+	}
+	if ad.AdvertisementHash == "" {
+		return errors.New("payments liquidity advertisement hash is required")
+	}
+	if expected := ComputeLiquidityAdvertisementHash(ad); ad.AdvertisementHash != expected {
+		return errors.New("payments liquidity advertisement hash mismatch")
+	}
+	return nil
+}
+
+func LiquidityAvailabilityScore(ad LiquidityAdvertisement, stats EdgeRoutingStats) (int64, error) {
+	ad = ad.Normalize()
+	if err := ad.Validate("0"); err != nil {
+		return 0, err
+	}
+	capacity, err := parsePositiveInt("payments liquidity score capacity", ad.Capacity)
+	if err != nil {
+		return 0, err
+	}
+	score := capacity.QuoRaw(10).Int64()
+	score += int64(ad.ReliabilityBps) / 100
+	if ad.BackedByReservation {
+		score += 100
+	}
+	stats = stats.Normalize()
+	score += int64(stats.SuccessRateBps) / 200
+	score -= int64(stats.FailureCount) * 25
+	score -= int64(stats.CongestionBps) / 200
+	score -= int64(stats.PendingConditionCount) * 5
+	return score, nil
+}
+
+func ApplyFalseLiquidityAdvertisementPenalty(store TopologyStore, ad LiquidityAdvertisement, currentHeight uint64) (TopologyStore, string, error) {
+	ad = ad.Normalize()
+	if err := ad.Validate("0"); err != nil {
+		return TopologyStore{}, "", err
+	}
+	forfeited, err := parseNonNegativeInt("payments false liquidity deposit", ad.DepositAmount)
+	if err != nil {
+		return TopologyStore{}, "", err
+	}
+	next := PenalizeInvalidGossip(store, ad.Advertiser, currentHeight)
+	return next, forfeited.String(), nil
+}
+
+func BuildSignedLiquidityReservation(reservation SignedLiquidityReservation, signer string) (SignedLiquidityReservation, error) {
+	reservation = reservation.Normalize()
+	if reservation.ReservationID == "" {
+		reservation.ReservationID = HashParts("liquidity-reservation", reservation.AdvertisementID, reservation.ChannelID, reservation.Reserver, fmt.Sprintf("%020d", reservation.Nonce))
+	}
+	reservation.CommitmentHash = ""
+	reservation.Signature = LiquidityReservationSignature{}
+	reservation.CommitmentHash = ComputeLiquidityReservationHash(reservation)
+	signature, err := SignatureForLiquidityReservation(reservation, signer)
+	if err != nil {
+		return SignedLiquidityReservation{}, err
+	}
+	reservation.Signature = signature
+	if err := reservation.Validate(); err != nil {
+		return SignedLiquidityReservation{}, err
+	}
+	return reservation.Normalize(), nil
+}
+
+func ComputeLiquidityReservationHash(reservation SignedLiquidityReservation) string {
+	reservation = reservation.Normalize()
+	return HashParts(
+		"liquidity-reservation",
+		reservation.ReservationID,
+		reservation.AdvertisementID,
+		reservation.ChainID,
+		reservation.ChannelID,
+		reservation.Reserver,
+		reservation.Counterparty,
+		reservation.Capacity,
+		reservation.FeeAmount,
+		fmt.Sprintf("%020d", reservation.ExpirationHeight),
+		fmt.Sprintf("%020d", reservation.Nonce),
+	)
+}
+
+func SignatureForLiquidityReservation(reservation SignedLiquidityReservation, signer string) (LiquidityReservationSignature, error) {
+	reservation = reservation.Normalize()
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments liquidity reservation signer", signer); err != nil {
+		return LiquidityReservationSignature{}, err
+	}
+	if reservation.CommitmentHash == "" {
+		reservation.CommitmentHash = ComputeLiquidityReservationHash(reservation)
+	}
+	return LiquidityReservationSignature{
+		Signer:           signer,
+		ChainID:          reservation.ChainID,
+		ChannelID:        reservation.ChannelID,
+		ObjectType:       SignatureObjectLiquidity,
+		Version:          CurrentStateVersion,
+		Nonce:            reservation.Nonce,
+		ObjectID:         reservation.ReservationID,
+		ExpirationHeight: reservation.ExpirationHeight,
+		CommitmentHash:   reservation.CommitmentHash,
+		SignatureHash: ComputeSignatureEnvelopeHash(
+			signer,
+			reservation.ChainID,
+			reservation.ChannelID,
+			SignatureObjectLiquidity,
+			CurrentStateVersion,
+			reservation.Nonce,
+			reservation.ReservationID,
+			reservation.ExpirationHeight,
+			reservation.CommitmentHash,
+		),
+	}, nil
+}
+
+func (r SignedLiquidityReservation) Normalize() SignedLiquidityReservation {
+	r.ReservationID = normalizeOptionalHash(r.ReservationID)
+	r.AdvertisementID = normalizeHash(r.AdvertisementID)
+	r.ChainID = strings.TrimSpace(r.ChainID)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Reserver = strings.TrimSpace(r.Reserver)
+	r.Counterparty = strings.TrimSpace(r.Counterparty)
+	r.Capacity = strings.TrimSpace(r.Capacity)
+	r.FeeAmount = strings.TrimSpace(r.FeeAmount)
+	if r.FeeAmount == "" {
+		r.FeeAmount = "0"
+	}
+	r.CommitmentHash = normalizeOptionalHash(r.CommitmentHash)
+	r.Signature = r.Signature.Normalize()
+	return r
+}
+
+func (r SignedLiquidityReservation) Validate() error {
+	reservation := r.Normalize()
+	if err := ValidateHash("payments liquidity reservation id", reservation.ReservationID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments liquidity reservation advertisement id", reservation.AdvertisementID); err != nil {
+		return err
+	}
+	if reservation.ChainID == "" {
+		return errors.New("payments liquidity reservation chain id is required")
+	}
+	if err := ValidateHash("payments liquidity reservation channel id", reservation.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity reserver", reservation.Reserver); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity reservation counterparty", reservation.Counterparty); err != nil {
+		return err
+	}
+	if reservation.Reserver == reservation.Counterparty {
+		return errors.New("payments liquidity reservation parties must differ")
+	}
+	if err := validatePositiveInt("payments liquidity reservation capacity", reservation.Capacity); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments liquidity reservation fee", reservation.FeeAmount); err != nil {
+		return err
+	}
+	if reservation.ExpirationHeight == 0 || reservation.Nonce == 0 {
+		return errors.New("payments liquidity reservation expiration and nonce must be positive")
+	}
+	if reservation.CommitmentHash == "" {
+		return errors.New("payments liquidity reservation commitment is required")
+	}
+	if expected := ComputeLiquidityReservationHash(reservation); reservation.CommitmentHash != expected {
+		return errors.New("payments liquidity reservation commitment mismatch")
+	}
+	return reservation.Signature.Validate(reservation)
+}
+
+func (s LiquidityReservationSignature) Normalize() LiquidityReservationSignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ObjectType = strings.TrimSpace(s.ObjectType)
+	s.ObjectID = normalizeOptionalHash(s.ObjectID)
+	s.CommitmentHash = normalizeOptionalHash(s.CommitmentHash)
+	s.SignatureHash = normalizeOptionalHash(s.SignatureHash)
+	return s
+}
+
+func (s LiquidityReservationSignature) Validate(reservation SignedLiquidityReservation) error {
+	sig := s.Normalize()
+	reservation = reservation.Normalize()
+	if err := addressing.ValidateUserAddress("payments liquidity reservation signature signer", sig.Signer); err != nil {
+		return err
+	}
+	if sig.Signer != reservation.Reserver {
+		return errors.New("payments liquidity reservation signer mismatch")
+	}
+	if sig.ChainID != reservation.ChainID || sig.ChannelID != reservation.ChannelID {
+		return errors.New("payments liquidity reservation signature domain mismatch")
+	}
+	if sig.ObjectType != SignatureObjectLiquidity || sig.Version != CurrentStateVersion {
+		return errors.New("payments liquidity reservation signature object mismatch")
+	}
+	if sig.Nonce != reservation.Nonce || sig.ObjectID != reservation.ReservationID || sig.ExpirationHeight != reservation.ExpirationHeight || sig.CommitmentHash != reservation.CommitmentHash {
+		return errors.New("payments liquidity reservation signature commitment mismatch")
+	}
+	if err := ValidateHash("payments liquidity reservation signature hash", sig.SignatureHash); err != nil {
+		return err
+	}
+	expected := ComputeSignatureEnvelopeHash(sig.Signer, sig.ChainID, sig.ChannelID, sig.ObjectType, sig.Version, sig.Nonce, sig.ObjectID, sig.ExpirationHeight, sig.CommitmentHash)
+	if sig.SignatureHash != expected {
+		return errors.New("payments liquidity reservation signature value mismatch")
+	}
+	return nil
 }
 
 func BuildVirtualChannel(vc VirtualChannel) (VirtualChannel, error) {
@@ -4683,8 +6791,14 @@ func BuildVirtualParentReserve(vc VirtualChannel, reserve VirtualParentReserve, 
 	if reserve.Capacity == "" {
 		reserve.Capacity = vc.Capacity
 	}
+	if reserve.SplitAmount == "" {
+		reserve.SplitAmount = reserve.Capacity
+	}
 	if reserve.FeeAmount == "" {
 		reserve.FeeAmount = "0"
+	}
+	if reserve.SegmentID == "" {
+		reserve.SegmentID = HashParts("virtual-reserve-segment", vc.VirtualChannelID, reserve.ParentChannelID, reserve.ReservedBy, reserve.SplitAmount)
 	}
 	if signer != "" {
 		reserve.ReservedBy = signer
@@ -4709,9 +6823,11 @@ func ComputeVirtualReserveCommitment(vc VirtualChannel, reserve VirtualParentRes
 		vc.ChainID,
 		vc.VirtualChannelID,
 		vc.ParentRouteID,
+		reserve.SegmentID,
 		reserve.ParentChannelID,
 		reserve.ReservedBy,
 		reserve.Capacity,
+		reserve.SplitAmount,
 		reserve.FeeAmount,
 		fmt.Sprintf("%020d", vc.ExpiresHeight),
 	)
@@ -4737,6 +6853,7 @@ func SignatureForVirtualReservation(vc VirtualChannel, reserve VirtualParentRese
 		ObjectType:       SignatureObjectVirtualReserve,
 		Version:          CurrentStateVersion,
 		Capacity:         reserve.Capacity,
+		SplitAmount:      reserve.SplitAmount,
 		FeeAmount:        reserve.FeeAmount,
 		ExpirationHeight: vc.ExpiresHeight,
 		CommitmentHash:   reserve.ReserveCommitment,
@@ -4781,6 +6898,9 @@ func ValidateVirtualReservationSignature(sig VirtualReservationSignature, vc Vir
 	}
 	if sig.Capacity != reserve.Capacity || sig.FeeAmount != reserve.FeeAmount {
 		return errors.New("payments virtual reservation signature amount mismatch")
+	}
+	if sig.SplitAmount != reserve.SplitAmount {
+		return errors.New("payments virtual reservation signature split amount mismatch")
 	}
 	if sig.ExpirationHeight != vc.ExpiresHeight {
 		return errors.New("payments virtual reservation signature expiration mismatch")
@@ -4827,9 +6947,10 @@ func ComputeVirtualActivationProofHash(proof VirtualActivationProof) string {
 		proof.VirtualChannel.StateHash,
 		proof.VirtualChannel.ParentRouteID,
 		fmt.Sprintf("%020d", proof.RouteTimeoutHeight),
+		fmt.Sprintf("%t", proof.AggregatedCapacity),
 	}
 	for _, reserve := range proof.ParentReserves {
-		parts = append(parts, reserve.ParentChannelID, reserve.ReservedBy, reserve.ReserveCommitment)
+		parts = append(parts, reserve.SegmentID, reserve.ParentChannelID, reserve.ReservedBy, reserve.SplitAmount, reserve.ReserveCommitment)
 	}
 	return HashParts(parts...)
 }
@@ -4846,22 +6967,35 @@ func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
 	if proof.RouteTimeoutHeight <= vc.ExpiresHeight {
 		return errors.New("payments virtual activation proof route timeout must exceed virtual expiry")
 	}
-	if len(proof.ParentReserves) != len(vc.ParentChannelIDs) {
+	if !proof.AggregatedCapacity && len(proof.ParentReserves) != len(vc.ParentChannelIDs) {
 		return errors.New("payments virtual activation proof requires one reserve per parent")
+	}
+	if proof.AggregatedCapacity {
+		if err := ValidateVirtualReserveSegments(vc, VirtualReserveSegmentsFromProof(proof)); err != nil {
+			return err
+		}
 	}
 	parentSet := make(map[string]struct{}, len(vc.ParentChannelIDs))
 	for _, parentID := range vc.ParentChannelIDs {
 		parentSet[parentID] = struct{}{}
 	}
 	seenParents := make(map[string]struct{}, len(proof.ParentReserves))
+	coveredParents := make(map[string]struct{}, len(proof.ParentReserves))
 	for _, reserve := range proof.ParentReserves {
 		if _, found := parentSet[reserve.ParentChannelID]; !found {
 			return errors.New("payments virtual activation proof reserve references unknown parent")
 		}
-		if _, found := seenParents[reserve.ParentChannelID]; found {
+		if !proof.AggregatedCapacity {
+			if _, found := seenParents[reserve.ParentChannelID]; found {
+				return errors.New("payments virtual activation proof duplicate parent reserve")
+			}
+			seenParents[reserve.ParentChannelID] = struct{}{}
+		}
+		if _, found := seenParents[reserve.SegmentID]; found {
 			return errors.New("payments virtual activation proof duplicate parent reserve")
 		}
-		seenParents[reserve.ParentChannelID] = struct{}{}
+		seenParents[reserve.SegmentID] = struct{}{}
+		coveredParents[reserve.ParentChannelID] = struct{}{}
 		if !containsString(vc.Intermediaries, reserve.ReservedBy) && !containsString(vc.Endpoints, reserve.ReservedBy) {
 			return errors.New("payments virtual reserve signer must be route participant")
 		}
@@ -4874,10 +7008,24 @@ func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
 			return err
 		}
 		if reserved.LT(capacity) {
-			return errors.New("payments virtual reserve capacity below virtual capacity")
+			if !proof.AggregatedCapacity {
+				return errors.New("payments virtual reserve capacity below virtual capacity")
+			}
+			split, err := parsePositiveInt("payments virtual reserve split amount", reserve.SplitAmount)
+			if err != nil {
+				return err
+			}
+			if reserved.LT(split) {
+				return errors.New("payments virtual reserve capacity below split amount")
+			}
 		}
 		if err := ValidateVirtualReservationSignature(reserve.Signature, vc, reserve); err != nil {
 			return err
+		}
+	}
+	for parentID := range parentSet {
+		if _, found := coveredParents[parentID]; !found {
+			return errors.New("payments virtual activation proof missing parent reserve")
 		}
 	}
 	expected := ComputeVirtualActivationProofHash(proof)
@@ -4885,6 +7033,231 @@ func ValidateVirtualActivationProof(proof VirtualActivationProof) error {
 		return errors.New("payments virtual activation proof hash mismatch")
 	}
 	return nil
+}
+
+func BuildVirtualCloseProof(final VirtualChannel, mode VirtualCloseMode, commitments []string, submittedBy string, closeHeight uint64) (VirtualCloseProof, error) {
+	final = final.Normalize()
+	if final.StateHash == "" || final.AnchorCommitment == "" {
+		built, err := BuildVirtualChannel(final)
+		if err != nil {
+			return VirtualCloseProof{}, err
+		}
+		built.Signatures = final.Signatures
+		final = built.Normalize()
+	}
+	proof := VirtualCloseProof{
+		VirtualChannelID:         final.VirtualChannelID,
+		ParentRouteID:            final.ParentRouteID,
+		CloseMode:                mode,
+		FinalState:               final,
+		ParentReserveCommitments: normalizeHashSlice(commitments),
+		SubmittedBy:              strings.TrimSpace(submittedBy),
+		CloseHeight:              closeHeight,
+		ReleaseHeight:            VirtualCloseReleaseHeight(mode, closeHeight, final.ExpiresHeight),
+	}
+	proof.ProofHash = ComputeVirtualCloseProofHash(proof)
+	return proof.Normalize(), nil
+}
+
+func VirtualCloseReleaseHeight(mode VirtualCloseMode, closeHeight, expiresHeight uint64) uint64 {
+	switch mode {
+	case VirtualCloseModeCooperative, VirtualCloseModeExpired:
+		return closeHeight
+	case VirtualCloseModeIntermediaryRisk, VirtualCloseModeDisputed:
+		return closeHeight + DefaultDisputePeriod
+	default:
+		return 0
+	}
+}
+
+func ComputeVirtualCloseProofHash(proof VirtualCloseProof) string {
+	proof = proof.Normalize()
+	parts := []string{
+		"virtual-close-proof",
+		proof.VirtualChannelID,
+		proof.ParentRouteID,
+		string(proof.CloseMode),
+		proof.FinalState.StateHash,
+		proof.SubmittedBy,
+		fmt.Sprintf("%020d", proof.CloseHeight),
+		fmt.Sprintf("%020d", proof.ReleaseHeight),
+	}
+	parts = append(parts, proof.ParentReserveCommitments...)
+	return HashParts(parts...)
+}
+
+func ValidateVirtualCloseProof(proof VirtualCloseProof, current VirtualChannel, currentHeight uint64) error {
+	proof = proof.Normalize()
+	current = current.Normalize()
+	if currentHeight == 0 || proof.CloseHeight != currentHeight {
+		return errors.New("payments virtual close proof height mismatch")
+	}
+	if !IsVirtualCloseMode(proof.CloseMode) {
+		return fmt.Errorf("unknown payments virtual close mode %q", proof.CloseMode)
+	}
+	if proof.VirtualChannelID != current.VirtualChannelID || proof.FinalState.VirtualChannelID != current.VirtualChannelID {
+		return errors.New("payments virtual close proof channel mismatch")
+	}
+	if proof.ParentRouteID != current.ParentRouteID || proof.FinalState.ParentRouteID != current.ParentRouteID {
+		return errors.New("payments virtual close proof route mismatch")
+	}
+	if !containsString(current.Endpoints, proof.SubmittedBy) && !containsString(current.Intermediaries, proof.SubmittedBy) {
+		return errors.New("payments virtual close submitter must be route participant")
+	}
+	if len(current.ParentReserveCommitments) > 0 && strings.Join(proof.ParentReserveCommitments, "/") != strings.Join(current.ParentReserveCommitments, "/") {
+		return errors.New("payments virtual close reserve commitment mismatch")
+	}
+	if proof.ReleaseHeight != VirtualCloseReleaseHeight(proof.CloseMode, proof.CloseHeight, current.ExpiresHeight) {
+		return errors.New("payments virtual close release height mismatch")
+	}
+	switch proof.CloseMode {
+	case VirtualCloseModeCooperative:
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual cooperative close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	case VirtualCloseModeExpired:
+		if currentHeight < current.ExpiresHeight+DefaultDisputePeriod {
+			return errors.New("payments virtual expired close before finalization")
+		}
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual expired close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	case VirtualCloseModeIntermediaryRisk:
+		if !containsString(current.Intermediaries, proof.SubmittedBy) {
+			return errors.New("payments virtual intermediary-risk close requires intermediary submitter")
+		}
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual intermediary-risk close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	case VirtualCloseModeDisputed:
+		if proof.FinalState.Nonce < current.Nonce {
+			return errors.New("payments virtual disputed close state is stale")
+		}
+		if err := validateVirtualEndpointSignedState(current, proof.FinalState, false); err != nil {
+			return err
+		}
+	}
+	expected := ComputeVirtualCloseProofHash(proof)
+	if proof.ProofHash != expected {
+		return errors.New("payments virtual close proof hash mismatch")
+	}
+	return nil
+}
+
+func VirtualReserveSegmentsFromProof(proof VirtualActivationProof) []VirtualReserveSegment {
+	proof = proof.Normalize()
+	out := make([]VirtualReserveSegment, 0, len(proof.ParentReserves))
+	for _, reserve := range proof.ParentReserves {
+		segment := VirtualReserveSegment{
+			SegmentID:         reserve.SegmentID,
+			VirtualChannelID:  proof.VirtualChannel.VirtualChannelID,
+			ParentChannelID:   reserve.ParentChannelID,
+			ReserveCommitment: reserve.ReserveCommitment,
+			Capacity:          reserve.SplitAmount,
+			BalanceA:          reserve.SplitAmount,
+			BalanceB:          "0",
+			FeeAmount:         reserve.FeeAmount,
+		}
+		segment.SegmentHash = ComputeVirtualReserveSegmentHash(segment)
+		out = append(out, segment.Normalize())
+	}
+	return normalizeVirtualReserveSegments(out)
+}
+
+func ComputeVirtualReserveSegmentHash(segment VirtualReserveSegment) string {
+	segment = segment.Normalize()
+	return HashParts("virtual-reserve-segment", segment.SegmentID, segment.VirtualChannelID, segment.ParentChannelID, segment.ReserveCommitment, segment.Capacity, segment.BalanceA, segment.BalanceB, segment.FeeAmount)
+}
+
+func ValidateVirtualReserveSegments(vc VirtualChannel, segments []VirtualReserveSegment) error {
+	vc = vc.Normalize()
+	segments = normalizeVirtualReserveSegments(segments)
+	if len(segments) == 0 {
+		return errors.New("payments virtual reserve segments are required")
+	}
+	total := sdkmath.ZeroInt()
+	seen := make(map[string]struct{}, len(segments))
+	for _, segment := range segments {
+		if err := segment.ValidateForVirtualChannel(vc); err != nil {
+			return err
+		}
+		if _, found := seen[segment.SegmentID]; found {
+			return errors.New("payments virtual reserve segments must be unique")
+		}
+		seen[segment.SegmentID] = struct{}{}
+		capacity, err := parsePositiveInt("payments virtual reserve segment capacity", segment.Capacity)
+		if err != nil {
+			return err
+		}
+		total = total.Add(capacity)
+	}
+	capacity, err := parsePositiveInt("payments virtual capacity", vc.Capacity)
+	if err != nil {
+		return err
+	}
+	if !total.Equal(capacity) {
+		return errors.New("payments virtual reserve segment split amount must equal capacity")
+	}
+	return nil
+}
+
+func BuildVirtualSegmentSettlementProofs(vc VirtualChannel, segments []VirtualReserveSegment) ([]VirtualSegmentSettlementProof, error) {
+	vc = vc.Normalize()
+	if err := ValidateVirtualReserveSegments(vc, segments); err != nil {
+		return nil, err
+	}
+	segments = normalizeVirtualReserveSegments(segments)
+	out := make([]VirtualSegmentSettlementProof, 0, len(segments))
+	for _, segment := range segments {
+		proof := VirtualSegmentSettlementProof{
+			SegmentID:         segment.SegmentID,
+			VirtualChannelID:  vc.VirtualChannelID,
+			ParentChannelID:   segment.ParentChannelID,
+			FinalStateHash:    vc.StateHash,
+			ReserveCommitment: segment.ReserveCommitment,
+			BalanceA:          segment.BalanceA,
+			BalanceB:          segment.BalanceB,
+		}
+		proof.SettlementHash = ComputeVirtualSegmentSettlementHash(proof)
+		out = append(out, proof.Normalize())
+	}
+	return normalizeVirtualSegmentSettlementProofs(out), nil
+}
+
+func ComputeVirtualSegmentSettlementHash(proof VirtualSegmentSettlementProof) string {
+	proof = proof.Normalize()
+	return HashParts("virtual-segment-settlement", proof.SegmentID, proof.VirtualChannelID, proof.ParentChannelID, proof.FinalStateHash, proof.ReserveCommitment, proof.BalanceA, proof.BalanceB)
+}
+
+func BuildVirtualPartialActivationFailure(vc VirtualChannel, failedSegmentID, reason string, refundCommitments []string) (VirtualPartialActivationFailure, error) {
+	vc = vc.Normalize()
+	failure := VirtualPartialActivationFailure{
+		VirtualChannelID:  vc.VirtualChannelID,
+		FailedSegmentID:   normalizeHash(failedSegmentID),
+		Reason:            strings.TrimSpace(reason),
+		RefundCommitments: normalizeHashSlice(refundCommitments),
+	}
+	failure.FailureHash = ComputeVirtualPartialActivationFailureHash(failure)
+	if err := failure.ValidateForVirtualChannel(vc); err != nil {
+		return VirtualPartialActivationFailure{}, err
+	}
+	return failure.Normalize(), nil
+}
+
+func ComputeVirtualPartialActivationFailureHash(failure VirtualPartialActivationFailure) string {
+	failure = failure.Normalize()
+	parts := []string{"virtual-partial-activation-failure", failure.VirtualChannelID, failure.FailedSegmentID, failure.Reason}
+	parts = append(parts, failure.RefundCommitments...)
+	return HashParts(parts...)
 }
 
 func BuildVirtualChannelDisputeProof(latest VirtualChannel, commitments []string, submittedBy string) (VirtualChannelDisputeProof, error) {
@@ -5058,6 +7431,7 @@ func (v VirtualChannel) Normalize() VirtualChannel {
 	v.BalanceA = strings.TrimSpace(v.BalanceA)
 	v.BalanceB = strings.TrimSpace(v.BalanceB)
 	v.RoutingFeeAmount = strings.TrimSpace(v.RoutingFeeAmount)
+	v.AnchorFeePaid = strings.TrimSpace(v.AnchorFeePaid)
 	if v.Nonce == 0 {
 		v.Nonce = 1
 	}
@@ -5069,6 +7443,9 @@ func (v VirtualChannel) Normalize() VirtualChannel {
 	}
 	if v.RoutingFeeAmount == "" {
 		v.RoutingFeeAmount = "0"
+	}
+	if v.AnchorFeePaid == "" {
+		v.AnchorFeePaid = "0"
 	}
 	v.AnchorCommitment = normalizeOptionalHash(v.AnchorCommitment)
 	v.ConditionRoot = normalizeOptionalHash(v.ConditionRoot)
@@ -5153,6 +7530,9 @@ func (v VirtualChannel) ValidateCore() error {
 		return err
 	}
 	if err := validateNonNegativeInt("payments virtual routing fee", vc.RoutingFeeAmount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments virtual anchor fee", vc.AnchorFeePaid); err != nil {
 		return err
 	}
 	capacity, err := parsePositiveInt("payments virtual capacity", vc.Capacity)
@@ -5249,6 +7629,7 @@ func (s VirtualReservationSignature) Normalize() VirtualReservationSignature {
 	s.ParentRouteID = normalizeHash(s.ParentRouteID)
 	s.ParentChannelID = normalizeHash(s.ParentChannelID)
 	s.Capacity = strings.TrimSpace(s.Capacity)
+	s.SplitAmount = strings.TrimSpace(s.SplitAmount)
 	s.FeeAmount = strings.TrimSpace(s.FeeAmount)
 	s.CommitmentHash = normalizeHash(s.CommitmentHash)
 	s.SignatureHash = normalizeHash(s.SignatureHash)
@@ -5256,9 +7637,14 @@ func (s VirtualReservationSignature) Normalize() VirtualReservationSignature {
 }
 
 func (r VirtualParentReserve) Normalize() VirtualParentReserve {
+	r.SegmentID = normalizeOptionalHash(r.SegmentID)
 	r.ParentChannelID = normalizeHash(r.ParentChannelID)
 	r.ReservedBy = strings.TrimSpace(r.ReservedBy)
 	r.Capacity = strings.TrimSpace(r.Capacity)
+	if r.SplitAmount == "" {
+		r.SplitAmount = r.Capacity
+	}
+	r.SplitAmount = strings.TrimSpace(r.SplitAmount)
 	if r.FeeAmount == "" {
 		r.FeeAmount = "0"
 	}
@@ -5283,6 +7669,142 @@ func (p VirtualChannelDisputeProof) Normalize() VirtualChannelDisputeProof {
 	p.SubmittedBy = strings.TrimSpace(p.SubmittedBy)
 	p.EvidenceHash = normalizeOptionalHash(p.EvidenceHash)
 	return p
+}
+
+func (r VirtualReserveRelease) Normalize() VirtualReserveRelease {
+	r.SegmentID = normalizeOptionalHash(r.SegmentID)
+	r.VirtualChannelID = normalizeHash(r.VirtualChannelID)
+	r.ParentChannelID = normalizeHash(r.ParentChannelID)
+	r.ReserveCommitment = normalizeHash(r.ReserveCommitment)
+	r.Capacity = strings.TrimSpace(r.Capacity)
+	r.BalanceA = strings.TrimSpace(r.BalanceA)
+	r.BalanceB = strings.TrimSpace(r.BalanceB)
+	r.FeeAmount = strings.TrimSpace(r.FeeAmount)
+	r.ReleaseHash = normalizeOptionalHash(r.ReleaseHash)
+	return r
+}
+
+func (p VirtualCloseProof) Normalize() VirtualCloseProof {
+	p.VirtualChannelID = normalizeHash(p.VirtualChannelID)
+	p.ParentRouteID = normalizeHash(p.ParentRouteID)
+	p.FinalState = p.FinalState.Normalize()
+	p.ParentReserveCommitments = normalizeHashSlice(p.ParentReserveCommitments)
+	p.SubmittedBy = strings.TrimSpace(p.SubmittedBy)
+	p.ProofHash = normalizeOptionalHash(p.ProofHash)
+	return p
+}
+
+func (s VirtualReserveSegment) Normalize() VirtualReserveSegment {
+	s.SegmentID = normalizeHash(s.SegmentID)
+	s.VirtualChannelID = normalizeHash(s.VirtualChannelID)
+	s.ParentChannelID = normalizeHash(s.ParentChannelID)
+	s.ReserveCommitment = normalizeHash(s.ReserveCommitment)
+	s.Capacity = strings.TrimSpace(s.Capacity)
+	s.BalanceA = strings.TrimSpace(s.BalanceA)
+	s.BalanceB = strings.TrimSpace(s.BalanceB)
+	s.FeeAmount = strings.TrimSpace(s.FeeAmount)
+	s.SegmentHash = normalizeOptionalHash(s.SegmentHash)
+	return s
+}
+
+func (s VirtualReserveSegment) ValidateForVirtualChannel(vc VirtualChannel) error {
+	s = s.Normalize()
+	vc = vc.Normalize()
+	if err := ValidateHash("payments virtual reserve segment id", s.SegmentID); err != nil {
+		return err
+	}
+	if s.VirtualChannelID != vc.VirtualChannelID {
+		return errors.New("payments virtual reserve segment channel mismatch")
+	}
+	if !containsString(vc.ParentChannelIDs, s.ParentChannelID) {
+		return errors.New("payments virtual reserve segment references unknown parent")
+	}
+	if err := ValidateHash("payments virtual reserve segment commitment", s.ReserveCommitment); err != nil {
+		return err
+	}
+	capacity, err := parsePositiveInt("payments virtual reserve segment capacity", s.Capacity)
+	if err != nil {
+		return err
+	}
+	balanceA, err := parseNonNegativeInt("payments virtual reserve segment balance a", s.BalanceA)
+	if err != nil {
+		return err
+	}
+	balanceB, err := parseNonNegativeInt("payments virtual reserve segment balance b", s.BalanceB)
+	if err != nil {
+		return err
+	}
+	if !balanceA.Add(balanceB).Equal(capacity) {
+		return errors.New("payments virtual reserve segment balances must equal capacity")
+	}
+	if err := validateNonNegativeInt("payments virtual reserve segment fee", s.FeeAmount); err != nil {
+		return err
+	}
+	if expected := ComputeVirtualReserveSegmentHash(s); s.SegmentHash != expected {
+		return errors.New("payments virtual reserve segment hash mismatch")
+	}
+	return nil
+}
+
+func (p VirtualSegmentSettlementProof) Normalize() VirtualSegmentSettlementProof {
+	p.SegmentID = normalizeHash(p.SegmentID)
+	p.VirtualChannelID = normalizeHash(p.VirtualChannelID)
+	p.ParentChannelID = normalizeHash(p.ParentChannelID)
+	p.FinalStateHash = normalizeHash(p.FinalStateHash)
+	p.ReserveCommitment = normalizeHash(p.ReserveCommitment)
+	p.BalanceA = strings.TrimSpace(p.BalanceA)
+	p.BalanceB = strings.TrimSpace(p.BalanceB)
+	p.SettlementHash = normalizeOptionalHash(p.SettlementHash)
+	return p
+}
+
+func (p VirtualSegmentSettlementProof) ValidateForSegment(segment VirtualReserveSegment, vc VirtualChannel) error {
+	p = p.Normalize()
+	segment = segment.Normalize()
+	vc = vc.Normalize()
+	if p.SegmentID != segment.SegmentID || p.VirtualChannelID != vc.VirtualChannelID || p.ParentChannelID != segment.ParentChannelID {
+		return errors.New("payments virtual segment settlement proof domain mismatch")
+	}
+	if p.FinalStateHash != vc.StateHash || p.ReserveCommitment != segment.ReserveCommitment {
+		return errors.New("payments virtual segment settlement proof commitment mismatch")
+	}
+	if p.BalanceA != segment.BalanceA || p.BalanceB != segment.BalanceB {
+		return errors.New("payments virtual segment settlement proof balance mismatch")
+	}
+	if expected := ComputeVirtualSegmentSettlementHash(p); p.SettlementHash != expected {
+		return errors.New("payments virtual segment settlement proof hash mismatch")
+	}
+	return nil
+}
+
+func (f VirtualPartialActivationFailure) Normalize() VirtualPartialActivationFailure {
+	f.VirtualChannelID = normalizeHash(f.VirtualChannelID)
+	f.FailedSegmentID = normalizeHash(f.FailedSegmentID)
+	f.Reason = strings.TrimSpace(f.Reason)
+	f.RefundCommitments = normalizeHashSlice(f.RefundCommitments)
+	f.FailureHash = normalizeOptionalHash(f.FailureHash)
+	return f
+}
+
+func (f VirtualPartialActivationFailure) ValidateForVirtualChannel(vc VirtualChannel) error {
+	f = f.Normalize()
+	vc = vc.Normalize()
+	if f.VirtualChannelID != vc.VirtualChannelID {
+		return errors.New("payments virtual partial activation failure channel mismatch")
+	}
+	if err := ValidateHash("payments virtual failed segment id", f.FailedSegmentID); err != nil {
+		return err
+	}
+	if f.Reason == "" {
+		return errors.New("payments virtual partial activation failure reason is required")
+	}
+	if len(f.RefundCommitments) == 0 {
+		return errors.New("payments virtual partial activation failure refund commitments are required")
+	}
+	if expected := ComputeVirtualPartialActivationFailureHash(f); f.FailureHash != expected {
+		return errors.New("payments virtual partial activation failure hash mismatch")
+	}
+	return nil
 }
 
 func (op SettlementOperation) Normalize() SettlementOperation {
@@ -5363,6 +7885,158 @@ func NewSettlementBatch(batchID string, operations []SettlementOperation) (Settl
 	return batch, nil
 }
 
+func GroupSettlementOperationsByChannelKey(seed string, operations []SettlementOperation) ([]SettlementBatch, error) {
+	operations = SortSettlementOperations(operations)
+	if len(operations) == 0 {
+		return nil, errors.New("payments settlement batch grouping requires operations")
+	}
+	groups := [][]SettlementOperation{}
+	groupChannels := []map[string]struct{}{}
+	for _, op := range operations {
+		if err := op.Validate(); err != nil {
+			return nil, err
+		}
+		placed := false
+		for i := range groups {
+			if _, found := groupChannels[i][op.ChannelID]; found {
+				continue
+			}
+			groups[i] = append(groups[i], op)
+			groupChannels[i][op.ChannelID] = struct{}{}
+			placed = true
+			break
+		}
+		if !placed {
+			groups = append(groups, []SettlementOperation{op})
+			groupChannels = append(groupChannels, map[string]struct{}{op.ChannelID: {}})
+		}
+	}
+	out := make([]SettlementBatch, 0, len(groups))
+	seed = strings.TrimSpace(seed)
+	if seed == "" {
+		seed = "settlement-batch-group"
+	}
+	for i, group := range groups {
+		batchID := HashParts(seed, fmt.Sprintf("%020d", uint64(i)))
+		batch, err := NewSettlementBatch(batchID, group)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, batch)
+	}
+	return out, nil
+}
+
+func AccessPlanForSettlementOperation(op SettlementOperation, blockHeight uint64) (BlockSTMAccessPlan, error) {
+	op = op.Normalize()
+	if err := op.Validate(); err != nil {
+		return BlockSTMAccessPlan{}, err
+	}
+	txClass := blockSTMClassForBatchOperation(op.OperationType)
+	plan := BlockSTMAccessPlan{
+		OperationID:        op.OperationID,
+		TxClass:            txClass,
+		ChannelID:          op.ChannelID,
+		ReadKeys:           []string{PaymentChannelKey(op.ChannelID)},
+		WriteKeys:          []string{PaymentChannelKey(op.ChannelID)},
+		AccumulatorKeys:    []string{PaymentBlockAccumulatorKey(blockHeight)},
+		ConflictDomain:     PaymentChannelKey(op.ChannelID),
+		DeterministicGroup: PaymentChannelKey(op.ChannelID),
+	}
+	switch op.OperationType {
+	case BatchOperationOpen:
+		plan.WriteKeys = append(plan.WriteKeys, PaymentCustodyKey(op.ChannelID))
+	case BatchOperationClose, BatchOperationDispute:
+		plan.WriteKeys = append(plan.WriteKeys, PaymentPendingCloseIndexKey(op.ChannelID))
+	case BatchOperationSettle:
+		plan.WriteKeys = append(plan.WriteKeys, PaymentSettlementKey(op.ChannelID), PaymentSettlementTombstoneKey(op.ChannelID), PaymentCustodyKey(op.ChannelID))
+	}
+	return plan.Normalize(), nil
+}
+
+func AccessPlanForConditionResolution(channelID string, conditionIDs []string, blockHeight uint64) (BlockSTMAccessPlan, error) {
+	channelID = normalizeHash(channelID)
+	if err := ValidateHash("payments blockstm condition channel id", channelID); err != nil {
+		return BlockSTMAccessPlan{}, err
+	}
+	conditionIDs = normalizeHashSlice(conditionIDs)
+	if len(conditionIDs) == 0 {
+		return BlockSTMAccessPlan{}, errors.New("payments blockstm condition resolution requires condition ids")
+	}
+	readKeys := []string{PaymentChannelKey(channelID)}
+	writeKeys := []string{PaymentChannelKey(channelID)}
+	for _, conditionID := range conditionIDs {
+		writeKeys = append(writeKeys, PaymentConditionIndexKey(channelID, conditionID))
+	}
+	plan := BlockSTMAccessPlan{
+		OperationID:        HashParts("condition-resolution", channelID, strings.Join(conditionIDs, "/")),
+		TxClass:            BlockSTMClassResolveCondition,
+		ChannelID:          channelID,
+		ConditionIDs:       conditionIDs,
+		ReadKeys:           readKeys,
+		WriteKeys:          writeKeys,
+		AccumulatorKeys:    []string{PaymentBlockAccumulatorKey(blockHeight)},
+		ConflictDomain:     PaymentChannelKey(channelID),
+		DeterministicGroup: PaymentChannelKey(channelID),
+	}
+	return plan.Normalize(), nil
+}
+
+func ProfileBlockSTMConflicts(plans []BlockSTMAccessPlan) BlockSTMConflictProfile {
+	normalized := make([]BlockSTMAccessPlan, len(plans))
+	for i, plan := range plans {
+		normalized[i] = plan.Normalize()
+	}
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].OperationID < normalized[j].OperationID
+	})
+	conflicts := []BlockSTMConflict{}
+	for i := range normalized {
+		for j := i + 1; j < len(normalized); j++ {
+			for _, conflict := range blockSTMPlanConflicts(normalized[i], normalized[j]) {
+				conflicts = append(conflicts, conflict)
+			}
+		}
+	}
+	return BlockSTMConflictProfile{
+		Plans:                    normalized,
+		Conflicts:                conflicts,
+		ParallelizableGroups:     blockSTMParallelizableGroups(normalized),
+		ConflictFree:             len(conflicts) == 0,
+		GlobalAccountingDeferred: blockSTMAccountingDeferred(normalized),
+	}
+}
+
+func AccumulatePaymentBlockAccounting(acc PaymentBlockAccumulator, settlement SettlementRecord) (PaymentBlockAccumulator, error) {
+	acc = acc.Normalize()
+	settlement = settlement.Normalize()
+	fee, err := parseNonNegativeInt("payments block accumulator fee", acc.FeeAmount)
+	if err != nil {
+		return PaymentBlockAccumulator{}, err
+	}
+	burn, err := parseNonNegativeInt("payments block accumulator burn", acc.BurnAmount)
+	if err != nil {
+		return PaymentBlockAccumulator{}, err
+	}
+	penalty, err := parseNonNegativeInt("payments block accumulator penalty", acc.PenaltyAmount)
+	if err != nil {
+		return PaymentBlockAccumulator{}, err
+	}
+	settlementFee, err := parseNonNegativeInt("payments settlement fee", settlement.SettlementFee)
+	if err != nil {
+		return PaymentBlockAccumulator{}, err
+	}
+	penaltyTotal, err := sumPenaltyAllocations(settlement.PenaltyAllocations)
+	if err != nil {
+		return PaymentBlockAccumulator{}, err
+	}
+	acc.FeeAmount = fee.Add(settlementFee).String()
+	acc.PenaltyAmount = penalty.Add(penaltyTotal).String()
+	acc.BurnAmount = burn.String()
+	acc.OperationCount++
+	return acc.Normalize(), nil
+}
+
 func SortSettlementOperations(operations []SettlementOperation) []SettlementOperation {
 	out := make([]SettlementOperation, len(operations))
 	for i, op := range operations {
@@ -5371,6 +8045,762 @@ func SortSettlementOperations(operations []SettlementOperation) []SettlementOper
 	sort.SliceStable(out, func(i, j int) bool {
 		return compareSettlementOperations(out[i], out[j]) < 0
 	})
+	return out
+}
+
+func (p BlockSTMAccessPlan) Normalize() BlockSTMAccessPlan {
+	p.OperationID = normalizeOptionalHash(p.OperationID)
+	p.ChannelID = normalizeOptionalHash(p.ChannelID)
+	p.ConditionIDs = normalizeHashSlice(p.ConditionIDs)
+	p.ReadKeys = normalizeStoreKeySlice(p.ReadKeys)
+	p.WriteKeys = normalizeStoreKeySlice(p.WriteKeys)
+	p.AccumulatorKeys = normalizeStoreKeySlice(p.AccumulatorKeys)
+	p.ConflictDomain = strings.TrimSpace(p.ConflictDomain)
+	p.DeterministicGroup = strings.TrimSpace(p.DeterministicGroup)
+	if p.ConflictDomain == "" && p.ChannelID != "" {
+		p.ConflictDomain = PaymentChannelKey(p.ChannelID)
+	}
+	if p.DeterministicGroup == "" {
+		p.DeterministicGroup = p.ConflictDomain
+	}
+	return p
+}
+
+func (p BlockSTMAccessPlan) Validate() error {
+	p = p.Normalize()
+	if err := ValidateHash("payments blockstm operation id", p.OperationID); err != nil {
+		return err
+	}
+	if !IsBlockSTMTransactionClass(p.TxClass) {
+		return fmt.Errorf("unknown payments blockstm transaction class %q", p.TxClass)
+	}
+	if p.ChannelID != "" {
+		if err := ValidateHash("payments blockstm channel id", p.ChannelID); err != nil {
+			return err
+		}
+	}
+	if len(p.WriteKeys) == 0 {
+		return errors.New("payments blockstm access plan requires write keys")
+	}
+	if p.ConflictDomain == "" {
+		return errors.New("payments blockstm access plan requires conflict domain")
+	}
+	return nil
+}
+
+func (c BlockSTMConflict) Normalize() BlockSTMConflict {
+	c.LeftOperationID = normalizeOptionalHash(c.LeftOperationID)
+	c.RightOperationID = normalizeOptionalHash(c.RightOperationID)
+	c.Key = strings.TrimSpace(c.Key)
+	c.Reason = strings.TrimSpace(c.Reason)
+	return c
+}
+
+func (a PaymentBlockAccumulator) Normalize() PaymentBlockAccumulator {
+	a.FeeAmount = strings.TrimSpace(a.FeeAmount)
+	if a.FeeAmount == "" {
+		a.FeeAmount = "0"
+	}
+	a.BurnAmount = strings.TrimSpace(a.BurnAmount)
+	if a.BurnAmount == "" {
+		a.BurnAmount = "0"
+	}
+	a.PenaltyAmount = strings.TrimSpace(a.PenaltyAmount)
+	if a.PenaltyAmount == "" {
+		a.PenaltyAmount = "0"
+	}
+	if a.AccumulatorKey == "" && a.BlockHeight > 0 {
+		a.AccumulatorKey = PaymentBlockAccumulatorKey(a.BlockHeight)
+	}
+	a.AccumulatorKey = strings.TrimSpace(a.AccumulatorKey)
+	return a
+}
+
+func (a PaymentBlockAccumulator) Validate() error {
+	a = a.Normalize()
+	if a.BlockHeight == 0 {
+		return errors.New("payments block accumulator height must be positive")
+	}
+	if a.AccumulatorKey != PaymentBlockAccumulatorKey(a.BlockHeight) {
+		return errors.New("payments block accumulator key mismatch")
+	}
+	if err := validateNonNegativeInt("payments block accumulator fees", a.FeeAmount); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments block accumulator burns", a.BurnAmount); err != nil {
+		return err
+	}
+	return validateNonNegativeInt("payments block accumulator penalties", a.PenaltyAmount)
+}
+
+func (r StoreV2ChannelRecord) Normalize() StoreV2ChannelRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Channel = r.Channel.Normalize()
+	r.LatestStateHash = normalizeOptionalHash(r.LatestStateHash)
+	r.PendingCloseKey = strings.TrimSpace(r.PendingCloseKey)
+	r.ParticipantIndexKeys = normalizeStoreKeySlice(r.ParticipantIndexKeys)
+	r.RoutingAdvertisementKey = strings.TrimSpace(r.RoutingAdvertisementKey)
+	return r
+}
+
+func (r StoreV2ChannelRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 channel record version mismatch")
+	}
+	if r.Key != StoreV2ChannelKey(r.ChannelID) {
+		return errors.New("payments store v2 channel key mismatch")
+	}
+	if r.Channel.ChannelID != r.ChannelID {
+		return errors.New("payments store v2 channel id mismatch")
+	}
+	if err := ValidateHash("payments store v2 latest state hash", r.LatestStateHash); err != nil {
+		return err
+	}
+	if r.LatestStateNonce == 0 {
+		return errors.New("payments store v2 latest state nonce must be positive")
+	}
+	if len(r.Channel.LatestState.Signatures) != 0 {
+		return errors.New("payments store v2 active channel record must stay compact")
+	}
+	for _, key := range r.ParticipantIndexKeys {
+		if !strings.HasPrefix(key, paymentKey(StoreV2KeyParticipantChannelsPrefix)+"/") {
+			return errors.New("payments store v2 participant index key prefix mismatch")
+		}
+	}
+	return nil
+}
+
+func (r StoreV2ChannelStateRecord) Normalize() StoreV2ChannelStateRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.StateHash = normalizeOptionalHash(r.StateHash)
+	r.FullState = r.FullState.Normalize()
+	return r
+}
+
+func (r StoreV2ChannelStateRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 channel state record version mismatch")
+	}
+	if r.Key != StoreV2ChannelStateKey(r.ChannelID, r.Nonce) {
+		return errors.New("payments store v2 channel state key mismatch")
+	}
+	if r.Nonce == 0 {
+		return errors.New("payments store v2 channel state nonce must be positive")
+	}
+	if err := ValidateHash("payments store v2 channel state hash", r.StateHash); err != nil {
+		return err
+	}
+	if r.FullState.StateHash != "" && r.FullState.StateHash != r.StateHash {
+		return errors.New("payments store v2 channel state hash mismatch")
+	}
+	if !r.SubmittedOnChain && len(r.FullState.Signatures) != 0 {
+		return errors.New("payments store v2 off-chain checkpoint stores hash only")
+	}
+	return nil
+}
+
+func (r StoreV2PendingCloseRecord) Normalize() StoreV2PendingCloseRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Close = r.Close.Normalize()
+	return r
+}
+
+func (r StoreV2PendingCloseRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 pending close record version mismatch")
+	}
+	if r.Key != StoreV2PendingCloseKey(r.ChannelID) {
+		return errors.New("payments store v2 pending close key mismatch")
+	}
+	if r.Close.State.ChannelID != r.ChannelID {
+		return errors.New("payments store v2 pending close channel mismatch")
+	}
+	return nil
+}
+
+func (r StoreV2ConditionRecord) Normalize() StoreV2ConditionRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.ConditionID = normalizeHash(r.ConditionID)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Promise = r.Promise.Normalize()
+	r.ClaimEvidence = normalizeOptionalHash(r.ClaimEvidence)
+	return r
+}
+
+func (r StoreV2ConditionRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 condition record version mismatch")
+	}
+	if r.Key != StoreV2ConditionKey(r.ConditionID) {
+		return errors.New("payments store v2 condition key mismatch")
+	}
+	if err := ValidateHash("payments store v2 condition id", r.ConditionID); err != nil {
+		return err
+	}
+	return ValidateHash("payments store v2 condition channel id", r.ChannelID)
+}
+
+func (r StoreV2VirtualChannelRecord) Normalize() StoreV2VirtualChannelRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.VirtualChannelID = normalizeHash(r.VirtualChannelID)
+	r.Channel = r.Channel.Normalize()
+	r.AnchorHash = normalizeOptionalHash(r.AnchorHash)
+	return r
+}
+
+func (r StoreV2VirtualChannelRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 virtual channel record version mismatch")
+	}
+	if r.Key != StoreV2VirtualChannelKey(r.VirtualChannelID) {
+		return errors.New("payments store v2 virtual channel key mismatch")
+	}
+	if r.Channel.VirtualChannelID != r.VirtualChannelID {
+		return errors.New("payments store v2 virtual channel id mismatch")
+	}
+	return ValidateHash("payments store v2 virtual channel anchor", r.AnchorHash)
+}
+
+func (r StoreV2ParticipantChannelRecord) Normalize() StoreV2ParticipantChannelRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.Participant = strings.TrimSpace(r.Participant)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	return r
+}
+
+func (r StoreV2ParticipantChannelRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 participant channel version mismatch")
+	}
+	if err := addressing.ValidateUserAddress("payments store v2 participant", r.Participant); err != nil {
+		return err
+	}
+	if r.Key != StoreV2ParticipantChannelKey(r.Participant, r.ChannelID) {
+		return errors.New("payments store v2 participant channel key mismatch")
+	}
+	return nil
+}
+
+func (r StoreV2SettlementTombstoneRecord) Normalize() StoreV2SettlementTombstoneRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Tombstone = r.Tombstone.Normalize()
+	if r.PruneAfterHeight == 0 {
+		r.PruneAfterHeight = r.Tombstone.ExpiresHeight
+	}
+	return r
+}
+
+func (r StoreV2SettlementTombstoneRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 tombstone version mismatch")
+	}
+	if r.Key != StoreV2SettlementTombstoneKey(r.ChannelID) {
+		return errors.New("payments store v2 tombstone key mismatch")
+	}
+	if r.Tombstone.ChannelID != r.ChannelID {
+		return errors.New("payments store v2 tombstone channel mismatch")
+	}
+	if r.PruneAfterHeight < r.Tombstone.ClosedHeight {
+		return errors.New("payments store v2 tombstone prune height before close")
+	}
+	return nil
+}
+
+func (r StoreV2FeeAccumulatorRecord) Normalize() StoreV2FeeAccumulatorRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.BlockOrEpoch = strings.TrimSpace(r.BlockOrEpoch)
+	r.Bucket = strings.TrimSpace(r.Bucket)
+	r.Amount = strings.TrimSpace(r.Amount)
+	if r.Amount == "" {
+		r.Amount = "0"
+	}
+	return r
+}
+
+func (r StoreV2FeeAccumulatorRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 fee accumulator version mismatch")
+	}
+	if r.Key != StoreV2FeeAccumulatorKey(r.BlockOrEpoch, r.Bucket) {
+		return errors.New("payments store v2 fee accumulator key mismatch")
+	}
+	return validateNonNegativeInt("payments store v2 fee accumulator amount", r.Amount)
+}
+
+func (r StoreV2FraudProofRecord) Normalize() StoreV2FraudProofRecord {
+	r.Key = strings.TrimSpace(r.Key)
+	if r.Version == 0 {
+		r.Version = StoreV2MigrationVersion
+	}
+	r.ProofID = normalizeHash(r.ProofID)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Proof = r.Proof.Normalize()
+	return r
+}
+
+func (r StoreV2FraudProofRecord) Validate() error {
+	r = r.Normalize()
+	if r.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 fraud proof version mismatch")
+	}
+	if r.Key != StoreV2FraudProofKey(r.ProofID) {
+		return errors.New("payments store v2 fraud proof key mismatch")
+	}
+	if r.Proof.ProofID != r.ProofID {
+		return errors.New("payments store v2 fraud proof id mismatch")
+	}
+	return ValidateHash("payments store v2 fraud proof channel id", r.ChannelID)
+}
+
+func (l StoreV2Layout) Normalize() StoreV2Layout {
+	if l.Version == 0 {
+		l.Version = StoreV2MigrationVersion
+	}
+	for i := range l.Channels {
+		l.Channels[i] = l.Channels[i].Normalize()
+	}
+	for i := range l.ChannelStates {
+		l.ChannelStates[i] = l.ChannelStates[i].Normalize()
+	}
+	for i := range l.PendingCloses {
+		l.PendingCloses[i] = l.PendingCloses[i].Normalize()
+	}
+	for i := range l.Conditions {
+		l.Conditions[i] = l.Conditions[i].Normalize()
+	}
+	for i := range l.VirtualChannels {
+		l.VirtualChannels[i] = l.VirtualChannels[i].Normalize()
+	}
+	for i := range l.ParticipantChannels {
+		l.ParticipantChannels[i] = l.ParticipantChannels[i].Normalize()
+	}
+	for i := range l.SettlementTombstones {
+		l.SettlementTombstones[i] = l.SettlementTombstones[i].Normalize()
+	}
+	for i := range l.FeeAccumulators {
+		l.FeeAccumulators[i] = l.FeeAccumulators[i].Normalize()
+	}
+	for i := range l.FraudProofs {
+		l.FraudProofs[i] = l.FraudProofs[i].Normalize()
+	}
+	sortStoreV2Layout(&l)
+	return l
+}
+
+func (l StoreV2Layout) Validate() error {
+	l = l.Normalize()
+	if l.Version != StoreV2MigrationVersion {
+		return errors.New("payments store v2 layout version mismatch")
+	}
+	seen := map[string]struct{}{}
+	validateKey := func(key string) error {
+		if key == "" {
+			return errors.New("payments store v2 key is required")
+		}
+		if _, found := seen[key]; found {
+			return fmt.Errorf("payments store v2 duplicate key %s", key)
+		}
+		seen[key] = struct{}{}
+		return nil
+	}
+	for _, record := range l.Channels {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.ChannelStates {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.PendingCloses {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.Conditions {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.VirtualChannels {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.ParticipantChannels {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.SettlementTombstones {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.FeeAccumulators {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, record := range l.FraudProofs {
+		if err := validateKey(record.Key); err != nil {
+			return err
+		}
+		if err := record.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s AdaptiveSyncSnapshot) Normalize() AdaptiveSyncSnapshot {
+	s.Key = strings.TrimSpace(s.Key)
+	if s.Version == 0 {
+		s.Version = StoreV2MigrationVersion
+	}
+	s.Layout = s.Layout.Normalize()
+	for i := range s.ActiveDisputes {
+		s.ActiveDisputes[i] = s.ActiveDisputes[i].Normalize()
+	}
+	for i := range s.PendingFinalizations {
+		s.PendingFinalizations[i] = s.PendingFinalizations[i].Normalize()
+	}
+	for i := range s.WatcherReplayEvents {
+		s.WatcherReplayEvents[i] = s.WatcherReplayEvents[i].Normalize()
+	}
+	sort.SliceStable(s.ActiveDisputes, func(i, j int) bool { return s.ActiveDisputes[i].Key < s.ActiveDisputes[j].Key })
+	sort.SliceStable(s.PendingFinalizations, func(i, j int) bool { return s.PendingFinalizations[i].Key < s.PendingFinalizations[j].Key })
+	sort.SliceStable(s.WatcherReplayEvents, func(i, j int) bool { return s.WatcherReplayEvents[i].Key < s.WatcherReplayEvents[j].Key })
+	s.SnapshotHash = normalizeOptionalHash(s.SnapshotHash)
+	return s
+}
+
+func (s AdaptiveSyncSnapshot) Validate() error {
+	s = s.Normalize()
+	if s.Version != StoreV2MigrationVersion {
+		return errors.New("payments adaptive sync snapshot version mismatch")
+	}
+	if s.Height == 0 {
+		return errors.New("payments adaptive sync snapshot height must be positive")
+	}
+	if s.Key != StoreV2AdaptiveSnapshotKey(s.Height) {
+		return errors.New("payments adaptive sync snapshot key mismatch")
+	}
+	if !s.ConsensusOnly || !s.RoutingTopologyExcluded {
+		return errors.New("payments adaptive sync snapshot must exclude routing topology")
+	}
+	if err := s.Layout.Validate(); err != nil {
+		return err
+	}
+	pendingByChannel := map[string]StoreV2PendingCloseRecord{}
+	for _, pending := range s.Layout.PendingCloses {
+		pendingByChannel[pending.ChannelID] = pending
+	}
+	seen := map[string]struct{}{}
+	for _, dispute := range s.ActiveDisputes {
+		if err := dispute.Validate(); err != nil {
+			return err
+		}
+		if _, found := pendingByChannel[dispute.ChannelID]; !found {
+			return errors.New("payments adaptive sync active dispute missing pending close")
+		}
+		if _, found := seen[dispute.Key]; found {
+			return errors.New("payments adaptive sync duplicate active dispute")
+		}
+		seen[dispute.Key] = struct{}{}
+	}
+	seen = map[string]struct{}{}
+	for _, pending := range s.PendingFinalizations {
+		if err := pending.Validate(); err != nil {
+			return err
+		}
+		if _, found := pendingByChannel[pending.ChannelID]; !found {
+			return errors.New("payments adaptive sync pending finalization missing pending close")
+		}
+		if _, found := seen[pending.Key]; found {
+			return errors.New("payments adaptive sync duplicate pending finalization")
+		}
+		seen[pending.Key] = struct{}{}
+	}
+	seen = map[string]struct{}{}
+	for _, event := range s.WatcherReplayEvents {
+		if err := event.Validate(); err != nil {
+			return err
+		}
+		if _, found := seen[event.Key]; found {
+			return errors.New("payments adaptive sync duplicate watcher replay event")
+		}
+		seen[event.Key] = struct{}{}
+	}
+	if s.SnapshotHash == "" {
+		return errors.New("payments adaptive sync snapshot hash is required")
+	}
+	if expected := ComputeAdaptiveSyncSnapshotHash(s); s.SnapshotHash != expected {
+		return errors.New("payments adaptive sync snapshot hash mismatch")
+	}
+	return nil
+}
+
+func (i AdaptiveSyncActiveDisputeIndex) Normalize() AdaptiveSyncActiveDisputeIndex {
+	i.Key = strings.TrimSpace(i.Key)
+	i.ChannelID = normalizeHash(i.ChannelID)
+	i.PendingStateHash = normalizeHash(i.PendingStateHash)
+	i.Submitter = strings.TrimSpace(i.Submitter)
+	return i
+}
+
+func (i AdaptiveSyncActiveDisputeIndex) Validate() error {
+	i = i.Normalize()
+	if i.Key != StoreV2ActiveDisputeKey(i.ChannelID) {
+		return errors.New("payments adaptive sync active dispute key mismatch")
+	}
+	if err := ValidateHash("payments adaptive sync active dispute channel id", i.ChannelID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments adaptive sync active dispute state hash", i.PendingStateHash); err != nil {
+		return err
+	}
+	if i.PendingNonce == 0 || i.SubmittedHeight == 0 || i.SettleAfterHeight == 0 {
+		return errors.New("payments adaptive sync active dispute heights and nonce must be positive")
+	}
+	if i.DisputeCount == 0 {
+		return errors.New("payments adaptive sync active dispute count must be positive")
+	}
+	return addressing.ValidateUserAddress("payments adaptive sync active dispute submitter", i.Submitter)
+}
+
+func (i AdaptiveSyncPendingFinalizationIndex) Normalize() AdaptiveSyncPendingFinalizationIndex {
+	i.Key = strings.TrimSpace(i.Key)
+	i.ChannelID = normalizeHash(i.ChannelID)
+	i.PendingStateHash = normalizeHash(i.PendingStateHash)
+	return i
+}
+
+func (i AdaptiveSyncPendingFinalizationIndex) Validate() error {
+	i = i.Normalize()
+	if i.Key != StoreV2PendingFinalizationKey(i.ChannelID) {
+		return errors.New("payments adaptive sync pending finalization key mismatch")
+	}
+	if err := ValidateHash("payments adaptive sync pending finalization channel id", i.ChannelID); err != nil {
+		return err
+	}
+	if !IsChannelFinality(i.Finality) {
+		return fmt.Errorf("unknown payments adaptive sync pending finalization finality %q", i.Finality)
+	}
+	if i.PendingHeight == 0 || i.PendingNonce == 0 {
+		return errors.New("payments adaptive sync pending finalization height and nonce must be positive")
+	}
+	return ValidateHash("payments adaptive sync pending finalization state hash", i.PendingStateHash)
+}
+
+func (e AdaptiveSyncWatcherReplayEvent) Normalize() AdaptiveSyncWatcherReplayEvent {
+	e.Key = strings.TrimSpace(e.Key)
+	e.Event = e.Event.Normalize()
+	e.EventHash = normalizeOptionalHash(e.EventHash)
+	return e
+}
+
+func (e AdaptiveSyncWatcherReplayEvent) Validate() error {
+	e = e.Normalize()
+	if err := e.Event.Validate(); err != nil {
+		return err
+	}
+	if e.Key != StoreV2WatcherReplayEventKey(e.Event.Height, e.Event.EventID) {
+		return errors.New("payments adaptive sync watcher replay event key mismatch")
+	}
+	if e.EventHash != AdaptiveSyncEventHash(e.Event) {
+		return errors.New("payments adaptive sync watcher replay event hash mismatch")
+	}
+	return nil
+}
+
+func AdaptiveSyncEventHash(event PaymentEvent) string {
+	event = event.Normalize()
+	parts := []string{"adaptive-sync-event", event.EventID, event.EventType, event.ChannelID, fmt.Sprintf("%020d", event.Height)}
+	for _, attr := range event.Attributes {
+		parts = append(parts, attr.Key, attr.Value)
+	}
+	return HashParts(parts...)
+}
+
+func ComputeAdaptiveSyncSnapshotHash(snapshot AdaptiveSyncSnapshot) string {
+	snapshot = snapshot.Normalize()
+	parts := []string{"adaptive-sync-snapshot", snapshot.Key, fmt.Sprintf("%020d", snapshot.Height), fmt.Sprintf("%t", snapshot.ConsensusOnly), fmt.Sprintf("%t", snapshot.RoutingTopologyExcluded)}
+	for _, record := range snapshot.Layout.Channels {
+		parts = append(parts, record.Key, record.LatestStateHash)
+	}
+	for _, record := range snapshot.Layout.PendingCloses {
+		parts = append(parts, record.Key, record.Close.State.StateHash)
+	}
+	for _, record := range snapshot.Layout.Conditions {
+		parts = append(parts, record.Key, fmt.Sprintf("%t", record.Settled))
+	}
+	for _, record := range snapshot.Layout.VirtualChannels {
+		parts = append(parts, record.Key, record.AnchorHash)
+	}
+	for _, record := range snapshot.Layout.SettlementTombstones {
+		parts = append(parts, record.Key, record.Tombstone.StateHash)
+	}
+	for _, dispute := range snapshot.ActiveDisputes {
+		parts = append(parts, dispute.Key, dispute.PendingStateHash, fmt.Sprintf("%020d", dispute.PendingNonce))
+	}
+	for _, pending := range snapshot.PendingFinalizations {
+		parts = append(parts, pending.Key, pending.PendingStateHash, fmt.Sprintf("%020d", pending.PendingHeight))
+	}
+	for _, event := range snapshot.WatcherReplayEvents {
+		parts = append(parts, event.Key, event.EventHash)
+	}
+	return HashParts(parts...)
+}
+
+func blockSTMClassForBatchOperation(op BatchOperationType) BlockSTMTransactionClass {
+	switch op {
+	case BatchOperationOpen:
+		return BlockSTMClassOpenChannel
+	case BatchOperationClose:
+		return BlockSTMClassCloseChannel
+	case BatchOperationDispute:
+		return BlockSTMClassDisputeChannel
+	case BatchOperationSettle:
+		return BlockSTMClassSettleChannel
+	default:
+		return ""
+	}
+}
+
+func blockSTMPlanConflicts(left, right BlockSTMAccessPlan) []BlockSTMConflict {
+	left = left.Normalize()
+	right = right.Normalize()
+	conflicts := []BlockSTMConflict{}
+	leftWrites := setFromStrings(left.WriteKeys)
+	rightWrites := setFromStrings(right.WriteKeys)
+	for key := range leftWrites {
+		if _, found := rightWrites[key]; found {
+			conflicts = append(conflicts, BlockSTMConflict{
+				LeftOperationID:  left.OperationID,
+				RightOperationID: right.OperationID,
+				Key:              key,
+				Reason:           "write/write",
+			}.Normalize())
+		}
+	}
+	for _, key := range left.WriteKeys {
+		if containsString(right.ReadKeys, key) && !containsString(left.AccumulatorKeys, key) && !containsString(right.AccumulatorKeys, key) {
+			conflicts = append(conflicts, BlockSTMConflict{LeftOperationID: left.OperationID, RightOperationID: right.OperationID, Key: key, Reason: "write/read"}.Normalize())
+		}
+	}
+	for _, key := range right.WriteKeys {
+		if containsString(left.ReadKeys, key) && !containsString(left.AccumulatorKeys, key) && !containsString(right.AccumulatorKeys, key) {
+			conflicts = append(conflicts, BlockSTMConflict{LeftOperationID: left.OperationID, RightOperationID: right.OperationID, Key: key, Reason: "read/write"}.Normalize())
+		}
+	}
+	return conflicts
+}
+
+func blockSTMParallelizableGroups(plans []BlockSTMAccessPlan) [][]string {
+	groups := [][]string{}
+	groupDomains := []map[string]struct{}{}
+	for _, plan := range plans {
+		plan = plan.Normalize()
+		placed := false
+		for i := range groups {
+			if _, found := groupDomains[i][plan.ConflictDomain]; found {
+				continue
+			}
+			groups[i] = append(groups[i], plan.OperationID)
+			groupDomains[i][plan.ConflictDomain] = struct{}{}
+			placed = true
+			break
+		}
+		if !placed {
+			groups = append(groups, []string{plan.OperationID})
+			groupDomains = append(groupDomains, map[string]struct{}{plan.ConflictDomain: {}})
+		}
+	}
+	return groups
+}
+
+func blockSTMAccountingDeferred(plans []BlockSTMAccessPlan) bool {
+	for _, plan := range plans {
+		plan = plan.Normalize()
+		for _, accKey := range plan.AccumulatorKeys {
+			if containsString(plan.WriteKeys, accKey) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func setFromStrings(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out[value] = struct{}{}
+		}
+	}
 	return out
 }
 
@@ -5432,6 +8862,22 @@ func IsBatchOperationType(value BatchOperationType) bool {
 	}
 }
 
+func IsBlockSTMTransactionClass(value BlockSTMTransactionClass) bool {
+	switch value {
+	case BlockSTMClassOpenChannel,
+		BlockSTMClassUpdateCheckpoint,
+		BlockSTMClassCloseChannel,
+		BlockSTMClassDisputeChannel,
+		BlockSTMClassSettleChannel,
+		BlockSTMClassResolveCondition,
+		BlockSTMClassBatchConditions,
+		BlockSTMClassPenaltyAccounting:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsCloseReason(value CloseReason) bool {
 	switch value {
 	case CloseReasonUnilateral, CloseReasonCooperative, CloseReasonTimeout, CloseReasonFraud:
@@ -5450,9 +8896,65 @@ func IsVirtualChannelStatus(value VirtualChannelStatus) bool {
 	}
 }
 
+func IsVirtualCloseMode(value VirtualCloseMode) bool {
+	switch value {
+	case VirtualCloseModeCooperative,
+		VirtualCloseModeExpired,
+		VirtualCloseModeIntermediaryRisk,
+		VirtualCloseModeDisputed:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsPenaltyRoute(value PenaltyRoute) bool {
 	switch value {
-	case PenaltyRouteReporter, PenaltyRouteBurn, PenaltyRouteSecurityReserve, PenaltyRouteCommunityPool:
+	case PenaltyRouteReporter, PenaltyRouteCounterparty, PenaltyRouteBurn, PenaltyRouteSecurityReserve, PenaltyRouteCommunityPool:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsPaymentPenaltyClass(value PaymentPenaltyClass) bool {
+	switch value {
+	case PenaltyClassInvalidClose,
+		PenaltyClassStaleClose,
+		PenaltyClassDoubleSign,
+		PenaltyClassInvalidCondition,
+		PenaltyClassReplayAttempt,
+		PenaltyClassAsyncOverexposure,
+		PenaltyClassInvalidFraudProof:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsPenaltySource(value PenaltySource) bool {
+	switch value {
+	case PenaltySourceChannelBalance,
+		PenaltySourceParticipantBond,
+		PenaltySourceRoutingAdvertisementDeposit,
+		PenaltySourceFraudProofDeposit:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsPaymentFeeClass(value PaymentFeeClass) bool {
+	switch value {
+	case PaymentFeeClassChannelOpen,
+		PaymentFeeClassChannelCheckpoint,
+		PaymentFeeClassCooperativeClose,
+		PaymentFeeClassUnilateralClose,
+		PaymentFeeClassDispute,
+		PaymentFeeClassFraudProofVerification,
+		PaymentFeeClassConditionalPromiseSettlement,
+		PaymentFeeClassVirtualChannelAnchor,
+		PaymentFeeClassRoutingAdvertisement:
 		return true
 	default:
 		return false
@@ -7065,6 +10567,60 @@ func normalizePenaltyAllocations(allocations []PenaltyAllocation) []PenaltyAlloc
 	return out
 }
 
+func normalizePenaltyMatrix(matrix []PenaltyMatrixEntry) []PenaltyMatrixEntry {
+	if len(matrix) == 0 {
+		matrix = DefaultPenaltyMatrix()
+	}
+	out := make([]PenaltyMatrixEntry, len(matrix))
+	for i, entry := range matrix {
+		out[i] = entry.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := string(out[i].Class) + "/" + string(out[i].ProofType)
+		right := string(out[j].Class) + "/" + string(out[j].ProofType)
+		return left < right
+	})
+	return out
+}
+
+func cappedPenaltyPortion(available sdkmath.Int, capText string, bps uint32) (sdkmath.Int, error) {
+	if !available.IsPositive() {
+		return sdkmath.ZeroInt(), nil
+	}
+	portion := available
+	if bps > 0 {
+		if bps > MaxPenaltyRouteBps {
+			return sdkmath.ZeroInt(), errors.New("payments penalty portion bps exceeds 10000")
+		}
+		portion = available.MulRaw(int64(bps)).QuoRaw(int64(MaxPenaltyRouteBps))
+	}
+	capText = strings.TrimSpace(capText)
+	if capText != "" {
+		capAmount, err := parseNonNegativeInt("payments penalty portion cap", capText)
+		if err != nil {
+			return sdkmath.ZeroInt(), err
+		}
+		if portion.GT(capAmount) {
+			portion = capAmount
+		}
+	}
+	if portion.GT(available) {
+		portion = available
+	}
+	return portion, nil
+}
+
+func channelCounterparty(channel ChannelRecord, offender string) string {
+	channel = channel.Normalize()
+	offender = strings.TrimSpace(offender)
+	for _, participant := range channel.Participants {
+		if participant != offender {
+			return participant
+		}
+	}
+	return ""
+}
+
 func normalizeStateSignatures(signatures []StateSignature) []StateSignature {
 	out := make([]StateSignature, len(signatures))
 	for i, signature := range signatures {
@@ -7082,10 +10638,35 @@ func normalizeVirtualParentReserves(reserves []VirtualParentReserve) []VirtualPa
 		out[i] = reserve.Normalize()
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].SegmentID != out[j].SegmentID {
+			return out[i].SegmentID < out[j].SegmentID
+		}
 		if out[i].ParentChannelID != out[j].ParentChannelID {
 			return out[i].ParentChannelID < out[j].ParentChannelID
 		}
 		return out[i].ReservedBy < out[j].ReservedBy
+	})
+	return out
+}
+
+func normalizeVirtualReserveSegments(segments []VirtualReserveSegment) []VirtualReserveSegment {
+	out := make([]VirtualReserveSegment, len(segments))
+	for i, segment := range segments {
+		out[i] = segment.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].SegmentID < out[j].SegmentID
+	})
+	return out
+}
+
+func normalizeVirtualSegmentSettlementProofs(proofs []VirtualSegmentSettlementProof) []VirtualSegmentSettlementProof {
+	out := make([]VirtualSegmentSettlementProof, len(proofs))
+	for i, proof := range proofs {
+		out[i] = proof.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].SegmentID < out[j].SegmentID
 	})
 	return out
 }
@@ -7101,6 +10682,78 @@ func normalizeHashSlice(values []string) []string {
 	}
 	sortStrings(out)
 	return out
+}
+
+func normalizeStoreKeySlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" {
+			continue
+		}
+		if _, found := seen[normalized]; found {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	sortStrings(out)
+	return out
+}
+
+func sortStoreV2Layout(layout *StoreV2Layout) {
+	sort.SliceStable(layout.Channels, func(i, j int) bool { return layout.Channels[i].Key < layout.Channels[j].Key })
+	sort.SliceStable(layout.ChannelStates, func(i, j int) bool { return layout.ChannelStates[i].Key < layout.ChannelStates[j].Key })
+	sort.SliceStable(layout.PendingCloses, func(i, j int) bool { return layout.PendingCloses[i].Key < layout.PendingCloses[j].Key })
+	sort.SliceStable(layout.Conditions, func(i, j int) bool { return layout.Conditions[i].Key < layout.Conditions[j].Key })
+	sort.SliceStable(layout.VirtualChannels, func(i, j int) bool { return layout.VirtualChannels[i].Key < layout.VirtualChannels[j].Key })
+	sort.SliceStable(layout.ParticipantChannels, func(i, j int) bool { return layout.ParticipantChannels[i].Key < layout.ParticipantChannels[j].Key })
+	sort.SliceStable(layout.SettlementTombstones, func(i, j int) bool { return layout.SettlementTombstones[i].Key < layout.SettlementTombstones[j].Key })
+	sort.SliceStable(layout.FeeAccumulators, func(i, j int) bool { return layout.FeeAccumulators[i].Key < layout.FeeAccumulators[j].Key })
+	sort.SliceStable(layout.FraudProofs, func(i, j int) bool { return layout.FraudProofs[i].Key < layout.FraudProofs[j].Key })
+}
+
+func compactStoreV2Channel(channel ChannelRecord) ChannelRecord {
+	channel = channel.Normalize()
+	channel.LatestState = compactStoreV2State(channel.LatestState)
+	channel.PendingClose = PendingClose{}
+	return channel
+}
+
+func compactStoreV2State(state ChannelState) ChannelState {
+	state = state.Normalize()
+	return ChannelState{
+		ChainID:     state.ChainID,
+		ChannelID:   state.ChannelID,
+		ChannelType: state.ChannelType,
+		Denom:       state.Denom,
+		Version:     state.Version,
+		Nonce:       state.Nonce,
+		Epoch:       state.Epoch,
+		StateHash:   state.StateHash,
+	}
+}
+
+func StoreV2RoutingKeyForChannel(channel ChannelRecord) string {
+	channel = channel.Normalize()
+	if !channel.RoutingAdvertised {
+		return ""
+	}
+	return PaymentRoutingAdvertisementIndexKey(channel.ChannelID)
+}
+
+func storeV2ConditionFromPayment(channel ChannelRecord, condition ConditionalPayment, settled bool) StoreV2ConditionRecord {
+	channel = channel.Normalize()
+	condition = condition.Normalize()
+	return StoreV2ConditionRecord{
+		Key:           StoreV2ConditionKey(condition.ConditionID),
+		Version:       StoreV2MigrationVersion,
+		ConditionID:   condition.ConditionID,
+		ChannelID:     channel.ChannelID,
+		ExpiresHeight: condition.TimeoutHeight,
+		Settled:       settled,
+	}.Normalize()
 }
 
 func normalizeAddressSet(values []string) []string {

@@ -56,6 +56,19 @@ type DomainCommit struct {
 	ExpiresHeight  uint64
 }
 
+type UsedDomainCommitment struct {
+	CommitmentHash    string
+	Name              string
+	Owner             sdk.AccAddress
+	RevealedHeight    uint64
+	ExpiresHeight     uint64
+	ChainID           string
+	ModuleName        string
+	ModuleVersion     uint64
+	RegistrationClass string
+	MaxPrice          string
+}
+
 type ReverseRecord = ReverseResolverRecord
 
 type SubdomainRecord struct {
@@ -138,6 +151,7 @@ type IdentityState struct {
 	Domains                []Domain
 	DomainNFTs             []DomainNFT
 	Commits                []DomainCommit
+	UsedCommitments        []UsedDomainCommitment
 	Resolvers              []ResolverRecord
 	ReverseRecords         []ReverseRecord
 	Subdomains             []SubdomainRecord

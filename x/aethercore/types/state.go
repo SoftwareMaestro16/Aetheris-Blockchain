@@ -217,13 +217,15 @@ func CommitBlockRoots(state CoreState, height uint64) (CoreState, RootSnapshot, 
 	messageRoot := hashParts("aetheris-aek-global-message-root-v1", fmt.Sprint(height), zonesRoot)
 	receiptRoot := hashParts("aetheris-aek-execution-receipt-root-v1", fmt.Sprint(height), zonesRoot)
 	contributions := RootContributions{
-		IdentityRoot: EmptyRootHash,
-		StorageRoot:  EmptyRootHash,
-		MessageRoot:  messageRoot,
-		ReceiptsRoot: receiptRoot,
-		PaymentsRoot: EmptyRootHash,
-		VMRoot:       EmptyRootHash,
-		ParamsHash:   ComputeAetherCoreParamsHash(state.Params),
+		IdentityRoot:  EmptyRootHash,
+		StorageRoot:   EmptyRootHash,
+		MessageRoot:   messageRoot,
+		ReceiptsRoot:  receiptRoot,
+		RoutingRoot:   EmptyRootHash,
+		PaymentsRoot:  EmptyRootHash,
+		ContractsRoot: EmptyRootHash,
+		VMRoot:        EmptyRootHash,
+		ParamsHash:    ComputeAetherCoreParamsHash(state.Params),
 	}
 	return CommitBlockRootsWithContributions(state, height, contributions)
 }
@@ -339,6 +341,9 @@ func AddExportManifest(state CoreState, manifest ExportManifest) (CoreState, err
 	}
 	if manifest.GlobalRoot != root.GlobalRoot {
 		return CoreState{}, errors.New("aethercore export manifest global root mismatch")
+	}
+	if err := ValidateExportImportRootChecks(state, manifest); err != nil {
+		return CoreState{}, err
 	}
 	for _, existing := range state.ExportManifests {
 		if existing.Height == manifest.Height {

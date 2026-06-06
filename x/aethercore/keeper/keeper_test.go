@@ -260,13 +260,15 @@ func keeperLayout(t *testing.T, zoneID types.ZoneID, epoch uint64, shardIDs []ty
 
 func keeperContributions(height uint64) types.RootContributions {
 	return types.RootContributions{
-		IdentityRoot: keeperHash(fmt.Sprintf("%d/identity", height)),
-		StorageRoot:  keeperHash(fmt.Sprintf("%d/storage", height)),
-		MessageRoot:  keeperHash(fmt.Sprintf("%d/messages", height)),
-		ReceiptsRoot: keeperHash(fmt.Sprintf("%d/receipts", height)),
-		PaymentsRoot: keeperHash(fmt.Sprintf("%d/payments", height)),
-		VMRoot:       keeperHash(fmt.Sprintf("%d/vm", height)),
-		ParamsHash:   keeperHash(fmt.Sprintf("%d/params", height)),
+		IdentityRoot:  keeperHash(fmt.Sprintf("%d/identity", height)),
+		StorageRoot:   keeperHash(fmt.Sprintf("%d/storage", height)),
+		MessageRoot:   keeperHash(fmt.Sprintf("%d/messages", height)),
+		ReceiptsRoot:  keeperHash(fmt.Sprintf("%d/receipts", height)),
+		RoutingRoot:   keeperHash(fmt.Sprintf("%d/routing", height)),
+		PaymentsRoot:  keeperHash(fmt.Sprintf("%d/payments", height)),
+		ContractsRoot: keeperHash(fmt.Sprintf("%d/contracts", height)),
+		VMRoot:        keeperHash(fmt.Sprintf("%d/vm", height)),
+		ParamsHash:    keeperHash(fmt.Sprintf("%d/params", height)),
 	}
 }
 

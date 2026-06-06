@@ -15,9 +15,11 @@ import (
 var genesisKey = []byte{0x01}
 
 type GenesisState struct {
-	Version uint64
-	Params  prototype.Params
-	State   paymentstypes.PaymentsState
+	Version     uint64
+	Params      prototype.Params
+	State       paymentstypes.PaymentsState
+	Liquidity   paymentstypes.LiquidityOptimizationState
+	FraudProofs paymentstypes.FraudProofVerificationState
 }
 
 type Keeper struct {
@@ -35,9 +37,11 @@ func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
 
 func DefaultGenesis() GenesisState {
 	return GenesisState{
-		Version: prototype.CurrentGenesisVersion,
-		Params:  prototype.DefaultParams(),
-		State:   paymentstypes.EmptyState(),
+		Version:     prototype.CurrentGenesisVersion,
+		Params:      prototype.DefaultParams(),
+		State:       paymentstypes.EmptyState(),
+		Liquidity:   paymentstypes.EmptyLiquidityOptimizationState(),
+		FraudProofs: paymentstypes.EmptyFraudProofVerificationState(),
 	}
 }
 
@@ -48,7 +52,13 @@ func (gs GenesisState) Validate() error {
 	if err := gs.Params.Validate(); err != nil {
 		return err
 	}
-	return gs.State.Validate()
+	if err := gs.State.Validate(); err != nil {
+		return err
+	}
+	if err := gs.Liquidity.Validate(); err != nil {
+		return err
+	}
+	return gs.FraudProofs.Validate()
 }
 
 func (k *Keeper) InitGenesis(gs GenesisState) error {
@@ -137,6 +147,30 @@ func (k *Keeper) RegisterRoutingEdge(edge paymentstypes.ChannelEdge) error {
 	return nil
 }
 
+func (k *Keeper) ConfigurePaymentFeeSchedule(schedule paymentstypes.PaymentFeeSchedule) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.ConfigurePaymentFeeSchedule(k.genesis.State, schedule)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) SetPaymentFeeMultiplier(multiplier paymentstypes.PaymentFeeMultiplier) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.SetPaymentFeeMultiplier(k.genesis.State, multiplier)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
 func (k *Keeper) AcceptSignedState(channelID string, nextState paymentstypes.ChannelState, currentHeight uint64) error {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return err
@@ -204,6 +238,42 @@ func (k *Keeper) BatchSettleLinkedPromises(req paymentstypes.BatchConditionSettl
 	next, result, err := paymentstypes.BatchSettleLinkedPromises(k.genesis.State, req)
 	if err != nil {
 		return paymentstypes.BatchConditionSettlementResult{}, err
+	}
+	k.genesis.State = next
+	return result, nil
+}
+
+func (k *Keeper) RefreshAsyncExecutionQueues(currentHeight uint64) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.RefreshAsyncExecutionQueues(k.genesis.State, currentHeight)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) EnqueueExpiredPromise(promise paymentstypes.ConditionalPromise, resolver string, currentHeight uint64) (paymentstypes.AsyncPromiseExpiryJob, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.AsyncPromiseExpiryJob{}, err
+	}
+	next, job, err := paymentstypes.EnqueueExpiredPromise(k.genesis.State, promise, resolver, currentHeight)
+	if err != nil {
+		return paymentstypes.AsyncPromiseExpiryJob{}, err
+	}
+	k.genesis.State = next
+	return job, nil
+}
+
+func (k *Keeper) ProcessAsyncExecutionQueues(currentHeight, maxFinalizations, maxPromiseExpiries uint64) (paymentstypes.AsyncExecutionResult, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.AsyncExecutionResult{}, err
+	}
+	next, result, err := paymentstypes.ProcessAsyncExecutionQueues(k.genesis.State, currentHeight, maxFinalizations, maxPromiseExpiries)
+	if err != nil {
+		return paymentstypes.AsyncExecutionResult{}, err
 	}
 	k.genesis.State = next
 	return result, nil
@@ -310,6 +380,42 @@ func (k *Keeper) SubmitWatchDispute(submission paymentstypes.WatchDisputeSubmiss
 		return err
 	}
 	next, err := paymentstypes.SubmitWatchDispute(k.genesis.State, submission)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) RegisterValidatorPaymentService(metadata paymentstypes.ValidatorPaymentServiceMetadata) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.RegisterValidatorPaymentService(k.genesis.State, metadata)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) RegisterValidatorWatchService(registration paymentstypes.ValidatorWatchRegistration) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.RegisterValidatorWatchService(k.genesis.State, registration)
+	if err != nil {
+		return err
+	}
+	k.genesis.State = next
+	return nil
+}
+
+func (k *Keeper) SubmitValidatorAssistedDispute(submission paymentstypes.ValidatorAssistedDisputeSubmission) error {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return err
+	}
+	next, err := paymentstypes.SubmitValidatorAssistedDispute(k.genesis.State, submission)
 	if err != nil {
 		return err
 	}
@@ -425,6 +531,18 @@ func (k *Keeper) SubmitVirtualChannelDispute(proof paymentstypes.VirtualChannelD
 	return nil
 }
 
+func (k *Keeper) CloseVirtualChannelWithProof(proof paymentstypes.VirtualCloseProof, currentHeight uint64) (paymentstypes.VirtualChannel, []paymentstypes.VirtualReserveRelease, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.VirtualChannel{}, nil, err
+	}
+	next, closed, releases, err := paymentstypes.CloseVirtualChannelWithProof(k.genesis.State, proof, currentHeight)
+	if err != nil {
+		return paymentstypes.VirtualChannel{}, nil, err
+	}
+	k.genesis.State = next
+	return closed, releases, nil
+}
+
 func (k *Keeper) CloseVirtualChannel(virtualChannelID string, currentHeight uint64) (paymentstypes.VirtualChannel, error) {
 	if err := k.genesis.Params.RequireEnabled(); err != nil {
 		return paymentstypes.VirtualChannel{}, err
@@ -447,6 +565,25 @@ func (k *Keeper) AddSettlementBatch(batch paymentstypes.SettlementBatch) error {
 	}
 	k.genesis.State = next
 	return nil
+}
+
+func (k Keeper) GroupSettlementOperationsByChannelKey(seed string, operations []paymentstypes.SettlementOperation) ([]paymentstypes.SettlementBatch, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return nil, err
+	}
+	return paymentstypes.GroupSettlementOperationsByChannelKey(seed, operations)
+}
+
+func (k Keeper) ProfileBlockSTMConflicts(plans []paymentstypes.BlockSTMAccessPlan) (paymentstypes.BlockSTMConflictProfile, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.BlockSTMConflictProfile{}, err
+	}
+	for _, plan := range plans {
+		if err := plan.Validate(); err != nil {
+			return paymentstypes.BlockSTMConflictProfile{}, err
+		}
+	}
+	return paymentstypes.ProfileBlockSTMConflicts(plans), nil
 }
 
 func (k Keeper) QueryStateHash(channelID string) (paymentstypes.StateHashDebug, error) {
@@ -497,6 +634,47 @@ func (k Keeper) Settlements(req *prototype.PageRequest) ([]paymentstypes.Settlem
 	return out, res, nil
 }
 
+func (k Keeper) StoreV2Layout() (paymentstypes.StoreV2Layout, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.StoreV2Layout{}, err
+	}
+	return paymentstypes.BuildStoreV2Layout(k.genesis.State)
+}
+
+func (k Keeper) ParticipantChannels(address string, req *prototype.PageRequest) ([]paymentstypes.StoreV2ParticipantChannelRecord, prototype.PageResponse, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	layout, err := paymentstypes.BuildStoreV2Layout(k.genesis.State)
+	if err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	pageReq := paymentstypes.ParticipantChannelPageRequest{Address: address}
+	if req != nil {
+		pageReq.Offset = req.Offset
+		pageReq.Limit = req.Limit
+	}
+	page, err := paymentstypes.QueryStoreV2ParticipantChannels(layout, pageReq)
+	if err != nil {
+		return nil, prototype.PageResponse{}, err
+	}
+	return page.Entries, prototype.PageResponse{NextOffset: page.NextOffset}, nil
+}
+
+func (k Keeper) AdaptiveSyncSnapshot(height uint64) (paymentstypes.AdaptiveSyncSnapshot, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.AdaptiveSyncSnapshot{}, err
+	}
+	return paymentstypes.BuildAdaptiveSyncSnapshot(k.genesis.State, height)
+}
+
+func (k Keeper) RecoverAdaptiveSyncSafety(snapshot paymentstypes.AdaptiveSyncSnapshot) (paymentstypes.AdaptiveSyncRecoveryState, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.AdaptiveSyncRecoveryState{}, err
+	}
+	return paymentstypes.RecoverAdaptiveSyncSafety(snapshot)
+}
+
 func (k Keeper) RoutePayment(from, to, amount string, currentHeight uint64, maxHops int) ([]paymentstypes.ChannelEdge, error) {
 	return paymentstypes.RoutePayment(k.genesis.State, from, to, amount, currentHeight, maxHops)
 }
@@ -524,5 +702,7 @@ func (k Keeper) Migrate1to2State(ctx context.Context) error {
 
 func cloneGenesis(gs GenesisState) GenesisState {
 	gs.State = gs.State.Export()
+	gs.Liquidity = gs.Liquidity.Export()
+	gs.FraudProofs = gs.FraudProofs.Export()
 	return gs
 }

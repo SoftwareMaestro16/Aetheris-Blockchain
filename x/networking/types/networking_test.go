@@ -4136,7 +4136,7 @@ func TestXNetworkStateRejectsInvalidKeysMessagesAndConsensusReputation(t *testin
 func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *testing.T) {
 	roadmap := DefaultNetworkingImplementationRoadmap()
 	require.NoError(t, ValidateNetworkingImplementationRoadmap(roadmap))
-	require.Len(t, roadmap.Phases, 5)
+	require.Len(t, roadmap.Phases, 9)
 	require.Equal(t, ComputeNetworkingRoadmapRoot(roadmap), roadmap.RoadmapRoot)
 
 	phase0 := roadmap.Phases[0]
@@ -4155,7 +4155,7 @@ func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *t
 	require.ErrorContains(t, ValidateNetworkingImplementationRoadmap(broken), "root mismatch")
 }
 
-func TestNetworkingRoadmapReadinessForPhasesZeroToFour(t *testing.T) {
+func TestNetworkingRoadmapReadinessForPhasesZeroToEight(t *testing.T) {
 	evidence := testRoadmapEvidence(t)
 
 	phase0, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseBaselineInstrumentation, evidence)
@@ -4192,6 +4192,34 @@ func TestNetworkingRoadmapReadinessForPhasesZeroToFour(t *testing.T) {
 	require.Contains(t, phase4.SatisfiedExitCriteria, ExitChunkedStreamingPayloads)
 	require.Contains(t, phase4.SatisfiedExitCriteria, ExitInterruptedTransfersResume)
 	require.Contains(t, phase4.SatisfiedExitCriteria, ExitInvalidChunksRejected)
+
+	phase5, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseDiscoveryLayer, evidence)
+	require.NoError(t, err)
+	require.True(t, phase5.Ready)
+	require.Contains(t, phase5.SatisfiedExitCriteria, ExitDiscoveryObjectsDiscoverable)
+	require.Contains(t, phase5.SatisfiedExitCriteria, ExitDiscoveryRecordsExpireVerify)
+	require.Contains(t, phase5.SatisfiedExitCriteria, ExitForgedExpiredRecordsRejected)
+
+	phase6, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseHybridBroadcast, evidence)
+	require.NoError(t, err)
+	require.True(t, phase6.Ready)
+	require.Contains(t, phase6.SatisfiedExitCriteria, ExitBlocksHeaderChunksProofSet)
+	require.Contains(t, phase6.SatisfiedExitCriteria, ExitDuplicateConflictingHandled)
+	require.Contains(t, phase6.SatisfiedExitCriteria, ExitFallbackGossipResilient)
+
+	phase7, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseAetherMesh, evidence)
+	require.NoError(t, err)
+	require.True(t, phase7.Ready)
+	require.Contains(t, phase7.SatisfiedExitCriteria, ExitL3MessageClassesSupported)
+	require.Contains(t, phase7.SatisfiedExitCriteria, ExitCrossZoneDeliverySemantics)
+	require.Contains(t, phase7.SatisfiedExitCriteria, ExitReceiptsVisibleProofQueryable)
+
+	phase8, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseSecurityLoadHardening, evidence)
+	require.NoError(t, err)
+	require.True(t, phase8.Ready)
+	require.Contains(t, phase8.SatisfiedExitCriteria, ExitMaliciousPeersIsolated)
+	require.Contains(t, phase8.SatisfiedExitCriteria, ExitCriticalChannelsUnderFlood)
+	require.Contains(t, phase8.SatisfiedExitCriteria, ExitDiscoveryPoisoningDetected)
 }
 
 func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
@@ -4229,6 +4257,292 @@ func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, phase4.Ready)
 	require.NotContains(t, phase4.SatisfiedExitCriteria, ExitInvalidChunksRejected)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.DiscoveryExpiredRejected = false
+	phase5, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseDiscoveryLayer, evidence)
+	require.NoError(t, err)
+	require.False(t, phase5.Ready)
+	require.NotContains(t, phase5.SatisfiedExitCriteria, ExitForgedExpiredRecordsRejected)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.BroadcastConflictHandled = false
+	phase6, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseHybridBroadcast, evidence)
+	require.NoError(t, err)
+	require.False(t, phase6.Ready)
+	require.NotContains(t, phase6.SatisfiedExitCriteria, ExitDuplicateConflictingHandled)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.CrossZoneExactlyOnce = false
+	phase7, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseAetherMesh, evidence)
+	require.NoError(t, err)
+	require.False(t, phase7.Ready)
+	require.NotContains(t, phase7.SatisfiedExitCriteria, ExitCrossZoneDeliverySemantics)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.DiscoveryPoisoningDetected = false
+	phase8, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseSecurityLoadHardening, evidence)
+	require.NoError(t, err)
+	require.False(t, phase8.Ready)
+	require.NotContains(t, phase8.SatisfiedExitCriteria, ExitDiscoveryPoisoningDetected)
+}
+
+func TestNetworkingAcceptanceCriteriaDefineImplementationPlanningGate(t *testing.T) {
+	spec := DefaultNetworkingAcceptanceCriteriaSpec()
+	require.NoError(t, ValidateNetworkingAcceptanceCriteriaSpec(spec))
+	require.Len(t, spec.Criteria, 11)
+	require.NotEmpty(t, spec.SpecRoot)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionL0CometBFTProtected)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionANAChannelQoS)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionRL2Streaming)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionSecurityControls)
+	require.Contains(t, networkingAcceptanceCriterionIDs(spec.Criteria), AcceptanceCriterionRequiredTestCoverage)
+
+	missing := spec
+	missing.Criteria = append([]NetworkingAcceptanceCriterion(nil), spec.Criteria[:len(spec.Criteria)-1]...)
+	missing.SpecRoot = ComputeNetworkingAcceptanceCriteriaRoot(missing)
+	require.ErrorContains(t, ValidateNetworkingAcceptanceCriteriaSpec(missing), "must define 11 criteria")
+
+	unknown := spec
+	unknown.Criteria = append([]NetworkingAcceptanceCriterion(nil), spec.Criteria...)
+	unknown.Criteria[0] = NetworkingAcceptanceCriterion("ship_without_cometbft")
+	unknown.SpecRoot = ComputeNetworkingAcceptanceCriteriaRoot(unknown)
+	require.ErrorContains(t, ValidateNetworkingAcceptanceCriteriaSpec(unknown), "unknown networking acceptance criterion")
+}
+
+func TestNetworkingImplementationPlanningReadinessRequiresAllAcceptanceEvidence(t *testing.T) {
+	spec := DefaultNetworkingAcceptanceCriteriaSpec()
+	evidence := testNetworkingAcceptanceEvidence()
+	report, err := EvaluateNetworkingImplementationPlanningReadiness(spec, evidence)
+	require.NoError(t, err)
+	require.True(t, report.Ready)
+	require.Empty(t, report.Missing)
+	require.Empty(t, report.Rejected)
+	require.NotEmpty(t, report.ReadinessHash)
+
+	missing := make([]NetworkingAcceptanceEvidence, 0, len(evidence)-1)
+	for _, item := range evidence {
+		if item.Criterion != AcceptanceCriterionDRTDiscovery {
+			missing = append(missing, item)
+		}
+	}
+	report, err = EvaluateNetworkingImplementationPlanningReadiness(spec, missing)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Missing, AcceptanceCriterionDRTDiscovery)
+
+	rejected := append([]NetworkingAcceptanceEvidence(nil), evidence...)
+	for i := range rejected {
+		if rejected[i].Criterion == AcceptanceCriterionSecurityControls {
+			rejected[i].Accepted = false
+			break
+		}
+	}
+	report, err = EvaluateNetworkingImplementationPlanningReadiness(spec, rejected)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Rejected, AcceptanceCriterionSecurityControls)
+
+	emptyEvidence := append([]NetworkingAcceptanceEvidence(nil), evidence...)
+	for i := range emptyEvidence {
+		if emptyEvidence[i].Criterion == AcceptanceCriterionRequiredTestCoverage {
+			emptyEvidence[i].Evidence = nil
+			break
+		}
+	}
+	report, err = EvaluateNetworkingImplementationPlanningReadiness(spec, emptyEvidence)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Rejected, AcceptanceCriterionRequiredTestCoverage)
+}
+
+func TestRequiredNetworkingTestCoverageValidatesUnitAndIntegrationMatrix(t *testing.T) {
+	coverage := DefaultRequiredNetworkingTestCoverage()
+	require.NoError(t, ValidateRequiredNetworkingTestCoverage(coverage))
+	require.NotEmpty(t, ComputeNetworkingTestCoverageRoot(coverage))
+
+	var unitCount, integrationCount, securityCount, performanceCount int
+	for _, spec := range coverage {
+		switch spec.Category {
+		case NetworkingTestCoverageUnit:
+			unitCount++
+		case NetworkingTestCoverageIntegration:
+			integrationCount++
+		case NetworkingTestCoverageSecurity:
+			securityCount++
+		case NetworkingTestCoveragePerformance:
+			performanceCount++
+		}
+	}
+	require.Equal(t, 10, unitCount)
+	require.Equal(t, 9, integrationCount)
+	require.Equal(t, 9, securityCount)
+	require.Equal(t, 9, performanceCount)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestNodeIDDerivation)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestBroadcastDeduplication)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestHeaderFirstPropagation)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestCrossZoneReplaySecurity)
+	require.Contains(t, requiredCoverageTests(coverage), RequiredTestPeerRotationStability)
+
+	missing := append([]NetworkingTestCoverageSpec(nil), coverage[:len(coverage)-1]...)
+	require.ErrorContains(t, ValidateRequiredNetworkingTestCoverage(missing), "must define 37 areas")
+
+	wrongCategory := append([]NetworkingTestCoverageSpec(nil), coverage...)
+	for i := range wrongCategory {
+		if wrongCategory[i].Test == RequiredTestCrossZoneDelivery {
+			wrongCategory[i].Category = NetworkingTestCoverageUnit
+			break
+		}
+	}
+	require.ErrorContains(t, ValidateRequiredNetworkingTestCoverage(wrongCategory), "must be integration")
+}
+
+func TestNetworkingTestCoverageReportRequiresAllRequiredEvidence(t *testing.T) {
+	evidence := testRequiredNetworkingCoverageEvidence()
+	report, err := EvaluateNetworkingTestCoverage(evidence)
+	require.NoError(t, err)
+	require.True(t, report.Ready)
+	require.Empty(t, report.Missing)
+	require.Empty(t, report.Failed)
+	require.NotEmpty(t, report.ReportHash)
+
+	missing := make([]NetworkingTestCoverageEvidence, 0, len(evidence)-1)
+	for _, item := range evidence {
+		if item.Test != RequiredTestBroadcastDeduplication {
+			missing = append(missing, item)
+		}
+	}
+	report, err = EvaluateNetworkingTestCoverage(missing)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Missing, RequiredTestBroadcastDeduplication)
+
+	failed := append([]NetworkingTestCoverageEvidence(nil), evidence...)
+	for i := range failed {
+		if failed[i].Test == RequiredTestCrossZoneDelivery {
+			failed[i].Passed = false
+			break
+		}
+	}
+	report, err = EvaluateNetworkingTestCoverage(failed)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, RequiredTestCrossZoneDelivery)
+}
+
+func TestNetworkingObservabilitySpecCoversRequiredMetricsAndEvents(t *testing.T) {
+	spec := DefaultNetworkingObservabilitySpec()
+	require.NoError(t, ValidateNetworkingObservabilitySpec(spec))
+	require.Len(t, spec.Metrics, 16)
+	require.Len(t, spec.Events, 13)
+	require.Len(t, spec.Alerts, 9)
+	require.NotEmpty(t, spec.SpecRoot)
+	require.Contains(t, spec.Metrics, ObservableMetricActivePeers)
+	require.Contains(t, spec.Metrics, ObservableMetricRoutingFailureCount)
+	require.Contains(t, spec.Events, ObservableEventNetworkNodeRegistered)
+	require.Contains(t, spec.Events, ObservableEventNetworkRouteFailed)
+	require.Contains(t, spec.Alerts, ObservableAlertConsensusChannelLatencyAboveThreshold)
+	require.Contains(t, spec.Alerts, ObservableAlertEclipseRiskPeerDiversityLow)
+
+	missingMetric := spec
+	missingMetric.Metrics = append([]NetworkingObservableMetric(nil), spec.Metrics[:len(spec.Metrics)-1]...)
+	missingMetric.SpecRoot = ComputeNetworkingObservabilitySpecRoot(missingMetric)
+	require.ErrorContains(t, ValidateNetworkingObservabilitySpec(missingMetric), "must define 16 metrics")
+
+	unknownEvent := spec
+	unknownEvent.Events = append([]NetworkingObservableEvent(nil), spec.Events...)
+	unknownEvent.Events[0] = NetworkingObservableEvent("network_unknown")
+	unknownEvent.SpecRoot = ComputeNetworkingObservabilitySpecRoot(unknownEvent)
+	require.ErrorContains(t, ValidateNetworkingObservabilitySpec(unknownEvent), "unknown networking observability event")
+
+	missingAlert := spec
+	missingAlert.Alerts = append([]NetworkingObservableAlert(nil), spec.Alerts[:len(spec.Alerts)-1]...)
+	missingAlert.SpecRoot = ComputeNetworkingObservabilitySpecRoot(missingAlert)
+	require.ErrorContains(t, ValidateNetworkingObservabilitySpec(missingAlert), "must define 9 alerts")
+
+	unknownAlert := spec
+	unknownAlert.Alerts = append([]NetworkingObservableAlert(nil), spec.Alerts...)
+	unknownAlert.Alerts[0] = NetworkingObservableAlert("network_unknown_alert")
+	unknownAlert.SpecRoot = ComputeNetworkingObservabilitySpecRoot(unknownAlert)
+	require.ErrorContains(t, ValidateNetworkingObservabilitySpec(unknownAlert), "unknown networking observability alert")
+}
+
+func TestNetworkingObservabilityReportRequiresSamplesAndEvents(t *testing.T) {
+	spec := DefaultNetworkingObservabilitySpec()
+	metrics := testNetworkingObservabilityMetrics()
+	events := testNetworkingObservabilityEvents()
+	report, err := BuildNetworkingObservabilityReport(spec, metrics, events)
+	require.NoError(t, err)
+	require.True(t, report.Ready)
+	require.Empty(t, report.MissingMetrics)
+	require.Empty(t, report.MissingEvents)
+	require.NotEmpty(t, report.ReportHash)
+
+	missingMetric := make([]NetworkingMetricSample, 0, len(metrics)-1)
+	for _, sample := range metrics {
+		if sample.Metric != ObservableMetricBroadcastDedupHitRate {
+			missingMetric = append(missingMetric, sample)
+		}
+	}
+	report, err = BuildNetworkingObservabilityReport(spec, missingMetric, events)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.MissingMetrics, ObservableMetricBroadcastDedupHitRate)
+
+	missingEvent := make([]NetworkingEventRecord, 0, len(events)-1)
+	for _, event := range events {
+		if event.Event != ObservableEventNetworkRouteFailed {
+			missingEvent = append(missingEvent, event)
+		}
+	}
+	report, err = BuildNetworkingObservabilityReport(spec, metrics, missingEvent)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.MissingEvents, ObservableEventNetworkRouteFailed)
+
+	tampered := append([]NetworkingEventRecord(nil), events...)
+	tampered[0].EventID = HashParts("wrong-event-id")
+	_, err = BuildNetworkingObservabilityReport(spec, metrics, tampered)
+	require.ErrorContains(t, err, "event id mismatch")
+}
+
+func TestNetworkingAlertRulesAndSignalsCoverSectionSeventeenThree(t *testing.T) {
+	rules := DefaultNetworkingAlertRules()
+	require.NoError(t, ValidateNetworkingAlertRules(rules))
+	require.Len(t, rules, 9)
+	require.Contains(t, networkingAlertRuleIDs(rules), ObservableAlertConsensusChannelLatencyAboveThreshold)
+	require.Contains(t, networkingAlertRuleIDs(rules), ObservableAlertDiscoveryPoisoningAttempt)
+	require.Contains(t, networkingAlertRuleIDs(rules), ObservableAlertEclipseRiskPeerDiversityLow)
+
+	missing := append([]NetworkingAlertRule(nil), rules[:len(rules)-1]...)
+	require.ErrorContains(t, ValidateNetworkingAlertRules(missing), "must define 9 alerts")
+
+	invalid := append([]NetworkingAlertRule(nil), rules...)
+	invalid[0].Threshold = 0
+	require.ErrorContains(t, ValidateNetworkingAlertRules(invalid), "threshold must be positive")
+
+	signals := testNetworkingAlertSignals(rules)
+	report, err := BuildNetworkingAlertReport(rules, signals)
+	require.NoError(t, err)
+	require.True(t, report.Ready)
+	require.Empty(t, report.MissingAlerts)
+	require.NotEmpty(t, report.ReportHash)
+
+	withoutDiscovery := make([]NetworkingAlertSignal, 0, len(signals)-1)
+	for _, signal := range signals {
+		if signal.Alert != ObservableAlertDiscoveryPoisoningAttempt {
+			withoutDiscovery = append(withoutDiscovery, signal)
+		}
+	}
+	report, err = BuildNetworkingAlertReport(rules, withoutDiscovery)
+	require.NoError(t, err)
+	require.False(t, report.Ready)
+	require.Contains(t, report.MissingAlerts, ObservableAlertDiscoveryPoisoningAttempt)
+
+	tampered := append([]NetworkingAlertSignal(nil), signals...)
+	tampered[0].TriggerID = HashParts("wrong-alert-trigger")
+	_, err = BuildNetworkingAlertReport(rules, tampered)
+	require.ErrorContains(t, err, "trigger id mismatch")
 }
 
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
@@ -4268,6 +4582,114 @@ func TestRoutingAndStateTransitionHardRules(t *testing.T) {
 		InStateTransition: true,
 		ExternalCalls:     []string{"https://example.invalid"},
 	}), "forbidden")
+}
+
+func TestNetworkingNonGoalsDefineSectionEighteenBoundary(t *testing.T) {
+	spec := DefaultNetworkingNonGoalSpec()
+	require.NoError(t, ValidateNetworkingNonGoalSpec(spec))
+	require.Len(t, spec.NonGoals, 7)
+	require.NotEmpty(t, spec.SpecRoot)
+	require.Contains(t, networkingNonGoalIDs(spec.NonGoals), NetworkingNonGoalApplicationLogic)
+	require.Contains(t, networkingNonGoalIDs(spec.NonGoals), NetworkingNonGoalReplaceCometBFTConsensus)
+	require.Contains(t, networkingNonGoalIDs(spec.NonGoals), NetworkingNonGoalExternalDiscoveryServices)
+	require.Contains(t, networkingNonGoalIDs(spec.NonGoals), NetworkingNonGoalLiveMetricsConsensusAuthority)
+	require.Contains(t, networkingNonGoalIDs(spec.NonGoals), NetworkingNonGoalOffChainServiceConsensusLogic)
+
+	missing := spec
+	missing.NonGoals = append([]NetworkingNonGoal(nil), spec.NonGoals[:len(spec.NonGoals)-1]...)
+	missing.SpecRoot = ComputeNetworkingNonGoalSpecRoot(missing)
+	require.ErrorContains(t, ValidateNetworkingNonGoalSpec(missing), "must define 7 non-goals")
+
+	unknown := spec
+	unknown.NonGoals = append([]NetworkingNonGoal(nil), spec.NonGoals...)
+	unknown.NonGoals[0] = NetworkingNonGoal("ship_social_network")
+	unknown.SpecRoot = ComputeNetworkingNonGoalSpecRoot(unknown)
+	require.ErrorContains(t, ValidateNetworkingNonGoalSpec(unknown), "unknown networking non-goal")
+}
+
+func TestNetworkingScopeBoundaryRejectsNonGoalViolations(t *testing.T) {
+	boundary := DefaultNetworkingScopeBoundary()
+	require.NoError(t, ValidateNetworkingScopeBoundary(boundary))
+	require.NotEmpty(t, boundary.BoundaryRoot)
+
+	cases := []struct {
+		name    string
+		mutate  func(NetworkingScopeBoundary) NetworkingScopeBoundary
+		wantErr string
+	}{
+		{
+			name: "application logic",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.ImplementsApplicationLogic = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "application logic",
+		},
+		{
+			name: "replace cometbft",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.ReplacesCometBFTConsensus = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "replace CometBFT consensus",
+		},
+		{
+			name: "centralized routing",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.RequiresCentralizedRouting = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "centralized routing",
+		},
+		{
+			name: "external discovery",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.RequiresExternalDiscoveryServices = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "external discovery services",
+		},
+		{
+			name: "messaging social",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.IntroducesMessagingSocialLayer = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "messaging or social network",
+		},
+		{
+			name: "live metrics authoritative",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.LiveMetricsConsensusAuthoritative = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "live network metrics consensus-authoritative",
+		},
+		{
+			name: "offchain service logic",
+			mutate: func(boundary NetworkingScopeBoundary) NetworkingScopeBoundary {
+				boundary.OffChainServiceLogicInConsensus = true
+				boundary.BoundaryRoot = ComputeNetworkingScopeBoundaryRoot(boundary)
+				return boundary
+			},
+			wantErr: "off-chain service logic inside consensus",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.ErrorContains(t, ValidateNetworkingScopeBoundary(tc.mutate(boundary)), tc.wantErr)
+		})
+	}
+
+	tampered := boundary
+	tampered.BoundaryRoot = HashParts("wrong-non-goal-boundary")
+	require.ErrorContains(t, ValidateNetworkingScopeBoundary(tampered), "boundary root mismatch")
 }
 
 func TestNetworkRoleConsensusScopeRequiresBondedCommitment(t *testing.T) {
@@ -4692,6 +5114,281 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 	badChunk := chunks[0]
 	badChunk.ChunkHash = HashParts("roadmap-invalid-chunk")
 	invalidChunkErr := VerifyRL2Chunk(offer.Transfer, rl2Descriptors[0], badChunk)
+	zoneOwner := signedNodeRecordWithCapabilities(t, 0x8a, salt, 100, []NodeRole{NodeRoleZoneExecution}, []string{"zone-roadmap"}, nil)
+	rpcOwner := signedNodeRecord(t, 0x8b, salt, 100, NodeRoleFull)
+	storageOwner := signedNodeRecord(t, 0x8c, salt, 100, NodeRoleStorageProvider)
+	nodeDiscovery := testSignedDiscoveryObjectRecord(t, local, 0x88, salt, DRTObjectNode, local.NodeID, HashParts("roadmap-node-ad"), "", "", "", 90)
+	zoneDiscovery := testSignedDiscoveryObjectRecord(t, zoneOwner, 0x8a, salt, DRTObjectExecutionZone, HashParts("roadmap-zone-target"), HashParts("roadmap-zone-ad"), "zone-roadmap", "", "", 90)
+	rpcDiscovery := testSignedDiscoveryObjectRecord(t, rpcOwner, 0x8b, salt, DRTObjectRPCEndpoint, rpcOwner.NodeID, HashParts("roadmap-rpc-endpoint"), "", "", "", 90)
+	storageDiscovery := testSignedDiscoveryObjectRecord(t, storageOwner, 0x8c, salt, DRTObjectStorageProvider, storageOwner.NodeID, HashParts("roadmap-storage-endpoint"), "", "", "", 90)
+	discoveryTable := EmptyDistributedRoutingTable()
+	for _, record := range []DiscoveryRecord{nodeDiscovery, discovery, zoneDiscovery, rpcDiscovery, storageDiscovery} {
+		discoveryTable, err = discoveryTable.Store(record, salt, 20)
+		require.NoError(t, err)
+	}
+	renewedDiscovery, err := RenewDiscoveryRecord(discovery, 95, deterministicPrivateKey(0x89), salt)
+	require.NoError(t, err)
+	discoveryTable, err = discoveryTable.UpdateLease(renewedDiscovery, salt, 30)
+	require.NoError(t, err)
+	resultHash, err := ComputeDiscoveryResponseResultHash(discoveryTable.FindService("svc.roadmap", 30))
+	require.NoError(t, err)
+	stateRoot := HashParts("roadmap-discovery-state-root")
+	discoveryProof := DiscoveryOnChainProof{
+		ProofHeight: 30,
+		StateRoot:   stateRoot,
+		ProofHash:   ComputeDiscoveryOnChainProofHash(resultHash, stateRoot, 30),
+	}
+	discoveryResponse, err := BuildDiscoveryResponse(discoveryTable, DRTQuery{ObjectType: DRTObjectServiceEndpoint, ServiceID: "svc.roadmap", CurrentHeight: 30}, local, deterministicPrivateKey(0x88), salt, discoveryProof, 30)
+	require.NoError(t, err)
+	require.NoError(t, discoveryResponse.Validate(local.NodePubKey, salt, 30))
+	forgedDiscovery := discovery
+	forgedDiscovery.Signature = cloneBytes(forgedDiscovery.Signature)
+	forgedDiscovery.Signature[0] ^= 0xff
+	forgedDiscoveryErr := ValidateSignedDiscoveryRecord(forgedDiscovery, salt, 20)
+	expiredDiscoveryErr := ValidateSignedDiscoveryRecord(discovery, salt, 91)
+	broadcastOrigin := signedNodeRecord(t, 0x8d, salt, 100, NodeRoleRouting)
+	broadcastMsg, err := SignBroadcastMessage(BroadcastMessage{
+		OverlayID:   serviceDesc.OverlayID,
+		PayloadHash: HashParts("roadmap-broadcast-payload"),
+		PayloadType: BroadcastPayloadService,
+		Height:      20,
+		TTL:         64,
+		Priority:    PriorityForChannel(ChannelService),
+		FanoutPolicy: BroadcastFanoutPolicy{
+			TreeFanout:   serviceDesc.Fanout + 10,
+			GossipFanout: serviceDesc.Fanout + 10,
+			OverlayBound: true,
+		},
+	}, deterministicPrivateKey(0x8d), salt)
+	require.NoError(t, err)
+	broadcastGraph := RoutingGraph{
+		OverlayID: serviceDesc.OverlayID,
+		Version:   11,
+		Edges: []RoutingEdge{
+			{FromNodeID: local.NodeID, ToNodeID: remote.NodeID, LatencyMillis: 10, Weight: 9_000, Priority: 1},
+			{FromNodeID: local.NodeID, ToNodeID: peerC.NodeID, LatencyMillis: 20, Weight: 8_000, Priority: 2},
+		},
+	}
+	broadcastGraph.GraphHash = ComputeRoutingGraphHash(broadcastGraph)
+	_, broadcastPlan, err := PlanBroadcastForwarding(broadcastMsg, serviceDesc, broadcastGraph, local.NodeID, []string{local.NodeID, broadcastOrigin.NodeID, remote.NodeID, peerC.NodeID, HashParts("roadmap-broadcast-peer-d")}, BroadcastDeduper{}, 20)
+	require.NoError(t, err)
+	broadcastCache := NewBroadcastDedupCache(64)
+	broadcastCache, acceptDecision, err := broadcastCache.Accept(broadcastMsg, remote.NodeID, 20)
+	require.NoError(t, err)
+	require.True(t, acceptDecision.Accepted)
+	broadcastCache, duplicateDecision, err := broadcastCache.Accept(broadcastMsg, remote.NodeID, 21)
+	require.NoError(t, err)
+	conflictMsg := broadcastMsg
+	conflictMsg.PayloadHash = HashParts("roadmap-conflicting-broadcast-payload")
+	broadcastCache, conflictDecision, err := broadcastCache.Accept(conflictMsg, remote.NodeID, 21)
+	require.NoError(t, err)
+	executionDesc := testDefaultOverlayDescriptor(t, OverlayTypeExecution)
+	dataDesc := testDefaultOverlayDescriptor(t, OverlayTypeData)
+	executionMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:              MeshMessageExecution,
+		Payload:           []byte("roadmap-execution-message"),
+		Origin:            local.NodeID,
+		Destination:       remote.NodeID,
+		Priority:          PriorityForChannel(ChannelExecution),
+		TTL:               40,
+		OverlayID:         executionDesc.OverlayID,
+		DestinationZone:   "zone-roadmap",
+		Sequence:          1,
+		ConsensusEffect:   true,
+		DeterminismSource: DeterminismCommittedState,
+		Proof: AetherMeshProof{
+			ProofType:   "roadmap-execution-schedule",
+			ProofHash:   HashParts("roadmap-execution-proof"),
+			ProofHeight: 30,
+		},
+	})
+	require.NoError(t, err)
+	serviceMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:           MeshMessageService,
+		Payload:        []byte("roadmap-service-message"),
+		Origin:         local.NodeID,
+		Destination:    remote.NodeID,
+		Priority:       PriorityForChannel(ChannelService),
+		TTL:            40,
+		OverlayID:      serviceDesc.OverlayID,
+		Sequence:       2,
+		RouteHint:      RouteHint{ServiceID: "svc.roadmap"},
+		DeadlineHeight: 90,
+	})
+	require.NoError(t, err)
+	queryMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:        MeshMessageQuery,
+		Payload:     []byte("roadmap-query-message"),
+		Origin:      local.NodeID,
+		Destination: remote.NodeID,
+		Priority:    PriorityForChannel(ChannelService),
+		TTL:         40,
+		OverlayID:   serviceDesc.OverlayID,
+		Sequence:    3,
+	})
+	require.NoError(t, err)
+	storageMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:        MeshMessageStorage,
+		Payload:     []byte("roadmap-storage-message"),
+		Origin:      local.NodeID,
+		Destination: storageOwner.NodeID,
+		Priority:    PriorityForChannel(ChannelData),
+		TTL:         40,
+		OverlayID:   dataDesc.OverlayID,
+		Sequence:    4,
+		RouteHint:   RouteHint{StorageKeyHash: HashParts("roadmap-storage-key")},
+	})
+	require.NoError(t, err)
+	crossZoneMesh, err := NewAetherMeshMessage(AetherMeshMessage{
+		Type:              MeshMessageCrossZone,
+		Payload:           []byte("roadmap-cross-zone-message"),
+		Origin:            local.NodeID,
+		Destination:       remote.NodeID,
+		Priority:          PriorityForChannel(ChannelExecution),
+		TTL:               40,
+		OverlayID:         executionDesc.OverlayID,
+		SourceZone:        "zone-roadmap",
+		DestinationZone:   "zone-remote",
+		Sequence:          5,
+		ConsensusEffect:   true,
+		DeterminismSource: DeterminismDeterministicProof,
+		Proof: AetherMeshProof{
+			ProofType:   "roadmap-cross-zone-proof",
+			ProofHash:   HashParts("roadmap-cross-zone-proof"),
+			ProofHeight: 30,
+		},
+	})
+	require.NoError(t, err)
+	meshRoute := func(msg AetherMeshMessage, desc OverlayDescriptor, channel ChannelClass, target string) AetherMeshDelivery {
+		return AetherMeshDelivery{
+			Message: msg,
+			Channel: channel,
+			Route: OverlayRoutePlan{
+				MessageID:     msg.MessageID,
+				OverlayID:     desc.OverlayID,
+				OverlayType:   desc.OverlayType,
+				Strategy:      desc.Routing,
+				TargetNodeIDs: []string{target},
+			},
+		}
+	}
+	crossZoneMsg, err := NewCrossZoneMessage(CrossZoneMessage{
+		SourceZone:      "zone-roadmap",
+		DestinationZone: "zone-remote",
+		SourceSequence:  1,
+		MessageHash:     crossZoneMesh.PayloadHash,
+		ExpiryHeight:    100,
+		ReceiptPolicy:   ReceiptPolicyAlways,
+		ProofRequired:   true,
+	})
+	require.NoError(t, err)
+	crossZoneTracker := CrossZoneSequenceTracker{}
+	crossZoneTracker, err = AcceptCrossZoneSequence(crossZoneTracker, crossZoneMsg, true, 30)
+	require.NoError(t, err)
+	_, replayErr := AcceptCrossZoneSequence(crossZoneTracker, crossZoneMsg, true, 31)
+	crossZoneReceipt, err := NewCrossZoneReceipt(CrossZoneReceipt{
+		SourceZone:      crossZoneMsg.SourceZone,
+		DestinationZone: crossZoneMsg.DestinationZone,
+		SourceSequence:  crossZoneMsg.SourceSequence,
+		MessageHash:     crossZoneMsg.MessageHash,
+		Status:          CrossZoneReceiptExecuted,
+		ReceiptPolicy:   ReceiptPolicyAlways,
+		ProofHash:       HashParts("roadmap-cross-zone-receipt-proof"),
+		ReceiptHeight:   35,
+		RollbackSafe:    true,
+		ProofQueryable:  true,
+	})
+	require.NoError(t, err)
+	receiptDelivery, err := NewReceiptDelivery(crossZoneReceipt, remote.NodeID, 36)
+	require.NoError(t, err)
+	receiptDelivery, err = AckReceiptDelivery(receiptDelivery, HashParts("roadmap-receipt-ack"))
+	require.NoError(t, err)
+	queryResponseProof, err := NewQueryResponseProof(QueryResponseProof{
+		RequestID:   queryMesh.MessageID,
+		Responder:   remote.NodeID,
+		PayloadHash: HashParts("roadmap-query-response"),
+		Proof: AetherMeshProof{
+			ProofType:   "roadmap-query-proof",
+			ProofHash:   HashParts("roadmap-query-proof"),
+			ProofHeight: 36,
+		},
+		ResponseHeight: 37,
+	})
+	require.NoError(t, err)
+	l3Metrics, err := EvaluateL3Metrics(nil, []ReceiptDelivery{receiptDelivery}, []QueryResponseProof{queryResponseProof}, nil, nil)
+	require.NoError(t, err)
+	securityPolicy := DefaultNetworkSecurityPolicy()
+	securityDecision, err := EvaluateNetworkSecurity(PeerScore{ScoreBps: 8_500, ReliabilityBps: 9_000, ThroughputBps: 8_000}, PeerSecurityObservation{
+		PeerNodeID:            remote.NodeID,
+		InvalidMessages:       securityPolicy.MaxInvalidMessages + 1,
+		DuplicateMessages:     securityPolicy.MaxInvalidMessages + 2,
+		ConflictingBroadcasts: 1,
+		CorruptChunks:         1,
+		ForgedAdvertisements:  1,
+		BytesThisEpoch:        securityPolicy.MaxBytesPerEpoch + 1,
+		SybilClusterPeers:     1,
+		CrossZoneReplayCount:  1,
+	}, securityPolicy)
+	require.NoError(t, err)
+	reputationDecision, err := ComputePeerReputation(PeerReputationInput{
+		PeerNodeID:                remote.NodeID,
+		ValidMessages:             90,
+		InvalidMessages:           10,
+		LatencyMillis:             50,
+		ThroughputBytesPerSec:     32 << 20,
+		CorrectChunks:             10,
+		CorruptChunks:             1,
+		ValidDiscoveryResponses:   9,
+		InvalidDiscoveryResponses: 1,
+		ValidServiceResponses:     9,
+		InvalidServiceResponses:   1,
+		Timeouts:                  1,
+		DuplicateBroadcasts:       1,
+		ConflictingBroadcasts:     1,
+	})
+	require.NoError(t, err)
+	eclipsePlan, err := BuildEclipseResistancePlan(AdaptiveOverlayGraph{
+		OverlayID:    serviceDesc.OverlayID,
+		LocalNodeID:  local.NodeID,
+		RoutingEpoch: 30,
+		PolicyHash:   HashParts("roadmap-security-eclipse-policy"),
+		RandomSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-random-a", []NodeRole{NodeRoleFull}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("roadmap-random-b", []NodeRole{NodeRoleFull}, []string{"zone-b"}),
+		},
+		FallbackSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-fallback", []NodeRole{NodeRoleFull}, []string{"zone-c"}),
+		},
+		StableSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-validator-a", []NodeRole{NodeRoleValidator}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("roadmap-validator-b", []NodeRole{NodeRoleValidator}, []string{"zone-b"}),
+		},
+		ZoneSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("roadmap-zone-a", []NodeRole{NodeRoleZoneExecution}, []string{"zone-a"}),
+			testSecurityAdaptivePeer("roadmap-zone-b", []NodeRole{NodeRoleZoneExecution}, []string{"zone-b"}),
+		},
+	}, []DiscoveryRecord{{RecordType: DRTObjectRoutingEntryPoint, OwnerNodeID: HashParts("security-adaptive-peer", "roadmap-validator-a"), ProofHash: HashParts("roadmap-proof-backed-route"), ProofHeight: 30}}, DefaultEclipseResistancePolicy(), 30)
+	require.NoError(t, err)
+	_, eclipseThreats, err := SimulateEclipseResistance(AdaptiveOverlayGraph{
+		OverlayID:    HashParts("roadmap-bad-eclipse-overlay"),
+		LocalNodeID:  HashParts("roadmap-bad-eclipse-local"),
+		RoutingEpoch: 31,
+		PolicyHash:   HashParts("roadmap-bad-eclipse-policy"),
+		RandomSet:    []AdaptivePeer{testSecurityAdaptivePeer("roadmap-only-random", []NodeRole{NodeRoleFull}, []string{"zone-a"})},
+		FallbackSet:  []AdaptivePeer{testSecurityAdaptivePeer("roadmap-only-fallback", []NodeRole{NodeRoleFull}, []string{"zone-a"})},
+	}, nil, DefaultEclipseResistancePolicy(), 31)
+	require.NoError(t, err)
+	spamSimulation, err := SimulateSpamResistance(securityPolicy, PeerRateUsage{
+		PeerNodeID:  remote.NodeID,
+		Channel:     ChannelService,
+		Messages:    securityPolicy.MaxPeerMessagesPerWindow + 10,
+		Bytes:       10 << 20,
+		WindowStart: 30,
+		WindowEnd:   30,
+	}, []BroadcastMessage{broadcastMsg, broadcastMsg}, remote.NodeID, 30)
+	require.NoError(t, err)
+	routingManipulation, err := SimulateRoutingManipulation([]BroadcastMessage{broadcastMsg, conflictMsg}, remote.NodeID, 30)
+	require.NoError(t, err)
 	return NetworkingRoadmapEvidence{
 		CometBFTInventory: adapter,
 		PerformanceSnapshot: PerformanceMetricsSnapshot{
@@ -4718,7 +5415,7 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 		XNetworkParams:          DefaultXNetworkParams(salt),
 		Session:                 session,
 		NodeRecords:             []NodeRecord{local, remote},
-		SignedDiscoveryRecords:  []DiscoveryRecord{discovery},
+		SignedDiscoveryRecords:  []DiscoveryRecord{discovery, nodeDiscovery, zoneDiscovery, rpcDiscovery, storageDiscovery},
 		HandshakeReplayRejected: true,
 		KeyRotationAvailable:    true,
 		OverlayDescriptors:      descriptors,
@@ -4730,15 +5427,53 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 			Committed:                  true,
 			UsedForExecutionScheduling: true,
 		},
-		PeerRotationPreserved:   true,
-		RL2Offer:                offer,
-		RL2ChunkDescriptors:     rl2Descriptors,
-		RL2Session:              resumed,
-		RL2StreamingPlan:        resumed.StreamingPlan,
-		RL2PayloadTypes:         []RL2PayloadType{RL2PayloadLargeBlock, RL2PayloadStateSyncStream, RL2PayloadProofSet},
-		RL2BackpressureSignal:   signal,
-		RL2InvalidChunkRejected: invalidChunkErr != nil,
-		RL2InterruptedResumed:   true,
+		PeerRotationPreserved:     true,
+		RL2Offer:                  offer,
+		RL2ChunkDescriptors:       rl2Descriptors,
+		RL2Session:                resumed,
+		RL2StreamingPlan:          resumed.StreamingPlan,
+		RL2PayloadTypes:           []RL2PayloadType{RL2PayloadLargeBlock, RL2PayloadStateSyncStream, RL2PayloadProofSet},
+		RL2BackpressureSignal:     signal,
+		RL2InvalidChunkRejected:   invalidChunkErr != nil,
+		RL2InterruptedResumed:     true,
+		DiscoveryTable:            discoveryTable,
+		DiscoveryResponse:         discoveryResponse,
+		DiscoveryObjectTypes:      []DRTObjectType{DRTObjectNode, DRTObjectExecutionZone, DRTObjectServiceEndpoint, DRTObjectRPCEndpoint, DRTObjectStorageProvider},
+		DiscoveryLeaseRenewed:     renewedDiscovery.ExpiresHeight == 95,
+		DiscoveryForgedRejected:   forgedDiscoveryErr != nil,
+		DiscoveryExpiredRejected:  expiredDiscoveryErr != nil,
+		BroadcastMessage:          broadcastMsg,
+		BroadcastPlan:             broadcastPlan,
+		BroadcastDedupCache:       broadcastCache,
+		BroadcastDuplicateHandled: duplicateDecision.DroppedDuplicate,
+		BroadcastConflictHandled:  conflictDecision.FaultEvidence.EvidenceHash != "",
+		BlockSession:              testPerformanceBlockSession(t),
+		ParallelChunkPlan:         testPerformanceStreamPlan(),
+		GossipFallbackUsed:        broadcastPlan.FallbackUsed,
+		MeshMessages:              []AetherMeshMessage{executionMesh, serviceMesh, queryMesh, storageMesh, crossZoneMesh},
+		MeshDeliveries: []AetherMeshDelivery{
+			meshRoute(executionMesh, executionDesc, ChannelExecution, remote.NodeID),
+			meshRoute(serviceMesh, serviceDesc, ChannelService, remote.NodeID),
+			meshRoute(crossZoneMesh, executionDesc, ChannelExecution, remote.NodeID),
+		},
+		CrossZoneTracker:            crossZoneTracker,
+		CrossZoneReceipt:            crossZoneReceipt,
+		ReceiptDelivery:             receiptDelivery,
+		QueryResponseProof:          queryResponseProof,
+		L3Metrics:                   l3Metrics,
+		CrossZoneAtLeastOnce:        true,
+		CrossZoneExactlyOnce:        replayErr != nil,
+		SecurityPolicy:              securityPolicy,
+		SecurityDecision:            securityDecision,
+		ReputationDecision:          reputationDecision,
+		EclipsePlan:                 eclipsePlan,
+		EclipseThreats:              eclipseThreats,
+		SpamSimulation:              spamSimulation,
+		RoutingManipulation:         routingManipulation,
+		BandwidthExhaustionDetected: containsNetworkThreat(spamSimulation.Threats, ThreatBandwidthExhaustion),
+		ChunkCorruptionDetected:     containsNetworkThreat(securityDecision.Threats, ThreatChunkCorruption),
+		DiscoveryPoisoningDetected:  forgedDiscoveryErr != nil && discoveryResponse.OnChainProof.ProofHash != "",
+		CriticalChannelsAvailable:   true,
 	}
 }
 
@@ -4749,6 +5484,390 @@ func adaptivePeerIDs(peers []AdaptivePeer) []string {
 	}
 	sortStrings(out)
 	return out
+}
+
+func requiredCoverageTests(specs []NetworkingTestCoverageSpec) []NetworkingRequiredTest {
+	out := make([]NetworkingRequiredTest, len(specs))
+	for i, spec := range specs {
+		out[i] = spec.Test
+	}
+	sortRequiredTests(out)
+	return out
+}
+
+func networkingAcceptanceCriterionIDs(criteria []NetworkingAcceptanceCriterion) []NetworkingAcceptanceCriterion {
+	out := append([]NetworkingAcceptanceCriterion(nil), criteria...)
+	sortNetworkingAcceptanceCriteria(out)
+	return out
+}
+
+func testNetworkingAcceptanceEvidence() []NetworkingAcceptanceEvidence {
+	return []NetworkingAcceptanceEvidence{
+		{
+			Criterion: AcceptanceCriterionL0CometBFTProtected,
+			Evidence:  []string{"TestLayerStackPreservesCometBFTBaselineAndExtensionOrder", "TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionANAChannelQoS,
+			Evidence:  []string{"TestDefaultANAValidatesCometBFTBaselineAndResponsibilities", "TestANAPropagationKeepsConsensusOnCometBFTAndFanoutForService"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionL1IdentitySessions,
+			Evidence:  []string{"TestNodeRecordSignatureIdentityAndExpiry", "TestSessionHandshakeRejectsReplayExpiredRecordsAndMismatches"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionL2Overlays,
+			Evidence:  []string{"TestOverlayManagerFormsZoneAndServiceOverlays", "TestRoutingGraphBuildsDeterministicCommittedRoutesAndFallback"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionL3AetherMesh,
+			Evidence:  []string{"TestAetherMeshMessageTypesMapToChannels", "TestAetherMeshCrossZoneAndConsensusProofRules"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionRL2Streaming,
+			Evidence:  []string{"TestRL2ChunkDescriptorsVerifyOrderedMerkleRootAndChunkBytes", "TestRL2InterruptedTransferResumesAndRejectsInvalidChunks"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionDRTDiscovery,
+			Evidence:  []string{"TestDiscoveryRecordMustBeSignedExpiringAndProofChecked", "TestSignedDiscoveryRecordStoreFindRenewAndRevoke"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionHybridBroadcast,
+			Evidence:  []string{"TestBroadcastMessageSignsDeduplicatesAndRejectsForgedOrExpired", "TestBroadcastDedupCacheDropsDuplicatesDetectsConflictsAndPrunes"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionSecurityControls,
+			Evidence:  []string{"TestNetworkSecurityReplayChannelBindingAndQoSIsolation", "TestNetworkSecuritySimulationsCoverEclipseSpamAndRoutingManipulation"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionCosmosABCIIntegration,
+			Evidence:  []string{"TestCosmosCometBFTCompatibilityPlanPreservesRequiredSurfaces", "TestABCIIntegrationPlanKeepsLiveNetworkStateOutOfFinalizeBlock"},
+			Accepted:  true,
+		},
+		{
+			Criterion: AcceptanceCriterionRequiredTestCoverage,
+			Evidence:  []string{"TestRequiredNetworkingTestCoverageValidatesUnitAndIntegrationMatrix", "TestNetworkingTestCoverageReportRequiresAllRequiredEvidence"},
+			Accepted:  true,
+		},
+	}
+}
+
+func testNetworkingObservabilityMetrics() []NetworkingMetricSample {
+	return []NetworkingMetricSample{
+		{Metric: ObservableMetricActivePeers, Value: 8, Height: 50},
+		{Metric: ObservableMetricPeersByRole, Labels: []string{"role=SERVICE_NODE"}, Value: 2, Height: 50},
+		{Metric: ObservableMetricActiveSessions, Value: 3, Height: 50},
+		{Metric: ObservableMetricStreamsByChannelType, Labels: []string{"channel=EXECUTION_CHANNEL"}, Value: 2, Height: 50},
+		{Metric: ObservableMetricPerChannelBandwidth, Labels: []string{"channel=SERVICE_CHANNEL"}, Value: 4096, Height: 50},
+		{Metric: ObservableMetricPeerScore, Labels: []string{"node=fast"}, Value: 8500, Height: 50},
+		{Metric: ObservableMetricOverlaySize, Labels: []string{"overlay=zone"}, Value: 5, Height: 50},
+		{Metric: ObservableMetricOverlayChurn, Labels: []string{"overlay=zone"}, Value: 1, Height: 50},
+		{Metric: ObservableMetricDiscoveryQueryLatency, Value: 30, Height: 50},
+		{Metric: ObservableMetricBroadcastDedupHitRate, Value: 5000, Height: 50},
+		{Metric: ObservableMetricRL2TransferThroughput, Value: 1 << 20, Height: 50},
+		{Metric: ObservableMetricRL2ChunkRetryRate, Value: 2, Height: 50},
+		{Metric: ObservableMetricBlockPropagationLatency, Value: 15, Height: 50},
+		{Metric: ObservableMetricCrossZoneMessageDeliveryLatency, Value: 60, Height: 50},
+		{Metric: ObservableMetricServiceTrafficVolume, Value: 8192, Height: 50},
+		{Metric: ObservableMetricRoutingFailureCount, Value: 1, Height: 50},
+	}
+}
+
+func testNetworkingObservabilityEvents() []NetworkingEventRecord {
+	nodeID := HashParts("observability-node")
+	peerID := HashParts("observability-peer")
+	overlayID := HashParts("observability-overlay")
+	transferID := HashParts("observability-transfer")
+	messageID := HashParts("observability-message")
+	evidenceHash := HashParts("observability-evidence")
+	return []NetworkingEventRecord{
+		NewNetworkingEventRecord(ObservableEventNetworkNodeRegistered, nodeID, "", "", "", "", "", 50),
+		NewNetworkingEventRecord(ObservableEventNetworkSessionOpened, peerID, "", ChannelConsensus, "", "", "", 51),
+		NewNetworkingEventRecord(ObservableEventNetworkSessionClosed, peerID, "", ChannelConsensus, "", "", "", 52),
+		NewNetworkingEventRecord(ObservableEventNetworkPeerScoreUpdated, peerID, "", "", "", "", evidenceHash, 53),
+		NewNetworkingEventRecord(ObservableEventNetworkOverlayJoined, nodeID, overlayID, ChannelRouting, "", "", "", 54),
+		NewNetworkingEventRecord(ObservableEventNetworkOverlayLeft, nodeID, overlayID, ChannelRouting, "", "", "", 55),
+		NewNetworkingEventRecord(ObservableEventNetworkDiscoveryRecordStored, nodeID, overlayID, ChannelDiscovery, "", "", evidenceHash, 56),
+		NewNetworkingEventRecord(ObservableEventNetworkDiscoveryRecordExpired, nodeID, overlayID, ChannelDiscovery, "", "", evidenceHash, 57),
+		NewNetworkingEventRecord(ObservableEventNetworkRL2TransferStarted, nodeID, overlayID, ChannelData, transferID, "", "", 58),
+		NewNetworkingEventRecord(ObservableEventNetworkRL2TransferCompleted, nodeID, overlayID, ChannelData, transferID, "", "", 59),
+		NewNetworkingEventRecord(ObservableEventNetworkInvalidChunk, peerID, overlayID, ChannelData, transferID, "", evidenceHash, 60),
+		NewNetworkingEventRecord(ObservableEventNetworkBroadcastConflict, peerID, overlayID, ChannelBlock, "", messageID, evidenceHash, 61),
+		NewNetworkingEventRecord(ObservableEventNetworkRouteFailed, peerID, overlayID, ChannelRouting, "", messageID, evidenceHash, 62),
+	}
+}
+
+func networkingAlertRuleIDs(rules []NetworkingAlertRule) []NetworkingObservableAlert {
+	out := make([]NetworkingObservableAlert, len(rules))
+	for i, rule := range rules {
+		out[i] = NormalizeNetworkingAlertRule(rule).Alert
+	}
+	sortObservableAlerts(out)
+	return out
+}
+
+func networkingNonGoalIDs(nonGoals []NetworkingNonGoal) []NetworkingNonGoal {
+	out := append([]NetworkingNonGoal(nil), nonGoals...)
+	sortNetworkingNonGoals(out)
+	return out
+}
+
+func testNetworkingAlertSignals(rules []NetworkingAlertRule) []NetworkingAlertSignal {
+	nodeID := HashParts("observability-alert-node")
+	overlayID := HashParts("observability-alert-overlay")
+	signals := make([]NetworkingAlertSignal, 0, len(rules))
+	for i, rule := range NormalizeNetworkingAlertRules(rules) {
+		observed := rule.Threshold + 1
+		if rule.Condition == NetworkingAlertConditionBelowThreshold {
+			observed = rule.Threshold - 1
+		}
+		var sourceMetric NetworkingObservableMetric
+		var sourceEvent NetworkingObservableEvent
+		if len(rule.SourceMetrics) > 0 {
+			sourceMetric = rule.SourceMetrics[0]
+		}
+		if len(rule.SourceEvents) > 0 {
+			sourceEvent = rule.SourceEvents[0]
+		}
+		signals = append(signals, NewNetworkingAlertSignal(rule, sourceMetric, sourceEvent, nodeID, overlayID, observed, uint64(70+i)))
+	}
+	return signals
+}
+
+func testRequiredNetworkingCoverageEvidence() []NetworkingTestCoverageEvidence {
+	return []NetworkingTestCoverageEvidence{
+		{
+			Test:      RequiredTestNodeIDDerivation,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestNodeRecordSignatureIdentityAndExpiry"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestNodeRecordSignature,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestNodeRecordSignatureIdentityAndExpiry", "TestANAValidatesSignedPeerRoleAdvertisements"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestSessionHandshake,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestSessionHandshakeRejectsReplayExpiredRecordsAndMismatches", "TestSessionHandshakeNegotiatesEncryptedMultiplexedStreams"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestStreamPriority,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestAetherMeshMessageTypesMapToChannels", "TestStreamPayloadTypeMapsToRL2AndRejectsInvalidBounds"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestOverlayMembership,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestOverlayMembershipProofAuthorizesServiceStakeAndSignedRecords", "TestOverlayManagerFormsZoneAndServiceOverlays"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestRouteCost,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestRoutingGraphBuildsDeterministicCommittedRoutesAndFallback", "TestAetherMeshRouteUsesOverlayAndServicePeers"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestNetworkMessageID,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestNetworkMessageHardRulesRequireReplaySafeCommitments", "TestAetherMeshCrossZoneAndConsensusProofRules"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestDiscoveryRecordExpiry,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestDiscoveryRecordMustBeSignedExpiringAndProofChecked", "TestSignedDiscoveryRecordStoreFindRenewAndRevoke"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestChunkHashVerification,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestChunkPayloadRoundTripAndCorruptionDetection", "TestRL2ChunkDescriptorsVerifyOrderedMerkleRootAndChunkBytes"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestBroadcastDeduplication,
+			Category:  NetworkingTestCoverageUnit,
+			TestNames: []string{"TestBroadcastMessageSignsDeduplicatesAndRejectsForgedOrExpired", "TestBroadcastDedupCacheDropsDuplicatesDetectsConflictsAndPrunes"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestCometBFTANAConsensus,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestANAPropagationKeepsConsensusOnCometBFTAndFanoutForService", "TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestMultiplexedSessionStreams,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestSessionHandshakeNegotiatesEncryptedMultiplexedStreams", "TestNetworkSecurityReplayChannelBindingAndQoSIsolation"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestZoneOverlayFormation,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestOverlayManagerFormsZoneAndServiceOverlays", "TestOverlayRouteBuildsZoneLocalAndFallbackPlans"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestServiceOverlayFormation,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestOverlayManagerFormsZoneAndServiceOverlays", "TestAetherMeshRouteUsesOverlayAndServicePeers"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestCrossZoneDelivery,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestCrossZoneSequenceTrackerAssignsAndRejectsReplayAndGaps", "TestReceiptDeliveryProtocolAcknowledgesAndFeedsMetrics"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestRL2BlockChunkTransfer,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestRL2OfferStateMachineResumesInterruptedTransferAndCompletes", "TestBlockHeaderFirstPropagationVerifiesChunksProofsAndReconstructs"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestResumableStateSnapshot,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestRL2MissingChunksRequestUsesVerifiedBitmapResumeToken", "TestRL2OfferStateMachineResumesInterruptedTransferAndCompletes"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestDiscoveryProofLookup,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestDiscoveryResponseSignsResultsAndProofAttachment", "TestNetworkingAPIIntegrationBuildsDiagnosticsProofsAndRouteHints"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestHeaderFirstPropagation,
+			Category:  NetworkingTestCoverageIntegration,
+			TestNames: []string{"TestBlockHeaderFirstPropagationVerifiesChunksProofsAndReconstructs", "TestBroadcastForwardingUsesTreeThenGossipFallbackAndOverlayFanout"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestReplayedHandshake,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestSessionHandshakeRejectsReplayExpiredRecordsAndMismatches", "TestNetworkSecurityReplayChannelBindingAndQoSIsolation"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestForgedNodeAdvertisement,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestANAValidatesSignedPeerRoleAdvertisements", "TestNetworkSecurityAuthenticatesDiscoveryOverlayAndChunks"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestExpiredDiscoverySecurity,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestDiscoveryResponseRejectsExpiredForgedAndReplayedRecords", "TestNetworkSecurityAuthenticatesDiscoveryOverlayAndChunks"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestConflictingBroadcast,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestBroadcastDedupCacheDropsDuplicatesDetectsConflictsAndPrunes", "TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestInvalidChunkSecurity,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestRL2StateMachineClassifiesInvalidChunksAndRootMismatch", "TestNetworkSecurityAuthenticatesDiscoveryOverlayAndChunks"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestEclipsePeerSetSimulation,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestEclipseResistancePlanMaintainsDiversityAndProofBackedRouting", "TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestServiceSpamFlood,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestSpamResistanceSignedEnvelopeRateLimitsAndResourceBackedAds", "TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestConsensusUnderBulkLoad,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic", "TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestCrossZoneReplaySecurity,
+			Category:  NetworkingTestCoverageSecurity,
+			TestNames: []string{"TestCrossZoneMessageRequiresSequenceExpiryAndReplayProtection", "TestCrossZoneSequenceTrackerAssignsAndRejectsReplayAndGaps"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestBlockHeaderLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestPerformanceModelBoundsFanoutLatencyStreamingAndQoS"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestBlockReconstructionTime,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestBlockHeaderFirstPropagationVerifiesChunksProofsAndReconstructs"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestChunkStreamingThroughput,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestPerformanceModelBoundsFanoutLatencyStreamingAndQoS"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestDiscoveryQueryLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestDiscoveryResponseSignsResultsAndProofAttachment"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestOverlayJoinLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestOverlayManagerFormsZoneAndServiceOverlays"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestCrossZonePropagation,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestReceiptDeliveryProtocolAcknowledgesAndFeedsMetrics"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestServiceTrafficThroughput,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestPerformanceMetricsSnapshotAggregatesOverlayBandwidthAndScores", "TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestConsensusMixedLoadLatency,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestL0ScheduleKeepsConsensusAheadOfServiceAndBulkTraffic", "TestPerformanceMetricsRejectInvalidBenchmarksAndServiceIsolationFailures"},
+			Passed:    true,
+		},
+		{
+			Test:      RequiredTestPeerRotationStability,
+			Category:  NetworkingTestCoveragePerformance,
+			TestNames: []string{"TestAdaptiveOverlayGraphRejectsEclipseAndZoneReplacement", "TestAdaptivePeerRotationBoundsChurnAndKeepsStablePeers"},
+			Passed:    true,
+		},
+	}
 }
 
 func testSessionRequest(local, remote NodeRecord, openedHeight, expiresHeight uint64, nonce string, channels []ChannelClass) SessionRequest {

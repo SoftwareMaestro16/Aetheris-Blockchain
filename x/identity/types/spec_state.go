@@ -46,6 +46,9 @@ func CommitDomainRegistration(state IdentityState, name string, owner sdk.AccAdd
 	if _, found := findActiveCommit(state, normalized, height); found {
 		return IdentityState{}, errors.New("identity domain already has active commit")
 	}
+	if isRegistrationCommitmentUsed(state, commitmentHash) {
+		return IdentityState{}, errors.New("identity registration commitment already used")
+	}
 	next := state.Clone()
 	next.Commits = append(next.Commits, DomainCommit{
 		Name:           normalized,
@@ -103,6 +106,7 @@ func RevealRegisterDomain(state IdentityState, name string, owner sdk.AccAddress
 	next.Domains = upsertDomain(next.Domains, domain)
 	next.DomainNFTs = upsertDomainNFT(next.DomainNFTs, nft)
 	next.Commits = removeDomainCommit(next.Commits, commit)
+	next.UsedCommitments = append(next.UsedCommitments, NewUsedDomainCommitment(commit, height))
 	sortIdentityState(&next)
 	if err := next.Validate(); err != nil {
 		return IdentityState{}, Domain{}, err
@@ -332,6 +336,7 @@ func (s IdentityState) Clone() IdentityState {
 		Domains:                cloneDomains(s.Domains),
 		DomainNFTs:             cloneDomainNFTs(s.DomainNFTs),
 		Commits:                cloneDomainCommits(s.Commits),
+		UsedCommitments:        cloneUsedDomainCommitments(s.UsedCommitments),
 		Resolvers:              cloneResolvers(s.Resolvers),
 		ReverseRecords:         cloneReverseRecords(s.ReverseRecords),
 		Subdomains:             cloneSubdomains(s.Subdomains),
@@ -405,6 +410,7 @@ func sortIdentityState(state *IdentityState) {
 	sortDomains(state.Domains)
 	sortDomainNFTs(state.DomainNFTs)
 	sortDomainCommits(state.Commits)
+	sortUsedDomainCommitments(state.UsedCommitments)
 	sortResolvers(state.Resolvers)
 	sortReverseRecords(state.ReverseRecords)
 	sortSubdomains(state.Subdomains)

@@ -59,6 +59,15 @@ func findActiveCommitByHash(state IdentityState, name string, owner sdk.AccAddre
 	return DomainCommit{}, false
 }
 
+func isRegistrationCommitmentUsed(state IdentityState, commitmentHash string) bool {
+	for _, tombstone := range state.UsedCommitments {
+		if tombstone.CommitmentHash == commitmentHash {
+			return true
+		}
+	}
+	return false
+}
+
 func upsertDomain(domains []Domain, domain Domain) []Domain {
 	out := cloneDomains(domains)
 	for i := range out {
@@ -188,6 +197,20 @@ func compareDomainCommits(left, right DomainCommit) int {
 		return c
 	}
 	return stringsCompare(left.CommitmentHash, right.CommitmentHash)
+}
+
+func sortUsedDomainCommitments(commitments []UsedDomainCommitment) {
+	sort.SliceStable(commitments, func(i, j int) bool { return compareUsedDomainCommitments(commitments[i], commitments[j]) < 0 })
+}
+
+func compareUsedDomainCommitments(left, right UsedDomainCommitment) int {
+	if c := stringsCompare(left.CommitmentHash, right.CommitmentHash); c != 0 {
+		return c
+	}
+	if c := stringsCompare(left.Name, right.Name); c != 0 {
+		return c
+	}
+	return bytes.Compare(left.Owner, right.Owner)
 }
 
 func compareReverse(left, right ReverseRecord) int {
