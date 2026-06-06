@@ -145,6 +145,11 @@ func assertPrototypeGenesisProfile(
 	var mintGenState minttypes.GenesisState
 	cdc.MustUnmarshalJSON(appState[minttypes.ModuleName], &mintGenState)
 	require.Equal(t, appparams.BaseDenom, mintGenState.Params.MintDenom)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.DefaultTargetInflationBps), mintGenState.Minter.Inflation)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.MinInflationBps), mintGenState.Params.InflationMin)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.MaxInflationBps), mintGenState.Params.InflationMax)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.DefaultTargetStakeBps), mintGenState.Params.GoalBonded)
+	require.True(t, mintGenState.Params.MaxSupply.IsZero())
 
 	var feesGenState feestypes.GenesisState
 	cdc.MustUnmarshalJSON(appState[feestypes.ModuleName], &feesGenState)

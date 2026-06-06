@@ -10,11 +10,12 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
+
+	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
 func TestPoSCreateValidatorWithNaet(t *testing.T) {
@@ -302,22 +303,20 @@ func TestPoSMintPolicyIsNaetAndUncappedWithBoundedInflation(t *testing.T) {
 
 	params, err := app.MintKeeper.Params.Get(ctx)
 	require.NoError(t, err)
+	expected := appparams.AetherisMintParams()
 	require.Equal(t, BondDenom, params.MintDenom)
 	require.True(t, params.MaxSupply.IsZero(), "zero max supply means uncapped PoS issuance in Cosmos SDK mint params")
 	require.NoError(t, params.Validate())
-	require.False(t, params.InflationRateChange.IsNegative())
-	require.False(t, params.InflationMin.IsNegative())
-	require.True(t, params.InflationMax.GTE(params.InflationMin))
-	require.True(t, params.GoalBonded.IsPositive())
-	require.True(t, params.GoalBonded.LTE(sdkmath.LegacyOneDec()))
+	require.Equal(t, expected.InflationRateChange, params.InflationRateChange)
+	require.Equal(t, expected.InflationMin, params.InflationMin)
+	require.Equal(t, expected.InflationMax, params.InflationMax)
+	require.Equal(t, expected.GoalBonded, params.GoalBonded)
 	require.Positive(t, params.BlocksPerYear)
 
-	defaults := minttypes.DefaultParams()
-	require.Equal(t, defaults.InflationRateChange, params.InflationRateChange)
-	require.Equal(t, defaults.InflationMin, params.InflationMin)
-	require.Equal(t, defaults.InflationMax, params.InflationMax)
-	require.Equal(t, defaults.GoalBonded, params.GoalBonded)
-	require.Equal(t, defaults.BlocksPerYear, params.BlocksPerYear)
+	minter, err := app.MintKeeper.Minter.Get(ctx)
+	require.NoError(t, err)
+	require.True(t, minter.Inflation.GTE(params.InflationMin))
+	require.True(t, minter.Inflation.LTE(params.InflationMax))
 }
 
 func TestAddTestAddrsUsesBondDenom(t *testing.T) {

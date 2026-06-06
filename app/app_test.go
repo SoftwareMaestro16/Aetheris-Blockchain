@@ -112,6 +112,12 @@ func TestDefaultGenesisValidatesAndSetsCustomModuleDefaults(t *testing.T) {
 	var mintGenState minttypes.GenesisState
 	app.AppCodec().MustUnmarshalJSON(genesis[minttypes.ModuleName], &mintGenState)
 	require.Equal(t, appparams.BaseDenom, mintGenState.Params.MintDenom)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.DefaultTargetInflationBps), mintGenState.Minter.Inflation)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.DefaultResponsivenessBps), mintGenState.Params.InflationRateChange)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.MinInflationBps), mintGenState.Params.InflationMin)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.MaxInflationBps), mintGenState.Params.InflationMax)
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.DefaultTargetStakeBps), mintGenState.Params.GoalBonded)
+	require.True(t, mintGenState.Params.MaxSupply.IsZero())
 
 	var tokenfactoryGenState tokenfactorytypes.GenesisState
 	app.AppCodec().MustUnmarshalJSON(genesis[tokenfactorytypes.ModuleName], &tokenfactoryGenState)
@@ -417,6 +423,24 @@ func TestGenesisRejectsInvalidCoreBankAndStakingState(t *testing.T) {
 				genesis[minttypes.ModuleName] = app.AppCodec().MustMarshalJSON(&mintGenesis)
 			},
 			errMatch: "invalid mint denom",
+		},
+		"mint inflation max mismatch": {
+			mutate: func(app *L1App, genesis GenesisState) {
+				var mintGenesis minttypes.GenesisState
+				app.AppCodec().MustUnmarshalJSON(genesis[minttypes.ModuleName], &mintGenesis)
+				mintGenesis.Params.InflationMax = minttypes.DefaultParams().InflationMax
+				genesis[minttypes.ModuleName] = app.AppCodec().MustMarshalJSON(&mintGenesis)
+			},
+			errMatch: "invalid mint max inflation",
+		},
+		"mint current inflation outside bounds": {
+			mutate: func(app *L1App, genesis GenesisState) {
+				var mintGenesis minttypes.GenesisState
+				app.AppCodec().MustUnmarshalJSON(genesis[minttypes.ModuleName], &mintGenesis)
+				mintGenesis.Minter.Inflation = minttypes.DefaultInitialMinter().Inflation
+				genesis[minttypes.ModuleName] = app.AppCodec().MustMarshalJSON(&mintGenesis)
+			},
+			errMatch: "invalid mint current inflation",
 		},
 		"fees denom mismatch": {
 			mutate: func(app *L1App, genesis GenesisState) {

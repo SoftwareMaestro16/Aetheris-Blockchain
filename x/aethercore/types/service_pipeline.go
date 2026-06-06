@@ -149,17 +149,18 @@ type ServiceEndBlockMaintenance struct {
 }
 
 type ServiceStateTransition struct {
-	CurrentStateRoot      string
-	NextStateRoot         string
-	Call                  ServiceCallEnvelope
-	Context               ServiceConsensusContext
-	StateReadSet          []string
-	StateWriteSet         []string
-	ExternalCalls         []string
-	UsesWallClock         bool
-	IterationLimit        uint64
-	ProofVerificationGas  uint64
-	DirectCrossZoneWrites []string
+	CurrentStateRoot       string
+	NextStateRoot          string
+	Call                   ServiceCallEnvelope
+	Context                ServiceConsensusContext
+	StateReadSet           []string
+	StateWriteSet          []string
+	ExternalCalls          []string
+	UsesWallClock          bool
+	LiveAvailabilityChecks bool
+	IterationLimit         uint64
+	ProofVerificationGas   uint64
+	DirectCrossZoneWrites  []string
 }
 
 func PrepareServiceProposal(ctx ServiceConsensusContext, state CoreState, calls []ServiceCallEnvelope) (ServiceProposalPlan, error) {
@@ -772,6 +773,9 @@ func (t ServiceStateTransition) Validate(state CoreState) error {
 	}
 	if t.UsesWallClock {
 		return errors.New("aethercore service STF must not use nondeterministic wall-clock time")
+	}
+	if t.LiveAvailabilityChecks {
+		return errors.New("aethercore service STF must not perform live service availability checks")
 	}
 	if t.IterationLimit == 0 {
 		return errors.New("aethercore service STF iteration limit must be bounded")

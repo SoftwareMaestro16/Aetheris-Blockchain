@@ -179,8 +179,30 @@ func (app *L1App) validateAetherisMintGenesis(genesisState GenesisState) error {
 	if err := app.appCodec.UnmarshalJSON(genesisState[minttypes.ModuleName], &mintGenesis); err != nil {
 		return fmt.Errorf("invalid %s genesis state: %w", minttypes.ModuleName, err)
 	}
-	if mintGenesis.Params.MintDenom != appparams.BaseDenom {
-		return fmt.Errorf("invalid mint denom: expected %s, got %s", appparams.BaseDenom, mintGenesis.Params.MintDenom)
+	if err := minttypes.ValidateGenesis(mintGenesis); err != nil {
+		return fmt.Errorf("invalid %s genesis state: %w", minttypes.ModuleName, err)
+	}
+	expected := appparams.AetherisMintParams()
+	if mintGenesis.Params.MintDenom != expected.MintDenom {
+		return fmt.Errorf("invalid mint denom: expected %s, got %s", expected.MintDenom, mintGenesis.Params.MintDenom)
+	}
+	if !mintGenesis.Params.InflationRateChange.Equal(expected.InflationRateChange) {
+		return fmt.Errorf("invalid mint inflation rate change: expected %s, got %s", expected.InflationRateChange, mintGenesis.Params.InflationRateChange)
+	}
+	if !mintGenesis.Params.InflationMin.Equal(expected.InflationMin) {
+		return fmt.Errorf("invalid mint min inflation: expected %s, got %s", expected.InflationMin, mintGenesis.Params.InflationMin)
+	}
+	if !mintGenesis.Params.InflationMax.Equal(expected.InflationMax) {
+		return fmt.Errorf("invalid mint max inflation: expected %s, got %s", expected.InflationMax, mintGenesis.Params.InflationMax)
+	}
+	if !mintGenesis.Params.GoalBonded.Equal(expected.GoalBonded) {
+		return fmt.Errorf("invalid mint goal bonded: expected %s, got %s", expected.GoalBonded, mintGenesis.Params.GoalBonded)
+	}
+	if !mintGenesis.Params.MaxSupply.Equal(expected.MaxSupply) {
+		return fmt.Errorf("invalid mint max supply: expected %s, got %s", expected.MaxSupply, mintGenesis.Params.MaxSupply)
+	}
+	if mintGenesis.Minter.Inflation.LT(expected.InflationMin) || mintGenesis.Minter.Inflation.GT(expected.InflationMax) {
+		return fmt.Errorf("invalid mint current inflation: expected within %s..%s, got %s", expected.InflationMin, expected.InflationMax, mintGenesis.Minter.Inflation)
 	}
 	return nil
 }
@@ -203,10 +225,10 @@ func (app *L1App) validateAetherisFeeGenesis(genesisState GenesisState) error {
 }
 
 func (app *L1App) ensureCoreGenesisCollections(ctx sdk.Context) error {
-	if err := ensureCollectionItem(ctx, app.MintKeeper.Params, minttypes.DefaultParams()); err != nil {
+	if err := ensureCollectionItem(ctx, app.MintKeeper.Params, appparams.AetherisMintParams()); err != nil {
 		return err
 	}
-	if err := ensureCollectionItem(ctx, app.MintKeeper.Minter, minttypes.DefaultInitialMinter()); err != nil {
+	if err := ensureCollectionItem(ctx, app.MintKeeper.Minter, appparams.AetherisInitialMinter()); err != nil {
 		return err
 	}
 	if err := ensureCollectionItem(ctx, app.DistrKeeper.Params, distrtypes.DefaultParams()); err != nil {

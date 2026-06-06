@@ -119,6 +119,10 @@ func TestServiceSTFRejectsNonDeterministicOrUnmeteredExecution(t *testing.T) {
 	require.ErrorContains(t, transition.Validate(state), "wall-clock")
 
 	transition.UsesWallClock = false
+	transition.LiveAvailabilityChecks = true
+	require.ErrorContains(t, transition.Validate(state), "availability")
+
+	transition.LiveAvailabilityChecks = false
 	transition.ProofVerificationGas = 0
 	require.ErrorContains(t, transition.Validate(state), "metered")
 

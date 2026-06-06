@@ -18,6 +18,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
+	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
@@ -48,6 +49,7 @@ func initGenFiles(
 	}
 	bankGenState.DenomMetadata = appparams.EnsureNativeTokenMetadata(bankGenState.DenomMetadata)
 	appGenState[banktypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(&bankGenState)
+	appGenState[minttypes.ModuleName] = clientCtx.Codec.MustMarshalJSON(appparams.AetherisMintGenesisState())
 
 	appGenStateJSON, err := json.MarshalIndent(appGenState, "", "  ")
 	if err != nil {
