@@ -17,6 +17,8 @@ const (
 	IdentityRoadmapPhase2UnifiedResolverV2 IdentityImplementationRoadmapPhaseIDV2 = "phase_2_unified_resolver"
 	IdentityRoadmapPhase3SubdomainsZonesV2 IdentityImplementationRoadmapPhaseIDV2 = "phase_3_subdomains_and_zone_control"
 	IdentityRoadmapPhase4ProofResolutionV2 IdentityImplementationRoadmapPhaseIDV2 = "phase_4_proof_based_resolution"
+	IdentityRoadmapPhase5ExecutionV2       IdentityImplementationRoadmapPhaseIDV2 = "phase_5_execution_integration"
+	IdentityRoadmapPhase6PerformanceV2     IdentityImplementationRoadmapPhaseIDV2 = "phase_6_performance_hardening"
 
 	IdentityRoadmapTaskCanonicalNameNormalizationV2 IdentityImplementationRoadmapTaskIDV2 = "define_canonical_name_normalization"
 	IdentityRoadmapTaskDomainProofHashFormatsV2     IdentityImplementationRoadmapTaskIDV2 = "define_domain_hash_and_proof_hash_formats"
@@ -56,6 +58,20 @@ const (
 	IdentityRoadmapTaskNonExistenceProofQueryV2        IdentityImplementationRoadmapTaskIDV2 = "implement_non_existence_proof_query"
 	IdentityRoadmapTaskLightClientVerificationSDKV2    IdentityImplementationRoadmapTaskIDV2 = "add_light_client_verification_sdk"
 
+	IdentityRoadmapTaskRoutingIntegrationModuleV2              IdentityImplementationRoadmapTaskIDV2 = "implement_routing_integration_module"
+	IdentityRoadmapTaskSendByNameSDKHelperV2                   IdentityImplementationRoadmapTaskIDV2 = "add_send_by_name_sdk_helper"
+	IdentityRoadmapTaskInvokeByNameSDKHelperV2                 IdentityImplementationRoadmapTaskIDV2 = "add_invoke_by_name_sdk_helper"
+	IdentityRoadmapTaskServiceDiscoveryHelperV2                IdentityImplementationRoadmapTaskIDV2 = "add_service_discovery_helper"
+	IdentityRoadmapTaskInterfaceDescriptorVerificationHelperV2 IdentityImplementationRoadmapTaskIDV2 = "add_interface_descriptor_verification_helper"
+	IdentityRoadmapTaskWalletDisplayStatesV2                   IdentityImplementationRoadmapTaskIDV2 = "add_wallet_display_state_definitions"
+
+	IdentityRoadmapTaskStoreV2ResolutionBenchmarksV2 IdentityImplementationRoadmapTaskIDV2 = "add_store_v2_resolution_benchmarks"
+	IdentityRoadmapTaskBlockSTMBatchBenchmarksV2     IdentityImplementationRoadmapTaskIDV2 = "add_blockstm_batch_update_benchmarks"
+	IdentityRoadmapTaskABCIProposalGroupingV2        IdentityImplementationRoadmapTaskIDV2 = "add_abci_proposal_grouping_for_identity_transactions"
+	IdentityRoadmapTaskBoundedExpiryProcessingV2     IdentityImplementationRoadmapTaskIDV2 = "add_bounded_expiry_processing"
+	IdentityRoadmapTaskAdaptiveSyncRecoveryTestsV2   IdentityImplementationRoadmapTaskIDV2 = "add_adaptivesync_recovery_tests"
+	IdentityRoadmapTaskCacheInvalidationEventTestsV2 IdentityImplementationRoadmapTaskIDV2 = "add_cache_invalidation_event_tests"
+
 	IdentityRoadmapExitSignableHashableVectorsV2 IdentityImplementationRoadmapExitIDV2 = "all_signable_and_hashable_identity_objects_have_test_vectors"
 	IdentityRoadmapExitLifecycleDeterminismV2    IdentityImplementationRoadmapExitIDV2 = "all_lifecycle_states_have_deterministic_transition_tests"
 	IdentityRoadmapExitStorePrefixesFinalizedV2  IdentityImplementationRoadmapExitIDV2 = "store_key_prefixes_are_finalized"
@@ -75,6 +91,14 @@ const (
 	IdentityRoadmapExitLightClientAllTargetsV2      IdentityImplementationRoadmapExitIDV2 = "light_clients_can_verify_address_contract_service_interface_reverse_resolution"
 	IdentityRoadmapExitExplicitProofFailuresV2      IdentityImplementationRoadmapExitIDV2 = "proof_failure_modes_are_explicit"
 	IdentityRoadmapExitProofVectorsModuleVersionsV2 IdentityImplementationRoadmapExitIDV2 = "proof_test_vectors_pass_across_module_versions"
+
+	IdentityRoadmapExitPresigningTargetResolutionV2   IdentityImplementationRoadmapExitIDV2 = "identity_records_drive_pre_signing_transaction_target_resolution"
+	IdentityRoadmapExitWalletProofBackedTargetsV2     IdentityImplementationRoadmapExitIDV2 = "wallets_can_verify_proof_backed_identity_targets"
+	IdentityRoadmapExitInterfaceServiceHashVerifiedV2 IdentityImplementationRoadmapExitIDV2 = "interface_and_service_metadata_are_hash_verified_before_use"
+
+	IdentityRoadmapExitIndependentUpdatesParallelizeV2     IdentityImplementationRoadmapExitIDV2 = "independent_identity_updates_parallelize_without_avoidable_conflicts"
+	IdentityRoadmapExitDirectResolutionBoundedLargeStateV2 IdentityImplementationRoadmapExitIDV2 = "direct_resolution_remains_bounded_with_large_state"
+	IdentityRoadmapExitPostSyncProofQueriesV2              IdentityImplementationRoadmapExitIDV2 = "recovering_nodes_can_serve_proof_queries_after_sync"
 )
 
 type IdentityRoadmapTaskV2 struct {
@@ -189,6 +213,40 @@ func DefaultIdentityImplementationRoadmapV2() IdentityImplementationRoadmapV2 {
 				{ID: IdentityRoadmapExitProofVectorsModuleVersionsV2, Evidence: []string{"x/identity/types/proof_format_v2.go:ValidateIdentityResolutionProofFormatV2", "x/identity/types/proof_format_v2_test.go:TestIdentityResolutionProofFormatV2FieldsEncodingAndCommitment"}},
 			},
 		},
+		{
+			ID:    IdentityRoadmapPhase5ExecutionV2,
+			Title: "Execution Integration",
+			Tasks: []IdentityRoadmapTaskV2{
+				{ID: IdentityRoadmapTaskRoutingIntegrationModuleV2, Evidence: []string{"x/identity/types/routing_integration_module_breakdown_v2.go:DefaultRoutingIntegrationModuleBreakdownV2", "x/identity/types/routing_integration_module_breakdown_v2_test.go:TestRoutingIntegrationModuleBreakdownV2CoversSection136"}},
+				{ID: IdentityRoadmapTaskSendByNameSDKHelperV2, Evidence: []string{"x/identity/types/api_sdk_requirements_v2.go:IdentityWalletSDKBuildSendByNameTxV2", "x/identity/types/execution_integration_v2.go:BuildIdentitySendByNameV2"}},
+				{ID: IdentityRoadmapTaskInvokeByNameSDKHelperV2, Evidence: []string{"x/identity/types/api_sdk_requirements_v2.go:IdentityWalletSDKBuildInvokeByNameTxV2", "x/identity/types/execution_integration_v2.go:BuildIdentityInvokeByNameV2"}},
+				{ID: IdentityRoadmapTaskServiceDiscoveryHelperV2, Evidence: []string{"x/identity/types/api_sdk_requirements_v2.go:IdentityWalletSDKResolveServiceVerifiedV2", "x/identity/types/service_interface_mapping_v2.go:BuildIdentityServiceDiscoveryV2"}},
+				{ID: IdentityRoadmapTaskInterfaceDescriptorVerificationHelperV2, Evidence: []string{"x/identity/types/service_interface_mapping_v2.go:BuildIdentityInterfaceSchemaMappingV2", "x/identity/types/service_interface_mapping_v2_test.go:TestIdentityInterfaceSchemaMappingV2PolicyAndHashVerification"}},
+				{ID: IdentityRoadmapTaskWalletDisplayStatesV2, Evidence: []string{"x/identity/types/failure_handling_v2.go:EvaluateIdentityWalletResolutionStatusV2", "x/identity/types/reverse_safety_v2.go:BuildIdentityReverseWalletDisplayStateV2"}},
+			},
+			ExitCriteria: []IdentityRoadmapExitCriterionV2{
+				{ID: IdentityRoadmapExitPresigningTargetResolutionV2, Evidence: []string{"x/identity/types/execution_integration_v2.go:BuildIdentitySendByNameV2", "x/identity/types/routing_integration_module_breakdown_v2.go:BuildRoutingIntegrationTransactionMappingV2"}},
+				{ID: IdentityRoadmapExitWalletProofBackedTargetsV2, Evidence: []string{"x/identity/types/api_sdk_requirements_v2.go:IdentityWalletSDKResolvePrimaryVerifiedV2", "x/identity/types/api_sdk_requirements_v2.go:IdentityWalletSDKVerifyResolutionProofV2"}},
+				{ID: IdentityRoadmapExitInterfaceServiceHashVerifiedV2, Evidence: []string{"x/identity/types/service_interface_mapping_v2.go:BuildIdentityInterfaceSchemaMappingV2", "x/identity/types/service_interface_mapping_v2_test.go:TestIdentityServiceDiscoveryV2ExternalMetadataHash"}},
+			},
+		},
+		{
+			ID:    IdentityRoadmapPhase6PerformanceV2,
+			Title: "Performance Hardening",
+			Tasks: []IdentityRoadmapTaskV2{
+				{ID: IdentityRoadmapTaskStoreV2ResolutionBenchmarksV2, Evidence: []string{"x/identity/types/bench_test.go:BenchmarkIdentityStoreV2DirectResolutionReadPath", "x/identity/types/bench_test.go:BenchmarkIdentityStoreV2RecursiveResolutionReadPath"}},
+				{ID: IdentityRoadmapTaskBlockSTMBatchBenchmarksV2, Evidence: []string{"x/identity/types/bench_test.go:BenchmarkIdentityBlockSTMBatchResolverUpdates", "x/identity/types/bench_test.go:BenchmarkIdentityBlockSTMMixedConflictClassification"}},
+				{ID: IdentityRoadmapTaskABCIProposalGroupingV2, Evidence: []string{"x/identity/types/abci_lifecycle_v2.go:GroupIdentityProposalUpdatesV2", "x/identity/types/abci_lifecycle_v2_test.go:TestIdentityABCIPlusPrecheckAndProposalGroupingV2"}},
+				{ID: IdentityRoadmapTaskBoundedExpiryProcessingV2, Evidence: []string{"x/identity/types/abci_lifecycle_v2.go:FinalizeIdentityABCIPlusV2", "x/identity/types/abci_lifecycle_v2_test.go:TestIdentityABCIPlusFinalizeBoundedExpiryAndCacheEventsV2"}},
+				{ID: IdentityRoadmapTaskAdaptiveSyncRecoveryTestsV2, Evidence: []string{"x/identity/types/adaptive_sync_v2.go:RestoreIdentityAdaptiveSyncSnapshotV2", "x/identity/types/adaptive_sync_v2_test.go:TestIdentityAdaptiveSyncSnapshotRestoreProofReadyWithAuctionsAndExpiryV2"}},
+				{ID: IdentityRoadmapTaskCacheInvalidationEventTestsV2, Evidence: []string{"x/identity/types/resolution_cache_v2.go:InvalidateIdentityResolutionCachesV2", "x/identity/types/resolution_cache_v2.go:ValidateIdentityCacheInvalidationEventV2"}},
+			},
+			ExitCriteria: []IdentityRoadmapExitCriterionV2{
+				{ID: IdentityRoadmapExitIndependentUpdatesParallelizeV2, Evidence: []string{"x/identity/types/blockstm_v2.go:IdentityBlockSTMBatchResolverAccessSetV2", "x/identity/types/blockstm_v2_test.go:TestIdentityBlockSTMBatchResolverUpdatesUseDisjointNameHashesV2"}},
+				{ID: IdentityRoadmapExitDirectResolutionBoundedLargeStateV2, Evidence: []string{"x/identity/types/bench_test.go:BenchmarkIdentityStoreV2DirectResolutionReadPath", "x/identity/types/storev2_spec_test.go:TestIdentityStoreV2SpecPerformanceAccessPatterns"}},
+				{ID: IdentityRoadmapExitPostSyncProofQueriesV2, Evidence: []string{"x/identity/types/adaptive_sync_v2.go:RestoreIdentityAdaptiveSyncSnapshotV2", "x/identity/types/adaptive_sync_v2_test.go:TestIdentityAdaptiveSyncSnapshotRestoreProofReadyWithAuctionsAndExpiryV2"}},
+			},
+		},
 	}}
 	roadmap.RoadmapHash = ComputeIdentityImplementationRoadmapHashV2(roadmap)
 	return roadmap
@@ -236,6 +294,8 @@ func requiredIdentityRoadmapPhaseIDsV2() []IdentityImplementationRoadmapPhaseIDV
 		IdentityRoadmapPhase2UnifiedResolverV2,
 		IdentityRoadmapPhase3SubdomainsZonesV2,
 		IdentityRoadmapPhase4ProofResolutionV2,
+		IdentityRoadmapPhase5ExecutionV2,
+		IdentityRoadmapPhase6PerformanceV2,
 	}
 }
 
@@ -274,6 +334,10 @@ func requiredIdentityRoadmapTasksV2(phase IdentityImplementationRoadmapPhaseIDV2
 		return []IdentityImplementationRoadmapTaskIDV2{IdentityRoadmapTaskSubdomainModuleV2, IdentityRoadmapTaskDelegatedSubdomainCreationV2, IdentityRoadmapTaskPartialDelegationV2, IdentityRoadmapTaskDetachedSubdomainsV2, IdentityRoadmapTaskZonePoliciesV2, IdentityRoadmapTaskRecursivePathQueriesV2}
 	case IdentityRoadmapPhase4ProofResolutionV2:
 		return []IdentityImplementationRoadmapTaskIDV2{IdentityRoadmapTaskProofVerificationModuleV2, IdentityRoadmapTaskDirectResolutionProofQueryV2, IdentityRoadmapTaskRecursiveResolutionProofQueryV2, IdentityRoadmapTaskReverseProofQueryV2, IdentityRoadmapTaskNonExistenceProofQueryV2, IdentityRoadmapTaskLightClientVerificationSDKV2}
+	case IdentityRoadmapPhase5ExecutionV2:
+		return []IdentityImplementationRoadmapTaskIDV2{IdentityRoadmapTaskRoutingIntegrationModuleV2, IdentityRoadmapTaskSendByNameSDKHelperV2, IdentityRoadmapTaskInvokeByNameSDKHelperV2, IdentityRoadmapTaskServiceDiscoveryHelperV2, IdentityRoadmapTaskInterfaceDescriptorVerificationHelperV2, IdentityRoadmapTaskWalletDisplayStatesV2}
+	case IdentityRoadmapPhase6PerformanceV2:
+		return []IdentityImplementationRoadmapTaskIDV2{IdentityRoadmapTaskStoreV2ResolutionBenchmarksV2, IdentityRoadmapTaskBlockSTMBatchBenchmarksV2, IdentityRoadmapTaskABCIProposalGroupingV2, IdentityRoadmapTaskBoundedExpiryProcessingV2, IdentityRoadmapTaskAdaptiveSyncRecoveryTestsV2, IdentityRoadmapTaskCacheInvalidationEventTestsV2}
 	default:
 		return nil
 	}
@@ -291,6 +355,10 @@ func requiredIdentityRoadmapExitsV2(phase IdentityImplementationRoadmapPhaseIDV2
 		return []IdentityImplementationRoadmapExitIDV2{IdentityRoadmapExitRecursiveScopedDelegationV2, IdentityRoadmapExitParentChildExpiryRulesV2, IdentityRoadmapExitZonePolicyProofQueryableV2}
 	case IdentityRoadmapPhase4ProofResolutionV2:
 		return []IdentityImplementationRoadmapExitIDV2{IdentityRoadmapExitLightClientAllTargetsV2, IdentityRoadmapExitExplicitProofFailuresV2, IdentityRoadmapExitProofVectorsModuleVersionsV2}
+	case IdentityRoadmapPhase5ExecutionV2:
+		return []IdentityImplementationRoadmapExitIDV2{IdentityRoadmapExitPresigningTargetResolutionV2, IdentityRoadmapExitWalletProofBackedTargetsV2, IdentityRoadmapExitInterfaceServiceHashVerifiedV2}
+	case IdentityRoadmapPhase6PerformanceV2:
+		return []IdentityImplementationRoadmapExitIDV2{IdentityRoadmapExitIndependentUpdatesParallelizeV2, IdentityRoadmapExitDirectResolutionBoundedLargeStateV2, IdentityRoadmapExitPostSyncProofQueriesV2}
 	default:
 		return nil
 	}

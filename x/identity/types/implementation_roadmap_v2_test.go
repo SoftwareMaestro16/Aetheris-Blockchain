@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIdentityImplementationRoadmapV2CoversPhases0To2(t *testing.T) {
+func TestIdentityImplementationRoadmapV2CoversPhases0To6(t *testing.T) {
 	roadmap := DefaultIdentityImplementationRoadmapV2()
 	require.NoError(t, ValidateIdentityImplementationRoadmapV2(roadmap))
-	require.Len(t, roadmap.Phases, 5)
+	require.Len(t, roadmap.Phases, 7)
 	require.NotEmpty(t, roadmap.RoadmapHash)
 
 	phase0 := roadmap.Phases[0]
@@ -93,6 +93,38 @@ func TestIdentityImplementationRoadmapV2CoversPhases0To2(t *testing.T) {
 		IdentityRoadmapExitLightClientAllTargetsV2,
 		IdentityRoadmapExitExplicitProofFailuresV2,
 		IdentityRoadmapExitProofVectorsModuleVersionsV2,
+	})
+
+	phase5 := roadmap.Phases[5]
+	require.Equal(t, IdentityRoadmapPhase5ExecutionV2, phase5.ID)
+	requireRoadmapTasksV2(t, phase5, []IdentityImplementationRoadmapTaskIDV2{
+		IdentityRoadmapTaskRoutingIntegrationModuleV2,
+		IdentityRoadmapTaskSendByNameSDKHelperV2,
+		IdentityRoadmapTaskInvokeByNameSDKHelperV2,
+		IdentityRoadmapTaskServiceDiscoveryHelperV2,
+		IdentityRoadmapTaskInterfaceDescriptorVerificationHelperV2,
+		IdentityRoadmapTaskWalletDisplayStatesV2,
+	})
+	requireRoadmapExitsV2(t, phase5, []IdentityImplementationRoadmapExitIDV2{
+		IdentityRoadmapExitPresigningTargetResolutionV2,
+		IdentityRoadmapExitWalletProofBackedTargetsV2,
+		IdentityRoadmapExitInterfaceServiceHashVerifiedV2,
+	})
+
+	phase6 := roadmap.Phases[6]
+	require.Equal(t, IdentityRoadmapPhase6PerformanceV2, phase6.ID)
+	requireRoadmapTasksV2(t, phase6, []IdentityImplementationRoadmapTaskIDV2{
+		IdentityRoadmapTaskStoreV2ResolutionBenchmarksV2,
+		IdentityRoadmapTaskBlockSTMBatchBenchmarksV2,
+		IdentityRoadmapTaskABCIProposalGroupingV2,
+		IdentityRoadmapTaskBoundedExpiryProcessingV2,
+		IdentityRoadmapTaskAdaptiveSyncRecoveryTestsV2,
+		IdentityRoadmapTaskCacheInvalidationEventTestsV2,
+	})
+	requireRoadmapExitsV2(t, phase6, []IdentityImplementationRoadmapExitIDV2{
+		IdentityRoadmapExitIndependentUpdatesParallelizeV2,
+		IdentityRoadmapExitDirectResolutionBoundedLargeStateV2,
+		IdentityRoadmapExitPostSyncProofQueriesV2,
 	})
 
 	requireCoverageReferencesExistV2(t, identityRoadmapEvidenceReferencesV2(roadmap))
