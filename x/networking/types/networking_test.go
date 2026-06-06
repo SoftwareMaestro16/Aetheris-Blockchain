@@ -3197,6 +3197,152 @@ func TestEclipseResistancePlanMaintainsDiversityAndProofBackedRouting(t *testing
 	require.ErrorContains(t, ValidateEclipseResistancePlan(badPlan), "identity cluster")
 }
 
+func TestSpamResistanceSignedEnvelopeRateLimitsAndResourceBackedAds(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	privateKey := deterministicPrivateKey(0x7b)
+	signer, err := SignNodeRecord(NodeRecord{
+		Roles:                []NodeRole{NodeRoleService},
+		NetworkAddressesHash: HashParts("network-addresses", "signed-envelope"),
+		ServicesSupported:    []string{"svc.secure"},
+		ProtocolVersions:     []string{DefaultProtocolVersion},
+		ExpiresHeight:        100,
+	}, privateKey, salt)
+	require.NoError(t, err)
+
+	envelope := testEnvelope(ChannelService, 1024, 20, 1, "signed-security-envelope")
+	signed, err := SignSecurityEnvelope(envelope, signer, privateKey, 20)
+	require.NoError(t, err)
+	require.NoError(t, signed.Validate(signer.NodePubKey))
+	tampered := signed
+	tampered.Envelope.PayloadHash = HashParts("tampered-envelope")
+	require.ErrorContains(t, tampered.Validate(signer.NodePubKey), "signature")
+
+	policy := DefaultNetworkSecurityPolicy()
+	decision, err := EvaluatePeerRateLimit(policy, PeerRateUsage{
+		PeerNodeID:  signer.NodeID,
+		Channel:     ChannelService,
+		Messages:    policy.MaxPeerMessagesPerWindow + 1,
+		Bytes:       9 << 20,
+		WindowStart: 20,
+		WindowEnd:   20,
+	})
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.ExceededMessages)
+	require.True(t, decision.ExceededBytes)
+	require.True(t, decision.ThrottlePeer)
+
+	req := testSessionRequest(signer, signedNodeRecord(t, 0x7c, salt, 100, NodeRoleFull), 20, 40, "cost-limited", nil)
+	report, err := EvaluateHandshakeCost(req, policy)
+	require.NoError(t, err)
+	require.True(t, report.Accepted)
+	tightPolicy := policy
+	tightPolicy.MaxHandshakeCostUnits = 1
+	report, err = EvaluateHandshakeCost(req, tightPolicy)
+	require.NoError(t, err)
+	require.False(t, report.Accepted)
+
+	require.NoError(t, ValidatePayloadSize(envelope, policy))
+	tightPayloadPolicy := policy
+	tightPayloadPolicy.MaxPayloadBytes = 512
+	require.ErrorContains(t, ValidatePayloadSize(envelope, tightPayloadPolicy), "payload size")
+
+	record := testSignedDiscoveryObjectRecord(t, signer, 0x7b, salt, DRTObjectServiceEndpoint, HashParts("target", "svc.secure"), HashParts("endpoint", "svc.secure"), "", "svc.secure", "", 90)
+	ad := testDRTAdvertisement(DRTObjectServiceEndpoint, signer, "", "", "svc.secure", HashParts("endpoint", "svc.secure"), policy.MinServiceStakeWeight, 8_000, 20, 90)
+	ad.Discovery = record
+	ad.ObjectID = ComputeDRTObjectID(ad)
+	ad.AdvertisementID = ComputeDRTAdvertisementID(ad)
+	require.NoError(t, ValidateResourceBackedAdvertisement(ad, salt, 20, policy, false))
+	ad.StakeWeight = policy.MinServiceStakeWeight - 1
+	ad.AdvertisementID = ComputeDRTAdvertisementID(ad)
+	require.ErrorContains(t, ValidateResourceBackedAdvertisement(ad, salt, 20, policy, false), "stake backed")
+}
+
+func TestSpamResistanceChunkLimitsDuplicateSuppressionAndSimulations(t *testing.T) {
+	policy := DefaultNetworkSecurityPolicy()
+	source := HashParts("spam-source")
+	target := HashParts("spam-target")
+	payload := bytes.Repeat([]byte("spam-chunk"), 64)
+	chunks, err := ChunkPayload(payload, 64)
+	require.NoError(t, err)
+	transfer, err := NewRL2TransferFromChunks(source, target, RL2PayloadStorageObject, chunks, PriorityForChannel(ChannelData), 0, RL2FECNone)
+	require.NoError(t, err)
+	request, err := NewRL2ChunkRequest(transfer, []uint32{0})
+	require.NoError(t, err)
+	require.NoError(t, ValidateChunkRequestLimit(request, transfer, policy))
+
+	badRequest := request
+	badRequest.MissingIndexes = []uint32{1, 1}
+	require.ErrorContains(t, ValidateChunkRequestLimit(badRequest, transfer, policy), "duplicate")
+	tightPolicy := policy
+	tightPolicy.MaxChunkRequestsPerWindow = 1
+	badRequest.MissingIndexes = []uint32{1, 2}
+	require.ErrorContains(t, ValidateChunkRequestLimit(badRequest, transfer, tightPolicy), "limit")
+
+	origin := signedNodeRecord(t, 0x7d, []byte("aetheris-test-network"), 100, NodeRoleFull)
+	msg, err := SignBroadcastMessage(BroadcastMessage{
+		OriginNode:  origin.NodeID,
+		OverlayID:   HashParts("spam-overlay"),
+		PayloadHash: HashParts("spam-payload"),
+		PayloadType: BroadcastPayloadService,
+		TTL:         5,
+		Priority:    PriorityForChannel(ChannelService),
+		FanoutPolicy: BroadcastFanoutPolicy{
+			TreeFanout:   1,
+			GossipFanout: 2,
+			OverlayBound: true,
+		},
+		Height: 20,
+	}, deterministicPrivateKey(0x7d), []byte("aetheris-test-network"))
+	require.NoError(t, err)
+	cache := NewBroadcastDedupCache(4)
+	cache, accepted, err := SuppressDuplicateBroadcast(cache, msg, origin.NodeID, 20)
+	require.NoError(t, err)
+	require.True(t, accepted)
+	_, accepted, err = SuppressDuplicateBroadcast(cache, msg, origin.NodeID, 20)
+	require.NoError(t, err)
+	require.False(t, accepted)
+
+	spamResult, err := SimulateSpamResistance(policy, PeerRateUsage{
+		PeerNodeID:  origin.NodeID,
+		Channel:     ChannelService,
+		Messages:    policy.MaxPeerMessagesPerWindow + 10,
+		Bytes:       10 << 20,
+		WindowStart: 20,
+		WindowEnd:   20,
+	}, []BroadcastMessage{msg, msg}, origin.NodeID, 20)
+	require.NoError(t, err)
+	require.True(t, spamResult.Throttled)
+	require.Contains(t, spamResult.Threats, ThreatSpamFlood)
+	require.Contains(t, spamResult.Threats, ThreatBandwidthExhaustion)
+
+	conflict := msg
+	conflict.PayloadHash = HashParts("spam-conflicting-payload")
+	conflict.Signature = nil
+	conflict.BroadcastID = msg.BroadcastID
+	conflict.Signature = msg.Signature
+	manipulation, err := SimulateRoutingManipulation([]BroadcastMessage{msg, conflict}, origin.NodeID, 20)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), manipulation.FaultsDetected)
+	require.Contains(t, manipulation.Threats, ThreatRoutingManipulation)
+
+	graph := AdaptiveOverlayGraph{
+		OverlayID:    HashParts("spam-eclipse-overlay"),
+		LocalNodeID:  HashParts("spam-eclipse-local"),
+		RoutingEpoch: 1,
+		PolicyHash:   HashParts("spam-eclipse-policy"),
+		RandomSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("only-random", []NodeRole{NodeRoleFull}, []string{"zone-a"}),
+		},
+		FallbackSet: []AdaptivePeer{
+			testSecurityAdaptivePeer("fallback", []NodeRole{NodeRoleFull}, []string{"zone-a"}),
+		},
+	}
+	_, threats, err := SimulateEclipseResistance(graph, nil, DefaultEclipseResistancePolicy(), 1)
+	require.NoError(t, err)
+	require.Contains(t, threats, ThreatEclipseAttack)
+}
+
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
 	metrics := PeerMetrics{LatencyMillis: 25, ReliabilityBps: 9_900, ThroughputBytesPerSec: 32 << 20}
 	score, err := ComputePeerScore(metrics)
