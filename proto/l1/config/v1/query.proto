@@ -1,0 +1,32 @@
+syntax = "proto3";
+package l1.config.v1;
+
+import "l1/config/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/config/types";
+
+message QueryParamsRequest {}
+
+message QueryParamsResponse {
+  Params params = 1;
+}
+
+message QueryEntryRequest {
+  string key = 1;
+}
+
+message QueryEntryResponse {
+  ConfigEntry entry = 1;
+}
+
+message QueryEntriesRequest {}
+
+message QueryEntriesResponse {
+  repeated ConfigEntry entries = 1;
+}
+
+service Query {
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+  rpc Entry(QueryEntryRequest) returns (QueryEntryResponse);
+  rpc Entries(QueryEntriesRequest) returns (QueryEntriesResponse);
+}

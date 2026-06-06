@@ -22,6 +22,7 @@ import (
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
+	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feestypes "github.com/sovereign-l1/l1/x/fees/types"
 	loadtypes "github.com/sovereign-l1/l1/x/load/types"
@@ -51,6 +52,10 @@ var aetherCorePrototypeModules = []string{
 	paymentstypes.ModuleName,
 }
 
+var aetherCoreSystemModules = []string{
+	configtypes.ModuleName,
+}
+
 func AetherCoreRoutingExecutionPoint() RoutingExecutionPoint {
 	return RoutingExecutionPointAnteAdmissionOnly
 }
@@ -71,6 +76,16 @@ func AetherCorePrototypeStoreKeys() []string {
 	}
 }
 
+func AetherCoreSystemModuleNames() []string {
+	return slices.Clone(aetherCoreSystemModules)
+}
+
+func AetherCoreSystemStoreKeys() []string {
+	return []string{
+		configtypes.StoreKey,
+	}
+}
+
 func aetherCorePreBlockerOrder() []string {
 	return []string{upgradetypes.ModuleName, authtypes.ModuleName}
 }
@@ -86,6 +101,7 @@ func aetherCoreBeginBlockerOrder() []string {
 		genutiltypes.ModuleName,
 		authz.ModuleName,
 		epochstypes.ModuleName,
+		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
@@ -104,6 +120,7 @@ func aetherCoreEndBlockerOrder() []string {
 		genutiltypes.ModuleName,
 		feegrant.ModuleName,
 		protocolpooltypes.ModuleName,
+		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
@@ -132,6 +149,7 @@ func aetherCoreInitGenesisOrder() []string {
 		consensusparamtypes.ModuleName,
 		epochstypes.ModuleName,
 		protocolpooltypes.ModuleName,
+		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
@@ -163,6 +181,7 @@ func aetherCoreExportGenesisOrder() []string {
 		upgradetypes.ModuleName,
 		vestingtypes.ModuleName,
 		epochstypes.ModuleName,
+		configtypes.ModuleName,
 		aethercoretypes.ModuleName,
 		loadtypes.ModuleName,
 		routingtypes.ModuleName,
@@ -192,6 +211,17 @@ func (app *L1App) ValidateAetherCoreWiringGate() error {
 		}
 		if _, found := maccPerms[moduleName]; found {
 			return fmt.Errorf("prototype module %s must not have module account permissions", moduleName)
+		}
+	}
+	for _, moduleName := range AetherCoreSystemModuleNames() {
+		if _, found := app.ModuleManager.Modules[moduleName]; !found {
+			return fmt.Errorf("system module %s is not registered", moduleName)
+		}
+		if _, found := app.keys[moduleName]; !found {
+			return fmt.Errorf("system module %s store key is not mounted", moduleName)
+		}
+		if _, found := maccPerms[moduleName]; found {
+			return fmt.Errorf("system module %s must not have module account permissions", moduleName)
 		}
 	}
 	return nil

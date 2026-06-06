@@ -48,6 +48,8 @@ import (
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
+	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
+	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -220,6 +222,7 @@ func (app *L1App) initKeepers(
 	epochsKeeper := epochskeeper.NewKeeper(runtime.NewKVStoreService(keys[epochstypes.StoreKey]), appCodec)
 	app.EpochsKeeper = &epochsKeeper
 	app.EpochsKeeper.SetHooks(epochstypes.NewMultiEpochHooks())
+	app.ConfigKeeper = configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey]))
 
 	app.TokenFactoryKeeper = tokenfactorykeeper.NewKeeper(
 		appCodec,

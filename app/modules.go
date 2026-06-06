@@ -33,6 +33,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/upgrade"
 
 	aethercoremodule "github.com/sovereign-l1/l1/x/aethercore"
+	configmodule "github.com/sovereign-l1/l1/x/config"
 	dexmodule "github.com/sovereign-l1/l1/x/dex"
 	feesmodule "github.com/sovereign-l1/l1/x/fees"
 	loadmodule "github.com/sovereign-l1/l1/x/load"
@@ -67,6 +68,7 @@ func (app *L1App) initModules(
 		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		epochs.NewAppModule(app.EpochsKeeper),
 		protocolpool.NewAppModule(app.ProtocolPoolKeeper, app.AccountKeeper, app.BankKeeper),
+		configmodule.NewAppModule(&app.ConfigKeeper),
 		aethercoremodule.NewAppModule(app.AetherCoreKeeper),
 		loadmodule.NewAppModule(app.LoadKeeper),
 		routingmodule.NewAppModule(app.RoutingKeeper),

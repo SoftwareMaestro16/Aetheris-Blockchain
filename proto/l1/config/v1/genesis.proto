@@ -1,0 +1,31 @@
+syntax = "proto3";
+package l1.config.v1;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/config/types";
+
+message GenesisState {
+  uint64 version = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+  ConfigState state = 3 [(gogoproto.nullable) = false];
+}
+
+message Params {
+  string authority = 1;
+  uint32 max_entries = 2;
+  uint32 max_key_bytes = 3;
+  uint32 max_value_bytes = 4;
+}
+
+message ConfigState {
+  repeated ConfigEntry entries = 1 [(gogoproto.nullable) = false];
+}
+
+message ConfigEntry {
+  string key = 1;
+  string value = 2;
+  string owner = 3;
+  uint64 version = 4;
+  int64 updated_height = 5;
+}

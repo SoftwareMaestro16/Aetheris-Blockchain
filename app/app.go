@@ -54,6 +54,8 @@ import (
 	appparams "github.com/sovereign-l1/l1/app/params"
 	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
+	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
+	configtypes "github.com/sovereign-l1/l1/x/config/types"
 	dexkeeper "github.com/sovereign-l1/l1/x/dex/keeper"
 	dextypes "github.com/sovereign-l1/l1/x/dex/types"
 	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
@@ -68,6 +70,8 @@ import (
 	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
 	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
 	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
+	schedulerkeeper "github.com/sovereign-l1/l1/x/scheduler/keeper"
+	schedulertypes "github.com/sovereign-l1/l1/x/scheduler/types"
 	tokenfactorykeeper "github.com/sovereign-l1/l1/x/tokenfactory/keeper"
 	tokenfactorytypes "github.com/sovereign-l1/l1/x/tokenfactory/types"
 	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
@@ -138,6 +142,7 @@ type L1App struct {
 	AuthzKeeper        authzkeeper.Keeper
 	EpochsKeeper       *epochskeeper.Keeper
 	ProtocolPoolKeeper protocolpoolkeeper.Keeper
+	ConfigKeeper       configkeeper.Keeper
 	TokenFactoryKeeper tokenfactorykeeper.Keeper
 	DexKeeper          dexkeeper.Keeper
 	FeesKeeper         feeskeeper.Keeper
@@ -247,6 +252,7 @@ func NewL1App(
 		authzkeeper.StoreKey,
 		epochstypes.StoreKey,
 		protocolpooltypes.StoreKey,
+		configtypes.StoreKey,
 		tokenfactorytypes.StoreKey,
 		dextypes.StoreKey,
 		feestypes.StoreKey,

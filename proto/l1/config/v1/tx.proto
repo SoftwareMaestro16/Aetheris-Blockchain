@@ -1,0 +1,28 @@
+syntax = "proto3";
+package l1.config.v1;
+
+import "l1/config/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/config/types";
+
+message MsgUpdateParams {
+  string authority = 1;
+  Params params = 2;
+}
+
+message MsgUpdateParamsResponse {}
+
+message MsgUpsertConfigEntry {
+  string authority = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message MsgUpsertConfigEntryResponse {
+  ConfigEntry entry = 1;
+}
+
+service Msg {
+  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc UpsertConfigEntry(MsgUpsertConfigEntry) returns (MsgUpsertConfigEntryResponse);
+}
