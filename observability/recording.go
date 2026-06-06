@@ -114,6 +114,18 @@ func RecordFeeModelEfficiency(healthy bool, riskCount int) {
 	SetGauge(MetricFeeModelEfficiencyRisks, nil, float64(riskCount))
 }
 
+func RecordValidatorProfitability(state string, rewardPerVotingPowerNaet int64, profitabilityMarginBps int32) {
+	if rewardPerVotingPowerNaet < 0 {
+		rewardPerVotingPowerNaet = 0
+	}
+	if state == "" {
+		state = "unknown"
+	}
+	labels := Labels{"state": state, "denom": "naet"}
+	SetGauge(MetricValidatorRewardPerPowerNaet, labels, float64(rewardPerVotingPowerNaet))
+	SetGauge(MetricValidatorProfitabilityBps, Labels{"state": state}, float64(profitabilityMarginBps))
+}
+
 func (r *Registry) collectRuntime() {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)

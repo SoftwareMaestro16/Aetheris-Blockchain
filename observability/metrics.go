@@ -42,6 +42,8 @@ const (
 	MetricStakingCentralizationRisks   = "aetheris_staking_centralization_risks"
 	MetricFeeModelEfficiencyHealthy    = "aetheris_fee_model_efficiency_healthy"
 	MetricFeeModelEfficiencyRisks      = "aetheris_fee_model_efficiency_risks"
+	MetricValidatorRewardPerPowerNaet  = "aetheris_validator_reward_per_power_naet"
+	MetricValidatorProfitabilityBps    = "aetheris_validator_profitability_bps"
 	MetricLocalnetHealth               = "aetheris_localnet_health"
 	MetricProcessUptimeSeconds         = "aetheris_process_uptime_seconds"
 	MetricProcessMemoryBytes           = "aetheris_process_memory_bytes"
@@ -97,6 +99,8 @@ var Definitions = []Definition{
 	{MetricStakingCentralizationRisks, "Number of staking centralization risks in the last evaluation.", kindGauge},
 	{MetricFeeModelEfficiencyHealthy, "Whether the last fee model efficiency evaluation found no risks.", kindGauge},
 	{MetricFeeModelEfficiencyRisks, "Number of fee model efficiency risks in the last evaluation.", kindGauge},
+	{MetricValidatorRewardPerPowerNaet, "Validator reward per unit of voting power in naet, labeled by validator state.", kindGauge},
+	{MetricValidatorProfitabilityBps, "Validator profitability margin in basis points, labeled by validator state.", kindGauge},
 	{MetricLocalnetHealth, "Localnet metrics endpoint health marker.", kindGauge},
 	{MetricProcessUptimeSeconds, "Aetheris process uptime in seconds.", kindGauge},
 	{MetricProcessMemoryBytes, "Go runtime memory allocation bytes.", kindGauge},

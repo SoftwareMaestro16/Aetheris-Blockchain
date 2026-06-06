@@ -53,6 +53,8 @@ func TestMetricNamesSnapshot(t *testing.T) {
 		MetricStakingCentralizationRisks,
 		MetricFeeModelEfficiencyHealthy,
 		MetricFeeModelEfficiencyRisks,
+		MetricValidatorRewardPerPowerNaet,
+		MetricValidatorProfitabilityBps,
 		MetricLocalnetHealth,
 		MetricProcessUptimeSeconds,
 		MetricProcessMemoryBytes,
@@ -156,6 +158,8 @@ func (r *Registry) RecordTestSamples() {
 	r.SetGauge(MetricStakingCentralizationRisks, nil, 0)
 	r.SetGauge(MetricFeeModelEfficiencyHealthy, nil, 1)
 	r.SetGauge(MetricFeeModelEfficiencyRisks, nil, 0)
+	r.SetGauge(MetricValidatorRewardPerPowerNaet, Labels{"state": "active", "denom": "naet"}, 100)
+	r.SetGauge(MetricValidatorProfitabilityBps, Labels{"state": "active"}, 1_000)
 }
 
 func renderRegistry(t *testing.T, reg *Registry) string {
