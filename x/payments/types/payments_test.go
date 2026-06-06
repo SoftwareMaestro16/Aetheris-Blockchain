@@ -1875,6 +1875,230 @@ func TestLocalSignerWriteAheadPreventsDoubleSign(t *testing.T) {
 	require.ErrorContains(t, err, "same nonce replacement")
 }
 
+func TestPaymentSignerAPIEnforcesLimitsPauseAndAuditLog(t *testing.T) {
+	alice := testAddress(0x65)
+	bob := testAddress(0x66)
+	gossipKey := testAddress(0x67)
+	channel := signedChannel(t, "signer-api-limits", "1000", alice, bob)
+	stateTwo := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "990"},
+		{Participant: bob, Amount: "10"},
+	})
+	stateThree := signedState(t, channel, 3, stateTwo.StateHash, []Balance{
+		{Participant: alice, Amount: "970"},
+		{Participant: bob, Amount: "30"},
+	})
+
+	api, err := NewPaymentSignerAPI(PaymentSignerConfig{
+		Signer:               alice,
+		KeyRole:              SignerKeyRoleParticipant,
+		FundsKey:             alice,
+		GossipKey:            gossipKey,
+		IsolationMode:        SignerIsolationHardware,
+		AutomatedSigning:     true,
+		MaxAutomatedAmount:   "25",
+		MaxAutomatedPerBlock: 2,
+		ChannelLimits: []ChannelSigningLimit{{
+			ChannelID:        channel.ChannelID,
+			MaxNonce:         3,
+			MaxAmount:        "25",
+			MaxSignatures:    2,
+			ValidUntilHeight: 100,
+		}},
+	}, SignerPersistence{}, nil)
+	require.NoError(t, err)
+
+	api, resp, err := api.SignState(SignStateRequest{
+		State:         stateTwo,
+		Signer:        alice,
+		KeyRole:       SignerKeyRoleParticipant,
+		Amount:        "10",
+		Automated:     true,
+		CurrentHeight: 20,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.WALRecord.Released)
+	require.Equal(t, SignerIsolationHardware, resp.WALRecord.IsolationMode)
+	require.Equal(t, resp.Signature.SignatureHash, resp.AuditLog.SignatureHash)
+	require.Equal(t, ComputeSignedStateAuditHash(resp.AuditLog), resp.AuditLog.AuditHash)
+	require.NoError(t, resp.AuditLog.Validate())
+	require.Equal(t, uint64(2), api.NonceStore.HighestSignedNonce(alice, channel.ChainID, channel.ChannelID, 1))
+	require.Len(t, api.AuditLogs, 1)
+
+	api, _, err = api.SignState(SignStateRequest{
+		State:         stateThree,
+		Signer:        alice,
+		KeyRole:       SignerKeyRoleParticipant,
+		Amount:        "20",
+		Automated:     true,
+		CurrentHeight: 20,
+	})
+	require.NoError(t, err)
+
+	stateFour := signedState(t, channel, 4, stateThree.StateHash, []Balance{
+		{Participant: alice, Amount: "960"},
+		{Participant: bob, Amount: "40"},
+	})
+	signatureLimited := api
+	signatureLimited.Config.ChannelLimits[0].MaxNonce = 5
+	_, _, err = signatureLimited.SignState(SignStateRequest{
+		State:         stateFour,
+		Signer:        alice,
+		KeyRole:       SignerKeyRoleParticipant,
+		Amount:        "10",
+		Automated:     true,
+		CurrentHeight: 21,
+	})
+	require.ErrorContains(t, err, "signature limit")
+
+	nonceLimited := api
+	nonceLimited.Config.ChannelLimits = []ChannelSigningLimit{{
+		ChannelID:        channel.ChannelID,
+		MaxNonce:         3,
+		MaxAmount:        "25",
+		ValidUntilHeight: 100,
+	}}
+	_, _, err = nonceLimited.SignState(SignStateRequest{
+		State:         stateFour,
+		Signer:        alice,
+		KeyRole:       SignerKeyRoleParticipant,
+		Amount:        "10",
+		Automated:     true,
+		CurrentHeight: 21,
+	})
+	require.ErrorContains(t, err, "nonce limit")
+
+	amountLimited := api
+	amountLimited.Config.ChannelLimits = []ChannelSigningLimit{{
+		ChannelID:        channel.ChannelID,
+		MaxNonce:         5,
+		MaxAmount:        "25",
+		ValidUntilHeight: 100,
+	}}
+	_, _, err = amountLimited.SignState(SignStateRequest{
+		State:         stateFour,
+		Signer:        alice,
+		KeyRole:       SignerKeyRoleParticipant,
+		Amount:        "26",
+		Automated:     true,
+		CurrentHeight: 21,
+	})
+	require.ErrorContains(t, err, "amount limit")
+
+	pausedConfig, err := EmergencyPauseSigner(api.Config, alice, channel.ChannelID, "compromised key", 25)
+	require.NoError(t, err)
+	api.Config = pausedConfig
+	_, _, err = api.SignState(SignStateRequest{
+		State:         stateTwo,
+		Signer:        alice,
+		KeyRole:       SignerKeyRoleParticipant,
+		Amount:        "10",
+		Automated:     true,
+		CurrentHeight: 26,
+	})
+	require.ErrorContains(t, err, "emergency paused")
+}
+
+func TestPaymentSignerAPISeparatesRoutingAndFundsKeys(t *testing.T) {
+	fundsKey := testAddress(0x68)
+	routeKey := testAddress(0x69)
+	counterparty := testAddress(0x6a)
+	channel := signedChannel(t, "signer-routing-separation", "1000", fundsKey, counterparty)
+	state := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: fundsKey, Amount: "990"},
+		{Participant: counterparty, Amount: "10"},
+	})
+
+	_, err := NewPaymentSignerAPI(PaymentSignerConfig{
+		Signer:    routeKey,
+		KeyRole:   SignerKeyRoleRoutingGossip,
+		FundsKey:  fundsKey,
+		GossipKey: fundsKey,
+	}, SignerPersistence{}, nil)
+	require.ErrorContains(t, err, "separate from funds key")
+
+	routingAPI, err := NewPaymentSignerAPI(PaymentSignerConfig{
+		Signer:    routeKey,
+		KeyRole:   SignerKeyRoleRoutingGossip,
+		FundsKey:  fundsKey,
+		GossipKey: routeKey,
+	}, SignerPersistence{}, nil)
+	require.NoError(t, err)
+
+	_, envelope, err := routingAPI.SignGossip(GossipMessage{
+		MessageType:      GossipNodeAnnouncement,
+		ChainID:          channel.ChainID,
+		NodeID:           routeKey,
+		From:             routeKey,
+		ValidAfterHeight: 10,
+		ValidUntilHeight: 50,
+	}, routeKey, 20)
+	require.NoError(t, err)
+	require.Equal(t, routeKey, envelope.Signature.Signer)
+	require.NoError(t, envelope.ValidateForState(EmptyState(), 20))
+
+	_, _, err = routingAPI.SignState(SignStateRequest{
+		State:         state,
+		Signer:        routeKey,
+		KeyRole:       SignerKeyRoleRoutingGossip,
+		Amount:        "10",
+		CurrentHeight: 20,
+	})
+	require.ErrorContains(t, err, "cannot sign channel state")
+
+	fundsAPI, err := NewPaymentSignerAPI(PaymentSignerConfig{
+		Signer:    fundsKey,
+		KeyRole:   SignerKeyRoleParticipant,
+		FundsKey:  fundsKey,
+		GossipKey: routeKey,
+	}, SignerPersistence{}, nil)
+	require.NoError(t, err)
+	_, _, err = fundsAPI.SignGossip(envelope.Message, fundsKey, 20)
+	require.ErrorContains(t, err, "requires routing gossip")
+}
+
+func TestKeyCompromiseCloseStartsFraudCloseWithLatestState(t *testing.T) {
+	alice := testAddress(0x6b)
+	bob := testAddress(0x6c)
+	channel := signedChannel(t, "key-compromise-close", "1000", alice, bob)
+	state := EmptyState()
+
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	latest := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "450"},
+		{Participant: bob, Amount: "550"},
+	})
+
+	bad := KeyCompromiseCloseRequest{
+		ChannelID:      channel.ChannelID,
+		CompromisedKey: testAddress(0x6d),
+		SafeSubmitter:  bob,
+		LatestState:    latest,
+		CurrentHeight:  20,
+		EvidenceHash:   HashParts("key-compromise", "bad", channel.ChannelID),
+	}
+	_, err = SubmitKeyCompromiseClose(state, bad)
+	require.ErrorContains(t, err, "channel participants")
+
+	next, err := SubmitKeyCompromiseClose(state, KeyCompromiseCloseRequest{
+		ChannelID:      channel.ChannelID,
+		CompromisedKey: alice,
+		SafeSubmitter:  bob,
+		LatestState:    latest,
+		CurrentHeight:  20,
+		SettlementFee:  "0",
+		EvidenceHash:   HashParts("key-compromise", channel.ChannelID, alice),
+	})
+	require.NoError(t, err)
+	require.Equal(t, ChannelStatusPendingClose, next.Channels[0].Status)
+	require.Equal(t, CloseReasonFraud, next.Channels[0].PendingClose.CloseReason)
+	require.Equal(t, bob, next.Channels[0].PendingClose.Submitter)
+	require.Equal(t, latest.StateHash, next.Channels[0].PendingClose.State.StateHash)
+	require.Equal(t, uint64(20)+channel.DisputePeriod, next.Channels[0].PendingClose.SettleAfterHeight)
+}
+
 func TestRollbackVectorsRejectNonceAndPreviousHashRollback(t *testing.T) {
 	alice := testAddress(0x67)
 	bob := testAddress(0x68)
