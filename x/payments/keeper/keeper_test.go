@@ -386,6 +386,101 @@ func TestKeeperConditionalPaymentsModuleMessagesAndInvariants(t *testing.T) {
 	require.ErrorContains(t, err, "already been settled")
 }
 
+func TestKeeperLiquidityOptimizationModuleReservationsForecastsAndDecay(t *testing.T) {
+	k := NewKeeper()
+	gs := DefaultGenesis()
+	gs.Params = prototype.TestnetParams()
+	require.NoError(t, k.InitGenesis(gs))
+
+	alice := keeperAddress(0x79)
+	bob := keeperAddress(0x7a)
+	channel := keeperSignedChannel(t, "keeper-liquidity-optimization", "500", alice, bob)
+	require.NoError(t, k.OpenChannel(channel))
+
+	liquidity, err := k.HandleLiquidityOptimizationMessage(paymentstypes.MsgSetLiquidityLimits{
+		Signer: alice,
+		Limits: paymentstypes.LiquidityLimits{
+			ChannelID:            channel.ChannelID,
+			Participant:          alice,
+			MaxReservedCapacity:  "350",
+			MinAvailableCapacity: "50",
+			MaxBaseFee:           "5",
+			MaxReservationFee:    "3",
+			MaxVirtualSetupFee:   "8",
+			MaxRebalanceLoad:     8,
+		},
+		CurrentHeight: 12,
+	})
+	require.NoError(t, err)
+	require.Len(t, liquidity.Limits, 1)
+
+	liquidity, err = k.HandleLiquidityOptimizationMessage(paymentstypes.MsgAdvertiseLiquidity{
+		Signer: alice,
+		Advertisement: paymentstypes.LiquidityAdvertisement{
+			ChannelID:           channel.ChannelID,
+			Advertiser:          alice,
+			Counterparty:        bob,
+			Capacity:            "300",
+			FeeDenom:            paymentstypes.NativeDenom,
+			BaseFee:             "2",
+			ReservationFee:      "3",
+			VirtualSetupFee:     "5",
+			ReliabilityBps:      9_000,
+			ValidUntilHeight:    80,
+			DepositAmount:       "9",
+			BackedByReservation: true,
+		},
+		RequiredDeposit: "5",
+		CurrentHeight:   13,
+	})
+	require.NoError(t, err)
+	require.Len(t, liquidity.Positions, 1)
+	require.Len(t, liquidity.Forecasts, 1)
+	require.Len(t, liquidity.Scores, 1)
+
+	reservation, err := paymentstypes.BuildSignedLiquidityReservation(paymentstypes.SignedLiquidityReservation{
+		AdvertisementID:  liquidity.Positions[0].FeePolicyID,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		Reserver:         alice,
+		Counterparty:     bob,
+		Capacity:         "200",
+		FeeAmount:        "3",
+		ExpirationHeight: 30,
+		Nonce:            1,
+	}, alice)
+	require.NoError(t, err)
+	liquidity, err = k.HandleLiquidityOptimizationMessage(paymentstypes.MsgReserveLiquidity{
+		Reservation:   reservation,
+		CurrentHeight: 14,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "200", liquidity.Positions[0].ReservedCapacity)
+	require.Equal(t, "100", liquidity.Positions[0].AvailableCapacity)
+
+	forecast, err := k.CapacityForecast(channel.ChannelID, alice, bob, 15, 10)
+	require.NoError(t, err)
+	require.Equal(t, "200", forecast.ReservedCapacity)
+
+	expired, err := k.ExpireLiquidityReservations(31)
+	require.NoError(t, err)
+	require.Len(t, expired, 1)
+	liquidity, err = k.LiquidityOptimizationState()
+	require.NoError(t, err)
+	require.True(t, liquidity.Reservations[0].Released)
+	require.Equal(t, "0", liquidity.Positions[0].ReservedCapacity)
+
+	before := liquidity.Scores[0].Score
+	require.NoError(t, k.DecayLiquidityScores(13+paymentstypes.DefaultGossipTTL, paymentstypes.DefaultGossipTTL))
+	liquidity, err = k.LiquidityOptimizationState()
+	require.NoError(t, err)
+	require.Less(t, liquidity.Scores[0].Score, before)
+
+	exported := k.ExportGenesis()
+	require.Len(t, exported.Liquidity.Positions, 1)
+	require.Len(t, exported.Liquidity.Reservations, 1)
+}
+
 func TestKeeperValidatorAssistedWatchDispute(t *testing.T) {
 	k := NewKeeper()
 	gs := DefaultGenesis()

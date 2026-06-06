@@ -14,9 +14,10 @@ import (
 var genesisKey = []byte{0x01}
 
 type GenesisState struct {
-	Version uint64
-	Params  prototype.Params
-	State   paymentstypes.PaymentsState
+	Version   uint64
+	Params    prototype.Params
+	State     paymentstypes.PaymentsState
+	Liquidity paymentstypes.LiquidityOptimizationState
 }
 
 type Keeper struct {
@@ -34,9 +35,10 @@ func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
 
 func DefaultGenesis() GenesisState {
 	return GenesisState{
-		Version: prototype.CurrentGenesisVersion,
-		Params:  prototype.DefaultParams(),
-		State:   paymentstypes.EmptyState(),
+		Version:   prototype.CurrentGenesisVersion,
+		Params:    prototype.DefaultParams(),
+		State:     paymentstypes.EmptyState(),
+		Liquidity: paymentstypes.EmptyLiquidityOptimizationState(),
 	}
 }
 
@@ -47,7 +49,10 @@ func (gs GenesisState) Validate() error {
 	if err := gs.Params.Validate(); err != nil {
 		return err
 	}
-	return gs.State.Validate()
+	if err := gs.State.Validate(); err != nil {
+		return err
+	}
+	return gs.Liquidity.Validate()
 }
 
 func (k *Keeper) InitGenesis(gs GenesisState) error {
@@ -687,5 +692,6 @@ func (k Keeper) Migrate1to2State(ctx context.Context) error {
 
 func cloneGenesis(gs GenesisState) GenesisState {
 	gs.State = gs.State.Export()
+	gs.Liquidity = gs.Liquidity.Export()
 	return gs
 }

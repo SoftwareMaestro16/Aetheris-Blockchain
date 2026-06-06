@@ -1519,6 +1519,185 @@ func TestLiquidityAdvertisementReservationScoreAndDepositPenalty(t *testing.T) {
 	require.Equal(t, -InvalidGossipPenalty, RoutingScoreForEdge(store, ChannelEdge{ChannelID: channelID, From: alice, To: bob, Capacity: "100", FeeAmount: "1", Active: true}))
 }
 
+func TestLiquidityOptimizationModuleReservationsForecastsFeesAndDecay(t *testing.T) {
+	alice := testAddress(0xae)
+	bob := testAddress(0xaf)
+	channel := signedChannel(t, "liquidity-optimization", "1000", alice, bob)
+	chain := EmptyStateWithChannel(t, channel)
+	state := EmptyLiquidityOptimizationState()
+	var err error
+
+	state, err = ApplyLiquidityOptimizationMessage(chain, state, MsgSetLiquidityLimits{
+		Signer: alice,
+		Limits: LiquidityLimits{
+			ChannelID:            channel.ChannelID,
+			Participant:          alice,
+			MaxReservedCapacity:  "700",
+			MinAvailableCapacity: "100",
+			MaxBaseFee:           "5",
+			MaxReservationFee:    "3",
+			MaxVirtualSetupFee:   "8",
+			MaxProportionalBps:   500,
+			MaxRebalanceLoad:     10,
+		},
+		CurrentHeight: 12,
+	})
+	require.NoError(t, err)
+
+	ad := LiquidityAdvertisement{
+		ChannelID:           channel.ChannelID,
+		Advertiser:          alice,
+		Counterparty:        bob,
+		Capacity:            "600",
+		FeeDenom:            NativeDenom,
+		BaseFee:             "2",
+		ReservationFee:      "3",
+		VirtualSetupFee:     "5",
+		ReliabilityBps:      9_500,
+		ValidUntilHeight:    80,
+		DepositAmount:       "9",
+		BackedByReservation: true,
+	}
+	state, err = ApplyLiquidityOptimizationMessage(chain, state, MsgAdvertiseLiquidity{
+		Signer:          alice,
+		Advertisement:   ad,
+		RequiredDeposit: "5",
+		CurrentHeight:   13,
+	})
+	require.NoError(t, err)
+	require.Len(t, state.Positions, 1)
+	require.Equal(t, "600", state.Positions[0].AvailableCapacity)
+	require.Len(t, state.Forecasts, 1)
+	require.Len(t, state.Scores, 1)
+
+	reservation, err := BuildSignedLiquidityReservation(SignedLiquidityReservation{
+		AdvertisementID:  state.Positions[0].FeePolicyID,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		Reserver:         alice,
+		Counterparty:     bob,
+		Capacity:         "400",
+		FeeAmount:        "3",
+		ExpirationHeight: 30,
+		Nonce:            1,
+	}, alice)
+	require.NoError(t, err)
+	state, err = ApplyLiquidityOptimizationMessage(chain, state, MsgReserveLiquidity{
+		Reservation:   reservation,
+		CurrentHeight: 14,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "400", state.Positions[0].ReservedCapacity)
+	require.Equal(t, "200", state.Positions[0].AvailableCapacity)
+	require.Equal(t, "400", state.Forecasts[0].ReservedCapacity)
+
+	overReserve, err := BuildSignedLiquidityReservation(SignedLiquidityReservation{
+		AdvertisementID:  state.Positions[0].FeePolicyID,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		Reserver:         alice,
+		Counterparty:     bob,
+		Capacity:         "300",
+		FeeAmount:        "3",
+		ExpirationHeight: 30,
+		Nonce:            2,
+	}, alice)
+	require.NoError(t, err)
+	_, err = ApplyLiquidityOptimizationMessage(chain, state, MsgReserveLiquidity{Reservation: overReserve, CurrentHeight: 15})
+	require.ErrorContains(t, err, "over-reservation")
+
+	policy, err := BuildRoutingFeePolicyUpdate(RoutingFeePolicyUpdate{
+		ChainID:                 channel.ChainID,
+		ChannelID:               channel.ChannelID,
+		From:                    alice,
+		To:                      bob,
+		FeeDenom:                NativeDenom,
+		BaseHopFee:              "2",
+		ProportionalFeeBps:      100,
+		LiquidityReservationFee: "3",
+		VirtualChannelSetupFee:  "5",
+		CongestionSurcharge:     "1",
+		FailurePenalty:          "1",
+		MaxHopFee:               "5",
+		ValidAfterHeight:        16,
+		ValidUntilHeight:        50,
+		Sequence:                1,
+	}, alice)
+	require.NoError(t, err)
+	state, err = ApplyLiquidityOptimizationMessage(chain, state, MsgUpdateFeePolicy{
+		Signer: alice,
+		Policy: policy,
+		Bounds: LiquidityFeePolicyBounds{
+			MaxBaseFee:         "5",
+			MaxReservationFee:  "3",
+			MaxVirtualSetupFee: "8",
+			MaxCongestionFee:   "2",
+			MaxFailurePenalty:  "2",
+			MaxHopFee:          "8",
+			MaxProportionalBps: 500,
+			MinValidityWindow:  8,
+			MaxValidityWindow:  80,
+		},
+		CurrentHeight: 16,
+	})
+	require.NoError(t, err)
+	require.Len(t, state.FeePolicies, 1)
+
+	tooHigh := policy
+	tooHigh.BaseHopFee = "9"
+	tooHigh.PolicyHash = ComputeRoutingFeePolicyHash(tooHigh)
+	tooHigh.Signature, err = SignatureForRoutingFeePolicy(tooHigh, alice)
+	require.NoError(t, err)
+	_, err = ApplyLiquidityOptimizationMessage(chain, state, MsgUpdateFeePolicy{
+		Signer:        alice,
+		Policy:        tooHigh,
+		Bounds:        LiquidityFeePolicyBounds{MaxBaseFee: "5"},
+		CurrentHeight: 17,
+	})
+	require.ErrorContains(t, err, "bounds")
+
+	state, err = ApplyLiquidityOptimizationMessage(chain, state, MsgSubmitRebalanceIntent{
+		Signer: alice,
+		Intent: RebalanceIntent{
+			ChannelID:         channel.ChannelID,
+			Owner:             alice,
+			TargetCapacity:    "500",
+			MaxSettlementLoad: 8,
+			Priority:          1,
+			ExpiresHeight:     60,
+		},
+		CurrentHeight: 18,
+	})
+	require.NoError(t, err)
+	require.Len(t, state.RebalanceIntents, 1)
+
+	_, err = ApplyLiquidityOptimizationMessage(chain, state, MsgSubmitRebalanceIntent{
+		Signer: alice,
+		Intent: RebalanceIntent{
+			ChannelID:         channel.ChannelID,
+			Owner:             alice,
+			TargetCapacity:    "500",
+			MaxSettlementLoad: 11,
+			Priority:          1,
+			ExpiresHeight:     60,
+		},
+		CurrentHeight: 19,
+	})
+	require.ErrorContains(t, err, "settlement load")
+
+	state, expired, err := ExpireLiquidityReservations(chain, state, 31)
+	require.NoError(t, err)
+	require.Len(t, expired, 1)
+	require.True(t, state.Reservations[0].Released)
+	require.Equal(t, "0", state.Positions[0].ReservedCapacity)
+	require.Equal(t, "600", state.Positions[0].AvailableCapacity)
+
+	before := state.Scores[0].Score
+	state, err = DecayLiquidityScores(state, 13+DefaultGossipTTL, DefaultGossipTTL)
+	require.NoError(t, err)
+	require.Less(t, state.Scores[0].Score, before)
+}
+
 func TestAsyncExecutionFinalizationQueueIsBoundedAndIdempotent(t *testing.T) {
 	alice := testAddress(0xa6)
 	bob := testAddress(0xa7)
