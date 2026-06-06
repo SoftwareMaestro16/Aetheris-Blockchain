@@ -1915,6 +1915,144 @@ func TestMultiPathSplittingUsesIndependentCapacityAwareRoutes(t *testing.T) {
 	require.NotEmpty(t, result.ScoreHash)
 }
 
+func TestCongestionSignalsIncreaseWeightAndReduceMaxPaymentSize(t *testing.T) {
+	alice := testAddress(0x57)
+	router := testAddress(0x58)
+	bob := testAddress(0x59)
+	direct := signedChannel(t, "congestion-direct", "1000", alice, bob)
+	first := signedChannel(t, "congestion-first", "1000", alice, router)
+	second := signedChannel(t, "congestion-second", "1000", router, bob)
+	state := EmptyState()
+	var err error
+	for _, channel := range []ChannelRecord{direct, first, second} {
+		state, err = OpenChannel(state, channel)
+		require.NoError(t, err)
+	}
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: direct.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "1", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: first.ChannelID, From: alice, To: router, Capacity: "500", FeeAmount: "2", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: second.ChannelID, From: router, To: bob, Capacity: "500", FeeAmount: "2", Active: true})
+	require.NoError(t, err)
+
+	policy := DefaultRoutePolicy()
+	policy, err = ApplyCongestionSnapshot(policy, CongestionSnapshot{
+		ChannelID:                   direct.ChannelID,
+		From:                        alice,
+		To:                          bob,
+		ChannelUpdateFailureRateBps: 9_000,
+		PendingConditionCount:       8,
+		AvgResolutionLatency:        500,
+		RouteRetryCount:             3,
+		ReservePressureBps:          8_000,
+		NodeQueueDelay:              400,
+		LiquidityUpdatedHeight:      10,
+		ObservedHeight:              100,
+	})
+	require.NoError(t, err)
+
+	route, err := SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 100, Policy: policy})
+	require.NoError(t, err)
+	require.Len(t, route.Edges, 2)
+	require.Equal(t, []string{first.ChannelID, second.ChannelID}, []string{route.Edges[0].ChannelID, route.Edges[1].ChannelID})
+
+	cappedPolicy := policy
+	cappedPolicy.ExcludedChannels = []string{first.ChannelID, second.ChannelID}
+	_, err = SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "300", CurrentHeight: 100, Policy: cappedPolicy})
+	require.ErrorContains(t, err, "eligible")
+}
+
+func TestCongestionPenaltyDecayRestoresRoutePreference(t *testing.T) {
+	alice := testAddress(0x5a)
+	bob := testAddress(0x5b)
+	cheap := signedChannel(t, "decay-cheap", "1000", alice, bob)
+	expensive := signedChannel(t, "decay-expensive", "1000", alice, bob)
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, cheap)
+	require.NoError(t, err)
+	state, err = OpenChannel(state, expensive)
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: cheap.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "1", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: expensive.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "9", Active: true})
+	require.NoError(t, err)
+
+	policy := DefaultRoutePolicy()
+	policy.DecayHalfLife = 10
+	policy, err = ApplyCongestionSnapshot(policy, CongestionSnapshot{
+		ChannelID:                   cheap.ChannelID,
+		From:                        alice,
+		To:                          bob,
+		ChannelUpdateFailureRateBps: 9_000,
+		PendingConditionCount:       10,
+		ReservePressureBps:          1_000,
+		ObservedHeight:              10,
+	})
+	require.NoError(t, err)
+	congested, err := SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 10, Policy: policy})
+	require.NoError(t, err)
+	require.Equal(t, expensive.ChannelID, congested.Edges[0].ChannelID)
+
+	decayed := DecayRoutePolicyPenalties(policy, 120)
+	recovered, err := SelectPaymentRoute(state, TopologyStore{}, RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 120, Policy: decayed})
+	require.NoError(t, err)
+	require.Equal(t, cheap.ChannelID, recovered.Edges[0].ChannelID)
+}
+
+func TestCongestionAwareRetryPolicySelectsAlternateRoute(t *testing.T) {
+	alice := testAddress(0x5c)
+	router := testAddress(0x5d)
+	bob := testAddress(0x5e)
+	direct := signedChannel(t, "retry-direct", "1000", alice, bob)
+	first := signedChannel(t, "retry-first", "1000", alice, router)
+	second := signedChannel(t, "retry-second", "1000", router, bob)
+	state := EmptyState()
+	var err error
+	for _, channel := range []ChannelRecord{direct, first, second} {
+		state, err = OpenChannel(state, channel)
+		require.NoError(t, err)
+	}
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: direct.ChannelID, From: alice, To: bob, Capacity: "500", FeeAmount: "1", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: first.ChannelID, From: alice, To: router, Capacity: "500", FeeAmount: "2", Active: true})
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: second.ChannelID, From: router, To: bob, Capacity: "500", FeeAmount: "2", Active: true})
+	require.NoError(t, err)
+
+	result, err := RetryPaymentRoute(state, TopologyStore{}, RouteRetryRequest{
+		Selection: RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 50, Policy: DefaultRoutePolicy()},
+		Failures: []RouteFailureReport{{
+			ChannelID:      direct.ChannelID,
+			From:           alice,
+			To:             bob,
+			FailureClass:   ClassifyRouteFailure("node queue congestion"),
+			Retryable:      true,
+			ObservedHeight: 50,
+		}},
+		Policy: RouteRetryPolicy{MaxAttempts: 3, AlternateRouteLimit: 2, ExcludeFailedEdges: true},
+	})
+	require.NoError(t, err)
+	require.True(t, result.Retryable)
+	require.Equal(t, uint32(2), result.Attempts)
+	require.Len(t, result.Route.Edges, 2)
+	require.Equal(t, []string{first.ChannelID, second.ChannelID}, []string{result.Route.Edges[0].ChannelID, result.Route.Edges[1].ChannelID})
+	require.NotEmpty(t, result.PolicyHash)
+
+	exhausted, err := RetryPaymentRoute(state, TopologyStore{}, RouteRetryRequest{
+		Selection: RouteSelectionRequest{From: alice, To: bob, Amount: "100", CurrentHeight: 50, Policy: DefaultRoutePolicy()},
+		Failures: []RouteFailureReport{
+			{ChannelID: direct.ChannelID, From: alice, To: bob, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 50},
+			{ChannelID: first.ChannelID, From: alice, To: router, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 51},
+			{ChannelID: second.ChannelID, From: router, To: bob, FailureClass: RouteFailureCongestion, Retryable: true, ObservedHeight: 52},
+		},
+		Policy: RouteRetryPolicy{MaxAttempts: 3, AlternateRouteLimit: 2, ExcludeFailedEdges: true},
+	})
+	require.NoError(t, err)
+	require.False(t, exhausted.Retryable)
+	require.Contains(t, exhausted.Reason, "attempts exhausted")
+}
+
 func TestUntrustedTopologyIsRejectedBeforeRouteUse(t *testing.T) {
 	alice := testAddress(0x49)
 	router := testAddress(0x4a)

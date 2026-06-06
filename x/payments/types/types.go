@@ -446,26 +446,74 @@ type EdgeRoutingStats struct {
 	NodeAvailabilityBps    uint32
 	FailureCount           uint32
 	TimeoutMargin          uint64
+	PendingConditionCount  uint32
+	AvgResolutionLatency   uint64
+	RetryCount             uint32
+	ReservePressureBps     uint32
+	NodeQueueDelay         uint64
+	LastFailureHeight      uint64
+	LastUpdatedHeight      uint64
 }
 
 type RoutePolicy struct {
-	MaxHops               int
-	RequiredTimeoutMargin uint64
-	StaleLiquidityAfter   uint64
-	HopPenalty            string
-	CongestionPenalty     string
-	StaleLiquidityPenalty string
-	FailurePenalty        string
-	TimeoutPenalty        string
-	SuccessPenalty        string
-	AvailabilityPenalty   string
-	ProportionalFeeBps    uint32
-	MaxFeeAmount          string
-	EnableMultiPath       bool
-	MaxSplits             int
-	ExcludedNodes         []string
-	ExcludedChannels      []string
-	EdgeStats             []EdgeRoutingStats
+	MaxHops                 int
+	RequiredTimeoutMargin   uint64
+	StaleLiquidityAfter     uint64
+	HopPenalty              string
+	CongestionPenalty       string
+	StaleLiquidityPenalty   string
+	FailurePenalty          string
+	TimeoutPenalty          string
+	SuccessPenalty          string
+	AvailabilityPenalty     string
+	ReservePressurePenalty  string
+	QueueDelayPenalty       string
+	PendingConditionPenalty string
+	LatencyPenalty          string
+	ProportionalFeeBps      uint32
+	DecayHalfLife           uint64
+	MaxCongestedPaymentBps  uint32
+	MaxFeeAmount            string
+	EnableMultiPath         bool
+	MaxSplits               int
+	ExcludedNodes           []string
+	ExcludedChannels        []string
+	EdgeStats               []EdgeRoutingStats
+}
+
+type RouteFailureClass string
+
+const (
+	RouteFailureCapacity        RouteFailureClass = "CAPACITY"
+	RouteFailureTimeout         RouteFailureClass = "TIMEOUT"
+	RouteFailureCongestion      RouteFailureClass = "CONGESTION"
+	RouteFailureLiquidityStale  RouteFailureClass = "LIQUIDITY_STALE"
+	RouteFailureNodeUnavailable RouteFailureClass = "NODE_UNAVAILABLE"
+	RouteFailurePolicyRejected  RouteFailureClass = "POLICY_REJECTED"
+	RouteFailureUnknown         RouteFailureClass = "UNKNOWN"
+)
+
+type RouteFailureReport struct {
+	ChannelID      string
+	From           string
+	To             string
+	FailureClass   RouteFailureClass
+	Retryable      bool
+	ObservedHeight uint64
+}
+
+type CongestionSnapshot struct {
+	ChannelID                   string
+	From                        string
+	To                          string
+	ChannelUpdateFailureRateBps uint32
+	PendingConditionCount       uint32
+	AvgResolutionLatency        uint64
+	RouteRetryCount             uint32
+	ReservePressureBps          uint32
+	NodeQueueDelay              uint64
+	LiquidityUpdatedHeight      uint64
+	ObservedHeight              uint64
 }
 
 type RouteSelectionRequest struct {
@@ -474,6 +522,27 @@ type RouteSelectionRequest struct {
 	Amount        string
 	CurrentHeight uint64
 	Policy        RoutePolicy
+}
+
+type RouteRetryPolicy struct {
+	MaxAttempts          uint32
+	AlternateRouteLimit  uint32
+	ExcludeFailedEdges   bool
+	CongestionRetryDelay uint64
+}
+
+type RouteRetryRequest struct {
+	Selection RouteSelectionRequest
+	Failures  []RouteFailureReport
+	Policy    RouteRetryPolicy
+}
+
+type RouteRetryResult struct {
+	Route      ScoredRoute
+	Attempts   uint32
+	Retryable  bool
+	Reason     string
+	PolicyHash string
 }
 
 type ScoredRoute struct {
@@ -1928,25 +1997,85 @@ func (s EdgeRoutingStats) Validate() error {
 	if err := addressing.ValidateUserAddress("payments route stats to", stats.To); err != nil {
 		return err
 	}
-	if stats.SuccessRateBps > 10_000 || stats.CongestionBps > 10_000 || stats.NodeAvailabilityBps > 10_000 {
+	if stats.SuccessRateBps > 10_000 || stats.CongestionBps > 10_000 || stats.NodeAvailabilityBps > 10_000 || stats.ReservePressureBps > 10_000 {
 		return errors.New("payments route stats bps must be <= 10000")
+	}
+	return nil
+}
+
+func (r RouteFailureReport) Normalize() RouteFailureReport {
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.From = strings.TrimSpace(r.From)
+	r.To = strings.TrimSpace(r.To)
+	return r
+}
+
+func (r RouteFailureReport) Validate() error {
+	report := r.Normalize()
+	if err := ValidateHash("payments route failure channel id", report.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments route failure from", report.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments route failure to", report.To); err != nil {
+		return err
+	}
+	if !IsRouteFailureClass(report.FailureClass) {
+		return errors.New("payments route failure class is invalid")
+	}
+	if report.ObservedHeight == 0 {
+		return errors.New("payments route failure observed height must be positive")
+	}
+	return nil
+}
+
+func (s CongestionSnapshot) Normalize() CongestionSnapshot {
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.From = strings.TrimSpace(s.From)
+	s.To = strings.TrimSpace(s.To)
+	return s
+}
+
+func (s CongestionSnapshot) Validate() error {
+	snapshot := s.Normalize()
+	if err := ValidateHash("payments congestion channel id", snapshot.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments congestion from", snapshot.From); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments congestion to", snapshot.To); err != nil {
+		return err
+	}
+	if snapshot.ChannelUpdateFailureRateBps > 10_000 || snapshot.ReservePressureBps > 10_000 {
+		return errors.New("payments congestion bps must be <= 10000")
+	}
+	if snapshot.ObservedHeight == 0 {
+		return errors.New("payments congestion observed height must be positive")
 	}
 	return nil
 }
 
 func DefaultRoutePolicy() RoutePolicy {
 	return RoutePolicy{
-		MaxHops:               MaxRoutingHops,
-		RequiredTimeoutMargin: DefaultTimeoutMargin,
-		StaleLiquidityAfter:   DefaultGossipTTL,
-		HopPenalty:            "1",
-		CongestionPenalty:     "10",
-		StaleLiquidityPenalty: "25",
-		FailurePenalty:        "25",
-		TimeoutPenalty:        "50",
-		SuccessPenalty:        "25",
-		AvailabilityPenalty:   "25",
-		MaxSplits:             1,
+		MaxHops:                 MaxRoutingHops,
+		RequiredTimeoutMargin:   DefaultTimeoutMargin,
+		StaleLiquidityAfter:     DefaultGossipTTL,
+		HopPenalty:              "1",
+		CongestionPenalty:       "10",
+		StaleLiquidityPenalty:   "25",
+		FailurePenalty:          "25",
+		TimeoutPenalty:          "50",
+		SuccessPenalty:          "25",
+		AvailabilityPenalty:     "25",
+		ReservePressurePenalty:  "25",
+		QueueDelayPenalty:       "10",
+		PendingConditionPenalty: "5",
+		LatencyPenalty:          "10",
+		DecayHalfLife:           DefaultGossipTTL,
+		MaxCongestedPaymentBps:  5_000,
+		MaxSplits:               1,
 	}
 }
 
@@ -1981,6 +2110,24 @@ func (p RoutePolicy) Normalize() RoutePolicy {
 	}
 	if strings.TrimSpace(p.AvailabilityPenalty) == "" {
 		p.AvailabilityPenalty = defaults.AvailabilityPenalty
+	}
+	if strings.TrimSpace(p.ReservePressurePenalty) == "" {
+		p.ReservePressurePenalty = defaults.ReservePressurePenalty
+	}
+	if strings.TrimSpace(p.QueueDelayPenalty) == "" {
+		p.QueueDelayPenalty = defaults.QueueDelayPenalty
+	}
+	if strings.TrimSpace(p.PendingConditionPenalty) == "" {
+		p.PendingConditionPenalty = defaults.PendingConditionPenalty
+	}
+	if strings.TrimSpace(p.LatencyPenalty) == "" {
+		p.LatencyPenalty = defaults.LatencyPenalty
+	}
+	if p.DecayHalfLife == 0 {
+		p.DecayHalfLife = defaults.DecayHalfLife
+	}
+	if p.MaxCongestedPaymentBps == 0 {
+		p.MaxCongestedPaymentBps = defaults.MaxCongestedPaymentBps
 	}
 	if strings.TrimSpace(p.MaxFeeAmount) != "" {
 		p.MaxFeeAmount = strings.TrimSpace(p.MaxFeeAmount)
@@ -2021,10 +2168,17 @@ func (p RoutePolicy) Validate() error {
 		{"payments route timeout penalty", policy.TimeoutPenalty},
 		{"payments route success penalty", policy.SuccessPenalty},
 		{"payments route availability penalty", policy.AvailabilityPenalty},
+		{"payments route reserve pressure penalty", policy.ReservePressurePenalty},
+		{"payments route queue delay penalty", policy.QueueDelayPenalty},
+		{"payments route pending condition penalty", policy.PendingConditionPenalty},
+		{"payments route latency penalty", policy.LatencyPenalty},
 	} {
 		if err := validateNonNegativeInt(value.field, value.text); err != nil {
 			return err
 		}
+	}
+	if policy.MaxCongestedPaymentBps > 10_000 {
+		return errors.New("payments max congested payment bps must be <= 10000")
 	}
 	if policy.MaxFeeAmount != "" {
 		if err := validateNonNegativeInt("payments route max fee", policy.MaxFeeAmount); err != nil {
@@ -2084,6 +2238,70 @@ func (r RouteSelectionRequest) Validate() error {
 		return errors.New("payments route request height must be positive")
 	}
 	return req.Policy.Validate()
+}
+
+func (p RouteRetryPolicy) Normalize() RouteRetryPolicy {
+	if p.MaxAttempts == 0 {
+		p.MaxAttempts = 3
+	}
+	if p.AlternateRouteLimit == 0 {
+		p.AlternateRouteLimit = p.MaxAttempts
+	}
+	return p
+}
+
+func (p RouteRetryPolicy) Validate() error {
+	policy := p.Normalize()
+	if policy.MaxAttempts == 0 || policy.MaxAttempts > 32 {
+		return errors.New("payments route retry max attempts must be between 1 and 32")
+	}
+	if policy.AlternateRouteLimit == 0 || policy.AlternateRouteLimit > policy.MaxAttempts {
+		return errors.New("payments route retry alternate limit must be within attempts")
+	}
+	return nil
+}
+
+func (r RouteRetryRequest) Normalize() RouteRetryRequest {
+	r.Selection = r.Selection.Normalize()
+	for i, failure := range r.Failures {
+		r.Failures[i] = failure.Normalize()
+	}
+	sort.SliceStable(r.Failures, func(i, j int) bool {
+		return routeFailureKey(r.Failures[i]) < routeFailureKey(r.Failures[j])
+	})
+	r.Policy = r.Policy.Normalize()
+	return r
+}
+
+func (r RouteRetryRequest) Validate() error {
+	req := r.Normalize()
+	if err := req.Selection.Validate(); err != nil {
+		return err
+	}
+	if err := req.Policy.Validate(); err != nil {
+		return err
+	}
+	for _, failure := range req.Failures {
+		if err := failure.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func IsRouteFailureClass(failureClass RouteFailureClass) bool {
+	switch failureClass {
+	case RouteFailureCapacity,
+		RouteFailureTimeout,
+		RouteFailureCongestion,
+		RouteFailureLiquidityStale,
+		RouteFailureNodeUnavailable,
+		RouteFailurePolicyRejected,
+		RouteFailureUnknown:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r ScoredRoute) Normalize() ScoredRoute {

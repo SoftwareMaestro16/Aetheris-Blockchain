@@ -1321,6 +1321,140 @@ func SelectPaymentRoute(state PaymentsState, store TopologyStore, req RouteSelec
 	return route, nil
 }
 
+func ApplyCongestionSnapshot(policy RoutePolicy, snapshot CongestionSnapshot) (RoutePolicy, error) {
+	policy = policy.Normalize()
+	snapshot = snapshot.Normalize()
+	if err := snapshot.Validate(); err != nil {
+		return RoutePolicy{}, err
+	}
+	stats := EdgeRoutingStats{
+		ChannelID:              snapshot.ChannelID,
+		From:                   snapshot.From,
+		To:                     snapshot.To,
+		SuccessRateBps:         10_000 - snapshot.ChannelUpdateFailureRateBps,
+		LiquidityUpdatedHeight: snapshot.LiquidityUpdatedHeight,
+		CongestionBps:          snapshot.ChannelUpdateFailureRateBps,
+		NodeAvailabilityBps:    10_000,
+		FailureCount:           uint32(snapshot.ChannelUpdateFailureRateBps / 1_000),
+		PendingConditionCount:  snapshot.PendingConditionCount,
+		AvgResolutionLatency:   snapshot.AvgResolutionLatency,
+		RetryCount:             snapshot.RouteRetryCount,
+		ReservePressureBps:     snapshot.ReservePressureBps,
+		NodeQueueDelay:         snapshot.NodeQueueDelay,
+		LastUpdatedHeight:      snapshot.ObservedHeight,
+	}
+	if snapshot.NodeQueueDelay > 0 {
+		stats.NodeAvailabilityBps = 10_000 - uint32Min(10_000, uint32(snapshot.NodeQueueDelay))
+	}
+	policy.EdgeStats = upsertRouteStats(policy.EdgeStats, stats)
+	return policy.Normalize(), policy.Validate()
+}
+
+func ApplyRouteFailureReport(policy RoutePolicy, report RouteFailureReport) (RoutePolicy, error) {
+	policy = policy.Normalize()
+	report = report.Normalize()
+	if err := report.Validate(); err != nil {
+		return RoutePolicy{}, err
+	}
+	stats, found := routeStatsForEdge(policy, ChannelEdge{ChannelID: report.ChannelID, From: report.From, To: report.To})
+	if !found {
+		stats = EdgeRoutingStats{
+			ChannelID:              report.ChannelID,
+			From:                   report.From,
+			To:                     report.To,
+			SuccessRateBps:         10_000,
+			NodeAvailabilityBps:    10_000,
+			LiquidityUpdatedHeight: report.ObservedHeight,
+		}
+	}
+	stats.FailureCount++
+	stats.RetryCount++
+	stats.LastFailureHeight = report.ObservedHeight
+	stats.LastUpdatedHeight = report.ObservedHeight
+	switch report.FailureClass {
+	case RouteFailureCapacity:
+		stats.ReservePressureBps = uint32Max(stats.ReservePressureBps, 8_000)
+	case RouteFailureTimeout:
+		stats.TimeoutMargin = 1
+	case RouteFailureCongestion:
+		stats.CongestionBps = uint32Max(stats.CongestionBps, 8_000)
+		stats.PendingConditionCount++
+	case RouteFailureLiquidityStale:
+		stats.LiquidityUpdatedHeight = 1
+	case RouteFailureNodeUnavailable:
+		stats.NodeAvailabilityBps = 1_000
+	case RouteFailurePolicyRejected:
+		stats.CongestionBps = uint32Max(stats.CongestionBps, 5_000)
+	default:
+		stats.CongestionBps = uint32Max(stats.CongestionBps, 4_000)
+	}
+	policy.EdgeStats = upsertRouteStats(policy.EdgeStats, stats)
+	return policy.Normalize(), policy.Validate()
+}
+
+func DecayRoutePolicyPenalties(policy RoutePolicy, currentHeight uint64) RoutePolicy {
+	policy = policy.Normalize()
+	if currentHeight == 0 {
+		return policy
+	}
+	for i, stats := range policy.EdgeStats {
+		policy.EdgeStats[i] = decayEdgeRoutingStats(stats, currentHeight, policy.DecayHalfLife)
+	}
+	return policy.Normalize()
+}
+
+func RetryPaymentRoute(state PaymentsState, store TopologyStore, req RouteRetryRequest) (RouteRetryResult, error) {
+	req = req.Normalize()
+	if err := req.Validate(); err != nil {
+		return RouteRetryResult{}, err
+	}
+	selection := req.Selection
+	selection.Policy = DecayRoutePolicyPenalties(selection.Policy, selection.CurrentHeight)
+	for _, failure := range req.Failures {
+		var err error
+		selection.Policy, err = ApplyRouteFailureReport(selection.Policy, failure)
+		if err != nil {
+			return RouteRetryResult{}, err
+		}
+		if req.Policy.ExcludeFailedEdges {
+			selection.Policy.ExcludedChannels = append(selection.Policy.ExcludedChannels, failure.ChannelID)
+		}
+	}
+	if uint32(len(req.Failures)) >= req.Policy.MaxAttempts {
+		return RouteRetryResult{Attempts: uint32(len(req.Failures)), Retryable: false, Reason: "payments route retry attempts exhausted"}, nil
+	}
+	route, err := SelectPaymentRoute(state, store, selection)
+	if err != nil {
+		return RouteRetryResult{Attempts: uint32(len(req.Failures)) + 1, Retryable: false, Reason: err.Error()}, err
+	}
+	return RouteRetryResult{
+		Route:      route,
+		Attempts:   uint32(len(req.Failures)) + 1,
+		Retryable:  true,
+		PolicyHash: routePolicyHash(selection.Policy),
+	}, nil
+}
+
+func ClassifyRouteFailure(reason string) RouteFailureClass {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	switch {
+	case strings.Contains(reason, "capacity") || strings.Contains(reason, "reserve"):
+		return RouteFailureCapacity
+	case strings.Contains(reason, "timeout") || strings.Contains(reason, "expired"):
+		return RouteFailureTimeout
+	case strings.Contains(reason, "congestion") || strings.Contains(reason, "queue"):
+		return RouteFailureCongestion
+	case strings.Contains(reason, "stale") || strings.Contains(reason, "fresh"):
+		return RouteFailureLiquidityStale
+	case strings.Contains(reason, "availability") || strings.Contains(reason, "unavailable"):
+		return RouteFailureNodeUnavailable
+	case strings.Contains(reason, "policy") || strings.Contains(reason, "fee"):
+		return RouteFailurePolicyRejected
+	default:
+		return RouteFailureUnknown
+	}
+}
+
 func SimulateRoute(route ScoredRoute, req RouteSelectionRequest) (RouteSimulationResult, error) {
 	route = route.Normalize()
 	req = req.Normalize()
@@ -2231,6 +2365,9 @@ func candidateRoutingEdges(state PaymentsState, store TopologyStore, amount sdkm
 		if routePolicyExcludesEdge(policy, edge) {
 			continue
 		}
+		if !edgeEffectiveCapacityCovers(policy, edge, amount) {
+			continue
+		}
 		channel, found := state.ChannelByID(edge.ChannelID)
 		if !found || channel.Status != ChannelStatusOpen {
 			continue
@@ -2292,6 +2429,37 @@ func routeEdgeWeight(store TopologyStore, edge ChannelEdge, amount sdkmath.Int, 
 			}
 			cost = cost.Add(penalty)
 		}
+		if stats.ReservePressureBps > 0 {
+			cost = cost.Add(routeScaledPenalty(policy.ReservePressurePenalty, stats.ReservePressureBps))
+		}
+		if stats.PendingConditionCount > 0 {
+			penalty, err := parseNonNegativeInt("payments pending condition penalty", policy.PendingConditionPenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty.Mul(sdkmath.NewInt(int64(stats.PendingConditionCount))))
+		}
+		if stats.AvgResolutionLatency > 0 {
+			penalty, err := parseNonNegativeInt("payments condition latency penalty", policy.LatencyPenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty.Mul(sdkmath.NewInt(int64(stats.AvgResolutionLatency))).Quo(sdkmath.NewInt(100)))
+		}
+		if stats.RetryCount > 0 {
+			penalty, err := parseNonNegativeInt("payments route retry penalty", policy.FailurePenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty.Mul(sdkmath.NewInt(int64(stats.RetryCount))))
+		}
+		if stats.NodeQueueDelay > 0 {
+			penalty, err := parseNonNegativeInt("payments node queue delay penalty", policy.QueueDelayPenalty)
+			if err != nil {
+				return sdkmath.ZeroInt(), sdkmath.ZeroInt(), err
+			}
+			cost = cost.Add(penalty.Mul(sdkmath.NewInt(int64(stats.NodeQueueDelay))).Quo(sdkmath.NewInt(100)))
+		}
 	}
 	reputation := RoutingScoreForEdge(store, edge)
 	if reputation < 0 {
@@ -2327,9 +2495,129 @@ func routeStatsForEdge(policy RoutePolicy, edge ChannelEdge) (EdgeRoutingStats, 
 	return EdgeRoutingStats{}, false
 }
 
+func edgeEffectiveCapacityCovers(policy RoutePolicy, edge ChannelEdge, amount sdkmath.Int) bool {
+	edge = edge.Normalize()
+	capacity, err := parsePositiveInt("payments congested edge capacity", edge.Capacity)
+	if err != nil {
+		return false
+	}
+	stats, found := routeStatsForEdge(policy, edge)
+	if !found {
+		return !capacity.LT(amount)
+	}
+	reductionBps := uint32Max(stats.CongestionBps, stats.ReservePressureBps)
+	if stats.PendingConditionCount > 0 {
+		reductionBps = uint32Max(reductionBps, uint32Min(10_000, stats.PendingConditionCount*500))
+	}
+	if reductionBps == 0 {
+		return !capacity.LT(amount)
+	}
+	allowedBps := uint32(10_000 - reductionBps)
+	maxCongestedBps := policy.Normalize().MaxCongestedPaymentBps
+	if maxCongestedBps > 0 && allowedBps > maxCongestedBps {
+		allowedBps = maxCongestedBps
+	}
+	effective := capacity.Mul(sdkmath.NewInt(int64(allowedBps))).Quo(sdkmath.NewInt(10_000))
+	return !effective.LT(amount)
+}
+
 func routeStatsKey(stats EdgeRoutingStats) string {
 	stats = stats.Normalize()
 	return fmt.Sprintf("%s/%s/%s", stats.ChannelID, stats.From, stats.To)
+}
+
+func upsertRouteStats(stats []EdgeRoutingStats, next EdgeRoutingStats) []EdgeRoutingStats {
+	next = next.Normalize()
+	key := routeStatsKey(next)
+	out := make([]EdgeRoutingStats, 0, len(stats)+1)
+	replaced := false
+	for _, existing := range stats {
+		existing = existing.Normalize()
+		if routeStatsKey(existing) == key {
+			out = append(out, next)
+			replaced = true
+			continue
+		}
+		out = append(out, existing)
+	}
+	if !replaced {
+		out = append(out, next)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return routeStatsKey(out[i]) < routeStatsKey(out[j])
+	})
+	return out
+}
+
+func decayEdgeRoutingStats(stats EdgeRoutingStats, currentHeight, halfLife uint64) EdgeRoutingStats {
+	stats = stats.Normalize()
+	if halfLife == 0 || stats.LastUpdatedHeight == 0 || currentHeight <= stats.LastUpdatedHeight {
+		return stats
+	}
+	periods := (currentHeight - stats.LastUpdatedHeight) / halfLife
+	if periods == 0 {
+		return stats
+	}
+	for ; periods > 0; periods-- {
+		stats.CongestionBps /= 2
+		stats.FailureCount /= 2
+		stats.PendingConditionCount /= 2
+		stats.AvgResolutionLatency /= 2
+		stats.RetryCount /= 2
+		stats.ReservePressureBps /= 2
+		stats.NodeQueueDelay /= 2
+		if stats.NodeAvailabilityBps < 10_000 {
+			stats.NodeAvailabilityBps += (10_000 - stats.NodeAvailabilityBps) / 2
+		}
+		if stats.SuccessRateBps < 10_000 {
+			stats.SuccessRateBps += (10_000 - stats.SuccessRateBps) / 2
+		}
+	}
+	stats.LastUpdatedHeight = currentHeight
+	return stats.Normalize()
+}
+
+func routeFailureKey(report RouteFailureReport) string {
+	report = report.Normalize()
+	return fmt.Sprintf("%s/%s/%s/%s/%020d", report.ChannelID, report.From, report.To, report.FailureClass, report.ObservedHeight)
+}
+
+func routePolicyHash(policy RoutePolicy) string {
+	policy = policy.Normalize()
+	parts := []string{"route-policy", fmt.Sprintf("%d", policy.MaxHops), fmt.Sprintf("%020d", policy.RequiredTimeoutMargin), fmt.Sprintf("%020d", policy.StaleLiquidityAfter)}
+	for _, channelID := range policy.ExcludedChannels {
+		parts = append(parts, "excluded-channel", channelID)
+	}
+	for _, node := range policy.ExcludedNodes {
+		parts = append(parts, "excluded-node", node)
+	}
+	for _, stats := range policy.EdgeStats {
+		stats = stats.Normalize()
+		parts = append(parts,
+			"stats",
+			routeStatsKey(stats),
+			fmt.Sprintf("%d", stats.SuccessRateBps),
+			fmt.Sprintf("%d", stats.CongestionBps),
+			fmt.Sprintf("%d", stats.FailureCount),
+			fmt.Sprintf("%d", stats.PendingConditionCount),
+			fmt.Sprintf("%020d", stats.LastUpdatedHeight),
+		)
+	}
+	return HashParts(parts...)
+}
+
+func uint32Max(left, right uint32) uint32 {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func uint32Min(left, right uint32) uint32 {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func routeContainsNode(edges []ChannelEdge, node string) bool {
