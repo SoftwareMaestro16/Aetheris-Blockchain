@@ -319,6 +319,85 @@ func TestRedelegationRetainsSourceRiskAndSelfBondChangesAreDelayed(t *testing.T)
 	require.ErrorContains(t, err, "self bond")
 }
 
+func TestRiskWindowRecordQueriesSlashExposureForDelayedEvidence(t *testing.T) {
+	params := DefaultParams()
+	params.EpochDurationSeconds = MinEpochDurationSeconds
+	params.PhaseDurations = DefaultEpochPhaseDurations(params.EpochDurationSeconds)
+	params.UnbondingSeconds = MinUnbondingSeconds
+	params.EvidenceWindowEpochs = 3
+	unbonding, err := BeginUnbondingRisk(params, "delegator-a", "val-a", sdkmath.NewInt(1_000), 10)
+	require.NoError(t, err)
+	active, err := RiskWindowFromUnbonding(unbonding, 10)
+	require.NoError(t, err)
+	require.Equal(t, RiskWindowStatusActive, active.Status)
+	require.Equal(t, "delegator-a", active.StakeOwner)
+	require.Equal(t, "val-a", active.ValidatorAddress)
+	require.Equal(t, uint64(10), active.StartEpoch)
+	require.Equal(t, uint64(24), active.EndEpoch)
+	require.Equal(t, uint64(27), active.SlashableUntilEpoch)
+	require.Equal(t, ComputeRiskWindowRoot(active), active.RiskHistoryRoot)
+
+	exited, err := RiskWindowFromUnbonding(unbonding, 25)
+	require.NoError(t, err)
+	require.Equal(t, RiskWindowStatusExited, exited.Status)
+	expired, err := RiskWindowFromUnbonding(unbonding, 28)
+	require.NoError(t, err)
+	require.Equal(t, RiskWindowStatusExpired, expired.Status)
+
+	result, err := QuerySlashExposure([]RiskWindowRecord{exited}, SlashExposureQuery{
+		StakeOwner:       "delegator-a",
+		ValidatorAddress: "val-a",
+		FaultEpoch:       23,
+		EvidenceEpoch:    27,
+	})
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(1_000), result.ExposureNaet)
+	require.Len(t, result.MatchingWindows, 1)
+
+	result, err = QuerySlashExposure([]RiskWindowRecord{exited}, SlashExposureQuery{
+		StakeOwner:       "delegator-a",
+		ValidatorAddress: "val-a",
+		FaultEpoch:       23,
+		EvidenceEpoch:    28,
+	})
+	require.NoError(t, err)
+	require.True(t, result.ExposureNaet.IsZero())
+
+	tampered := exited
+	tampered.AmountNaet = sdkmath.NewInt(2_000)
+	require.ErrorContains(t, tampered.Validate(), "history root")
+}
+
+func TestRiskWindowRecordKeepsRedelegationSourceExposure(t *testing.T) {
+	params := DefaultParams()
+	params.DelegationActivationEpochs = 2
+	params.EvidenceWindowEpochs = 4
+	redelegation, err := CreateRedelegationRiskRecord(params, "delegator-a", "val-source", "val-dest", sdkmath.NewInt(500), 20)
+	require.NoError(t, err)
+	window, err := RiskWindowFromRedelegation(redelegation, 22)
+	require.NoError(t, err)
+	require.Equal(t, "val-source", window.ValidatorAddress)
+	require.Equal(t, RiskWindowStatusExited, window.Status)
+
+	result, err := QuerySlashExposure([]RiskWindowRecord{window}, SlashExposureQuery{
+		StakeOwner:       "delegator-a",
+		ValidatorAddress: "val-source",
+		FaultEpoch:       21,
+		EvidenceEpoch:    24,
+	})
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(500), result.ExposureNaet)
+
+	result, err = QuerySlashExposure([]RiskWindowRecord{window}, SlashExposureQuery{
+		StakeOwner:       "delegator-a",
+		ValidatorAddress: "val-dest",
+		FaultEpoch:       21,
+		EvidenceEpoch:    24,
+	})
+	require.NoError(t, err)
+	require.True(t, result.ExposureNaet.IsZero())
+}
+
 func TestMaxValidatorSetChangesUsesConfiguredRate(t *testing.T) {
 	params := DefaultParams()
 	params.MaxValidatorSetChangeRateBps = 1_000

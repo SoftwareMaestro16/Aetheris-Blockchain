@@ -520,6 +520,40 @@ type PendingUnbondingSlashExposureInput struct {
 	EvidenceEpoch uint64
 }
 
+const (
+	RiskWindowStatusActive  = "active"
+	RiskWindowStatusExited  = "exited"
+	RiskWindowStatusExpired = "expired"
+	RiskWindowStatusSlashed = "slashed"
+)
+
+type RiskWindowRecord struct {
+	StakeOwner          string
+	ValidatorAddress    string
+	AmountNaet          sdkmath.Int
+	StartEpoch          uint64
+	EndEpoch            uint64
+	SlashableUntilEpoch uint64
+	RiskHistoryRoot     string
+	Status              string
+}
+
+type SlashExposureQuery struct {
+	StakeOwner       string
+	ValidatorAddress string
+	FaultEpoch       uint64
+	EvidenceEpoch    uint64
+}
+
+type SlashExposureQueryResult struct {
+	StakeOwner       string
+	ValidatorAddress string
+	FaultEpoch       uint64
+	EvidenceEpoch    uint64
+	ExposureNaet     sdkmath.Int
+	MatchingWindows  []RiskWindowRecord
+}
+
 type RejectedDelegationIntent struct {
 	Intent DelegationIntent
 	Reason string
@@ -1654,6 +1688,125 @@ func PendingUnbondingSlashExposure(input PendingUnbondingSlashExposureInput) (sd
 		return sdkmath.ZeroInt(), nil
 	}
 	return input.Record.AmountNaet, nil
+}
+
+func RiskWindowFromUnbonding(record UnbondingRiskRecord, currentEpoch uint64) (RiskWindowRecord, error) {
+	if err := record.Validate(); err != nil {
+		return RiskWindowRecord{}, err
+	}
+	window := RiskWindowRecord{
+		StakeOwner:          record.DelegatorID,
+		ValidatorAddress:    record.ValidatorID,
+		AmountNaet:          record.AmountNaet,
+		StartEpoch:          record.RequestedEpoch,
+		EndEpoch:            record.ExitEpoch,
+		SlashableUntilEpoch: record.SlashableUntilEpoch,
+		Status:              riskWindowStatus(record.ExitEpoch, record.SlashableUntilEpoch, currentEpoch),
+	}
+	window.RiskHistoryRoot = ComputeRiskWindowRoot(window)
+	return window, window.Validate()
+}
+
+func RiskWindowFromRedelegation(record RedelegationRiskRecord, currentEpoch uint64) (RiskWindowRecord, error) {
+	if err := record.Validate(); err != nil {
+		return RiskWindowRecord{}, err
+	}
+	window := RiskWindowRecord{
+		StakeOwner:          record.DelegatorID,
+		ValidatorAddress:    record.SourceValidatorID,
+		AmountNaet:          record.AmountNaet,
+		StartEpoch:          record.RequestedEpoch,
+		EndEpoch:            record.ActivationEpoch,
+		SlashableUntilEpoch: record.SourceSlashableUntilEpoch,
+		Status:              riskWindowStatus(record.ActivationEpoch, record.SourceSlashableUntilEpoch, currentEpoch),
+	}
+	window.RiskHistoryRoot = ComputeRiskWindowRoot(window)
+	return window, window.Validate()
+}
+
+func (r RiskWindowRecord) Validate() error {
+	if err := validatePosToken("risk window stake owner", r.StakeOwner); err != nil {
+		return err
+	}
+	if err := validatePosToken("risk window validator address", r.ValidatorAddress); err != nil {
+		return err
+	}
+	if r.AmountNaet.IsNil() || !r.AmountNaet.IsPositive() {
+		return errors.New("risk window amount must be positive")
+	}
+	if r.StartEpoch == 0 {
+		return errors.New("risk window start epoch is required")
+	}
+	if r.EndEpoch <= r.StartEpoch {
+		return errors.New("risk window end epoch must be after start epoch")
+	}
+	if r.SlashableUntilEpoch < r.EndEpoch {
+		return errors.New("risk window slashable epoch must cover end epoch")
+	}
+	if err := validateRiskWindowStatus(r.Status); err != nil {
+		return err
+	}
+	if err := validatePosHash("risk window history root", r.RiskHistoryRoot); err != nil {
+		return err
+	}
+	if expected := ComputeRiskWindowRoot(r); expected != r.RiskHistoryRoot {
+		return errors.New("risk window history root mismatch")
+	}
+	return nil
+}
+
+func QuerySlashExposure(windows []RiskWindowRecord, query SlashExposureQuery) (SlashExposureQueryResult, error) {
+	query.StakeOwner = strings.TrimSpace(query.StakeOwner)
+	query.ValidatorAddress = strings.TrimSpace(query.ValidatorAddress)
+	if err := validatePosToken("slash exposure stake owner", query.StakeOwner); err != nil {
+		return SlashExposureQueryResult{}, err
+	}
+	if err := validatePosToken("slash exposure validator address", query.ValidatorAddress); err != nil {
+		return SlashExposureQueryResult{}, err
+	}
+	if query.FaultEpoch == 0 || query.EvidenceEpoch == 0 {
+		return SlashExposureQueryResult{}, errors.New("slash exposure fault and evidence epochs are required")
+	}
+	result := SlashExposureQueryResult{
+		StakeOwner:       query.StakeOwner,
+		ValidatorAddress: query.ValidatorAddress,
+		FaultEpoch:       query.FaultEpoch,
+		EvidenceEpoch:    query.EvidenceEpoch,
+		ExposureNaet:     sdkmath.ZeroInt(),
+		MatchingWindows:  make([]RiskWindowRecord, 0),
+	}
+	for _, window := range windows {
+		if err := window.Validate(); err != nil {
+			return SlashExposureQueryResult{}, err
+		}
+		if window.StakeOwner != query.StakeOwner || window.ValidatorAddress != query.ValidatorAddress {
+			continue
+		}
+		if query.FaultEpoch < window.StartEpoch || query.FaultEpoch >= window.EndEpoch {
+			continue
+		}
+		if query.EvidenceEpoch > window.SlashableUntilEpoch {
+			continue
+		}
+		if window.Status == RiskWindowStatusExpired {
+			continue
+		}
+		result.ExposureNaet = result.ExposureNaet.Add(window.AmountNaet)
+		result.MatchingWindows = append(result.MatchingWindows, window)
+	}
+	return result, nil
+}
+
+func ComputeRiskWindowRoot(record RiskWindowRecord) string {
+	return posHashRoot("aetheris-pos-risk-window-v1", func(w posByteWriter) {
+		posWritePart(w, record.StakeOwner)
+		posWritePart(w, record.ValidatorAddress)
+		posWritePart(w, record.AmountNaet.String())
+		posWriteUint64(w, record.StartEpoch)
+		posWriteUint64(w, record.EndEpoch)
+		posWriteUint64(w, record.SlashableUntilEpoch)
+		posWritePart(w, record.Status)
+	})
 }
 
 func ComputeUnbondingRiskHistoryKey(record UnbondingRiskRecord) string {
@@ -4153,6 +4306,25 @@ func validateCollatorVerificationResult(result string) error {
 	default:
 		return fmt.Errorf("unsupported collator verification result %q", result)
 	}
+}
+
+func validateRiskWindowStatus(status string) error {
+	switch status {
+	case RiskWindowStatusActive, RiskWindowStatusExited, RiskWindowStatusExpired, RiskWindowStatusSlashed:
+		return nil
+	default:
+		return fmt.Errorf("unsupported risk window status %q", status)
+	}
+}
+
+func riskWindowStatus(endEpoch uint64, slashableUntilEpoch uint64, currentEpoch uint64) string {
+	if currentEpoch > slashableUntilEpoch {
+		return RiskWindowStatusExpired
+	}
+	if currentEpoch >= endEpoch {
+		return RiskWindowStatusExited
+	}
+	return RiskWindowStatusActive
 }
 
 func validatePosLayer(layer PosLayer) error {
