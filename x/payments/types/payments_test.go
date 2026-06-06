@@ -1235,6 +1235,136 @@ func TestFraudProofRefundAccountingAndSecurityReserveHook(t *testing.T) {
 	require.Equal(t, "6", allocationAmountFor(state.Channels[0].PendingClose.PenaltyAllocations, PenaltyRouteSecurityReserve))
 }
 
+func TestPenaltyMatrixCoversFraudProofCategoriesAndBoundsBalances(t *testing.T) {
+	alice := testAddress(0xaa)
+	bob := testAddress(0xab)
+	channel := signedChannel(t, "penalty-matrix", "100", alice, bob)
+	closeState := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "50"},
+		{Participant: bob, Amount: "50"},
+	})
+	conflicting := signedState(t, channel, 2, channel.OpeningStateHash, []Balance{
+		{Participant: alice, Amount: "40"},
+		{Participant: bob, Amount: "60"},
+	})
+	channel.Status = ChannelStatusPendingClose
+	channel.Finality = ChannelFinalityPendingClose
+	channel.PendingClose = PendingClose{
+		Submitter:          alice,
+		SubmittedHeight:    20,
+		SettleAfterHeight:  36,
+		CloseReason:        CloseReasonUnilateral,
+		SettlementFeeDenom: NativeDenom,
+		SettlementFee:      "0",
+		State:              closeState,
+	}
+	for _, proofType := range []FraudProofType{
+		FraudProofTypeInvalidClose,
+		FraudProofTypeStaleClose,
+		FraudProofTypeDoubleSign,
+		FraudProofTypeInvalidBalance,
+		FraudProofTypeInvalidCondition,
+		FraudProofTypeReplayAttempt,
+		FraudProofTypeAsyncOverexposure,
+	} {
+		_, err := PenaltyMatrixEntryForProof(proofType, DefaultPenaltyMatrix())
+		require.NoError(t, err)
+	}
+
+	proofID := HashParts("penalty-matrix-proof", channel.ChannelID)
+	proof := FraudProof{
+		ProofID:         proofID,
+		ProofType:       FraudProofTypeDoubleSign,
+		SubmittedBy:     bob,
+		OffendingSigner: alice,
+		StateA:          closeState,
+		StateB:          conflicting,
+		EvidenceHash:    ComputeDisputeProofHash(FraudProof{ProofID: proofID, ProofType: FraudProofTypeDoubleSign, StateA: closeState, StateB: conflicting}),
+		PenaltyDenom:    NativeDenom,
+		PenaltyAmount:   "25",
+	}
+	accounting, err := BuildPenaltyRouteAccounting(channel, proof, DefaultPenaltyMatrix(), FraudPenaltyPolicy{})
+	require.NoError(t, err)
+	require.Equal(t, PenaltyClassDoubleSign, accounting.Class)
+	require.Equal(t, PenaltySourceParticipantBond, accounting.Source)
+	require.Equal(t, "6", accounting.CounterpartyComp)
+	require.Equal(t, "8", accounting.ReporterReward)
+	require.Equal(t, "4", allocationAmountFor(accounting.Allocations, PenaltyRouteSecurityReserve))
+
+	finalBalances, err := applySettlementAdjustments(closeState.Balances, accounting.Penalties, accounting.Allocations, "0", alice)
+	require.NoError(t, err)
+	for _, balance := range finalBalances {
+		amount, err := parseNonNegativeInt("test final balance", balance.Amount)
+		require.NoError(t, err)
+		require.False(t, amount.IsNegative())
+	}
+
+	invalidProofPenalty, err := ComputeInvalidFraudProofSubmissionPenalty(bob, "7", "3")
+	require.NoError(t, err)
+	require.Equal(t, "3", invalidProofPenalty.ForfeitedAmount)
+	require.Equal(t, "4", invalidProofPenalty.RefundAmount)
+	invalidProofPenalty, err = ComputeInvalidFraudProofSubmissionPenalty(bob, "2", "3")
+	require.NoError(t, err)
+	require.Equal(t, "2", invalidProofPenalty.ForfeitedAmount)
+	require.Equal(t, "0", invalidProofPenalty.RefundAmount)
+}
+
+func TestLiquidityAdvertisementReservationScoreAndDepositPenalty(t *testing.T) {
+	alice := testAddress(0xac)
+	bob := testAddress(0xad)
+	channelID := HashParts("liquidity-ad-channel")
+	ad, err := BuildLiquidityAdvertisement(LiquidityAdvertisement{
+		ChannelID:           channelID,
+		Advertiser:          alice,
+		Counterparty:        bob,
+		Capacity:            "1000",
+		FeeDenom:            NativeDenom,
+		BaseFee:             "1",
+		ReservationFee:      "3",
+		VirtualSetupFee:     "5",
+		ReliabilityBps:      9_000,
+		ValidUntilHeight:    50,
+		DepositAmount:       "9",
+		BackedByReservation: true,
+	}, "5")
+	require.NoError(t, err)
+	require.NotEmpty(t, ad.AdvertisementHash)
+
+	_, err = BuildLiquidityAdvertisement(LiquidityAdvertisement{
+		ChannelID:        channelID,
+		Advertiser:       alice,
+		Counterparty:     bob,
+		Capacity:         "1000",
+		FeeDenom:         NativeDenom,
+		ValidUntilHeight: 50,
+		DepositAmount:    "4",
+	}, "5")
+	require.ErrorContains(t, err, "deposit below required")
+
+	reservation, err := BuildSignedLiquidityReservation(SignedLiquidityReservation{
+		AdvertisementID:  ad.AdvertisementID,
+		ChainID:          "aetheris-test-chain",
+		ChannelID:        channelID,
+		Reserver:         alice,
+		Counterparty:     bob,
+		Capacity:         "700",
+		FeeAmount:        "3",
+		ExpirationHeight: 45,
+		Nonce:            1,
+	}, alice)
+	require.NoError(t, err)
+	require.NoError(t, reservation.Validate())
+	require.Equal(t, reservation.CommitmentHash, reservation.Signature.CommitmentHash)
+
+	score, err := LiquidityAvailabilityScore(ad, EdgeRoutingStats{SuccessRateBps: 9_000, CongestionBps: 1_000})
+	require.NoError(t, err)
+	require.Greater(t, score, int64(0))
+	store, forfeited, err := ApplyFalseLiquidityAdvertisementPenalty(TopologyStore{}, ad, 60)
+	require.NoError(t, err)
+	require.Equal(t, "9", forfeited)
+	require.Equal(t, -InvalidGossipPenalty, RoutingScoreForEdge(store, ChannelEdge{ChannelID: channelID, From: alice, To: bob, Capacity: "100", FeeAmount: "1", Active: true}))
+}
+
 func TestAsyncExecutionFinalizationQueueIsBoundedAndIdempotent(t *testing.T) {
 	alice := testAddress(0xa6)
 	bob := testAddress(0xa7)

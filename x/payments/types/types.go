@@ -22,6 +22,7 @@ const (
 	SignatureObjectDelta          = "async_delta"
 	SignatureObjectPromise        = "conditional_promise"
 	SignatureObjectGossip         = "payment_gossip"
+	SignatureObjectLiquidity      = "liquidity_reservation"
 	SignatureObjectRoutingFee     = "routing_fee_policy"
 	SignatureObjectVirtual        = "virtual_channel"
 	SignatureObjectVirtualReserve = "virtual_reservation"
@@ -208,9 +209,22 @@ type PenaltyRoute string
 
 const (
 	PenaltyRouteReporter        PenaltyRoute = "REPORTER"
+	PenaltyRouteCounterparty    PenaltyRoute = "COUNTERPARTY"
 	PenaltyRouteBurn            PenaltyRoute = "BURN"
 	PenaltyRouteSecurityReserve PenaltyRoute = "SECURITY_RESERVE"
 	PenaltyRouteCommunityPool   PenaltyRoute = "COMMUNITY_POOL"
+)
+
+type PaymentPenaltyClass string
+
+const (
+	PenaltyClassInvalidClose      PaymentPenaltyClass = "INVALID_CLOSE_SUBMISSION"
+	PenaltyClassStaleClose        PaymentPenaltyClass = "STALE_CLOSE"
+	PenaltyClassDoubleSign        PaymentPenaltyClass = "SAME_NONCE_DOUBLE_SIGN"
+	PenaltyClassInvalidCondition  PaymentPenaltyClass = "INVALID_CONDITION_CLAIM"
+	PenaltyClassReplayAttempt     PaymentPenaltyClass = "REPLAY_ATTEMPT"
+	PenaltyClassAsyncOverexposure PaymentPenaltyClass = "ASYNC_OVEREXPOSURE"
+	PenaltyClassInvalidFraudProof PaymentPenaltyClass = "INVALID_FRAUD_PROOF"
 )
 
 type PaymentFeeClass string
@@ -1076,10 +1090,99 @@ type PenaltyAllocation struct {
 
 type FraudPenaltyPolicy struct {
 	ReporterRewardCap       string
+	CounterpartyRewardCap   string
+	CounterpartyRewardBps   uint32
 	BurnShareBps            uint32
 	SecurityReserveShareBps uint32
 	CommunityPoolShareBps   uint32
 	SecurityReserveHook     bool
+}
+
+type PenaltySource string
+
+const (
+	PenaltySourceChannelBalance              PenaltySource = "CHANNEL_BALANCE"
+	PenaltySourceParticipantBond             PenaltySource = "PARTICIPANT_BOND"
+	PenaltySourceRoutingAdvertisementDeposit PenaltySource = "ROUTING_ADVERTISEMENT_DEPOSIT"
+	PenaltySourceFraudProofDeposit           PenaltySource = "FRAUD_PROOF_DEPOSIT"
+)
+
+type PenaltyMatrixEntry struct {
+	Class                    PaymentPenaltyClass
+	ProofType                FraudProofType
+	Source                   PenaltySource
+	BasePenalty              string
+	ReporterRewardCap        string
+	CounterpartyCompensation string
+	BurnShareBps             uint32
+	SecurityReserveShareBps  uint32
+	CommunityPoolShareBps    uint32
+	InvalidProofVerifierCost string
+	Bounded                  bool
+}
+
+type PenaltyRouteAccounting struct {
+	Class            PaymentPenaltyClass
+	Source           PenaltySource
+	TotalPenalty     string
+	ReporterReward   string
+	CounterpartyComp string
+	Allocations      []PenaltyAllocation
+	Penalties        []Penalty
+}
+
+type InvalidFraudProofSubmissionPenalty struct {
+	Submitter        string
+	Denom            string
+	DepositAmount    string
+	VerificationCost string
+	ForfeitedAmount  string
+	RefundAmount     string
+}
+
+type LiquidityAdvertisement struct {
+	AdvertisementID     string
+	ChannelID           string
+	Advertiser          string
+	Counterparty        string
+	Capacity            string
+	FeeDenom            string
+	BaseFee             string
+	ReservationFee      string
+	VirtualSetupFee     string
+	ReliabilityBps      uint32
+	ValidUntilHeight    uint64
+	DepositAmount       string
+	BackedByReservation bool
+	AdvertisementHash   string
+}
+
+type LiquidityReservationSignature struct {
+	Signer           string
+	ChainID          string
+	ChannelID        string
+	ObjectType       string
+	Version          uint32
+	Nonce            uint64
+	ObjectID         string
+	ExpirationHeight uint64
+	CommitmentHash   string
+	SignatureHash    string
+}
+
+type SignedLiquidityReservation struct {
+	ReservationID    string
+	AdvertisementID  string
+	ChainID          string
+	ChannelID        string
+	Reserver         string
+	Counterparty     string
+	Capacity         string
+	FeeAmount        string
+	ExpirationHeight uint64
+	Nonce            uint64
+	CommitmentHash   string
+	Signature        LiquidityReservationSignature
 }
 
 type PaymentFeeSchedule struct {
@@ -5298,7 +5401,7 @@ func (p PenaltyAllocation) ValidateForChannel(channel ChannelRecord) error {
 	if !containsString(channel.Participants, allocation.Offender) {
 		return errors.New("payments penalty allocation offender must be channel participant")
 	}
-	if !IsPenaltyRoute(allocation.Route) || allocation.Route == PenaltyRouteReporter {
+	if !IsPenaltyRoute(allocation.Route) || allocation.Route == PenaltyRouteReporter || allocation.Route == PenaltyRouteCounterparty {
 		return errors.New("payments penalty allocation route must be burn, security reserve, or community pool")
 	}
 	if allocation.Denom != NativeDenom {
@@ -5309,6 +5412,7 @@ func (p PenaltyAllocation) ValidateForChannel(channel ChannelRecord) error {
 
 func (p FraudPenaltyPolicy) Normalize() FraudPenaltyPolicy {
 	p.ReporterRewardCap = strings.TrimSpace(p.ReporterRewardCap)
+	p.CounterpartyRewardCap = strings.TrimSpace(p.CounterpartyRewardCap)
 	return p
 }
 
@@ -5319,9 +5423,67 @@ func (p FraudPenaltyPolicy) Validate() error {
 			return err
 		}
 	}
+	if p.CounterpartyRewardCap != "" {
+		if err := validateNonNegativeInt("payments counterparty reward cap", p.CounterpartyRewardCap); err != nil {
+			return err
+		}
+	}
+	if p.CounterpartyRewardBps > MaxPenaltyRouteBps {
+		return errors.New("payments counterparty reward bps exceeds 10000")
+	}
 	total := p.BurnShareBps + p.SecurityReserveShareBps + p.CommunityPoolShareBps
 	if total > MaxPenaltyRouteBps {
 		return errors.New("payments penalty route shares exceed 10000 bps")
+	}
+	return nil
+}
+
+func (e PenaltyMatrixEntry) Normalize() PenaltyMatrixEntry {
+	e.BasePenalty = strings.TrimSpace(e.BasePenalty)
+	e.ReporterRewardCap = strings.TrimSpace(e.ReporterRewardCap)
+	e.CounterpartyCompensation = strings.TrimSpace(e.CounterpartyCompensation)
+	e.InvalidProofVerifierCost = strings.TrimSpace(e.InvalidProofVerifierCost)
+	if e.BasePenalty == "" {
+		e.BasePenalty = "0"
+	}
+	if e.ReporterRewardCap == "" {
+		e.ReporterRewardCap = "0"
+	}
+	if e.CounterpartyCompensation == "" {
+		e.CounterpartyCompensation = "0"
+	}
+	if e.InvalidProofVerifierCost == "" {
+		e.InvalidProofVerifierCost = "0"
+	}
+	return e
+}
+
+func (e PenaltyMatrixEntry) Validate() error {
+	entry := e.Normalize()
+	if !IsPaymentPenaltyClass(entry.Class) {
+		return fmt.Errorf("unknown payments penalty class %q", entry.Class)
+	}
+	if entry.ProofType != "" && !IsFraudProofType(entry.ProofType) {
+		return fmt.Errorf("unknown payments penalty matrix proof type %q", entry.ProofType)
+	}
+	if !IsPenaltySource(entry.Source) {
+		return fmt.Errorf("unknown payments penalty source %q", entry.Source)
+	}
+	for _, item := range []struct {
+		name   string
+		amount string
+	}{
+		{"payments penalty matrix base", entry.BasePenalty},
+		{"payments penalty reporter cap", entry.ReporterRewardCap},
+		{"payments penalty counterparty compensation", entry.CounterpartyCompensation},
+		{"payments invalid proof verifier cost", entry.InvalidProofVerifierCost},
+	} {
+		if err := validateNonNegativeInt(item.name, item.amount); err != nil {
+			return err
+		}
+	}
+	if entry.BurnShareBps+entry.SecurityReserveShareBps+entry.CommunityPoolShareBps > MaxPenaltyRouteBps {
+		return errors.New("payments penalty matrix route shares exceed 10000 bps")
 	}
 	return nil
 }
@@ -5760,6 +5922,171 @@ func BuildFraudPenaltyRouting(channel ChannelRecord, proof FraudProof, policy Fr
 	return normalizePenalties(penalties), normalizePenaltyAllocations(allocations), nil
 }
 
+func DefaultPenaltyMatrix() []PenaltyMatrixEntry {
+	return []PenaltyMatrixEntry{
+		{Class: PenaltyClassInvalidClose, ProofType: FraudProofTypeInvalidClose, Source: PenaltySourceChannelBalance, BasePenalty: "10", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassInvalidClose, ProofType: FraudProofTypeInvalidBalance, Source: PenaltySourceChannelBalance, BasePenalty: "10", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassStaleClose, ProofType: FraudProofTypeStaleClose, Source: PenaltySourceChannelBalance, BasePenalty: "10", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassDoubleSign, ProofType: FraudProofTypeDoubleSign, Source: PenaltySourceParticipantBond, BasePenalty: "20", ReporterRewardCap: "8", CounterpartyCompensation: "6", BurnShareBps: 3_000, SecurityReserveShareBps: 4_000, CommunityPoolShareBps: 3_000, Bounded: true},
+		{Class: PenaltyClassInvalidCondition, ProofType: FraudProofTypeInvalidCondition, Source: PenaltySourceChannelBalance, BasePenalty: "8", ReporterRewardCap: "4", CounterpartyCompensation: "4", BurnShareBps: 2_500, SecurityReserveShareBps: 2_500, CommunityPoolShareBps: 5_000, Bounded: true},
+		{Class: PenaltyClassReplayAttempt, ProofType: FraudProofTypeReplayAttempt, Source: PenaltySourceChannelBalance, BasePenalty: "8", ReporterRewardCap: "4", CounterpartyCompensation: "4", BurnShareBps: 3_000, SecurityReserveShareBps: 3_000, CommunityPoolShareBps: 4_000, Bounded: true},
+		{Class: PenaltyClassAsyncOverexposure, ProofType: FraudProofTypeAsyncOverexposure, Source: PenaltySourceParticipantBond, BasePenalty: "12", ReporterRewardCap: "5", CounterpartyCompensation: "5", BurnShareBps: 3_000, SecurityReserveShareBps: 3_000, CommunityPoolShareBps: 4_000, Bounded: true},
+		{Class: PenaltyClassInvalidFraudProof, Source: PenaltySourceFraudProofDeposit, BasePenalty: "0", InvalidProofVerifierCost: "1", Bounded: true},
+	}
+}
+
+func PenaltyClassForFraudProofType(proofType FraudProofType) (PaymentPenaltyClass, error) {
+	switch proofType {
+	case FraudProofTypeInvalidClose:
+		return PenaltyClassInvalidClose, nil
+	case FraudProofTypeStaleClose:
+		return PenaltyClassStaleClose, nil
+	case FraudProofTypeDoubleSign:
+		return PenaltyClassDoubleSign, nil
+	case FraudProofTypeInvalidCondition:
+		return PenaltyClassInvalidCondition, nil
+	case FraudProofTypeReplayAttempt:
+		return PenaltyClassReplayAttempt, nil
+	case FraudProofTypeAsyncOverexposure:
+		return PenaltyClassAsyncOverexposure, nil
+	case FraudProofTypeInvalidBalance:
+		return PenaltyClassInvalidClose, nil
+	default:
+		return "", fmt.Errorf("unknown payments fraud proof type %q", proofType)
+	}
+}
+
+func PenaltyMatrixEntryForProof(proofType FraudProofType, matrix []PenaltyMatrixEntry) (PenaltyMatrixEntry, error) {
+	class, err := PenaltyClassForFraudProofType(proofType)
+	if err != nil {
+		return PenaltyMatrixEntry{}, err
+	}
+	for _, entry := range normalizePenaltyMatrix(matrix) {
+		if entry.Class == class && (entry.ProofType == "" || entry.ProofType == proofType) {
+			return entry, nil
+		}
+	}
+	return PenaltyMatrixEntry{}, errors.New("payments penalty matrix entry not found")
+}
+
+func BuildPenaltyRouteAccounting(channel ChannelRecord, proof FraudProof, matrix []PenaltyMatrixEntry, policy FraudPenaltyPolicy) (PenaltyRouteAccounting, error) {
+	channel = channel.Normalize()
+	proof = proof.Normalize()
+	if err := proof.ValidateForChannel(channel); err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	entry, err := PenaltyMatrixEntryForProof(proof.ProofType, matrix)
+	if err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	if err := entry.Validate(); err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	policy = policy.Normalize()
+	if policy.ReporterRewardCap == "" {
+		policy.ReporterRewardCap = entry.ReporterRewardCap
+	}
+	if policy.CounterpartyRewardCap == "" {
+		policy.CounterpartyRewardCap = entry.CounterpartyCompensation
+	}
+	if policy.BurnShareBps == 0 && policy.SecurityReserveShareBps == 0 && policy.CommunityPoolShareBps == 0 {
+		policy.BurnShareBps = entry.BurnShareBps
+		policy.SecurityReserveShareBps = entry.SecurityReserveShareBps
+		policy.CommunityPoolShareBps = entry.CommunityPoolShareBps
+	}
+	if err := policy.Validate(); err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	penaltyAmount, err := parsePositiveInt("payments penalty accounting amount", proof.PenaltyAmount)
+	if err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	if entry.BasePenalty != "" {
+		basePenalty, err := parseNonNegativeInt("payments penalty matrix base", entry.BasePenalty)
+		if err != nil {
+			return PenaltyRouteAccounting{}, err
+		}
+		if penaltyAmount.LT(basePenalty) {
+			return PenaltyRouteAccounting{}, errors.New("payments fraud penalty below matrix minimum")
+		}
+	}
+	remaining := penaltyAmount
+	penalties := []Penalty{}
+	counterpartyComp := sdkmath.ZeroInt()
+	if proof.OffendingSigner == channel.PendingClose.Submitter {
+		counterparty := channelCounterparty(channel, proof.OffendingSigner)
+		if counterparty != "" {
+			counterpartyComp, err = cappedPenaltyPortion(remaining, policy.CounterpartyRewardCap, policy.CounterpartyRewardBps)
+			if err != nil {
+				return PenaltyRouteAccounting{}, err
+			}
+			if counterpartyComp.IsPositive() {
+				penalty := Penalty{Offender: proof.OffendingSigner, Recipient: counterparty, Denom: NativeDenom, Amount: counterpartyComp.String()}.Normalize()
+				if err := penalty.ValidateForChannel(channel); err != nil {
+					return PenaltyRouteAccounting{}, err
+				}
+				penalties = append(penalties, penalty)
+				remaining = remaining.Sub(counterpartyComp)
+			}
+		}
+	}
+	reporterReward := sdkmath.ZeroInt()
+	if remaining.IsPositive() {
+		reporterReward, err = cappedPenaltyPortion(remaining, policy.ReporterRewardCap, 0)
+		if err != nil {
+			return PenaltyRouteAccounting{}, err
+		}
+		if reporterReward.IsPositive() {
+			penalty := Penalty{Offender: proof.OffendingSigner, Recipient: proof.SubmittedBy, Denom: NativeDenom, Amount: reporterReward.String()}.Normalize()
+			if err := penalty.ValidateForChannel(channel); err != nil {
+				return PenaltyRouteAccounting{}, err
+			}
+			penalties = append(penalties, penalty)
+			remaining = remaining.Sub(reporterReward)
+		}
+	}
+	allocations, err := splitPenaltyRemainder(proof.OffendingSigner, remaining, policy)
+	if err != nil {
+		return PenaltyRouteAccounting{}, err
+	}
+	return PenaltyRouteAccounting{
+		Class:            entry.Class,
+		Source:           entry.Source,
+		TotalPenalty:     penaltyAmount.String(),
+		ReporterReward:   reporterReward.String(),
+		CounterpartyComp: counterpartyComp.String(),
+		Allocations:      allocations,
+		Penalties:        normalizePenalties(penalties),
+	}, nil
+}
+
+func ComputeInvalidFraudProofSubmissionPenalty(submitter, depositAmount, verificationCost string) (InvalidFraudProofSubmissionPenalty, error) {
+	submitter = strings.TrimSpace(submitter)
+	if err := addressing.ValidateUserAddress("payments invalid fraud proof submitter", submitter); err != nil {
+		return InvalidFraudProofSubmissionPenalty{}, err
+	}
+	deposit, err := parseNonNegativeInt("payments invalid fraud proof deposit", strings.TrimSpace(depositAmount))
+	if err != nil {
+		return InvalidFraudProofSubmissionPenalty{}, err
+	}
+	cost, err := parseNonNegativeInt("payments invalid fraud proof verification cost", strings.TrimSpace(verificationCost))
+	if err != nil {
+		return InvalidFraudProofSubmissionPenalty{}, err
+	}
+	forfeited := cost
+	if forfeited.GT(deposit) {
+		forfeited = deposit
+	}
+	return InvalidFraudProofSubmissionPenalty{
+		Submitter:        submitter,
+		Denom:            NativeDenom,
+		DepositAmount:    deposit.String(),
+		VerificationCost: cost.String(),
+		ForfeitedAmount:  forfeited.String(),
+		RefundAmount:     deposit.Sub(forfeited).String(),
+	}, nil
+}
+
 func (s SettlementRecord) Normalize() SettlementRecord {
 	s.ChainID = strings.TrimSpace(s.ChainID)
 	s.ChannelID = normalizeHash(s.ChannelID)
@@ -6039,6 +6366,325 @@ func (e ChannelEdge) Validate() error {
 		return err
 	}
 	return validateNonNegativeInt("payments routing advertisement fee", e.AdvertisementFeePaid)
+}
+
+func BuildLiquidityAdvertisement(ad LiquidityAdvertisement, requiredDeposit string) (LiquidityAdvertisement, error) {
+	ad = ad.Normalize()
+	if ad.AdvertisementID == "" {
+		ad.AdvertisementID = HashParts("liquidity-advertisement", ad.ChannelID, ad.Advertiser, ad.Counterparty, ad.Capacity, fmt.Sprintf("%020d", ad.ValidUntilHeight))
+	}
+	ad.AdvertisementHash = ""
+	ad.AdvertisementHash = ComputeLiquidityAdvertisementHash(ad)
+	if err := ad.Validate(requiredDeposit); err != nil {
+		return LiquidityAdvertisement{}, err
+	}
+	return ad.Normalize(), nil
+}
+
+func ComputeLiquidityAdvertisementHash(ad LiquidityAdvertisement) string {
+	ad = ad.Normalize()
+	return HashParts(
+		"liquidity-advertisement",
+		ad.AdvertisementID,
+		ad.ChannelID,
+		ad.Advertiser,
+		ad.Counterparty,
+		ad.Capacity,
+		ad.FeeDenom,
+		ad.BaseFee,
+		ad.ReservationFee,
+		ad.VirtualSetupFee,
+		fmt.Sprintf("%010d", ad.ReliabilityBps),
+		fmt.Sprintf("%020d", ad.ValidUntilHeight),
+		ad.DepositAmount,
+		fmt.Sprintf("%t", ad.BackedByReservation),
+	)
+}
+
+func (ad LiquidityAdvertisement) Normalize() LiquidityAdvertisement {
+	ad.AdvertisementID = normalizeOptionalHash(ad.AdvertisementID)
+	ad.ChannelID = normalizeHash(ad.ChannelID)
+	ad.Advertiser = strings.TrimSpace(ad.Advertiser)
+	ad.Counterparty = strings.TrimSpace(ad.Counterparty)
+	ad.Capacity = strings.TrimSpace(ad.Capacity)
+	ad.FeeDenom = normalizeAssetDenom(ad.FeeDenom)
+	ad.BaseFee = strings.TrimSpace(ad.BaseFee)
+	ad.ReservationFee = strings.TrimSpace(ad.ReservationFee)
+	ad.VirtualSetupFee = strings.TrimSpace(ad.VirtualSetupFee)
+	ad.DepositAmount = strings.TrimSpace(ad.DepositAmount)
+	for _, field := range []*string{&ad.BaseFee, &ad.ReservationFee, &ad.VirtualSetupFee, &ad.DepositAmount} {
+		if *field == "" {
+			*field = "0"
+		}
+	}
+	ad.AdvertisementHash = normalizeOptionalHash(ad.AdvertisementHash)
+	return ad
+}
+
+func (ad LiquidityAdvertisement) Validate(requiredDeposit string) error {
+	ad = ad.Normalize()
+	if err := ValidateHash("payments liquidity advertisement id", ad.AdvertisementID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments liquidity advertisement channel id", ad.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity advertiser", ad.Advertiser); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity counterparty", ad.Counterparty); err != nil {
+		return err
+	}
+	if ad.Advertiser == ad.Counterparty {
+		return errors.New("payments liquidity advertisement parties must differ")
+	}
+	if err := validatePositiveInt("payments liquidity advertised capacity", ad.Capacity); err != nil {
+		return err
+	}
+	if ad.FeeDenom != NativeDenom {
+		return fmt.Errorf("payments liquidity advertisement fee denom must be %s", NativeDenom)
+	}
+	for _, item := range []struct {
+		name   string
+		amount string
+	}{
+		{"payments liquidity base fee", ad.BaseFee},
+		{"payments liquidity reservation fee", ad.ReservationFee},
+		{"payments liquidity virtual setup fee", ad.VirtualSetupFee},
+		{"payments liquidity advertisement deposit", ad.DepositAmount},
+	} {
+		if err := validateNonNegativeInt(item.name, item.amount); err != nil {
+			return err
+		}
+	}
+	if ad.ReliabilityBps > MaxPenaltyRouteBps {
+		return errors.New("payments liquidity reliability bps exceeds 10000")
+	}
+	if ad.ValidUntilHeight == 0 {
+		return errors.New("payments liquidity advertisement validity height must be positive")
+	}
+	requiredDeposit = strings.TrimSpace(requiredDeposit)
+	if requiredDeposit != "" {
+		required, err := parseNonNegativeInt("payments liquidity required deposit", requiredDeposit)
+		if err != nil {
+			return err
+		}
+		deposit, err := parseNonNegativeInt("payments liquidity advertisement deposit", ad.DepositAmount)
+		if err != nil {
+			return err
+		}
+		if deposit.LT(required) {
+			return errors.New("payments liquidity advertisement deposit below required")
+		}
+	}
+	if ad.AdvertisementHash == "" {
+		return errors.New("payments liquidity advertisement hash is required")
+	}
+	if expected := ComputeLiquidityAdvertisementHash(ad); ad.AdvertisementHash != expected {
+		return errors.New("payments liquidity advertisement hash mismatch")
+	}
+	return nil
+}
+
+func LiquidityAvailabilityScore(ad LiquidityAdvertisement, stats EdgeRoutingStats) (int64, error) {
+	ad = ad.Normalize()
+	if err := ad.Validate("0"); err != nil {
+		return 0, err
+	}
+	capacity, err := parsePositiveInt("payments liquidity score capacity", ad.Capacity)
+	if err != nil {
+		return 0, err
+	}
+	score := capacity.QuoRaw(10).Int64()
+	score += int64(ad.ReliabilityBps) / 100
+	if ad.BackedByReservation {
+		score += 100
+	}
+	stats = stats.Normalize()
+	score += int64(stats.SuccessRateBps) / 200
+	score -= int64(stats.FailureCount) * 25
+	score -= int64(stats.CongestionBps) / 200
+	score -= int64(stats.PendingConditionCount) * 5
+	return score, nil
+}
+
+func ApplyFalseLiquidityAdvertisementPenalty(store TopologyStore, ad LiquidityAdvertisement, currentHeight uint64) (TopologyStore, string, error) {
+	ad = ad.Normalize()
+	if err := ad.Validate("0"); err != nil {
+		return TopologyStore{}, "", err
+	}
+	forfeited, err := parseNonNegativeInt("payments false liquidity deposit", ad.DepositAmount)
+	if err != nil {
+		return TopologyStore{}, "", err
+	}
+	next := PenalizeInvalidGossip(store, ad.Advertiser, currentHeight)
+	return next, forfeited.String(), nil
+}
+
+func BuildSignedLiquidityReservation(reservation SignedLiquidityReservation, signer string) (SignedLiquidityReservation, error) {
+	reservation = reservation.Normalize()
+	if reservation.ReservationID == "" {
+		reservation.ReservationID = HashParts("liquidity-reservation", reservation.AdvertisementID, reservation.ChannelID, reservation.Reserver, fmt.Sprintf("%020d", reservation.Nonce))
+	}
+	reservation.CommitmentHash = ""
+	reservation.Signature = LiquidityReservationSignature{}
+	reservation.CommitmentHash = ComputeLiquidityReservationHash(reservation)
+	signature, err := SignatureForLiquidityReservation(reservation, signer)
+	if err != nil {
+		return SignedLiquidityReservation{}, err
+	}
+	reservation.Signature = signature
+	if err := reservation.Validate(); err != nil {
+		return SignedLiquidityReservation{}, err
+	}
+	return reservation.Normalize(), nil
+}
+
+func ComputeLiquidityReservationHash(reservation SignedLiquidityReservation) string {
+	reservation = reservation.Normalize()
+	return HashParts(
+		"liquidity-reservation",
+		reservation.ReservationID,
+		reservation.AdvertisementID,
+		reservation.ChainID,
+		reservation.ChannelID,
+		reservation.Reserver,
+		reservation.Counterparty,
+		reservation.Capacity,
+		reservation.FeeAmount,
+		fmt.Sprintf("%020d", reservation.ExpirationHeight),
+		fmt.Sprintf("%020d", reservation.Nonce),
+	)
+}
+
+func SignatureForLiquidityReservation(reservation SignedLiquidityReservation, signer string) (LiquidityReservationSignature, error) {
+	reservation = reservation.Normalize()
+	signer = strings.TrimSpace(signer)
+	if err := addressing.ValidateUserAddress("payments liquidity reservation signer", signer); err != nil {
+		return LiquidityReservationSignature{}, err
+	}
+	if reservation.CommitmentHash == "" {
+		reservation.CommitmentHash = ComputeLiquidityReservationHash(reservation)
+	}
+	return LiquidityReservationSignature{
+		Signer:           signer,
+		ChainID:          reservation.ChainID,
+		ChannelID:        reservation.ChannelID,
+		ObjectType:       SignatureObjectLiquidity,
+		Version:          CurrentStateVersion,
+		Nonce:            reservation.Nonce,
+		ObjectID:         reservation.ReservationID,
+		ExpirationHeight: reservation.ExpirationHeight,
+		CommitmentHash:   reservation.CommitmentHash,
+		SignatureHash: ComputeSignatureEnvelopeHash(
+			signer,
+			reservation.ChainID,
+			reservation.ChannelID,
+			SignatureObjectLiquidity,
+			CurrentStateVersion,
+			reservation.Nonce,
+			reservation.ReservationID,
+			reservation.ExpirationHeight,
+			reservation.CommitmentHash,
+		),
+	}, nil
+}
+
+func (r SignedLiquidityReservation) Normalize() SignedLiquidityReservation {
+	r.ReservationID = normalizeOptionalHash(r.ReservationID)
+	r.AdvertisementID = normalizeHash(r.AdvertisementID)
+	r.ChainID = strings.TrimSpace(r.ChainID)
+	r.ChannelID = normalizeHash(r.ChannelID)
+	r.Reserver = strings.TrimSpace(r.Reserver)
+	r.Counterparty = strings.TrimSpace(r.Counterparty)
+	r.Capacity = strings.TrimSpace(r.Capacity)
+	r.FeeAmount = strings.TrimSpace(r.FeeAmount)
+	if r.FeeAmount == "" {
+		r.FeeAmount = "0"
+	}
+	r.CommitmentHash = normalizeOptionalHash(r.CommitmentHash)
+	r.Signature = r.Signature.Normalize()
+	return r
+}
+
+func (r SignedLiquidityReservation) Validate() error {
+	reservation := r.Normalize()
+	if err := ValidateHash("payments liquidity reservation id", reservation.ReservationID); err != nil {
+		return err
+	}
+	if err := ValidateHash("payments liquidity reservation advertisement id", reservation.AdvertisementID); err != nil {
+		return err
+	}
+	if reservation.ChainID == "" {
+		return errors.New("payments liquidity reservation chain id is required")
+	}
+	if err := ValidateHash("payments liquidity reservation channel id", reservation.ChannelID); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity reserver", reservation.Reserver); err != nil {
+		return err
+	}
+	if err := addressing.ValidateUserAddress("payments liquidity reservation counterparty", reservation.Counterparty); err != nil {
+		return err
+	}
+	if reservation.Reserver == reservation.Counterparty {
+		return errors.New("payments liquidity reservation parties must differ")
+	}
+	if err := validatePositiveInt("payments liquidity reservation capacity", reservation.Capacity); err != nil {
+		return err
+	}
+	if err := validateNonNegativeInt("payments liquidity reservation fee", reservation.FeeAmount); err != nil {
+		return err
+	}
+	if reservation.ExpirationHeight == 0 || reservation.Nonce == 0 {
+		return errors.New("payments liquidity reservation expiration and nonce must be positive")
+	}
+	if reservation.CommitmentHash == "" {
+		return errors.New("payments liquidity reservation commitment is required")
+	}
+	if expected := ComputeLiquidityReservationHash(reservation); reservation.CommitmentHash != expected {
+		return errors.New("payments liquidity reservation commitment mismatch")
+	}
+	return reservation.Signature.Validate(reservation)
+}
+
+func (s LiquidityReservationSignature) Normalize() LiquidityReservationSignature {
+	s.Signer = strings.TrimSpace(s.Signer)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.ChannelID = normalizeHash(s.ChannelID)
+	s.ObjectType = strings.TrimSpace(s.ObjectType)
+	s.ObjectID = normalizeOptionalHash(s.ObjectID)
+	s.CommitmentHash = normalizeOptionalHash(s.CommitmentHash)
+	s.SignatureHash = normalizeOptionalHash(s.SignatureHash)
+	return s
+}
+
+func (s LiquidityReservationSignature) Validate(reservation SignedLiquidityReservation) error {
+	sig := s.Normalize()
+	reservation = reservation.Normalize()
+	if err := addressing.ValidateUserAddress("payments liquidity reservation signature signer", sig.Signer); err != nil {
+		return err
+	}
+	if sig.Signer != reservation.Reserver {
+		return errors.New("payments liquidity reservation signer mismatch")
+	}
+	if sig.ChainID != reservation.ChainID || sig.ChannelID != reservation.ChannelID {
+		return errors.New("payments liquidity reservation signature domain mismatch")
+	}
+	if sig.ObjectType != SignatureObjectLiquidity || sig.Version != CurrentStateVersion {
+		return errors.New("payments liquidity reservation signature object mismatch")
+	}
+	if sig.Nonce != reservation.Nonce || sig.ObjectID != reservation.ReservationID || sig.ExpirationHeight != reservation.ExpirationHeight || sig.CommitmentHash != reservation.CommitmentHash {
+		return errors.New("payments liquidity reservation signature commitment mismatch")
+	}
+	if err := ValidateHash("payments liquidity reservation signature hash", sig.SignatureHash); err != nil {
+		return err
+	}
+	expected := ComputeSignatureEnvelopeHash(sig.Signer, sig.ChainID, sig.ChannelID, sig.ObjectType, sig.Version, sig.Nonce, sig.ObjectID, sig.ExpirationHeight, sig.CommitmentHash)
+	if sig.SignatureHash != expected {
+		return errors.New("payments liquidity reservation signature value mismatch")
+	}
+	return nil
 }
 
 func BuildVirtualChannel(vc VirtualChannel) (VirtualChannel, error) {
@@ -8264,7 +8910,34 @@ func IsVirtualCloseMode(value VirtualCloseMode) bool {
 
 func IsPenaltyRoute(value PenaltyRoute) bool {
 	switch value {
-	case PenaltyRouteReporter, PenaltyRouteBurn, PenaltyRouteSecurityReserve, PenaltyRouteCommunityPool:
+	case PenaltyRouteReporter, PenaltyRouteCounterparty, PenaltyRouteBurn, PenaltyRouteSecurityReserve, PenaltyRouteCommunityPool:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsPaymentPenaltyClass(value PaymentPenaltyClass) bool {
+	switch value {
+	case PenaltyClassInvalidClose,
+		PenaltyClassStaleClose,
+		PenaltyClassDoubleSign,
+		PenaltyClassInvalidCondition,
+		PenaltyClassReplayAttempt,
+		PenaltyClassAsyncOverexposure,
+		PenaltyClassInvalidFraudProof:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsPenaltySource(value PenaltySource) bool {
+	switch value {
+	case PenaltySourceChannelBalance,
+		PenaltySourceParticipantBond,
+		PenaltySourceRoutingAdvertisementDeposit,
+		PenaltySourceFraudProofDeposit:
 		return true
 	default:
 		return false
@@ -9892,6 +10565,60 @@ func normalizePenaltyAllocations(allocations []PenaltyAllocation) []PenaltyAlloc
 		return out[i].Amount < out[j].Amount
 	})
 	return out
+}
+
+func normalizePenaltyMatrix(matrix []PenaltyMatrixEntry) []PenaltyMatrixEntry {
+	if len(matrix) == 0 {
+		matrix = DefaultPenaltyMatrix()
+	}
+	out := make([]PenaltyMatrixEntry, len(matrix))
+	for i, entry := range matrix {
+		out[i] = entry.Normalize()
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := string(out[i].Class) + "/" + string(out[i].ProofType)
+		right := string(out[j].Class) + "/" + string(out[j].ProofType)
+		return left < right
+	})
+	return out
+}
+
+func cappedPenaltyPortion(available sdkmath.Int, capText string, bps uint32) (sdkmath.Int, error) {
+	if !available.IsPositive() {
+		return sdkmath.ZeroInt(), nil
+	}
+	portion := available
+	if bps > 0 {
+		if bps > MaxPenaltyRouteBps {
+			return sdkmath.ZeroInt(), errors.New("payments penalty portion bps exceeds 10000")
+		}
+		portion = available.MulRaw(int64(bps)).QuoRaw(int64(MaxPenaltyRouteBps))
+	}
+	capText = strings.TrimSpace(capText)
+	if capText != "" {
+		capAmount, err := parseNonNegativeInt("payments penalty portion cap", capText)
+		if err != nil {
+			return sdkmath.ZeroInt(), err
+		}
+		if portion.GT(capAmount) {
+			portion = capAmount
+		}
+	}
+	if portion.GT(available) {
+		portion = available
+	}
+	return portion, nil
+}
+
+func channelCounterparty(channel ChannelRecord, offender string) string {
+	channel = channel.Normalize()
+	offender = strings.TrimSpace(offender)
+	for _, participant := range channel.Participants {
+		if participant != offender {
+			return participant
+		}
+	}
+	return ""
 }
 
 func normalizeStateSignatures(signatures []StateSignature) []StateSignature {
