@@ -113,6 +113,64 @@ func TestMigrationPhase3ReadinessFailsIncompleteExtractionAndUncommittedRoots(t 
 	require.NoError(t, report.Validate())
 }
 
+func TestMigrationPhase4ReadinessPassesShardingRuntime(t *testing.T) {
+	report := BuildMigrationPhase4Readiness(validMigrationPhase4Input())
+	require.True(t, report.Passed, report.Failed)
+	require.Empty(t, report.Failed)
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase4ReadinessFailsSingleShardNondeterministicSchedulerAndLostMessages(t *testing.T) {
+	input := validMigrationPhase4Input()
+	input.ShardDescriptors = input.ShardDescriptors[:1]
+	input.SplitMergeScheduler.Deterministic = false
+	input.Migration.SurvivesLayoutChange = false
+	input.InFlightMessagesSurviveChange = false
+
+	report := BuildMigrationPhase4Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "zones_support_multiple_shards")
+	require.Contains(t, report.Failed, "split_merge_scheduler")
+	require.Contains(t, report.Failed, "deterministic_shard_migration")
+	require.Contains(t, report.Failed, "in_flight_messages_survive_layout_changes")
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase4ReadinessRequiresPerShardInboxOutboxAndRouteKeys(t *testing.T) {
+	input := validMigrationPhase4Input()
+	input.ShardDescriptors[0].RouteKeyRoot = ""
+	input.ShardDescriptors[1].InboxRoot = ""
+
+	report := BuildMigrationPhase4Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "per_shard_runtime_descriptors")
+}
+
+func TestMigrationPhase5ReadinessPassesAVM20(t *testing.T) {
+	report := BuildMigrationPhase5Readiness(validMigrationPhase5Input())
+	require.True(t, report.Passed, report.Failed)
+	require.Empty(t, report.Failed)
+	require.NoError(t, report.Validate())
+}
+
+func TestMigrationPhase5ReadinessFailsMissingInterpreterGasProofSyscallAndProofRoot(t *testing.T) {
+	input := validMigrationPhase5Input()
+	input.Interpreter.Implemented = false
+	input.GasTable.Deterministic = false
+	input.ProofVerificationSyscalls[0].Metered = false
+	input.ContractStateProofRoot = ""
+	input.ContractZoneDeterministic = false
+
+	report := BuildMigrationPhase5Readiness(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "avm_component:interpreter")
+	require.Contains(t, report.Failed, "avm_component:gas_table")
+	require.Contains(t, report.Failed, "proof_verification_syscalls")
+	require.Contains(t, report.Failed, "contract_state_proof_root")
+	require.Contains(t, report.Failed, "contract_zone_deterministic_execution")
+	require.NoError(t, report.Validate())
+}
+
 func validMigrationPhase0Input() MigrationPhase0Input {
 	appHash := hashStrings("single-chain-app-hash")
 	return MigrationPhase0Input{
@@ -208,6 +266,59 @@ func validMigrationPhase3Input() MigrationPhase3Input {
 	}
 }
 
+func validMigrationPhase4Input() MigrationPhase4Input {
+	return MigrationPhase4Input{
+		ShardsModuleHash:          hashStrings("x-shards"),
+		ZoneID:                    "financial",
+		ShardLayoutDescriptorRoot: hashStrings("shard-layout-descriptors"),
+		RouteKeyCalculationHash:   hashStrings("route-key-calculation"),
+		ShardDescriptors: []ShardRuntimeDescriptorCheck{
+			shardRuntimeDescriptor("shard-0001"),
+			shardRuntimeDescriptor("shard-0002"),
+		},
+		RootAggregationHash: hashStrings("shard-root-aggregation"),
+		SplitMergeScheduler: ShardSplitMergeSchedulerCheck{
+			SchedulerRoot:     hashStrings("shard-scheduler"),
+			SplitDecisionRoot: hashStrings("shard-split-decisions"),
+			MergeDecisionRoot: hashStrings("shard-merge-decisions"),
+			Deterministic:     true,
+		},
+		Migration: ShardMigrationCheck{
+			MigrationRoot:          hashStrings("shard-migration"),
+			OldLayoutHash:          hashStrings("old-shard-layout"),
+			NewLayoutHash:          hashStrings("new-shard-layout"),
+			InFlightMessageRoot:    hashStrings("in-flight-message-root"),
+			SurvivesLayoutChange:   true,
+			DeterministicMigration: true,
+		},
+		ZonesSupportMultipleShards:    true,
+		IndependentWorkloadsParallel:  true,
+		InFlightMessagesSurviveChange: true,
+	}
+}
+
+func validMigrationPhase5Input() MigrationPhase5Input {
+	return MigrationPhase5Input{
+		BytecodeFormat:         avm20Component("bytecode_format"),
+		Interpreter:            avm20Component("interpreter"),
+		GasTable:               avm20Component("gas_table"),
+		ContractStorageAdapter: avm20Component("contract_storage_adapter"),
+		ABIRegistry:            avm20Component("abi_registry"),
+		MessageSyscalls: []AVM20SyscallCheck{
+			avm20Syscall("emit_message"),
+			avm20Syscall("resolve_promise"),
+		},
+		ProofVerificationSyscalls: []AVM20SyscallCheck{
+			avm20Syscall("verify_account_proof"),
+			avm20Syscall("verify_contract_storage_proof"),
+		},
+		ContractZoneDeterministic: true,
+		AsyncMessageEmissionRoot:  hashStrings("avm-async-message-emission"),
+		ContractStateProofRoot:    hashStrings("avm-contract-state-proofs"),
+		ContractZoneExecutionRoot: hashStrings("avm-contract-zone-execution"),
+	}
+}
+
 func genesisImport(module string) GenesisImportCheck {
 	root := hashStrings("genesis", module)
 	return GenesisImportCheck{ModuleName: module, Active: true, Deterministic: true, ExportHash: root, ImportHash: root}
@@ -250,5 +361,36 @@ func zoneExtraction(zoneID string, modules []string) ZoneExtractionCheck {
 		ExecutionSummaryHash: hashStrings("zone-summary", zoneID),
 		CommittedRoot:        hashStrings("zone-root", zoneID),
 		Modules:              modules,
+	}
+}
+
+func shardRuntimeDescriptor(shardID string) ShardRuntimeDescriptorCheck {
+	return ShardRuntimeDescriptorCheck{
+		ShardID:           shardID,
+		LayoutHash:        hashStrings("shard-layout", shardID),
+		RouteKeyRoot:      hashStrings("shard-route-key", shardID),
+		InboxRoot:         hashStrings("shard-inbox", shardID),
+		OutboxRoot:        hashStrings("shard-outbox", shardID),
+		ShardRoot:         hashStrings("shard-state-root", shardID),
+		ParallelGroupHash: hashStrings("shard-parallel-group", shardID),
+		Active:            true,
+	}
+}
+
+func avm20Component(name string) AVM20ComponentCheck {
+	return AVM20ComponentCheck{
+		ComponentName: name,
+		ComponentHash: hashStrings("avm20-component", name),
+		Implemented:   true,
+		Deterministic: true,
+	}
+}
+
+func avm20Syscall(name string) AVM20SyscallCheck {
+	return AVM20SyscallCheck{
+		SyscallName: name,
+		SyscallHash: hashStrings("avm20-syscall", name),
+		Metered:     true,
+		Enabled:     true,
 	}
 }

@@ -14,6 +14,8 @@ const (
 	MigrationPhase1CoreCommitments   MigrationPhase = "phase_1_core_commitments"
 	MigrationPhase2MessageBus        MigrationPhase = "phase_2_message_bus"
 	MigrationPhase3ZoneExtraction    MigrationPhase = "phase_3_zone_extraction"
+	MigrationPhase4ShardingRuntime   MigrationPhase = "phase_4_sharding_runtime"
+	MigrationPhase5AVM20             MigrationPhase = "phase_5_avm_2_0"
 )
 
 type GenesisImportCheck struct {
@@ -135,6 +137,75 @@ type MigrationPhase3Input struct {
 	IdentityIsolatedActivation         bool
 	ZoneRootsCommittedPerBlock         bool
 	ZoneCommitmentRoot                 string
+}
+
+type ShardRuntimeDescriptorCheck struct {
+	ShardID           string
+	LayoutHash        string
+	RouteKeyRoot      string
+	InboxRoot         string
+	OutboxRoot        string
+	ShardRoot         string
+	ParallelGroupHash string
+	Active            bool
+}
+
+type ShardSplitMergeSchedulerCheck struct {
+	SchedulerRoot     string
+	SplitDecisionRoot string
+	MergeDecisionRoot string
+	Deterministic     bool
+}
+
+type ShardMigrationCheck struct {
+	MigrationRoot          string
+	OldLayoutHash          string
+	NewLayoutHash          string
+	InFlightMessageRoot    string
+	SurvivesLayoutChange   bool
+	DeterministicMigration bool
+}
+
+type MigrationPhase4Input struct {
+	ShardsModuleHash              string
+	ZoneID                        string
+	ShardLayoutDescriptorRoot     string
+	RouteKeyCalculationHash       string
+	ShardDescriptors              []ShardRuntimeDescriptorCheck
+	RootAggregationHash           string
+	SplitMergeScheduler           ShardSplitMergeSchedulerCheck
+	Migration                     ShardMigrationCheck
+	ZonesSupportMultipleShards    bool
+	IndependentWorkloadsParallel  bool
+	InFlightMessagesSurviveChange bool
+}
+
+type AVM20ComponentCheck struct {
+	ComponentName string
+	ComponentHash string
+	Implemented   bool
+	Deterministic bool
+}
+
+type AVM20SyscallCheck struct {
+	SyscallName string
+	SyscallHash string
+	Metered     bool
+	Enabled     bool
+}
+
+type MigrationPhase5Input struct {
+	BytecodeFormat            AVM20ComponentCheck
+	Interpreter               AVM20ComponentCheck
+	GasTable                  AVM20ComponentCheck
+	ContractStorageAdapter    AVM20ComponentCheck
+	ABIRegistry               AVM20ComponentCheck
+	MessageSyscalls           []AVM20SyscallCheck
+	ProofVerificationSyscalls []AVM20SyscallCheck
+	ContractZoneDeterministic bool
+	AsyncMessageEmissionRoot  string
+	ContractStateProofRoot    string
+	ContractZoneExecutionRoot string
 }
 
 type MigrationReadinessReport struct {
@@ -347,6 +418,116 @@ func BuildMigrationPhase3Readiness(input MigrationPhase3Input) MigrationReadines
 	return report
 }
 
+func BuildMigrationPhase4Readiness(input MigrationPhase4Input) MigrationReadinessReport {
+	input = input.Normalize()
+	failed := make([]string, 0)
+	evidence := make([]string, 0)
+	for _, item := range []struct {
+		label string
+		hash  string
+	}{
+		{"shards_module", input.ShardsModuleHash},
+		{"shard_layout_descriptors", input.ShardLayoutDescriptorRoot},
+		{"route_key_calculation", input.RouteKeyCalculationHash},
+		{"shard_root_aggregation", input.RootAggregationHash},
+	} {
+		if err := validateHexHash("migration phase 4 "+item.label, item.hash); err != nil {
+			failed = append(failed, item.label)
+		} else {
+			evidence = append(evidence, item.label+":"+item.hash)
+		}
+	}
+	if err := validateExecutionToken("migration phase 4 zone id", input.ZoneID); err != nil {
+		failed = append(failed, "zone_id")
+	}
+	if err := validateShardRuntimeDescriptors(input.ShardDescriptors); err != nil {
+		failed = append(failed, "per_shard_runtime_descriptors")
+	} else {
+		evidence = append(evidence, "per_shard_runtime_descriptors:"+hashShardRuntimeDescriptors(input.ShardDescriptors))
+	}
+	if !input.ZonesSupportMultipleShards || activeShardCount(input.ShardDescriptors) < 2 {
+		failed = append(failed, "zones_support_multiple_shards")
+	}
+	if !input.IndependentWorkloadsParallel {
+		failed = append(failed, "independent_shard_workloads_parallel")
+	}
+	if err := input.SplitMergeScheduler.Validate(); err != nil {
+		failed = append(failed, "split_merge_scheduler")
+	} else {
+		evidence = append(evidence, "split_merge_scheduler:"+hashShardSplitMergeScheduler(input.SplitMergeScheduler))
+	}
+	if err := input.Migration.Validate(); err != nil {
+		failed = append(failed, "deterministic_shard_migration")
+	} else {
+		evidence = append(evidence, "deterministic_shard_migration:"+hashShardMigration(input.Migration))
+	}
+	if !input.InFlightMessagesSurviveChange {
+		failed = append(failed, "in_flight_messages_survive_layout_changes")
+	}
+	report := MigrationReadinessReport{
+		Phase:    MigrationPhase4ShardingRuntime,
+		Passed:   len(failed) == 0,
+		Failed:   normalizeStringSet(failed),
+		Evidence: normalizeStringSet(evidence),
+	}
+	report.ReportHash = ComputeMigrationReadinessReportHash(report)
+	return report
+}
+
+func BuildMigrationPhase5Readiness(input MigrationPhase5Input) MigrationReadinessReport {
+	input = input.Normalize()
+	failed := make([]string, 0)
+	evidence := make([]string, 0)
+	for _, component := range []AVM20ComponentCheck{
+		input.BytecodeFormat,
+		input.Interpreter,
+		input.GasTable,
+		input.ContractStorageAdapter,
+		input.ABIRegistry,
+	} {
+		if err := component.Validate(); err != nil {
+			failed = append(failed, "avm_component:"+component.ComponentName)
+		} else {
+			evidence = append(evidence, "avm_component:"+component.ComponentName+":"+component.ComponentHash)
+		}
+	}
+	if err := validateAVM20Syscalls("message", input.MessageSyscalls); err != nil {
+		failed = append(failed, "contract_message_syscalls")
+	} else {
+		evidence = append(evidence, "contract_message_syscalls:"+hashAVM20Syscalls("message", input.MessageSyscalls))
+	}
+	if err := validateAVM20Syscalls("proof", input.ProofVerificationSyscalls); err != nil {
+		failed = append(failed, "proof_verification_syscalls")
+	} else {
+		evidence = append(evidence, "proof_verification_syscalls:"+hashAVM20Syscalls("proof", input.ProofVerificationSyscalls))
+	}
+	for _, item := range []struct {
+		label string
+		hash  string
+	}{
+		{"async_message_emission_root", input.AsyncMessageEmissionRoot},
+		{"contract_state_proof_root", input.ContractStateProofRoot},
+		{"contract_zone_execution_root", input.ContractZoneExecutionRoot},
+	} {
+		if err := validateHexHash("migration phase 5 "+item.label, item.hash); err != nil {
+			failed = append(failed, item.label)
+		} else {
+			evidence = append(evidence, item.label+":"+item.hash)
+		}
+	}
+	if !input.ContractZoneDeterministic {
+		failed = append(failed, "contract_zone_deterministic_execution")
+	}
+	report := MigrationReadinessReport{
+		Phase:    MigrationPhase5AVM20,
+		Passed:   len(failed) == 0,
+		Failed:   normalizeStringSet(failed),
+		Evidence: normalizeStringSet(evidence),
+	}
+	report.ReportHash = ComputeMigrationReadinessReportHash(report)
+	return report
+}
+
 func (i MigrationPhase0Input) Normalize() MigrationPhase0Input {
 	i.ModuleBoundaryDocHash = normalizeLowerHex(i.ModuleBoundaryDocHash)
 	i.StateExportValidationHash = normalizeLowerHex(i.StateExportValidationHash)
@@ -419,6 +600,47 @@ func (i MigrationPhase3Input) Normalize() MigrationPhase3Input {
 	i.IdentityZone = i.IdentityZone.Normalize()
 	i.ApplicationZone = i.ApplicationZone.Normalize()
 	i.ZoneCommitmentRoot = normalizeLowerHex(i.ZoneCommitmentRoot)
+	return i
+}
+
+func (i MigrationPhase4Input) Normalize() MigrationPhase4Input {
+	i.ShardsModuleHash = normalizeLowerHex(i.ShardsModuleHash)
+	i.ZoneID = strings.TrimSpace(i.ZoneID)
+	i.ShardLayoutDescriptorRoot = normalizeLowerHex(i.ShardLayoutDescriptorRoot)
+	i.RouteKeyCalculationHash = normalizeLowerHex(i.RouteKeyCalculationHash)
+	for idx := range i.ShardDescriptors {
+		i.ShardDescriptors[idx] = i.ShardDescriptors[idx].Normalize()
+	}
+	sort.SliceStable(i.ShardDescriptors, func(left, right int) bool {
+		return i.ShardDescriptors[left].ShardID < i.ShardDescriptors[right].ShardID
+	})
+	i.RootAggregationHash = normalizeLowerHex(i.RootAggregationHash)
+	i.SplitMergeScheduler = i.SplitMergeScheduler.Normalize()
+	i.Migration = i.Migration.Normalize()
+	return i
+}
+
+func (i MigrationPhase5Input) Normalize() MigrationPhase5Input {
+	i.BytecodeFormat = i.BytecodeFormat.Normalize()
+	i.Interpreter = i.Interpreter.Normalize()
+	i.GasTable = i.GasTable.Normalize()
+	i.ContractStorageAdapter = i.ContractStorageAdapter.Normalize()
+	i.ABIRegistry = i.ABIRegistry.Normalize()
+	for idx := range i.MessageSyscalls {
+		i.MessageSyscalls[idx] = i.MessageSyscalls[idx].Normalize()
+	}
+	sort.SliceStable(i.MessageSyscalls, func(left, right int) bool {
+		return i.MessageSyscalls[left].SyscallName < i.MessageSyscalls[right].SyscallName
+	})
+	for idx := range i.ProofVerificationSyscalls {
+		i.ProofVerificationSyscalls[idx] = i.ProofVerificationSyscalls[idx].Normalize()
+	}
+	sort.SliceStable(i.ProofVerificationSyscalls, func(left, right int) bool {
+		return i.ProofVerificationSyscalls[left].SyscallName < i.ProofVerificationSyscalls[right].SyscallName
+	})
+	i.AsyncMessageEmissionRoot = normalizeLowerHex(i.AsyncMessageEmissionRoot)
+	i.ContractStateProofRoot = normalizeLowerHex(i.ContractStateProofRoot)
+	i.ContractZoneExecutionRoot = normalizeLowerHex(i.ContractZoneExecutionRoot)
 	return i
 }
 
@@ -651,11 +873,146 @@ func (c ZoneExtractionCheck) Validate() error {
 	return nil
 }
 
+func (c ShardRuntimeDescriptorCheck) Normalize() ShardRuntimeDescriptorCheck {
+	c.ShardID = strings.TrimSpace(c.ShardID)
+	c.LayoutHash = normalizeLowerHex(c.LayoutHash)
+	c.RouteKeyRoot = normalizeLowerHex(c.RouteKeyRoot)
+	c.InboxRoot = normalizeLowerHex(c.InboxRoot)
+	c.OutboxRoot = normalizeLowerHex(c.OutboxRoot)
+	c.ShardRoot = normalizeLowerHex(c.ShardRoot)
+	c.ParallelGroupHash = normalizeLowerHex(c.ParallelGroupHash)
+	return c
+}
+
+func (c ShardRuntimeDescriptorCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration shard id", check.ShardID); err != nil {
+		return err
+	}
+	if !check.Active {
+		return errors.New("migration shard descriptor must be active")
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"migration shard layout hash", check.LayoutHash},
+		{"migration shard route key root", check.RouteKeyRoot},
+		{"migration shard inbox root", check.InboxRoot},
+		{"migration shard outbox root", check.OutboxRoot},
+		{"migration shard state root", check.ShardRoot},
+		{"migration shard parallel group hash", check.ParallelGroupHash},
+	} {
+		if err := validateHexHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c ShardSplitMergeSchedulerCheck) Normalize() ShardSplitMergeSchedulerCheck {
+	c.SchedulerRoot = normalizeLowerHex(c.SchedulerRoot)
+	c.SplitDecisionRoot = normalizeLowerHex(c.SplitDecisionRoot)
+	c.MergeDecisionRoot = normalizeLowerHex(c.MergeDecisionRoot)
+	return c
+}
+
+func (c ShardSplitMergeSchedulerCheck) Validate() error {
+	check := c.Normalize()
+	if !check.Deterministic {
+		return errors.New("migration shard split merge scheduler must be deterministic")
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"migration shard scheduler root", check.SchedulerRoot},
+		{"migration shard split decision root", check.SplitDecisionRoot},
+		{"migration shard merge decision root", check.MergeDecisionRoot},
+	} {
+		if err := validateHexHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c ShardMigrationCheck) Normalize() ShardMigrationCheck {
+	c.MigrationRoot = normalizeLowerHex(c.MigrationRoot)
+	c.OldLayoutHash = normalizeLowerHex(c.OldLayoutHash)
+	c.NewLayoutHash = normalizeLowerHex(c.NewLayoutHash)
+	c.InFlightMessageRoot = normalizeLowerHex(c.InFlightMessageRoot)
+	return c
+}
+
+func (c ShardMigrationCheck) Validate() error {
+	check := c.Normalize()
+	if !check.DeterministicMigration {
+		return errors.New("migration shard migration must be deterministic")
+	}
+	if !check.SurvivesLayoutChange {
+		return errors.New("migration shard migration must preserve in-flight messages")
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"migration shard migration root", check.MigrationRoot},
+		{"migration shard old layout hash", check.OldLayoutHash},
+		{"migration shard new layout hash", check.NewLayoutHash},
+		{"migration shard in-flight message root", check.InFlightMessageRoot},
+	} {
+		if err := validateHexHash(item.name, item.value); err != nil {
+			return err
+		}
+	}
+	if check.OldLayoutHash == check.NewLayoutHash {
+		return errors.New("migration shard layout hashes must change")
+	}
+	return nil
+}
+
+func (c AVM20ComponentCheck) Normalize() AVM20ComponentCheck {
+	c.ComponentName = strings.TrimSpace(c.ComponentName)
+	c.ComponentHash = normalizeLowerHex(c.ComponentHash)
+	return c
+}
+
+func (c AVM20ComponentCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration AVM component name", check.ComponentName); err != nil {
+		return err
+	}
+	if !check.Implemented || !check.Deterministic {
+		return errors.New("migration AVM component must be implemented and deterministic")
+	}
+	return validateHexHash("migration AVM component hash", check.ComponentHash)
+}
+
+func (c AVM20SyscallCheck) Normalize() AVM20SyscallCheck {
+	c.SyscallName = strings.TrimSpace(c.SyscallName)
+	c.SyscallHash = normalizeLowerHex(c.SyscallHash)
+	return c
+}
+
+func (c AVM20SyscallCheck) Validate() error {
+	check := c.Normalize()
+	if err := validateExecutionToken("migration AVM syscall name", check.SyscallName); err != nil {
+		return err
+	}
+	if !check.Enabled || !check.Metered {
+		return errors.New("migration AVM syscall must be enabled and metered")
+	}
+	return validateHexHash("migration AVM syscall hash", check.SyscallHash)
+}
+
 func (r MigrationReadinessReport) Validate() error {
 	if r.Phase != MigrationPhase0BaselineHardening &&
 		r.Phase != MigrationPhase1CoreCommitments &&
 		r.Phase != MigrationPhase2MessageBus &&
-		r.Phase != MigrationPhase3ZoneExtraction {
+		r.Phase != MigrationPhase3ZoneExtraction &&
+		r.Phase != MigrationPhase4ShardingRuntime &&
+		r.Phase != MigrationPhase5AVM20 {
 		return errors.New("migration readiness phase is unsupported")
 	}
 	if r.Passed && len(r.Failed) > 0 {
@@ -686,6 +1043,52 @@ func validateMsgBusStores(checks []MsgBusStoreCheck) error {
 	}
 	if len(required) > 0 {
 		return fmt.Errorf("migration missing msgbus stores: %v", sortedMapKeys(required))
+	}
+	return nil
+}
+
+func validateShardRuntimeDescriptors(checks []ShardRuntimeDescriptorCheck) error {
+	seen := make(map[string]struct{}, len(checks))
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		check = check.Normalize()
+		if _, exists := seen[check.ShardID]; exists {
+			return fmt.Errorf("migration duplicate shard descriptor: %s", check.ShardID)
+		}
+		seen[check.ShardID] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return errors.New("migration shard descriptors are required")
+	}
+	return nil
+}
+
+func activeShardCount(checks []ShardRuntimeDescriptorCheck) int {
+	count := 0
+	for _, check := range checks {
+		if check.Normalize().Active {
+			count++
+		}
+	}
+	return count
+}
+
+func validateAVM20Syscalls(kind string, checks []AVM20SyscallCheck) error {
+	seen := make(map[string]struct{}, len(checks))
+	for _, check := range checks {
+		if err := check.Validate(); err != nil {
+			return err
+		}
+		check = check.Normalize()
+		if _, exists := seen[check.SyscallName]; exists {
+			return fmt.Errorf("migration duplicate AVM %s syscall: %s", kind, check.SyscallName)
+		}
+		seen[check.SyscallName] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return fmt.Errorf("migration AVM %s syscalls are required", kind)
 	}
 	return nil
 }
@@ -799,6 +1202,52 @@ func hashMsgBusStores(checks []MsgBusStoreCheck) string {
 func hashMsgBusSafety(check MsgBusSafetyCheck) string {
 	check = check.Normalize()
 	return hashStrings("migration-msgbus-safety", check.ExpiryRoot, check.BounceRoot, check.InclusionProofRoot, check.ReceiptsProofRoot)
+}
+
+func hashShardRuntimeDescriptors(checks []ShardRuntimeDescriptorCheck) string {
+	parts := []string{"migration-shard-runtime-descriptors"}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(
+			parts,
+			check.ShardID,
+			check.LayoutHash,
+			check.RouteKeyRoot,
+			check.InboxRoot,
+			check.OutboxRoot,
+			check.ShardRoot,
+			check.ParallelGroupHash,
+			fmt.Sprintf("%t", check.Active),
+		)
+	}
+	return hashStrings(parts...)
+}
+
+func hashShardSplitMergeScheduler(check ShardSplitMergeSchedulerCheck) string {
+	check = check.Normalize()
+	return hashStrings("migration-shard-split-merge-scheduler", check.SchedulerRoot, check.SplitDecisionRoot, check.MergeDecisionRoot, fmt.Sprintf("%t", check.Deterministic))
+}
+
+func hashShardMigration(check ShardMigrationCheck) string {
+	check = check.Normalize()
+	return hashStrings(
+		"migration-shard-migration",
+		check.MigrationRoot,
+		check.OldLayoutHash,
+		check.NewLayoutHash,
+		check.InFlightMessageRoot,
+		fmt.Sprintf("%t", check.SurvivesLayoutChange),
+		fmt.Sprintf("%t", check.DeterministicMigration),
+	)
+}
+
+func hashAVM20Syscalls(kind string, checks []AVM20SyscallCheck) string {
+	parts := []string{"migration-avm20-syscalls", kind}
+	for _, check := range checks {
+		check = check.Normalize()
+		parts = append(parts, check.SyscallName, check.SyscallHash, fmt.Sprintf("%t", check.Metered), fmt.Sprintf("%t", check.Enabled))
+	}
+	return hashStrings(parts...)
 }
 
 func invariantKey(check ModuleInvariantCheck) string {
