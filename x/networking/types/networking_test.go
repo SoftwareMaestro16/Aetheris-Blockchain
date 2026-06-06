@@ -901,6 +901,134 @@ func TestRoutingTableCommitmentGuardsExecutionScheduling(t *testing.T) {
 	require.ErrorContains(t, tampered.Validate(), "lowercase hex")
 }
 
+func TestOverlayMembershipManagerRegistersMembersCanonically(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	record := signedNodeRecord(t, 0x49, salt, 100, NodeRoleService)
+	proof := testOverlayMembershipProof(t, record, desc, MembershipProofServiceRegistration, OverlayMembershipModeServiceRegistry, 80)
+
+	manager, err := NewOverlayMembershipManager(DefaultOverlayDescriptors())
+	require.NoError(t, err)
+	manager, membership, err := manager.Join(record, proof, 20)
+	require.NoError(t, err)
+	require.Equal(t, record.NodeID, membership.NodeID)
+	require.Equal(t, []string{record.NodeID}, manager.Members(desc.OverlayID, 20))
+	require.Empty(t, manager.Members(desc.OverlayID, 81))
+	require.NoError(t, manager.Validate(20))
+}
+
+func TestRoutingGraphBuilderProducesDeterministicEdges(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	local := signedNodeRecord(t, 0x4a, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	peers := []AdaptivePeer{
+		testAdaptivePeer(t, signedNodeRecord(t, 0x4b, salt, 100, NodeRoleService), 9_000, 15, 9_000, true),
+		testAdaptivePeer(t, signedNodeRecord(t, 0x4c, salt, 100, NodeRoleService), 8_000, 25, 8_000, true),
+		testAdaptivePeer(t, signedNodeRecord(t, 0x4d, salt, 100, NodeRoleFull), 7_000, 50, 7_500, false),
+	}
+	peers[2].ZonesSupported = nil
+	peers[2].Services = nil
+	manager, err := NewPeerSetManager(desc, local.NodeID, peers, 9, HashParts("peer-set-manager-policy"))
+	require.NoError(t, err)
+
+	graph, err := manager.RoutingGraph(true, HashParts("deterministic-route-hint"))
+	require.NoError(t, err)
+	require.True(t, graph.Committed)
+	require.NotEmpty(t, graph.Edges)
+	require.Equal(t, ComputeRoutingGraphHash(graph), graph.GraphHash)
+
+	again, err := manager.RoutingGraph(true, HashParts("deterministic-route-hint"))
+	require.NoError(t, err)
+	require.Equal(t, graph, again)
+}
+
+func TestOverlayPartitionUsesFallbackRouteForPhysicalDelivery(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	source := signedNodeRecord(t, 0x4e, salt, 100, NodeRoleFull)
+	service := signedNodeRecord(t, 0x4f, salt, 100, NodeRoleService)
+	fallbackA := signedNodeRecord(t, 0x50, salt, 100, NodeRoleFull)
+	fallbackB := signedNodeRecord(t, 0x53, salt, 100, NodeRoleFull)
+	fallbackC := signedNodeRecord(t, 0x54, salt, 100, NodeRoleFull)
+	desc, err := NewOverlayDescriptor(OverlayDescriptor{
+		OverlayType: OverlayTypeService,
+		PolicyHash:  HashParts("partitioned-service-overlay"),
+		Membership:  OverlayMembershipServiceAdvertisement,
+		Routing:     RoutingStrategyServiceProvider,
+		MinPeers:    3,
+		MaxPeers:    8,
+		Fanout:      3,
+		QoSClass:    QoSClassServiceCall,
+		Version:     1,
+	})
+	require.NoError(t, err)
+	msg, err := NewNetworkMessage(NetworkMessage{
+		Layer:            LayerL3Application,
+		Channel:          ChannelService,
+		PayloadHash:      HashParts("partitioned-service-payload"),
+		PayloadSizeBytes: 512,
+	})
+	require.NoError(t, err)
+	fallbackGraph, err := BuildAdaptiveOverlayGraph(desc, source.NodeID, []AdaptivePeer{
+		testGlobalAdaptivePeer(t, fallbackA, 7_000, 80, 8_000),
+		testGlobalAdaptivePeer(t, fallbackB, 6_500, 90, 8_500),
+		testGlobalAdaptivePeer(t, fallbackC, 6_000, 110, 7_500),
+	}, 11, HashParts("fallback-partition-policy"))
+	require.NoError(t, err)
+
+	plan, err := BuildOverlayRouteWithFallback(OverlayRoutingRequest{
+		Message:          msg,
+		SourceNodeID:     source.NodeID,
+		CandidatePeers:   []NodeRecord{service},
+		MembershipProofs: []OverlayMembershipProof{testOverlayMembershipProof(t, service, desc, MembershipProofServiceRegistration, OverlayMembershipModeServiceRegistry, 80)},
+		Graph:            RoutingGraph{OverlayID: desc.OverlayID, Version: 1},
+		Hint:             RouteHint{ServiceID: "execution-stream"},
+		CurrentHeight:    20,
+	}, []OverlayDescriptor{desc}, fallbackGraph)
+	require.NoError(t, err)
+	require.True(t, plan.FallbackUsed)
+	require.Equal(t, RoutingStrategyProbabilisticGossip, plan.Strategy)
+	require.NotEmpty(t, plan.TargetNodeIDs)
+
+	consensusMsg := msg
+	consensusMsg.ConsensusEffect = true
+	consensusMsg.DeterminismSource = DeterminismCommittedState
+	consensusMsg.ReplaySafeID = ComputeNetworkMessageID(consensusMsg)
+	_, err = BuildOverlayRouteWithFallback(OverlayRoutingRequest{
+		Message:        consensusMsg,
+		SourceNodeID:   source.NodeID,
+		CandidatePeers: []NodeRecord{service},
+		Graph:          RoutingGraph{OverlayID: desc.OverlayID, Version: 1},
+		CurrentHeight:  20,
+	}, []OverlayDescriptor{desc}, fallbackGraph)
+	require.Error(t, err)
+}
+
+func TestAdaptivePeerRotationBoundsChurnAndKeepsStablePeers(t *testing.T) {
+	salt := []byte("aetheris-test-network")
+	local := signedNodeRecord(t, 0x55, salt, 100, NodeRoleService)
+	desc := defaultOverlayByType(t, OverlayTypeService)
+	stable := testAdaptivePeer(t, signedNodeRecord(t, 0x56, salt, 100, NodeRoleService), 9_000, 20, 9_900, true)
+	oldA := testAdaptivePeer(t, signedNodeRecord(t, 0x57, salt, 100, NodeRoleService), 8_000, 40, 8_000, false)
+	oldB := testAdaptivePeer(t, signedNodeRecord(t, 0x58, salt, 100, NodeRoleService), 7_500, 60, 7_500, false)
+	oldC := testAdaptivePeer(t, signedNodeRecord(t, 0x59, salt, 100, NodeRoleFull), 7_000, 100, 7_000, false)
+	oldC.ZonesSupported = nil
+	oldC.Services = nil
+	stable.LastSeenHeight = 19
+	oldA.LastSeenHeight = 1
+	oldB.LastSeenHeight = 1
+	oldC.LastSeenHeight = 1
+	manager, err := NewPeerSetManager(desc, local.NodeID, []AdaptivePeer{stable, oldA, oldB, oldC}, 10, HashParts("rotation-policy"))
+	require.NoError(t, err)
+	manager.RotationPolicy = PeerRotationPolicy{MaxRotatedPeersBps: 2_500, StaleAfterEpochs: 4}
+
+	candidate := testAdaptivePeer(t, signedNodeRecord(t, 0x5a, salt, 100, NodeRoleService), 8_700, 30, 8_700, false)
+	rotated, err := manager.Rotate([]AdaptivePeer{candidate}, 20)
+	require.NoError(t, err)
+	require.Contains(t, adaptivePeerIDs(uniqueAdaptivePeers(rotated.Graph.FastSet, rotated.Graph.StableSet, rotated.Graph.RandomSet, rotated.Graph.FallbackSet)), stable.NodeID)
+	require.Contains(t, adaptivePeerIDs(uniqueAdaptivePeers(rotated.Graph.FastSet, rotated.Graph.StableSet, rotated.Graph.RandomSet, rotated.Graph.FallbackSet)), candidate.NodeID)
+	require.NoError(t, rotated.Graph.Validate(desc))
+}
+
 func TestLayerStackPreservesCometBFTBaselineAndExtensionOrder(t *testing.T) {
 	stack := DefaultLayerStack()
 	require.NoError(t, ValidateLayerStack(stack))
@@ -1352,6 +1480,24 @@ func testAdaptivePeer(t *testing.T, record NodeRecord, scoreBps uint32, latencyM
 		ReliabilityBps: reliabilityBps,
 	}
 	return AdaptivePeerFromNodeRecord(record, score, metrics, committed, 20)
+}
+
+func testGlobalAdaptivePeer(t *testing.T, record NodeRecord, scoreBps uint32, latencyMillis uint64, reliabilityBps uint32) AdaptivePeer {
+	t.Helper()
+
+	peer := testAdaptivePeer(t, record, scoreBps, latencyMillis, reliabilityBps, false)
+	peer.ZonesSupported = nil
+	peer.Services = nil
+	return peer
+}
+
+func adaptivePeerIDs(peers []AdaptivePeer) []string {
+	out := make([]string, len(peers))
+	for i, peer := range peers {
+		out[i] = normalizeHashText(peer.NodeID)
+	}
+	sortStrings(out)
+	return out
 }
 
 func testSessionRequest(local, remote NodeRecord, openedHeight, expiresHeight uint64, nonce string, channels []ChannelClass) SessionRequest {
