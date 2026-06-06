@@ -51,6 +51,44 @@ func TestRequiredTestCoverageReportRejectsDuplicateInvariant(t *testing.T) {
 	require.Contains(t, report.Failed, "invariant_tests")
 }
 
+func TestRequiredTestCoverageReportRequiresAllSimulationCases(t *testing.T) {
+	input := validRequiredTestCoverageInput()
+	input.Simulations = input.Simulations[:len(input.Simulations)-1]
+
+	report := BuildRequiredTestCoverageReport(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "simulation_tests")
+	require.NoError(t, report.Validate())
+}
+
+func TestRequiredTestCoverageReportRejectsNondeterministicSimulation(t *testing.T) {
+	input := validRequiredTestCoverageInput()
+	input.Simulations[4].Deterministic = false
+
+	report := BuildRequiredTestCoverageReport(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "simulation_tests")
+}
+
+func TestRequiredTestCoverageReportRequiresAllPerformanceCases(t *testing.T) {
+	input := validRequiredTestCoverageInput()
+	input.Performance = input.Performance[:len(input.Performance)-1]
+
+	report := BuildRequiredTestCoverageReport(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "performance_tests")
+	require.NoError(t, report.Validate())
+}
+
+func TestRequiredTestCoverageReportRejectsMismatchedPerformanceClass(t *testing.T) {
+	input := validRequiredTestCoverageInput()
+	input.Performance[0].Class = RequiredCoverageSimulation
+
+	report := BuildRequiredTestCoverageReport(input)
+	require.False(t, report.Passed)
+	require.Contains(t, report.Failed, "performance_tests")
+}
+
 func validRequiredTestCoverageInput() RequiredTestCoverageInput {
 	return RequiredTestCoverageInput{
 		CoverageVersion: "required_17",
@@ -70,6 +108,26 @@ func validRequiredTestCoverageInput() RequiredTestCoverageInput {
 			requiredCoverage(RequiredInvariantContractProofRootMatch, RequiredCoverageInvariant, "contract_proof"),
 			requiredCoverage(RequiredInvariantShardSplitPreservesKeys, RequiredCoverageInvariant, "shard_split"),
 			requiredCoverage(RequiredInvariantShardMergePreservesKeys, RequiredCoverageInvariant, "shard_merge"),
+		},
+		Simulations: []RequiredTestCoverageCase{
+			requiredCoverage(RequiredSimulationHighVolumeBankTransfers, RequiredCoverageSimulation, "bank_shards"),
+			requiredCoverage(RequiredSimulationIdentityUpdateBursts, RequiredCoverageSimulation, "identity_resolver"),
+			requiredCoverage(RequiredSimulationContractAsyncChains, RequiredCoverageSimulation, "contract_async"),
+			requiredCoverage(RequiredSimulationPaymentTimeoutBounce, RequiredCoverageSimulation, "payment_routes"),
+			requiredCoverage(RequiredSimulationDEXShardConflict, RequiredCoverageSimulation, "dex_shards"),
+			requiredCoverage(RequiredSimulationCrossZoneCongestion, RequiredCoverageSimulation, "cross_zone_congestion"),
+			requiredCoverage(RequiredSimulationShardSplitLoad, RequiredCoverageSimulation, "shard_split_load"),
+			requiredCoverage(RequiredSimulationAdaptiveSyncQueues, RequiredCoverageSimulation, "adaptive_sync_queues"),
+		},
+		Performance: []RequiredTestCoverageCase{
+			requiredCoverage(RequiredPerformanceLocalZoneTPS, RequiredCoveragePerformance, "local_zone_tps"),
+			requiredCoverage(RequiredPerformanceCrossShardThroughput, RequiredCoveragePerformance, "cross_shard_messages"),
+			requiredCoverage(RequiredPerformanceCrossZoneThroughput, RequiredCoveragePerformance, "cross_zone_messages"),
+			requiredCoverage(RequiredPerformanceAVMInstructionRate, RequiredCoveragePerformance, "avm_instructions"),
+			requiredCoverage(RequiredPerformanceStoreV2ProofLatency, RequiredCoveragePerformance, "store_v2_proofs"),
+			requiredCoverage(RequiredPerformanceBlockSTMConflictRate, RequiredCoveragePerformance, "blockstm_conflicts"),
+			requiredCoverage(RequiredPerformanceMempoolGrouping, RequiredCoveragePerformance, "mempool_grouping"),
+			requiredCoverage(RequiredPerformanceStateSyncMultipleZones, RequiredCoveragePerformance, "state_sync_zones"),
 		},
 	}
 }

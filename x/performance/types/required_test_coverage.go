@@ -12,6 +12,8 @@ type RequiredCoverageClass string
 const (
 	RequiredCoverageDeterminism RequiredCoverageClass = "DETERMINISM"
 	RequiredCoverageInvariant   RequiredCoverageClass = "INVARIANT"
+	RequiredCoverageSimulation  RequiredCoverageClass = "SIMULATION"
+	RequiredCoveragePerformance RequiredCoverageClass = "PERFORMANCE"
 )
 
 const (
@@ -29,6 +31,24 @@ const (
 	RequiredInvariantContractProofRootMatch     = "contract_state_proof_matches_contract_zone_root"
 	RequiredInvariantShardSplitPreservesKeys    = "shard_split_preserves_all_state_keys"
 	RequiredInvariantShardMergePreservesKeys    = "shard_merge_preserves_all_state_keys"
+
+	RequiredSimulationHighVolumeBankTransfers = "high_volume_bank_transfers_across_shards"
+	RequiredSimulationIdentityUpdateBursts    = "identity_resolver_update_bursts"
+	RequiredSimulationContractAsyncChains     = "contract_async_call_chains"
+	RequiredSimulationPaymentTimeoutBounce    = "payment_route_timeout_and_bounce"
+	RequiredSimulationDEXShardConflict        = "dex_pool_updates_under_shard_conflict"
+	RequiredSimulationCrossZoneCongestion     = "cross_zone_congestion"
+	RequiredSimulationShardSplitLoad          = "shard_split_under_sustained_load"
+	RequiredSimulationAdaptiveSyncQueues      = "node_recovery_adaptivesync_active_message_queues"
+
+	RequiredPerformanceLocalZoneTPS           = "local_zone_tps"
+	RequiredPerformanceCrossShardThroughput   = "cross_shard_message_throughput"
+	RequiredPerformanceCrossZoneThroughput    = "cross_zone_message_throughput"
+	RequiredPerformanceAVMInstructionRate     = "avm_instruction_throughput"
+	RequiredPerformanceStoreV2ProofLatency    = "store_v2_proof_generation_latency"
+	RequiredPerformanceBlockSTMConflictRate   = "blockstm_conflict_rate_by_workload"
+	RequiredPerformanceMempoolGrouping        = "mempool_grouping_effectiveness"
+	RequiredPerformanceStateSyncMultipleZones = "state_sync_time_with_multiple_zones"
 )
 
 var requiredDeterminismCoverage = map[string]struct{}{
@@ -50,6 +70,28 @@ var requiredInvariantCoverage = map[string]struct{}{
 	RequiredInvariantShardMergePreservesKeys:    {},
 }
 
+var requiredSimulationCoverage = map[string]struct{}{
+	RequiredSimulationHighVolumeBankTransfers: {},
+	RequiredSimulationIdentityUpdateBursts:    {},
+	RequiredSimulationContractAsyncChains:     {},
+	RequiredSimulationPaymentTimeoutBounce:    {},
+	RequiredSimulationDEXShardConflict:        {},
+	RequiredSimulationCrossZoneCongestion:     {},
+	RequiredSimulationShardSplitLoad:          {},
+	RequiredSimulationAdaptiveSyncQueues:      {},
+}
+
+var requiredPerformanceCoverage = map[string]struct{}{
+	RequiredPerformanceLocalZoneTPS:           {},
+	RequiredPerformanceCrossShardThroughput:   {},
+	RequiredPerformanceCrossZoneThroughput:    {},
+	RequiredPerformanceAVMInstructionRate:     {},
+	RequiredPerformanceStoreV2ProofLatency:    {},
+	RequiredPerformanceBlockSTMConflictRate:   {},
+	RequiredPerformanceMempoolGrouping:        {},
+	RequiredPerformanceStateSyncMultipleZones: {},
+}
+
 type RequiredTestCoverageCase struct {
 	CaseID        string
 	Class         RequiredCoverageClass
@@ -63,6 +105,8 @@ type RequiredTestCoverageInput struct {
 	CoverageVersion string
 	Determinism     []RequiredTestCoverageCase
 	Invariants      []RequiredTestCoverageCase
+	Simulations     []RequiredTestCoverageCase
+	Performance     []RequiredTestCoverageCase
 }
 
 type RequiredTestCoverageReport struct {
@@ -92,6 +136,16 @@ func BuildRequiredTestCoverageReport(input RequiredTestCoverageInput) RequiredTe
 	} else {
 		evidence = append(evidence, "invariant_tests:"+hashRequiredCoverageCases(RequiredCoverageInvariant, input.Invariants))
 	}
+	if err := validateRequiredCoverageCases(RequiredCoverageSimulation, input.Simulations, requiredSimulationCoverage); err != nil {
+		failed = append(failed, "simulation_tests")
+	} else {
+		evidence = append(evidence, "simulation_tests:"+hashRequiredCoverageCases(RequiredCoverageSimulation, input.Simulations))
+	}
+	if err := validateRequiredCoverageCases(RequiredCoveragePerformance, input.Performance, requiredPerformanceCoverage); err != nil {
+		failed = append(failed, "performance_tests")
+	} else {
+		evidence = append(evidence, "performance_tests:"+hashRequiredCoverageCases(RequiredCoveragePerformance, input.Performance))
+	}
 	report := RequiredTestCoverageReport{
 		CoverageVersion: input.CoverageVersion,
 		Passed:          len(failed) == 0,
@@ -115,6 +169,18 @@ func (i RequiredTestCoverageInput) Normalize() RequiredTestCoverageInput {
 	}
 	sort.SliceStable(i.Invariants, func(left, right int) bool {
 		return i.Invariants[left].CaseID < i.Invariants[right].CaseID
+	})
+	for idx := range i.Simulations {
+		i.Simulations[idx] = i.Simulations[idx].Normalize()
+	}
+	sort.SliceStable(i.Simulations, func(left, right int) bool {
+		return i.Simulations[left].CaseID < i.Simulations[right].CaseID
+	})
+	for idx := range i.Performance {
+		i.Performance[idx] = i.Performance[idx].Normalize()
+	}
+	sort.SliceStable(i.Performance, func(left, right int) bool {
+		return i.Performance[left].CaseID < i.Performance[right].CaseID
 	})
 	return i
 }
@@ -162,7 +228,7 @@ func (r RequiredTestCoverageReport) Validate() error {
 
 func IsRequiredCoverageClass(class RequiredCoverageClass) bool {
 	switch class {
-	case RequiredCoverageDeterminism, RequiredCoverageInvariant:
+	case RequiredCoverageDeterminism, RequiredCoverageInvariant, RequiredCoverageSimulation, RequiredCoveragePerformance:
 		return true
 	default:
 		return false
