@@ -104,6 +104,32 @@ func (k *Keeper) UpdateService(msg servicestypes.MsgUpdateService) error {
 	return k.replaceRegistry(descriptors, k.genesis.Registry.Providers, k.genesis.Registry.Reputations, k.genesis.Registry.Receipts, next.UpdatedHeight)
 }
 
+func (k *Keeper) RegisterInterface(msg servicestypes.MsgRegisterInterface) error {
+	next, err := servicestypes.RegisterInterfaceInState(k.genesis.Registry, msg, k.genesis.Registry.UpdatedHeight+1)
+	if err != nil {
+		return err
+	}
+	if err := servicestypes.ValidateRegistryInvariants(next); err != nil {
+		return err
+	}
+	k.genesis.Registry = next
+	k.rebuildStore()
+	return nil
+}
+
+func (k *Keeper) UpdateInterface(msg servicestypes.MsgUpdateInterface) error {
+	next, err := servicestypes.UpdateInterfaceInState(k.genesis.Registry, msg, k.genesis.Registry.UpdatedHeight+1)
+	if err != nil {
+		return err
+	}
+	if err := servicestypes.ValidateRegistryInvariants(next); err != nil {
+		return err
+	}
+	k.genesis.Registry = next
+	k.rebuildStore()
+	return nil
+}
+
 func (k *Keeper) RenewService(msg servicestypes.MsgRenewService) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err

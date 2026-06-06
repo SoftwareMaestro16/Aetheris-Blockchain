@@ -131,11 +131,44 @@ func TestServicesMsgAndQueryServers(t *testing.T) {
 	_, err = msgServer.RegisterService(context.Background(), &register)
 	require.NoError(t, err)
 
+	v2 := service.Interface
+	v2.Version = 2
+	v2.InterfaceName = "l1.services.v2.identity-resolver"
+	v2.MetadataHash = testServicesHash("identity-resolver/interface-v2")
+	v2.InterfaceHash = coretypes.ComputeServiceInterfaceHash(v2)
+	v2Schema, err := servicestypes.NewInterfaceSchemaFormat(v2, "run")
+	require.NoError(t, err)
+	registerInterface, err := servicestypes.NewMsgRegisterInterface(service.Owner, v2, v2Schema)
+	require.NoError(t, err)
+	_, err = msgServer.RegisterInterface(context.Background(), &registerInterface)
+	require.NoError(t, err)
+
+	v3 := v2
+	v3.Version = 3
+	v3.InterfaceName = "l1.services.v3.identity-resolver"
+	v3.MetadataHash = testServicesHash("identity-resolver/interface-v3")
+	v3.InterfaceHash = coretypes.ComputeServiceInterfaceHash(v3)
+	v3Schema, err := servicestypes.NewInterfaceSchemaFormat(v3, "run")
+	require.NoError(t, err)
+	updateInterface, err := servicestypes.NewMsgUpdateInterface(service.Owner, v2.InterfaceHash, v3, v3Schema, 2)
+	require.NoError(t, err)
+	_, err = msgServer.UpdateInterface(context.Background(), &updateInterface)
+	require.NoError(t, err)
+
 	query := servicestypes.QueryServer(k)
 	serviceResponse, err := query.Service(context.Background(), &servicestypes.QueryService{ServiceID: service.ServiceID, IncludeProof: true})
 	require.NoError(t, err)
 	require.True(t, serviceResponse.Found)
 	require.NoError(t, serviceResponse.Proof.Validate())
+
+	interfaceResponse, err := query.ServiceInterface(context.Background(), &servicestypes.QueryServiceInterface{InterfaceHash: v3.InterfaceHash})
+	require.NoError(t, err)
+	require.True(t, interfaceResponse.Found)
+	require.Equal(t, uint64(3), interfaceResponse.Interface.Version)
+	interfaceProof, err := servicestypes.QueryInterfaceProofFromState(k.RegistryState(), servicestypes.QueryInterfaceProof{InterfaceHash: v3.InterfaceHash})
+	require.NoError(t, err)
+	require.True(t, interfaceProof.Found)
+	require.NoError(t, interfaceProof.Proof.Validate())
 
 	params, err := query.ServiceParams(context.Background(), &servicestypes.QueryServiceParams{})
 	require.NoError(t, err)

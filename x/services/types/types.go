@@ -72,10 +72,14 @@ type MsgStakeProviderCollateralResponse struct{}
 type MsgUnstakeProviderCollateralResponse struct{}
 type MsgAnchorServiceReceiptResponse struct{}
 type MsgSubmitServiceDisputeResponse struct{}
+type MsgRegisterInterfaceResponse struct{}
+type MsgUpdateInterfaceResponse struct{}
 
 type MsgServer interface {
 	RegisterService(context.Context, *MsgRegisterService) (*MsgRegisterServiceResponse, error)
 	UpdateService(context.Context, *MsgUpdateService) (*MsgUpdateServiceResponse, error)
+	RegisterInterface(context.Context, *MsgRegisterInterface) (*MsgRegisterInterfaceResponse, error)
+	UpdateInterface(context.Context, *MsgUpdateInterface) (*MsgUpdateInterfaceResponse, error)
 	RenewService(context.Context, *MsgRenewService) (*MsgRenewServiceResponse, error)
 	DisableService(context.Context, *MsgDisableService) (*MsgDisableServiceResponse, error)
 	TransferService(context.Context, *MsgTransferService) (*MsgTransferServiceResponse, error)

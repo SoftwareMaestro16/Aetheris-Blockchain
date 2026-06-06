@@ -31,6 +31,20 @@ func (m msgServer) UpdateService(ctx context.Context, msg *servicestypes.MsgUpda
 	return &servicestypes.MsgUpdateServiceResponse{}, m.keeper.UpdateService(*msg)
 }
 
+func (m msgServer) RegisterInterface(ctx context.Context, msg *servicestypes.MsgRegisterInterface) (*servicestypes.MsgRegisterInterfaceResponse, error) {
+	if msg == nil {
+		return nil, errors.New("services empty register interface request")
+	}
+	return &servicestypes.MsgRegisterInterfaceResponse{}, m.keeper.RegisterInterface(*msg)
+}
+
+func (m msgServer) UpdateInterface(ctx context.Context, msg *servicestypes.MsgUpdateInterface) (*servicestypes.MsgUpdateInterfaceResponse, error) {
+	if msg == nil {
+		return nil, errors.New("services empty update interface request")
+	}
+	return &servicestypes.MsgUpdateInterfaceResponse{}, m.keeper.UpdateInterface(*msg)
+}
+
 func (m msgServer) RenewService(ctx context.Context, msg *servicestypes.MsgRenewService) (*servicestypes.MsgRenewServiceResponse, error) {
 	if msg == nil {
 		return nil, errors.New("services empty renew service request")
