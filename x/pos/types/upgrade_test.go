@@ -250,6 +250,75 @@ func TestEpochRulesEnforceDelegationDelayAndEvidenceWindow(t *testing.T) {
 	require.ErrorContains(t, err, "before evidence epoch")
 }
 
+func TestUnbondingRiskWindowExtendsBeyondUnbonding(t *testing.T) {
+	params := DefaultParams()
+	params.EpochDurationSeconds = MinEpochDurationSeconds
+	params.PhaseDurations = DefaultEpochPhaseDurations(params.EpochDurationSeconds)
+	params.UnbondingSeconds = MinUnbondingSeconds
+	params.EvidenceWindowEpochs = 3
+	window, err := UnbondingRiskWindowForParams(params)
+	require.NoError(t, err)
+	require.Equal(t, uint64(14), window.UnbondingEpochs)
+	require.Equal(t, uint64(3), window.SlashableWindowEpochs)
+	require.Equal(t, uint64(17), window.TotalRiskEpochs)
+
+	record, err := BeginUnbondingRisk(params, "delegator-a", "val-a", sdkmath.NewInt(1_000), 10)
+	require.NoError(t, err)
+	require.Equal(t, uint64(24), record.ExitEpoch)
+	require.Equal(t, uint64(27), record.SlashableUntilEpoch)
+	require.Equal(t, ComputeUnbondingRiskHistoryKey(record), record.RiskHistoryKey)
+
+	exposure, err := PendingUnbondingSlashExposure(PendingUnbondingSlashExposureInput{
+		Record:        record,
+		FaultEpoch:    23,
+		EvidenceEpoch: 27,
+	})
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(1_000), exposure)
+
+	exposure, err = PendingUnbondingSlashExposure(PendingUnbondingSlashExposureInput{
+		Record:        record,
+		FaultEpoch:    24,
+		EvidenceEpoch: 25,
+	})
+	require.NoError(t, err)
+	require.True(t, exposure.IsZero())
+
+	exposure, err = PendingUnbondingSlashExposure(PendingUnbondingSlashExposureInput{
+		Record:        record,
+		FaultEpoch:    23,
+		EvidenceEpoch: 28,
+	})
+	require.NoError(t, err)
+	require.True(t, exposure.IsZero())
+}
+
+func TestRedelegationRetainsSourceRiskAndSelfBondChangesAreDelayed(t *testing.T) {
+	params := DefaultParams()
+	params.DelegationActivationEpochs = 2
+	params.EvidenceWindowEpochs = 4
+	redelegation, err := CreateRedelegationRiskRecord(params, "delegator-a", "val-source", "val-dest", sdkmath.NewInt(500), 20)
+	require.NoError(t, err)
+	require.Equal(t, uint64(22), redelegation.ActivationEpoch)
+	require.Greater(t, redelegation.SourceSlashableUntilEpoch, redelegation.ActivationEpoch)
+	require.Equal(t, ComputeRedelegationRiskHistoryKey(redelegation), redelegation.RiskHistoryKey)
+
+	tampered := redelegation
+	tampered.DestinationValidatorID = "val-other"
+	require.ErrorContains(t, tampered.Validate(), "risk history key")
+
+	_, err = CreateRedelegationRiskRecord(params, "delegator-a", "val-source", "val-source", sdkmath.NewInt(500), 20)
+	require.ErrorContains(t, err, "destination")
+
+	selfBond, err := PlanSelfBondChange(params, "val-source", sdkmath.NewInt(1_000), sdkmath.NewInt(2_000), 20)
+	require.NoError(t, err)
+	require.Equal(t, uint64(22), selfBond.ActivationEpoch)
+	require.NoError(t, selfBond.Validate())
+
+	_, err = PlanSelfBondChange(params, "val-source", sdkmath.NewInt(1_000), sdkmath.NewInt(-1), 20)
+	require.ErrorContains(t, err, "self bond")
+}
+
 func TestMaxValidatorSetChangesUsesConfiguredRate(t *testing.T) {
 	params := DefaultParams()
 	params.MaxValidatorSetChangeRateBps = 1_000

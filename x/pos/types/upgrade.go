@@ -479,6 +479,47 @@ type DelegationActivation struct {
 	ActivationKey string
 }
 
+type UnbondingRiskWindow struct {
+	UnbondingEpochs       uint64
+	SlashableWindowEpochs uint64
+	TotalRiskEpochs       uint64
+}
+
+type UnbondingRiskRecord struct {
+	DelegatorID         string
+	ValidatorID         string
+	AmountNaet          sdkmath.Int
+	RequestedEpoch      uint64
+	ExitEpoch           uint64
+	SlashableUntilEpoch uint64
+	RiskHistoryKey      string
+}
+
+type RedelegationRiskRecord struct {
+	DelegatorID               string
+	SourceValidatorID         string
+	DestinationValidatorID    string
+	AmountNaet                sdkmath.Int
+	RequestedEpoch            uint64
+	ActivationEpoch           uint64
+	SourceSlashableUntilEpoch uint64
+	RiskHistoryKey            string
+}
+
+type SelfBondChangeRecord struct {
+	ValidatorID      string
+	PreviousBondNaet sdkmath.Int
+	NewBondNaet      sdkmath.Int
+	RequestedEpoch   uint64
+	ActivationEpoch  uint64
+}
+
+type PendingUnbondingSlashExposureInput struct {
+	Record        UnbondingRiskRecord
+	FaultEpoch    uint64
+	EvidenceEpoch uint64
+}
+
 type RejectedDelegationIntent struct {
 	Intent DelegationIntent
 	Reason string
@@ -1388,6 +1429,254 @@ func EvidenceWithinSlashableWindow(params Params, evidenceEpoch uint64, currentE
 		return false, errors.New("current epoch cannot be before evidence epoch")
 	}
 	return currentEpoch-evidenceEpoch <= params.EvidenceWindowEpochs, nil
+}
+
+func UnbondingRiskWindowForParams(params Params) (UnbondingRiskWindow, error) {
+	if err := params.Validate(); err != nil {
+		return UnbondingRiskWindow{}, err
+	}
+	unbondingEpochs := ceilDivUint64(params.UnbondingSeconds, params.EpochDurationSeconds)
+	totalRiskEpochs, err := checkedAddUint64(unbondingEpochs, params.EvidenceWindowEpochs, "unbonding risk window overflow")
+	if err != nil {
+		return UnbondingRiskWindow{}, err
+	}
+	return UnbondingRiskWindow{
+		UnbondingEpochs:       unbondingEpochs,
+		SlashableWindowEpochs: params.EvidenceWindowEpochs,
+		TotalRiskEpochs:       totalRiskEpochs,
+	}, nil
+}
+
+func BeginUnbondingRisk(params Params, delegatorID string, validatorID string, amount sdkmath.Int, requestedEpoch uint64) (UnbondingRiskRecord, error) {
+	if requestedEpoch == 0 {
+		return UnbondingRiskRecord{}, errors.New("unbonding requested epoch is required")
+	}
+	if err := validatePosToken("unbonding delegator id", strings.TrimSpace(delegatorID)); err != nil {
+		return UnbondingRiskRecord{}, err
+	}
+	if err := validatePosToken("unbonding validator id", strings.TrimSpace(validatorID)); err != nil {
+		return UnbondingRiskRecord{}, err
+	}
+	if amount.IsNil() || !amount.IsPositive() {
+		return UnbondingRiskRecord{}, errors.New("unbonding amount must be positive")
+	}
+	window, err := UnbondingRiskWindowForParams(params)
+	if err != nil {
+		return UnbondingRiskRecord{}, err
+	}
+	exitEpoch, err := checkedAddUint64(requestedEpoch, window.UnbondingEpochs, "unbonding exit epoch overflow")
+	if err != nil {
+		return UnbondingRiskRecord{}, err
+	}
+	slashableUntil, err := checkedAddUint64(requestedEpoch, window.TotalRiskEpochs, "unbonding slashable epoch overflow")
+	if err != nil {
+		return UnbondingRiskRecord{}, err
+	}
+	record := UnbondingRiskRecord{
+		DelegatorID:         strings.TrimSpace(delegatorID),
+		ValidatorID:         strings.TrimSpace(validatorID),
+		AmountNaet:          amount,
+		RequestedEpoch:      requestedEpoch,
+		ExitEpoch:           exitEpoch,
+		SlashableUntilEpoch: slashableUntil,
+	}
+	record.RiskHistoryKey = ComputeUnbondingRiskHistoryKey(record)
+	return record, record.Validate()
+}
+
+func (r UnbondingRiskRecord) Validate() error {
+	if err := validatePosToken("unbonding delegator id", r.DelegatorID); err != nil {
+		return err
+	}
+	if err := validatePosToken("unbonding validator id", r.ValidatorID); err != nil {
+		return err
+	}
+	if r.AmountNaet.IsNil() || !r.AmountNaet.IsPositive() {
+		return errors.New("unbonding amount must be positive")
+	}
+	if r.RequestedEpoch == 0 {
+		return errors.New("unbonding requested epoch is required")
+	}
+	if r.ExitEpoch <= r.RequestedEpoch {
+		return errors.New("unbonding exit epoch must be after requested epoch")
+	}
+	if r.SlashableUntilEpoch < r.ExitEpoch {
+		return errors.New("unbonding slashable window must cover exit epoch")
+	}
+	if err := validatePosHash("unbonding risk history key", r.RiskHistoryKey); err != nil {
+		return err
+	}
+	if expected := ComputeUnbondingRiskHistoryKey(r); expected != r.RiskHistoryKey {
+		return errors.New("unbonding risk history key mismatch")
+	}
+	return nil
+}
+
+func CreateRedelegationRiskRecord(params Params, delegatorID string, sourceValidatorID string, destinationValidatorID string, amount sdkmath.Int, requestedEpoch uint64) (RedelegationRiskRecord, error) {
+	if requestedEpoch == 0 {
+		return RedelegationRiskRecord{}, errors.New("redelegation requested epoch is required")
+	}
+	delegatorID = strings.TrimSpace(delegatorID)
+	sourceValidatorID = strings.TrimSpace(sourceValidatorID)
+	destinationValidatorID = strings.TrimSpace(destinationValidatorID)
+	if err := validatePosToken("redelegation delegator id", delegatorID); err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	if err := validatePosToken("redelegation source validator id", sourceValidatorID); err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	if err := validatePosToken("redelegation destination validator id", destinationValidatorID); err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	if sourceValidatorID == destinationValidatorID {
+		return RedelegationRiskRecord{}, errors.New("redelegation destination must differ from source")
+	}
+	if amount.IsNil() || !amount.IsPositive() {
+		return RedelegationRiskRecord{}, errors.New("redelegation amount must be positive")
+	}
+	if err := params.Validate(); err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	activationEpoch, err := checkedAddUint64(requestedEpoch, params.DelegationActivationEpochs, "redelegation activation epoch overflow")
+	if err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	window, err := UnbondingRiskWindowForParams(params)
+	if err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	sourceSlashableUntil, err := checkedAddUint64(requestedEpoch, window.TotalRiskEpochs, "redelegation source slashable epoch overflow")
+	if err != nil {
+		return RedelegationRiskRecord{}, err
+	}
+	record := RedelegationRiskRecord{
+		DelegatorID:               delegatorID,
+		SourceValidatorID:         sourceValidatorID,
+		DestinationValidatorID:    destinationValidatorID,
+		AmountNaet:                amount,
+		RequestedEpoch:            requestedEpoch,
+		ActivationEpoch:           activationEpoch,
+		SourceSlashableUntilEpoch: sourceSlashableUntil,
+	}
+	record.RiskHistoryKey = ComputeRedelegationRiskHistoryKey(record)
+	return record, record.Validate()
+}
+
+func (r RedelegationRiskRecord) Validate() error {
+	if err := validatePosToken("redelegation delegator id", r.DelegatorID); err != nil {
+		return err
+	}
+	if err := validatePosToken("redelegation source validator id", r.SourceValidatorID); err != nil {
+		return err
+	}
+	if err := validatePosToken("redelegation destination validator id", r.DestinationValidatorID); err != nil {
+		return err
+	}
+	if r.SourceValidatorID == r.DestinationValidatorID {
+		return errors.New("redelegation destination must differ from source")
+	}
+	if r.AmountNaet.IsNil() || !r.AmountNaet.IsPositive() {
+		return errors.New("redelegation amount must be positive")
+	}
+	if r.RequestedEpoch == 0 {
+		return errors.New("redelegation requested epoch is required")
+	}
+	if r.ActivationEpoch <= r.RequestedEpoch {
+		return errors.New("redelegation activation epoch must be after requested epoch")
+	}
+	if r.SourceSlashableUntilEpoch < r.ActivationEpoch {
+		return errors.New("redelegation source risk window must cover activation epoch")
+	}
+	if err := validatePosHash("redelegation risk history key", r.RiskHistoryKey); err != nil {
+		return err
+	}
+	if expected := ComputeRedelegationRiskHistoryKey(r); expected != r.RiskHistoryKey {
+		return errors.New("redelegation risk history key mismatch")
+	}
+	return nil
+}
+
+func PlanSelfBondChange(params Params, validatorID string, previousBond sdkmath.Int, newBond sdkmath.Int, requestedEpoch uint64) (SelfBondChangeRecord, error) {
+	if err := params.Validate(); err != nil {
+		return SelfBondChangeRecord{}, err
+	}
+	validatorID = strings.TrimSpace(validatorID)
+	if err := validatePosToken("self bond validator id", validatorID); err != nil {
+		return SelfBondChangeRecord{}, err
+	}
+	if previousBond.IsNil() || previousBond.IsNegative() || newBond.IsNil() || newBond.IsNegative() {
+		return SelfBondChangeRecord{}, errors.New("self bond amounts cannot be nil or negative")
+	}
+	if requestedEpoch == 0 {
+		return SelfBondChangeRecord{}, errors.New("self bond requested epoch is required")
+	}
+	activationEpoch, err := checkedAddUint64(requestedEpoch, params.DelegationActivationEpochs, "self bond activation epoch overflow")
+	if err != nil {
+		return SelfBondChangeRecord{}, err
+	}
+	record := SelfBondChangeRecord{
+		ValidatorID:      validatorID,
+		PreviousBondNaet: previousBond,
+		NewBondNaet:      newBond,
+		RequestedEpoch:   requestedEpoch,
+		ActivationEpoch:  activationEpoch,
+	}
+	return record, record.Validate()
+}
+
+func (r SelfBondChangeRecord) Validate() error {
+	if err := validatePosToken("self bond validator id", r.ValidatorID); err != nil {
+		return err
+	}
+	if r.PreviousBondNaet.IsNil() || r.PreviousBondNaet.IsNegative() || r.NewBondNaet.IsNil() || r.NewBondNaet.IsNegative() {
+		return errors.New("self bond amounts cannot be nil or negative")
+	}
+	if r.RequestedEpoch == 0 {
+		return errors.New("self bond requested epoch is required")
+	}
+	if r.ActivationEpoch <= r.RequestedEpoch {
+		return errors.New("self bond activation epoch must be after requested epoch")
+	}
+	return nil
+}
+
+func PendingUnbondingSlashExposure(input PendingUnbondingSlashExposureInput) (sdkmath.Int, error) {
+	if err := input.Record.Validate(); err != nil {
+		return sdkmath.Int{}, err
+	}
+	if input.FaultEpoch == 0 || input.EvidenceEpoch == 0 {
+		return sdkmath.Int{}, errors.New("fault and evidence epochs are required")
+	}
+	if input.FaultEpoch >= input.Record.ExitEpoch {
+		return sdkmath.ZeroInt(), nil
+	}
+	if input.EvidenceEpoch > input.Record.SlashableUntilEpoch {
+		return sdkmath.ZeroInt(), nil
+	}
+	return input.Record.AmountNaet, nil
+}
+
+func ComputeUnbondingRiskHistoryKey(record UnbondingRiskRecord) string {
+	return posHashRoot("aetheris-pos-unbonding-risk-v1", func(w posByteWriter) {
+		posWritePart(w, record.DelegatorID)
+		posWritePart(w, record.ValidatorID)
+		posWritePart(w, record.AmountNaet.String())
+		posWriteUint64(w, record.RequestedEpoch)
+		posWriteUint64(w, record.ExitEpoch)
+		posWriteUint64(w, record.SlashableUntilEpoch)
+	})
+}
+
+func ComputeRedelegationRiskHistoryKey(record RedelegationRiskRecord) string {
+	return posHashRoot("aetheris-pos-redelegation-risk-v1", func(w posByteWriter) {
+		posWritePart(w, record.DelegatorID)
+		posWritePart(w, record.SourceValidatorID)
+		posWritePart(w, record.DestinationValidatorID)
+		posWritePart(w, record.AmountNaet.String())
+		posWriteUint64(w, record.RequestedEpoch)
+		posWriteUint64(w, record.ActivationEpoch)
+		posWriteUint64(w, record.SourceSlashableUntilEpoch)
+	})
 }
 
 func DefaultEpochPhaseDurations(epochDurationSeconds uint64) EpochPhaseDurations {
@@ -4538,6 +4827,16 @@ func mulUint64Overflow(left uint64, right uint64) (uint64, bool) {
 		return 0, true
 	}
 	return left * right, false
+}
+
+func ceilDivUint64(value uint64, divisor uint64) uint64 {
+	if divisor == 0 {
+		return 0
+	}
+	if value == 0 {
+		return 0
+	}
+	return 1 + (value-1)/divisor
 }
 
 func isEvidenceStatus(status string) bool {
