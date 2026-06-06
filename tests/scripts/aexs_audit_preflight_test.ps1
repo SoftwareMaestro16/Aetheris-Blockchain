@@ -63,6 +63,12 @@ try {
   Assert-True ($result.invalid_invariant_checklist_count -eq 0) "AEXS must not generate invalid invariant checklist records"
   Assert-True ($result.core_exploit_count -ge 13) "AEXS must record consensus and Aether Core exploit catalog entries"
   Assert-True ($result.invalid_core_exploit_count -eq 0) "AEXS must not generate invalid consensus exploit records"
+  Assert-True ($result.slashing_exploit_count -ge 7) "AEXS must record slashing bypass exploit catalog entries"
+  Assert-True ($result.invalid_slashing_exploit_count -eq 0) "AEXS must not generate invalid slashing exploit records"
+  Assert-True ($result.tx_auth_bank_exploit_count -ge 11) "AEXS must record transaction/auth/bank exploit catalog entries"
+  Assert-True ($result.invalid_tx_auth_bank_exploit_count -eq 0) "AEXS must not generate invalid transaction/auth/bank exploit records"
+  Assert-True ($result.exploit_count -ge 31) "AEXS must record all current exploit catalog entries"
+  Assert-True ($result.invalid_exploit_count -eq 0) "AEXS must not generate invalid exploit records"
 
   foreach ($module in @(
       "app",
@@ -248,7 +254,7 @@ try {
   Assert-True ($invariantById["EXECINV-09"].attack_surface_covered -match "queue export ordering drift") "EXECINV-09 must record queue export/import drift"
 
   $exploitCatalog = Get-Content -Raw -LiteralPath (Join-Path $result.output_dir "exploit-catalog.json") | ConvertFrom-Json
-  Assert-True (@($exploitCatalog).Count -eq $result.core_exploit_count) "summary core exploit count must match exploit-catalog.json"
+  Assert-True (@($exploitCatalog).Count -eq $result.exploit_count) "summary exploit count must match exploit-catalog.json"
   $exploitById = @{}
   foreach ($exploit in $exploitCatalog) {
     $exploitById[$exploit.exploit_id] = $exploit
@@ -285,9 +291,27 @@ try {
       "COREEXP-10",
       "COREEXP-11",
       "COREEXP-12",
-      "COREEXP-13"
+      "COREEXP-13",
+      "SLASHEXP-01",
+      "SLASHEXP-02",
+      "SLASHEXP-03",
+      "SLASHEXP-04",
+      "SLASHEXP-05",
+      "SLASHEXP-06",
+      "SLASHEXP-07",
+      "TXEXP-01",
+      "TXEXP-02",
+      "TXEXP-03",
+      "TXEXP-04",
+      "TXEXP-05",
+      "TXEXP-06",
+      "TXEXP-07",
+      "TXEXP-08",
+      "TXEXP-09",
+      "TXEXP-10",
+      "TXEXP-11"
     )) {
-    Assert-True ($exploitById.ContainsKey($exploitId)) "core exploit catalog record missing: $exploitId"
+    Assert-True ($exploitById.ContainsKey($exploitId)) "exploit catalog record missing: $exploitId"
   }
   Assert-True ($exploitById["COREEXP-01"].exploit_path -match "conflicting blocks") "COREEXP-01 must record double-sign fork path"
   Assert-True ($exploitById["COREEXP-01"].severity -eq "Critical") "COREEXP-01 must be Critical"
@@ -296,6 +320,19 @@ try {
   Assert-True ($exploitById["COREEXP-07"].exploit_path -match "self-delegation inflation") "COREEXP-07 must record self-delegation inflation"
   Assert-True ($exploitById["COREEXP-11"].exploit_path -match "fork choice manipulation") "COREEXP-11 must record fork choice manipulation"
   Assert-True ($exploitById["COREEXP-13"].exploit_path -match "Byzantine majority") "COREEXP-13 must record Byzantine majority simulator"
+  Assert-True ($exploitById["SLASHEXP-01"].exploit_path -match "evidence after delay") "SLASHEXP-01 must record delayed evidence bypass"
+  Assert-True ($exploitById["SLASHEXP-02"].exploit_path -match "malformed equivocation proof") "SLASHEXP-02 must record malformed equivocation proof"
+  Assert-True ($exploitById["SLASHEXP-03"].exploit_path -match "race slashing evidence") "SLASHEXP-03 must record slashing race"
+  Assert-True ($exploitById["SLASHEXP-05"].exploit_path -match "unbond stake") "SLASHEXP-05 must record unbonding slash evasion"
+  Assert-True ($exploitById["SLASHEXP-06"].exploit_path -match "jailed validator") "SLASHEXP-06 must record jail escape through upgrade timing"
+  Assert-True ($exploitById["SLASHEXP-07"].exploit_path -match "invalid/stale/duplicate evidence") "SLASHEXP-07 must record invalid evidence replay"
+  Assert-True ($exploitById["TXEXP-01"].exploit_path -match "signed transaction bytes") "TXEXP-01 must record signature replay"
+  Assert-True ($exploitById["TXEXP-02"].exploit_path -match "wrong chain id") "TXEXP-02 must record cross-context replay"
+  Assert-True ($exploitById["TXEXP-03"].exploit_path -match "account sequence") "TXEXP-03 must record invalid nonce"
+  Assert-True ($exploitById["TXEXP-05"].exploit_path -match "underpay fee") "TXEXP-05 must record fee underpayment"
+  Assert-True ($exploitById["TXEXP-08"].exploit_path -match "multi-send") "TXEXP-08 must record multi-send partial failure"
+  Assert-True ($exploitById["TXEXP-09"].exploit_path -match "double spend") "TXEXP-09 must record race-condition double spend"
+  Assert-True ($exploitById["TXEXP-11"].exploit_path -match "zero address") "TXEXP-11 must record zero-address path"
 
   $campaignSetup = Get-Content -Raw -LiteralPath (Join-Path $result.output_dir "campaign-setup.json") | ConvertFrom-Json
   Assert-True ($campaignSetup.campaign_id -eq $result.campaign_id) "campaign setup campaign id must match summary"

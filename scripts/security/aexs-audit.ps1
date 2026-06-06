@@ -2407,6 +2407,217 @@ function Get-AexsCoreExploitRecords {
   return $records
 }
 
+function Get-AexsSlashingExploitOverrides {
+  $overrides = @{
+    "SLASHEXP-01" = [ordered]@{
+      path            = "submit valid evidence after delay boundaries and through redelegation/unbonding timing to attempt avoiding the slash"
+      expected_state  = "fresh valid delayed evidence still applies deterministic slash/jail/tombstone effects; stale evidence is rejected without mutation"
+      affected        = @("x/slashing", "x/staking", "app evidence handling")
+      severity        = "Critical"
+      fix             = "add delayed-evidence freshness tests, slash-period accounting checks, and redelegation/unbonding evidence regression coverage"
+    }
+    "SLASHEXP-02" = [ordered]@{
+      path            = "feed malformed equivocation proof variants to evidence handling and attempt accidental acceptance"
+      expected_state  = "malformed equivocation proof is rejected before slash accounting, validator status, or tombstone state changes"
+      affected        = @("x/slashing", "app evidence handling", "CometBFT evidence")
+      severity        = "Critical"
+      fix             = "harden proof decoding, validator identity binding, signature checks, and malformed evidence tests"
+    }
+    "SLASHEXP-03" = [ordered]@{
+      path            = "race slashing evidence against delegation, redelegation, unbonding, jail, and export/import transitions"
+      expected_state  = "slash accounting is atomic and deterministic; stake movement cannot avoid objective slash effects"
+      affected        = @("x/slashing", "x/staking", "x/distribution")
+      severity        = "Critical"
+      fix             = "add stateful race-sequence tests for slashing with staking transitions and cache-context rollback assertions"
+    }
+    "SLASHEXP-04" = [ordered]@{
+      path            = "redelegate stake after slashable behavior and attempt partial slash evasion across source and destination validators"
+      expected_state  = "redelegated stake remains slashable according to slash period and historical staking state"
+      affected        = @("x/slashing", "x/staking")
+      severity        = "High"
+      fix             = "add redelegation slash-period invariants and historical stake lookup regression tests"
+    }
+    "SLASHEXP-05" = [ordered]@{
+      path            = "unbond stake during evidence delay and attempt to exit before objective evidence applies"
+      expected_state  = "unbonding stake remains slashable throughout the protocol evidence window and cannot escape via timing"
+      affected        = @("x/slashing", "x/staking")
+      severity        = "Critical"
+      fix             = "test unbonding evidence windows, completion height boundaries, and slash accounting over unbonding delegations"
+    }
+    "SLASHEXP-06" = [ordered]@{
+      path            = "trigger upgrade/export/import timing around jailed validator state and attempt jail escape or tombstone loss"
+      expected_state  = "jailed and tombstoned state persists across upgrades, migrations, export/import, and restart"
+      affected        = @("x/slashing", "x/staking", "app upgrades", "genesis export")
+      severity        = "High"
+      fix             = "add migration/export/import tests for signing info, jailed state, tombstone state, and validator status"
+    }
+    "SLASHEXP-07" = [ordered]@{
+      path            = "replay previously accepted invalid/stale/duplicate evidence and attempt repeated or unintended slash mutation"
+      expected_state  = "invalid evidence replay is rejected; valid evidence is single-use and cannot slash twice"
+      affected        = @("x/slashing", "app evidence handling")
+      severity        = "High"
+      fix             = "add evidence replay markers, duplicate evidence tests, and exact-once slash accounting assertions"
+    }
+  }
+  return $overrides
+}
+
+function Get-AexsTxAuthBankExploitOverrides {
+  $overrides = @{
+    "TXEXP-01" = [ordered]@{
+      path            = "replay accepted signed transaction bytes through mempool, block replay, restart, and export/import paths"
+      expected_state  = "accepted transaction mutates state once; byte-for-byte replay fails sequence or replay checks before message execution"
+      affected        = @("x/auth", "app ante", "mempool", "x/bank")
+      severity        = "Critical"
+      fix             = "add signed-byte replay tests across CheckTx/FinalizeBlock/restart and sequence no-mutation assertions"
+    }
+    "TXEXP-02" = [ordered]@{
+      path            = "reuse signed bytes or sign doc across wrong chain id, account number, or context to attempt cross-context execution"
+      expected_state  = "wrong chain id or sign context rejects in ante before fee, sequence, or message state mutation"
+      affected        = @("x/auth", "app ante")
+      severity        = "Critical"
+      fix             = "add wrong-chain-id replay fixtures and sign-doc domain separation regression tests"
+    }
+    "TXEXP-03" = [ordered]@{
+      path            = "manipulate account sequence with stale, future, duplicate, or account-mismatched nonce values"
+      expected_state  = "invalid nonce rejects before sequence increment, fee mutation, or message execution"
+      affected        = @("x/auth", "app ante")
+      severity        = "High"
+      fix             = "add nonce boundary tests for stale/future/duplicate sequences and rejected-state snapshot comparisons"
+    }
+    "TXEXP-04" = [ordered]@{
+      path            = "alter transaction encoding, memo, auth info, or protobuf field ordering to attempt malleable equivalent execution"
+      expected_state  = "malleated transaction is either a distinct valid transaction with its own signature/sequence or rejected before mutation"
+      affected        = @("x/auth", "app tx decoding", "x/memo")
+      severity        = "High"
+      fix             = "add tx canonicalization, sign bytes, malformed protobuf, and memo mutation regression tests"
+    }
+    "TXEXP-05" = [ordered]@{
+      path            = "underpay fee with zero, missing, below-min, wrong-denom, or multi-denom fee fields"
+      expected_state  = "fee underpayment rejects in ante before messages execute or module state mutates"
+      affected        = @("x/fees", "x/auth", "app ante")
+      severity        = "Critical"
+      fix             = "add fee ante tests for missing/zero/below-min/non-naet/multi-denom underpayment and no-message-execution assertions"
+    }
+    "TXEXP-06" = [ordered]@{
+      path            = "manipulate fee amount, gas, split rounding, or refund accounting to inflate fee credit or rewards"
+      expected_state  = "fee accounting is exact and deterministic; malformed fee inflation attempts cannot mint, refund, or over-credit rewards"
+      affected        = @("x/fees", "x/distribution", "x/bank", "app ante")
+      severity        = "High"
+      fix             = "add fee split, rounding, max fee, refund, and distribution accounting invariants"
+    }
+    "TXEXP-07" = [ordered]@{
+      path            = "flood low-fee or malformed transactions to grief mempool, route priority, and block inclusion without paying required cost"
+      expected_state  = "low-fee spam is rejected or bounded by deterministic admission policy and cannot mutate state"
+      affected        = @("x/fees", "mempool", "x/routing", "app ante")
+      severity        = "High"
+      fix             = "add spam-burst simulations, fee admission tests, priority bounds, and mempool no-state-mutation assertions"
+    }
+    "TXEXP-08" = [ordered]@{
+      path            = "force a multi-send branch failure after earlier outputs and attempt partial committed bank movement"
+      expected_state  = "multi-send is atomic; any failed output rejects the whole transaction before balances or supply mutate"
+      affected        = @("x/bank", "app cache context")
+      severity        = "Critical"
+      fix             = "add partial multi-send failure tests with balance/supply snapshots before and after rejection"
+    }
+    "TXEXP-09" = [ordered]@{
+      path            = "race double spend attempts through repeated tx delivery, mempool rebroadcast, same sequence variants, and parallel local submission"
+      expected_state  = "only one spend can commit for a sequence and balance state; competing attempts fail before double debit"
+      affected        = @("x/auth", "x/bank", "mempool", "app")
+      severity        = "Critical"
+      fix             = "add repeated delivery, same-sequence, and insufficient-funds replay tests with account sequence/balance invariants"
+    }
+    "TXEXP-10" = [ordered]@{
+      path            = "replay a state transition that fails after partial writes and attempt rollback bypass or cache context leakage"
+      expected_state  = "failed state transition rolls back all writes and replay observes the original pre-failure state"
+      affected        = @("app cache context", "x/bank", "x/fees", "x/tokenfactory", "x/dex")
+      severity        = "High"
+      fix             = "add replayed failure rollback tests across bank, fees, tokenfactory, and DEX handlers"
+    }
+    "TXEXP-11" = [ordered]@{
+      path            = "inject zero address as signer, recipient, admin, authority, or bank transfer endpoint"
+      expected_state  = "zero-address signer or recipient path rejects before account, balance, authority, resolver, or module state mutation"
+      affected        = @("x/auth", "x/bank", "x/tokenfactory", "x/fees", "app address validation")
+      severity        = "Critical"
+      fix             = "add zero-address adversarial tests for signer, recipient, admin, authority, and fee/bank paths"
+    }
+  }
+  return $overrides
+}
+
+function Get-AexsExploitRecordsForSection {
+  param(
+    [string]$Text,
+    [string]$CampaignId,
+    [int]$SectionNumber,
+    [string]$SectionTitle,
+    [string]$IdPrefix,
+    [string]$SeedNamespace,
+    [hashtable]$Overrides,
+    [string[]]$DefaultAffectedModules,
+    [string]$DefaultSeverity
+  )
+  $section = Get-AexsMarkdownSection -Text $Text -Heading "Exploit Task Catalog"
+  if ([string]::IsNullOrWhiteSpace($section)) {
+    return @()
+  }
+
+  $capture = $false
+  $items = @()
+  $headingPattern = "^###\s+$SectionNumber\.\s+$([regex]::Escape($SectionTitle))\s*$"
+  foreach ($line in ($section -split "`r?`n")) {
+    if ($line -match $headingPattern) {
+      $capture = $true
+      continue
+    }
+    if ($capture -and $line -match '^###\s+') {
+      break
+    }
+    if ($capture -and $line -match '^- \[ \]\s+(.+?)\s*$') {
+      $items += $Matches[1].Trim().TrimEnd(".")
+    }
+  }
+
+  $records = @()
+  for ($i = 0; $i -lt $items.Count; $i++) {
+    $id = "{0}-{1:00}" -f $IdPrefix, ($i + 1)
+    $description = $items[$i]
+    $override = if ($null -ne $Overrides -and $Overrides.ContainsKey($id)) { $Overrides[$id] } else { $null }
+    $seedHash = (Get-AexsSha256Hex -Text "$CampaignId|$SeedNamespace|$id|$description").Substring(0, 16)
+    $seed = "aexs-$($id.ToLowerInvariant())-$seedHash"
+    $affected = if ($null -ne $override -and $override.Contains("affected")) { @($override["affected"]) } else { @($DefaultAffectedModules) }
+    $path = Get-AexsOverrideValue -Override $override -Field "path" -Fallback $description
+    $expected = Get-AexsOverrideValue -Override $override -Field "expected_state" -Fallback "exploit attempt must not violate protocol invariants or mutate state outside authorized transitions"
+    $severity = Get-AexsOverrideValue -Override $override -Field "severity" -Fallback $DefaultSeverity
+    $fix = Get-AexsOverrideValue -Override $override -Field "fix" -Fallback "add deterministic replay, adversarial simulation, invariant coverage, and regression tests for this exploit path"
+
+    $records += [ordered]@{
+      exploit_id         = $id
+      category           = $SectionTitle
+      description        = $description
+      exploit_path       = $path
+      seed               = $seed
+      step_list          = @(
+        "Run AEXS exploit scenario $id",
+        "Use seed $seed",
+        "Construct the adversarial sequence for $SectionTitle",
+        "Record expected state before execution",
+        "Record actual state after execution",
+        "If exploit succeeds, minimize the sequence and write AUDIT_RESULT.md"
+      )
+      expected_state     = $expected
+      actual_state       = "not_executed_preflight"
+      affected_modules   = $affected
+      severity           = $severity
+      fix_recommendation = $fix
+      status             = "planned_not_executed"
+      valid              = $true
+      invalid_reasons    = @()
+    }
+  }
+  return $records
+}
+
 function Test-AexsExploitRecord {
   param([object]$Record)
   $reasons = @()
@@ -2704,6 +2915,32 @@ $requiredCoreExploitTerms = @(
   "Attempt Byzantine majority simulator scenario."
 )
 
+$requiredSlashingExploitTerms = @(
+  "Slashing Bypass Exploits",
+  "Attempt delayed evidence submission bypass.",
+  "Attempt malformed equivocation proof acceptance.",
+  "Attempt slashing race condition.",
+  "Attempt redelegation-based partial slash evasion.",
+  "Attempt unbonding window slash evasion.",
+  "Attempt jail escape through upgrade timing.",
+  "Attempt invalid evidence replay."
+)
+
+$requiredTransactionExploitTerms = @(
+  "Transaction, Auth, And Bank Exploits",
+  "Attempt signature replay.",
+  "Attempt cross-context replay with wrong chain id.",
+  "Attempt invalid nonce bypass.",
+  "Attempt transaction malleability.",
+  "Attempt fee underpayment bypass.",
+  "Attempt fee inflation manipulation.",
+  "Attempt low-fee spam griefing.",
+  "Attempt multi-send partial failure exploit.",
+  "Attempt race-condition double spend.",
+  "Attempt rollback exploit during replayed state transition.",
+  "Attempt zero-address transfer or signer path."
+)
+
 $sourceFailures = @()
 foreach ($term in $requiredSourceTerms) {
   if (-not (Test-AexsTextAny -Text $taskText -Terms @($term)) -and -not (Test-AexsTextAny -Text $pipelineText -Terms @($term))) {
@@ -2746,6 +2983,12 @@ if ([string]::IsNullOrWhiteSpace($exploitCatalogSection)) {
 } else {
   foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredCoreExploitTerms)) {
     $sourceFailures += "missing core exploit catalog term: $term"
+  }
+  foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredSlashingExploitTerms)) {
+    $sourceFailures += "missing slashing exploit catalog term: $term"
+  }
+  foreach ($term in @(Get-AexsMissingTerms -Text $exploitCatalogSection -Terms $requiredTransactionExploitTerms)) {
+    $sourceFailures += "missing transaction/auth/bank exploit catalog term: $term"
   }
 }
 
@@ -2832,6 +3075,22 @@ foreach ($record in $coreExploitRecords) {
   $record["invalid_reasons"] = $invalidReasons
 }
 $invalidCoreExploitRecords = @($coreExploitRecords | Where-Object { -not $_["valid"] })
+$slashingExploitRecords = @(Get-AexsExploitRecordsForSection -Text $taskText -CampaignId $campaignId -SectionNumber 2 -SectionTitle "Slashing Bypass Exploits" -IdPrefix "SLASHEXP" -SeedNamespace "slashing-exploit" -Overrides (Get-AexsSlashingExploitOverrides) -DefaultAffectedModules @("x/slashing", "x/staking", "app evidence handling") -DefaultSeverity "High")
+foreach ($record in $slashingExploitRecords) {
+  $invalidReasons = @(Test-AexsExploitRecord -Record $record)
+  $record["valid"] = $invalidReasons.Count -eq 0
+  $record["invalid_reasons"] = $invalidReasons
+}
+$invalidSlashingExploitRecords = @($slashingExploitRecords | Where-Object { -not $_["valid"] })
+$txAuthBankExploitRecords = @(Get-AexsExploitRecordsForSection -Text $taskText -CampaignId $campaignId -SectionNumber 3 -SectionTitle "Transaction, Auth, And Bank Exploits" -IdPrefix "TXEXP" -SeedNamespace "tx-auth-bank-exploit" -Overrides (Get-AexsTxAuthBankExploitOverrides) -DefaultAffectedModules @("x/auth", "x/bank", "x/fees", "app ante") -DefaultSeverity "High")
+foreach ($record in $txAuthBankExploitRecords) {
+  $invalidReasons = @(Test-AexsExploitRecord -Record $record)
+  $record["valid"] = $invalidReasons.Count -eq 0
+  $record["invalid_reasons"] = $invalidReasons
+}
+$invalidTxAuthBankExploitRecords = @($txAuthBankExploitRecords | Where-Object { -not $_["valid"] })
+$exploitRecords = @($coreExploitRecords + $slashingExploitRecords + $txAuthBankExploitRecords)
+$invalidExploitRecords = @($exploitRecords | Where-Object { -not $_["valid"] })
 $mandatoryInvariantPassRate = 0
 $auditPassed = $false
 $productionSafe = $false
@@ -3398,10 +3657,22 @@ $summary = [ordered]@{
   invariant_checklist_ids             = @($invariantChecklistRecords | ForEach-Object { $_["invariant_id"] })
   invariant_checklist_categories      = @($invariantChecklistRecords | ForEach-Object { $_["category"] } | Sort-Object -Unique)
   invalid_invariant_checklist_records = @($invalidInvariantChecklistRecords | ForEach-Object { $_["invariant_id"] })
+  exploit_count                       = $exploitRecords.Count
+  invalid_exploit_count               = $invalidExploitRecords.Count
+  exploit_ids                         = @($exploitRecords | ForEach-Object { $_["exploit_id"] })
+  invalid_exploit_records             = @($invalidExploitRecords | ForEach-Object { $_["exploit_id"] })
   core_exploit_count                  = $coreExploitRecords.Count
   invalid_core_exploit_count          = $invalidCoreExploitRecords.Count
   core_exploit_ids                    = @($coreExploitRecords | ForEach-Object { $_["exploit_id"] })
   invalid_core_exploit_records        = @($invalidCoreExploitRecords | ForEach-Object { $_["exploit_id"] })
+  slashing_exploit_count              = $slashingExploitRecords.Count
+  invalid_slashing_exploit_count      = $invalidSlashingExploitRecords.Count
+  slashing_exploit_ids                = @($slashingExploitRecords | ForEach-Object { $_["exploit_id"] })
+  invalid_slashing_exploit_records    = @($invalidSlashingExploitRecords | ForEach-Object { $_["exploit_id"] })
+  tx_auth_bank_exploit_count          = $txAuthBankExploitRecords.Count
+  invalid_tx_auth_bank_exploit_count  = $invalidTxAuthBankExploitRecords.Count
+  tx_auth_bank_exploit_ids            = @($txAuthBankExploitRecords | ForEach-Object { $_["exploit_id"] })
+  invalid_tx_auth_bank_exploit_records = @($invalidTxAuthBankExploitRecords | ForEach-Object { $_["exploit_id"] })
   atomic_task_count                   = $atomicTasks.Count
   invalid_atomic_task_count           = $invalidAtomicTasks.Count
   invalid_atomic_tasks                = @($invalidAtomicTasks | ForEach-Object { $_["task_id"] })
@@ -3437,7 +3708,7 @@ $taskCopyPath = Join-Path $campaignDir "TO_AUDIT.md"
 $moduleRows | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $coveragePath
 $atomicTasks | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $atomicTasksPath
 $invariantChecklistRecords | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $invariantChecklistPath
-$coreExploitRecords | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $coreExploitPath
+$exploitRecords | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $coreExploitPath
 $campaignSetup | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $campaignSetupPath
 $scenarioCatalog | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $scenarioCatalogPath
 $transactionMutatorCatalog | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $transactionMutatorPath
@@ -3480,16 +3751,16 @@ foreach ($record in $invariantChecklistRecords) {
 $invariantReport | Set-Content -LiteralPath $invariantChecklistMarkdownPath
 
 $coreExploitReport = @()
-$coreExploitReport += "# AEXS Consensus And Aether Core Exploit Catalog"
+$coreExploitReport += "# AEXS Exploit Catalog"
 $coreExploitReport += ""
 $coreExploitReport += "- campaign id: $campaignId"
-$coreExploitReport += "- exploit count: $($coreExploitRecords.Count)"
-$coreExploitReport += "- invalid exploit count: $($invalidCoreExploitRecords.Count)"
+$coreExploitReport += "- exploit count: $($exploitRecords.Count)"
+$coreExploitReport += "- invalid exploit count: $($invalidExploitRecords.Count)"
 $coreExploitReport += "- status: planned_not_executed"
 $coreExploitReport += ""
 $coreExploitReport += "| Exploit | Severity | Path | Expected state | Actual state | Affected modules | Seed |"
 $coreExploitReport += "| --- | --- | --- | --- | --- | --- | --- |"
-foreach ($record in $coreExploitRecords) {
+foreach ($record in $exploitRecords) {
   $path = ([string]$record["exploit_path"]).Replace("|", "/")
   $expected = ([string]$record["expected_state"]).Replace("|", "/")
   $affected = (@($record["affected_modules"]) -join ", ").Replace("|", "/")
@@ -3555,8 +3826,14 @@ $report += "- transaction mutators: $($transactionMutators.Count)"
 $report += "- invalid transaction mutators: $($invalidTransactionMutators.Count)"
 $report += "- mandatory invariant checklist records: $($invariantChecklistRecords.Count)"
 $report += "- invalid mandatory invariant checklist records: $($invalidInvariantChecklistRecords.Count)"
+$report += "- exploit records: $($exploitRecords.Count)"
+$report += "- invalid exploit records: $($invalidExploitRecords.Count)"
 $report += "- consensus/aether core exploit records: $($coreExploitRecords.Count)"
 $report += "- invalid consensus/aether core exploit records: $($invalidCoreExploitRecords.Count)"
+$report += "- slashing bypass exploit records: $($slashingExploitRecords.Count)"
+$report += "- invalid slashing bypass exploit records: $($invalidSlashingExploitRecords.Count)"
+$report += "- transaction/auth/bank exploit records: $($txAuthBankExploitRecords.Count)"
+$report += "- invalid transaction/auth/bank exploit records: $($invalidTxAuthBankExploitRecords.Count)"
 $report += ""
 $report += "## Gate Decision"
 $report += ""
@@ -3570,7 +3847,10 @@ $report += "- modules without fuzz evidence: $(@($modulesWithoutFuzzEvidence | F
 $report += "- modules without adversarial evidence: $(@($modulesWithoutAdversarialEvidence | ForEach-Object { $_["module"] }) -join ', ')"
 $report += "- modules with invalid atomic tasks: $(@($modulesWithInvalidAtomicTasks | ForEach-Object { $_["module"] }) -join ', ')"
 $report += "- invalid mandatory invariant checklist records: $(@($invalidInvariantChecklistRecords | ForEach-Object { $_["invariant_id"] }) -join ', ')"
+$report += "- invalid exploit records: $(@($invalidExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 $report += "- invalid consensus/aether core exploit records: $(@($invalidCoreExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+$report += "- invalid slashing bypass exploit records: $(@($invalidSlashingExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+$report += "- invalid transaction/auth/bank exploit records: $(@($invalidTxAuthBankExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 $report += ""
 $report += "## Module Matrix"
 $report += ""
@@ -3592,7 +3872,7 @@ $report += "## Consensus And Aether Core Exploit Catalog"
 $report += ""
 $report += "| Exploit | Severity | Actual state | Status |"
 $report += "| --- | --- | --- | --- |"
-foreach ($record in $coreExploitRecords) {
+foreach ($record in $exploitRecords) {
   $report += "| $($record["exploit_id"]) | $($record["severity"]) | $($record["actual_state"]) | $($record["status"]) |"
 }
 $report += ""
@@ -3627,6 +3907,21 @@ if ($coreExploitRecords.Count -lt 13) {
 }
 if ($invalidCoreExploitRecords.Count -gt 0) {
   throw "AEXS core exploit catalog validation failed for record(s): $(@($invalidCoreExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+}
+if ($slashingExploitRecords.Count -lt 7) {
+  throw "AEXS slashing exploit catalog validation failed: fewer than required slashing bypass exploit records"
+}
+if ($invalidSlashingExploitRecords.Count -gt 0) {
+  throw "AEXS slashing exploit catalog validation failed for record(s): $(@($invalidSlashingExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+}
+if ($txAuthBankExploitRecords.Count -lt 11) {
+  throw "AEXS transaction/auth/bank exploit catalog validation failed: fewer than required transaction/auth/bank exploit records"
+}
+if ($invalidTxAuthBankExploitRecords.Count -gt 0) {
+  throw "AEXS transaction/auth/bank exploit catalog validation failed for record(s): $(@($invalidTxAuthBankExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
+}
+if ($invalidExploitRecords.Count -gt 0) {
+  throw "AEXS exploit catalog validation failed for record(s): $(@($invalidExploitRecords | ForEach-Object { $_["exploit_id"] }) -join ', ')"
 }
 if ($modulesBelowPlan.Count -gt 0) {
   throw "AEXS planned coverage gate failed for module(s): $(@($modulesBelowPlan | ForEach-Object { $_["module"] }) -join ', ')"

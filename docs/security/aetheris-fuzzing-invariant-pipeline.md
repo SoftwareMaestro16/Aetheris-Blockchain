@@ -423,6 +423,15 @@ grinding, validator cartel concentration, delegation manipulation,
 self-delegation inflation, fake validator liveness, validator eclipse, block
 withholding, fork-choice manipulation, finality-delay manipulation, and
 Byzantine-majority simulator scenarios.
+The slashing bypass catalog section covers delayed evidence submission,
+malformed equivocation proof acceptance, slashing race conditions,
+redelegation-based partial slash evasion, unbonding-window slash evasion, jail
+escape through upgrade timing, and invalid evidence replay. The transaction,
+auth, and bank catalog section covers signature replay, wrong-chain-id
+cross-context replay, invalid nonce bypass, transaction malleability, fee
+underpayment, fee inflation manipulation, low-fee spam griefing, multi-send
+partial failure, race-condition double spend, rollback during replayed state
+transitions, and zero-address transfer or signer paths.
 
 The base-chain `x/auth`, `x/bank`, `x/staking`, `x/slashing`, `x/gov`,
 `x/distribution`, `x/fees`, `x/tokenfactory`, `x/dex`, `x/identity`,
