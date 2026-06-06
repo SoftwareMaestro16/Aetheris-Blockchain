@@ -1839,6 +1839,146 @@ func TestUntrustedTopologyIsRejectedBeforeRouteUse(t *testing.T) {
 	require.ErrorContains(t, err, "unknown channel")
 }
 
+func TestSignedGossipEnvelopeBuildsLocalTopologyStore(t *testing.T) {
+	alice := testAddress(0x31)
+	bob := testAddress(0x32)
+	channel := signedChannel(t, "gossip-announcement", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+
+	envelope := signedGossipEnvelope(t, GossipMessage{
+		MessageType:      GossipChannelAnnouncement,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		NodeID:           alice,
+		From:             alice,
+		To:               bob,
+		Capacity:         "500",
+		FeeAmount:        "2",
+		ValidAfterHeight: 20,
+		ValidUntilHeight: 50,
+		ReputationDelta:  3,
+		Sequence:         1,
+	}, alice, 20)
+
+	store, err := ApplyGossipEnvelope(TopologyStore{}, state, envelope, 20)
+	require.NoError(t, err)
+	require.Len(t, store.Messages, 1)
+	require.Len(t, store.Edges, 1)
+	require.Equal(t, channel.ChannelID, store.Edges[0].ChannelID)
+	require.Equal(t, int64(3), RoutingScoreForEdge(store, store.Edges[0]))
+
+	commitmentOnly := signedGossipEnvelope(t, GossipMessage{
+		MessageType:       GossipChannelAnnouncement,
+		ChainID:           channel.ChainID,
+		NodeID:            bob,
+		From:              bob,
+		To:                alice,
+		Capacity:          "100",
+		FeeAmount:         "1",
+		ValidAfterHeight:  20,
+		ValidUntilHeight:  50,
+		ChannelCommitment: HashParts("verifiable-channel-commitment", bob, alice),
+		Sequence:          2,
+	}, bob, 20)
+	store, err = ApplyGossipEnvelope(store, state, commitmentOnly, 20)
+	require.NoError(t, err)
+	require.Len(t, store.Messages, 2)
+	require.Len(t, store.Edges, 1)
+}
+
+func TestGossipExpiryPruningAndInvalidPenaltyAffectLocalScoreOnly(t *testing.T) {
+	alice := testAddress(0x33)
+	bob := testAddress(0x34)
+	channel := signedChannel(t, "gossip-prune", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+	envelope := signedGossipEnvelope(t, GossipMessage{
+		MessageType:      GossipChannelUpdate,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		NodeID:           alice,
+		From:             alice,
+		To:               bob,
+		Capacity:         "400",
+		FeeAmount:        "1",
+		ValidAfterHeight: 20,
+		ValidUntilHeight: 25,
+		Sequence:         1,
+	}, alice, 20)
+
+	store, err := ApplyGossipEnvelope(TopologyStore{}, state, envelope, 20)
+	require.NoError(t, err)
+	require.Len(t, store.Edges, 1)
+	pruned, err := PruneTopologyStore(store, 26)
+	require.NoError(t, err)
+	require.Empty(t, pruned.Messages)
+	require.Empty(t, pruned.Edges)
+
+	_, err = ApplyGossipEnvelope(TopologyStore{}, state, envelope, 26)
+	require.ErrorContains(t, err, "expired")
+
+	invalid := signedGossipEnvelope(t, GossipMessage{
+		MessageType:      GossipLiquidityHint,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		NodeID:           alice,
+		From:             alice,
+		To:               bob,
+		Liquidity:        "250",
+		FeeAmount:        "1",
+		ValidAfterHeight: 30,
+		ValidUntilHeight: 60,
+		Sequence:         2,
+		Advisory:         true,
+	}, bob, 30)
+	penalized, err := ApplyGossipEnvelope(store, state, invalid, 30)
+	require.ErrorContains(t, err, "signer must match")
+	require.Len(t, penalized.Reputation, 1)
+	require.Equal(t, uint64(1), penalized.Reputation[0].InvalidGossip)
+	require.Equal(t, -InvalidGossipPenalty, RoutingScoreForEdge(penalized, store.Edges[0]))
+	require.Len(t, state.Channels, 1)
+	require.Empty(t, state.Edges)
+}
+
+func TestFeePolicyGossipRequiresValidityAndMaxFee(t *testing.T) {
+	alice := testAddress(0x35)
+	bob := testAddress(0x36)
+	channel := signedChannel(t, "gossip-fee-policy", "1000", alice, bob)
+	state := EmptyStateWithChannel(t, channel)
+
+	invalidPolicy := GossipMessage{
+		MessageType:      GossipFeePolicyUpdate,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		NodeID:           alice,
+		From:             alice,
+		To:               bob,
+		FeeAmount:        "1",
+		ValidAfterHeight: 20,
+		ValidUntilHeight: 50,
+	}
+	_, err := BuildGossipMessage(invalidPolicy)
+	require.ErrorContains(t, err, "max fee")
+
+	policy := signedGossipEnvelope(t, GossipMessage{
+		MessageType:      GossipFeePolicyUpdate,
+		ChainID:          channel.ChainID,
+		ChannelID:        channel.ChannelID,
+		NodeID:           alice,
+		From:             alice,
+		To:               bob,
+		Capacity:         "300",
+		FeeAmount:        "2",
+		MaxFee:           "5",
+		ValidAfterHeight: 20,
+		ValidUntilHeight: 50,
+		Sequence:         1,
+	}, alice, 20)
+	store, err := ApplyGossipEnvelope(TopologyStore{}, state, policy, 20)
+	require.NoError(t, err)
+	require.Len(t, store.Edges, 1)
+	require.Equal(t, "2", store.Edges[0].FeeAmount)
+}
+
 func TestSettlementPrunesRoutingEdgesForAuthoritativeClosedChannel(t *testing.T) {
 	alice := testAddress(0x4c)
 	bob := testAddress(0x4d)
@@ -2239,6 +2379,22 @@ func signedRoutePromise(t *testing.T, channel ChannelRecord, promiseID, routeID,
 	require.NoError(t, err)
 	promise = promise.Normalize()
 	return promise
+}
+
+func signedGossipEnvelope(t *testing.T, message GossipMessage, signer string, receivedAt uint64) SignedGossipEnvelope {
+	t.Helper()
+
+	built, err := BuildGossipMessage(message)
+	require.NoError(t, err)
+	sig, err := SignatureForGossip(built, signer)
+	require.NoError(t, err)
+	return SignedGossipEnvelope{
+		Message:      built,
+		MessageHash:  built.MessageID,
+		Signature:    sig,
+		ReceivedFrom: signer,
+		ReceivedAt:   receivedAt,
+	}.Normalize()
 }
 
 func mutateCanonicalState(state ChannelState, mutate func(*ChannelState)) ChannelState {
