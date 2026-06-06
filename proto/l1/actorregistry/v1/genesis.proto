@@ -1,0 +1,67 @@
+syntax = "proto3";
+package l1.actorregistry.v1;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/actor-registry/types";
+
+message GenesisState {
+  uint64 version = 1;
+  Params params = 2 [(gogoproto.nullable) = false];
+  ActorRegistryParams registry_params = 3 [(gogoproto.nullable) = false];
+  ActorRegistryState state = 4 [(gogoproto.nullable) = false];
+}
+
+message Params {
+  bool enabled = 1;
+  bool testnet_profile = 2;
+  string production_version_gate = 3;
+  string authority = 4;
+  uint64 default_query_limit = 5;
+  uint64 max_query_limit = 6;
+}
+
+message ActorRegistryParams {
+  uint32 max_actors = 1;
+  uint32 max_capabilities = 2;
+  string deleted_value_policy = 3;
+  string deleted_value_redirect = 4;
+  bool allow_deleted_value_send = 5;
+}
+
+message ActorRegistryState {
+  repeated ActorRecord actors = 1 [(gogoproto.nullable) = false];
+  repeated CodeRecord code_store = 2 [(gogoproto.nullable) = false];
+  repeated ActorMigrationRecord migrations = 3 [(gogoproto.nullable) = false];
+}
+
+message CodeRecord {
+  string code_hash = 1;
+  string registered_by = 2;
+  uint64 registered_at = 3;
+}
+
+message ActorRecord {
+  string actor_id = 1;
+  string contract_address = 2;
+  string owner = 3;
+  string code_hash = 4;
+  string storage_root = 5;
+  string mailbox_root = 6;
+  uint64 balance = 7;
+  uint64 logical_time = 8;
+  string status = 9;
+  string rent_status = 10;
+  uint64 last_active_height = 11;
+  repeated string capabilities = 12;
+  string migrated_from = 13;
+  string migrated_to = 14;
+}
+
+message ActorMigrationRecord {
+  string actor_id = 1;
+  string from_code_hash = 2;
+  string to_code_hash = 3;
+  uint64 height = 4;
+  uint64 logical_time = 5;
+}

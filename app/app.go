@@ -52,6 +52,8 @@ import (
 
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
+	actorregistrykeeper "github.com/sovereign-l1/l1/x/actor-registry/keeper"
+	actorregistrytypes "github.com/sovereign-l1/l1/x/actor-registry/types"
 	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	avmschedulerkeeper "github.com/sovereign-l1/l1/x/avm-scheduler/keeper"
@@ -160,6 +162,7 @@ type L1App struct {
 	PaymentsKeeper     paymentskeeper.Keeper
 	SchedulerKeeper    schedulerkeeper.Keeper
 	AVMSchedulerKeeper avmschedulerkeeper.Keeper
+	ActorRegistryKeeper actorregistrykeeper.Keeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -273,6 +276,7 @@ func NewL1App(
 		paymentstypes.StoreKey,
 		schedulertypes.StoreKey,
 		avmschedulertypes.StoreKey,
+		actorregistrytypes.StoreKey,
 	)
 
 	// register streaming services

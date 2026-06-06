@@ -46,6 +46,8 @@ import (
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	aetherisaddress "github.com/sovereign-l1/l1/app/addressing"
+	actorregistrykeeper "github.com/sovereign-l1/l1/x/actor-registry/keeper"
+	actorregistrytypes "github.com/sovereign-l1/l1/x/actor-registry/types"
 	aethercorekeeper "github.com/sovereign-l1/l1/x/aethercore/keeper"
 	aethercoretypes "github.com/sovereign-l1/l1/x/aethercore/types"
 	avmschedulerkeeper "github.com/sovereign-l1/l1/x/avm-scheduler/keeper"
@@ -260,5 +262,6 @@ func (app *L1App) initKeepers(
 	app.PaymentsKeeper = paymentskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[paymentstypes.StoreKey]))
 	app.SchedulerKeeper = schedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[schedulertypes.StoreKey]))
 	app.AVMSchedulerKeeper = avmschedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[avmschedulertypes.StoreKey]))
+	app.ActorRegistryKeeper = actorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[actorregistrytypes.StoreKey]))
 	return txConfig
 }

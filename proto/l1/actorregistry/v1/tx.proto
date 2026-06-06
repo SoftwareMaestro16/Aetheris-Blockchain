@@ -1,0 +1,91 @@
+syntax = "proto3";
+package l1.actorregistry.v1;
+
+import "l1/actorregistry/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/actor-registry/types";
+
+message MsgRegisterActor {
+  string authority = 1;
+  string owner = 2;
+  string code_hash = 3;
+  string salt = 4;
+  string actor_id = 5;
+  string contract_address = 6;
+  string storage_root = 7;
+  string mailbox_root = 8;
+  uint64 balance = 9;
+  uint64 height = 10;
+  repeated string capabilities = 11;
+}
+
+message MsgRegisterActorResponse {
+  ActorRecord actor = 1;
+}
+
+message MsgUpdateActorCode {
+  string authority = 1;
+  string actor_id = 2;
+  string code_hash = 3;
+  uint64 height = 4;
+  uint64 logical_time = 5;
+}
+
+message MsgUpdateActorCodeResponse {
+  ActorRecord actor = 1;
+}
+
+message MsgFreezeActor {
+  string authority = 1;
+  string actor_id = 2;
+  uint64 height = 3;
+}
+
+message MsgFreezeActorResponse {
+  ActorRecord actor = 1;
+}
+
+message MsgUnfreezeActor {
+  string authority = 1;
+  string actor_id = 2;
+  uint64 height = 3;
+}
+
+message MsgUnfreezeActorResponse {
+  ActorRecord actor = 1;
+}
+
+message MsgDeleteActor {
+  string authority = 1;
+  string actor_id = 2;
+  uint64 height = 3;
+}
+
+message MsgDeleteActorResponse {
+  ActorRecord actor = 1;
+}
+
+message MsgMigrateActor {
+  string authority = 1;
+  string actor_id = 2;
+  string new_code_hash = 3;
+  string new_storage_root = 4;
+  string new_mailbox_root = 5;
+  string new_actor_id = 6;
+  string new_address = 7;
+  uint64 height = 8;
+  uint64 logical_time = 9;
+}
+
+message MsgMigrateActorResponse {
+  ActorRecord actor = 1;
+}
+
+service Msg {
+  rpc RegisterActor(MsgRegisterActor) returns (MsgRegisterActorResponse);
+  rpc UpdateActorCode(MsgUpdateActorCode) returns (MsgUpdateActorCodeResponse);
+  rpc FreezeActor(MsgFreezeActor) returns (MsgFreezeActorResponse);
+  rpc UnfreezeActor(MsgUnfreezeActor) returns (MsgUnfreezeActorResponse);
+  rpc DeleteActor(MsgDeleteActor) returns (MsgDeleteActorResponse);
+  rpc MigrateActor(MsgMigrateActor) returns (MsgMigrateActorResponse);
+}

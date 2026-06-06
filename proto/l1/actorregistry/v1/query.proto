@@ -1,0 +1,63 @@
+syntax = "proto3";
+package l1.actorregistry.v1;
+
+import "l1/actorregistry/v1/genesis.proto";
+
+option go_package = "github.com/sovereign-l1/l1/x/actor-registry/types";
+
+message QueryActorRequest {
+  string actor_id = 1;
+}
+
+message QueryActorResponse {
+  ActorRecord actor = 1;
+}
+
+message QueryActorsByOwnerRequest {
+  string owner = 1;
+}
+
+message QueryActorsByOwnerResponse {
+  repeated ActorRecord actors = 1;
+}
+
+message QueryActorsByCodeHashRequest {
+  string code_hash = 1;
+}
+
+message QueryActorsByCodeHashResponse {
+  repeated ActorRecord actors = 1;
+}
+
+message QueryActorStatusRequest {
+  string actor_id = 1;
+}
+
+message QueryActorStatusResponse {
+  string status = 1;
+}
+
+message QueryActorMailboxRequest {
+  string actor_id = 1;
+}
+
+message QueryActorMailboxResponse {
+  string mailbox_root = 1;
+}
+
+message QueryActorStorageRootRequest {
+  string actor_id = 1;
+}
+
+message QueryActorStorageRootResponse {
+  string storage_root = 1;
+}
+
+service Query {
+  rpc Actor(QueryActorRequest) returns (QueryActorResponse);
+  rpc ActorsByOwner(QueryActorsByOwnerRequest) returns (QueryActorsByOwnerResponse);
+  rpc ActorsByCodeHash(QueryActorsByCodeHashRequest) returns (QueryActorsByCodeHashResponse);
+  rpc ActorStatus(QueryActorStatusRequest) returns (QueryActorStatusResponse);
+  rpc ActorMailbox(QueryActorMailboxRequest) returns (QueryActorMailboxResponse);
+  rpc ActorStorageRoot(QueryActorStorageRootRequest) returns (QueryActorStorageRootResponse);
+}

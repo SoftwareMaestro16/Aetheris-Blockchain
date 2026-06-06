@@ -32,6 +32,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	"github.com/cosmos/cosmos-sdk/x/upgrade"
 
+	actorregistrymodule "github.com/sovereign-l1/l1/x/actor-registry"
 	aethercoremodule "github.com/sovereign-l1/l1/x/aethercore"
 	avmschedulermodule "github.com/sovereign-l1/l1/x/avm-scheduler"
 	configmodule "github.com/sovereign-l1/l1/x/config"
@@ -82,6 +83,7 @@ func (app *L1App) initModules(
 		paymentsmodule.NewAppModule(app.PaymentsKeeper),
 		schedulermodule.NewAppModule(&app.SchedulerKeeper),
 		avmschedulermodule.NewAppModule(&app.AVMSchedulerKeeper),
+		actorregistrymodule.NewAppModule(&app.ActorRegistryKeeper),
 		tokenfactorymodule.NewAppModule(appCodec, app.TokenFactoryKeeper),
 		dexmodule.NewAppModule(appCodec, app.DexKeeper),
 		feesmodule.NewAppModule(appCodec, app.FeesKeeper),
