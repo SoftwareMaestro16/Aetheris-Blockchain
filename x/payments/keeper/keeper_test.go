@@ -94,6 +94,36 @@ func TestKeeperStoreV2ParticipantChannelPagination(t *testing.T) {
 	require.NotEqual(t, entries[0].ChannelID, next[0].ChannelID)
 }
 
+func TestKeeperAdaptiveSyncSnapshotRecovery(t *testing.T) {
+	k := NewKeeper()
+	gs := DefaultGenesis()
+	gs.Params = prototype.TestnetParams()
+	require.NoError(t, k.InitGenesis(gs))
+
+	alice := keeperAddress(0x65)
+	bob := keeperAddress(0x66)
+	channel := keeperSignedChannel(t, "keeper-adaptive-sync", "100", alice, bob)
+	require.NoError(t, k.OpenChannel(channel))
+	closeState := keeperSignedState(t, channel, 2, channel.OpeningStateHash, []paymentstypes.Balance{
+		{Participant: alice, Amount: "40"},
+		{Participant: bob, Amount: "60"},
+	})
+	require.NoError(t, k.SubmitClose(channel.ChannelID, closeState, alice, 20, "0"))
+	newer := keeperSignedState(t, channel, 3, closeState.StateHash, []paymentstypes.Balance{
+		{Participant: alice, Amount: "35"},
+		{Participant: bob, Amount: "65"},
+	})
+	require.NoError(t, k.DisputeClose(channel.ChannelID, newer, bob, 21))
+
+	snapshot, err := k.AdaptiveSyncSnapshot(22)
+	require.NoError(t, err)
+	require.Len(t, snapshot.ActiveDisputes, 1)
+	recovered, err := k.RecoverAdaptiveSyncSafety(snapshot)
+	require.NoError(t, err)
+	require.Contains(t, recovered.ActiveDisputeChannelIDs, channel.ChannelID)
+	require.Contains(t, recovered.PendingFinalizationIDs, channel.ChannelID)
+}
+
 func keeperSignedChannel(t *testing.T, salt, collateral, left, right string) paymentstypes.ChannelRecord {
 	t.Helper()
 

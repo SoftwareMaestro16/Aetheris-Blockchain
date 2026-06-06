@@ -550,6 +550,20 @@ func (k Keeper) ParticipantChannels(address string, req *prototype.PageRequest) 
 	return page.Entries, prototype.PageResponse{NextOffset: page.NextOffset}, nil
 }
 
+func (k Keeper) AdaptiveSyncSnapshot(height uint64) (paymentstypes.AdaptiveSyncSnapshot, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.AdaptiveSyncSnapshot{}, err
+	}
+	return paymentstypes.BuildAdaptiveSyncSnapshot(k.genesis.State, height)
+}
+
+func (k Keeper) RecoverAdaptiveSyncSafety(snapshot paymentstypes.AdaptiveSyncSnapshot) (paymentstypes.AdaptiveSyncRecoveryState, error) {
+	if err := k.genesis.Params.RequireEnabled(); err != nil {
+		return paymentstypes.AdaptiveSyncRecoveryState{}, err
+	}
+	return paymentstypes.RecoverAdaptiveSyncSafety(snapshot)
+}
+
 func (k Keeper) RoutePayment(from, to, amount string, currentHeight uint64, maxHops int) ([]paymentstypes.ChannelEdge, error) {
 	return paymentstypes.RoutePayment(k.genesis.State, from, to, amount, currentHeight, maxHops)
 }

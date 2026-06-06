@@ -30,6 +30,10 @@ const (
 	StoreV2KeySettlementTombstonesPrefix = "settlement_tombstones"
 	StoreV2KeyFeeAccumulatorsPrefix      = "fee_accumulators"
 	StoreV2KeyFraudProofsPrefix          = "fraud_proofs"
+	StoreV2KeyAdaptiveSnapshotsPrefix    = "adaptive_snapshots"
+	StoreV2KeyActiveDisputesPrefix       = "active_disputes"
+	StoreV2KeyPendingFinalizationsPrefix = "pending_finalizations"
+	StoreV2KeyWatcherReplayEventsPrefix  = "watcher_replay_events"
 )
 
 func PaymentChannelKey(channelID string) string {
@@ -106,6 +110,22 @@ func StoreV2FeeAccumulatorKey(blockOrEpoch, bucket string) string {
 
 func StoreV2FraudProofKey(proofID string) string {
 	return paymentKey(StoreV2KeyFraudProofsPrefix, normalizeHash(proofID))
+}
+
+func StoreV2AdaptiveSnapshotKey(height uint64) string {
+	return paymentKey(StoreV2KeyAdaptiveSnapshotsPrefix, fmt.Sprintf("%020d", height))
+}
+
+func StoreV2ActiveDisputeKey(channelID string) string {
+	return paymentKey(StoreV2KeyActiveDisputesPrefix, normalizeHash(channelID))
+}
+
+func StoreV2PendingFinalizationKey(channelID string) string {
+	return paymentKey(StoreV2KeyPendingFinalizationsPrefix, normalizeHash(channelID))
+}
+
+func StoreV2WatcherReplayEventKey(height uint64, eventID string) string {
+	return paymentKey(StoreV2KeyWatcherReplayEventsPrefix, fmt.Sprintf("%020d", height), normalizeHash(eventID))
 }
 
 func paymentKey(parts ...string) string {

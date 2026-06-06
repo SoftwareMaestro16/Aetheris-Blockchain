@@ -3134,6 +3134,78 @@ func TestStoreV2ParticipantIndexPagination(t *testing.T) {
 	require.NotEqual(t, page.Entries[0].ChannelID, next.Entries[0].ChannelID)
 }
 
+func TestAdaptiveSyncSnapshotRecoversNodeDuringActiveDispute(t *testing.T) {
+	alice := testAddress(0x8d)
+	bob := testAddress(0x8e)
+	channel := signedChannel(t, "adaptive-sync-dispute", "100", alice, bob)
+	state := EmptyState()
+	var err error
+	state, err = OpenChannel(state, channel)
+	require.NoError(t, err)
+	state, err = RegisterRoutingEdge(state, ChannelEdge{ChannelID: channel.ChannelID, From: alice, To: bob, Capacity: "100", FeeAmount: "1", Active: true})
+	require.NoError(t, err)
+	withoutRouting := state.Clone()
+	withoutRouting.Edges = nil
+
+	closeState := signedConditionalState(t, channel, 2, channel.OpeningStateHash, "25", []Balance{
+		{Participant: alice, Amount: "75"},
+		{Participant: bob, Amount: "0"},
+	})
+	state, err = SubmitClose(state, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+	withoutRouting, err = SubmitClose(withoutRouting, channel.ChannelID, closeState, alice, 20, "0")
+	require.NoError(t, err)
+	newer := signedConditionalState(t, channel, 3, closeState.StateHash, "25", []Balance{
+		{Participant: alice, Amount: "70"},
+		{Participant: bob, Amount: "5"},
+	})
+	state, err = DisputeClose(state, channel.ChannelID, newer, bob, 21)
+	require.NoError(t, err)
+	withoutRouting, err = DisputeClose(withoutRouting, channel.ChannelID, newer, bob, 21)
+	require.NoError(t, err)
+
+	snapshot, err := BuildAdaptiveSyncSnapshot(state, 22)
+	require.NoError(t, err)
+	require.NoError(t, snapshot.Validate())
+	noRoutingSnapshot, err := BuildAdaptiveSyncSnapshot(withoutRouting, 22)
+	require.NoError(t, err)
+	require.Equal(t, noRoutingSnapshot.SnapshotHash, snapshot.SnapshotHash)
+	require.True(t, snapshot.ConsensusOnly)
+	require.True(t, snapshot.RoutingTopologyExcluded)
+	require.Len(t, snapshot.ActiveDisputes, 1)
+	require.Equal(t, channel.ChannelID, snapshot.ActiveDisputes[0].ChannelID)
+	require.Len(t, snapshot.PendingFinalizations, 1)
+	require.Equal(t, state.Channels[0].PendingClose.SettleAfterHeight, snapshot.PendingFinalizations[0].PendingHeight)
+	require.Len(t, snapshot.Layout.PendingCloses, 1)
+	require.Len(t, snapshot.Layout.Conditions, 1)
+	require.NotEmpty(t, snapshot.WatcherReplayEvents)
+	require.True(t, strings.HasPrefix(snapshot.WatcherReplayEvents[0].Key, "payments/watcher_replay_events/"))
+
+	recovered, err := RecoverAdaptiveSyncSafety(snapshot)
+	require.NoError(t, err)
+	require.Equal(t, snapshot.SnapshotHash, recovered.RecoveredFromSnapshotHash)
+	require.Contains(t, recovered.ActiveDisputeChannelIDs, channel.ChannelID)
+	require.Contains(t, recovered.PendingCloseChannelIDs, channel.ChannelID)
+	require.Contains(t, recovered.PendingFinalizationIDs, channel.ChannelID)
+	require.Contains(t, recovered.UnresolvedConditionIDs, newer.Conditions[0].ConditionID)
+	require.NotEmpty(t, recovered.WatcherReplayEventIDs)
+}
+
+func TestAdaptiveSyncSnapshotIncludesVirtualAnchors(t *testing.T) {
+	alice := testAddress(0x8f)
+	router := testAddress(0x90)
+	bob := testAddress(0x91)
+	state, vc, _ := virtualChannelFixture(t, "adaptive-sync-virtual", alice, router, bob, "100", 40)
+
+	snapshot, err := BuildAdaptiveSyncSnapshot(state, 30)
+	require.NoError(t, err)
+	require.Len(t, snapshot.Layout.VirtualChannels, 1)
+	require.Equal(t, StoreV2VirtualChannelKey(vc.VirtualChannelID), snapshot.Layout.VirtualChannels[0].Key)
+	recovered, err := RecoverAdaptiveSyncSafety(snapshot)
+	require.NoError(t, err)
+	require.Contains(t, recovered.VirtualChannelIDs, vc.VirtualChannelID)
+}
+
 func BenchmarkPaymentChannelOpenAccessPlan(b *testing.B) {
 	op := benchmarkSettlementOperation("bench-open", BatchOperationOpen, 1)
 	for i := 0; i < b.N; i++ {
