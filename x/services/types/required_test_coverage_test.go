@@ -35,6 +35,34 @@ func TestDefaultServiceRequiredTestCoverageCoversSection17(t *testing.T) {
 	requireServiceIntegrationCoverage(t, coverage, ServiceIntegrationChallengeMixedResult)
 	requireServiceIntegrationCoverage(t, coverage, ServiceIntegrationSettleEscrowPayment)
 	requireServiceIntegrationCoverage(t, coverage, ServiceIntegrationGenerateReceiptProof)
+
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantDescriptorStoredHash)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantInterfaceRegisteredHash)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantActiveServiceInterface)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantCallReceiptServiceMethod)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantPaymentSettlementEscrowLimit)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantProviderCollateralNonNegative)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantExpiredServiceRejectsCalls)
+	requireServiceInvariantCoverage(t, coverage, ServiceInvariantReceiptRootCommittedReceipts)
+
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzMalformedDescriptors)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzMalformedInterfaceSchemas)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzLargePayloadCalls)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzDuplicateNonces)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzDuplicateIdempotencyKeys)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzForgedProviderSignatures)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzInvalidResultAnchors)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzInvalidDisputeProofs)
+	requireServiceFuzzCoverage(t, coverage, ServiceFuzzPaymentEdgeCases)
+
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceRegistryLookupLatency)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceInterfaceLookupLatency)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceServiceCallEnqueue)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceOnChainExecutionThroughput)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceReceiptAnchoringThroughput)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceReceiptProofLatency)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceProviderLookupLatency)
+	requireServicePerformanceCoverage(t, coverage, ServicePerformanceBlockSTMConflictRate)
 }
 
 func TestServiceRequiredTestCoverageRejectsMissingRequiredCases(t *testing.T) {
@@ -49,6 +77,24 @@ func TestServiceRequiredTestCoverageRejectsMissingRequiredCases(t *testing.T) {
 	coverage.IntegrationTests = removeServiceIntegrationCoverageForTest(coverage.IntegrationTests, ServiceIntegrationChallengeMixedResult)
 	coverage.CoverageHash = ComputeServiceRequiredTestCoverageHash(coverage)
 	require.ErrorContains(t, coverage.Validate(), "integration tests")
+
+	coverage, err = DefaultServiceRequiredTestCoverage()
+	require.NoError(t, err)
+	coverage.InvariantTests = removeServiceInvariantCoverageForTest(coverage.InvariantTests, ServiceInvariantReceiptRootCommittedReceipts)
+	coverage.CoverageHash = ComputeServiceRequiredTestCoverageHash(coverage)
+	require.ErrorContains(t, coverage.Validate(), "invariant tests")
+
+	coverage, err = DefaultServiceRequiredTestCoverage()
+	require.NoError(t, err)
+	coverage.FuzzTests = removeServiceFuzzCoverageForTest(coverage.FuzzTests, ServiceFuzzInvalidDisputeProofs)
+	coverage.CoverageHash = ComputeServiceRequiredTestCoverageHash(coverage)
+	require.ErrorContains(t, coverage.Validate(), "fuzz tests")
+
+	coverage, err = DefaultServiceRequiredTestCoverage()
+	require.NoError(t, err)
+	coverage.PerformanceTests = removeServicePerformanceCoverageForTest(coverage.PerformanceTests, ServicePerformanceBlockSTMConflictRate)
+	coverage.CoverageHash = ComputeServiceRequiredTestCoverageHash(coverage)
+	require.ErrorContains(t, coverage.Validate(), "performance tests")
 }
 
 func TestServiceRequiredTestCoverageRejectsHashTampering(t *testing.T) {
@@ -90,6 +136,45 @@ func requireServiceIntegrationCoverage(t *testing.T, coverage ServiceRequiredTes
 	t.Fatalf("missing integration coverage %s", caseID)
 }
 
+func requireServiceInvariantCoverage(t *testing.T, coverage ServiceRequiredTestCoverage, caseID ServiceInvariantTestCaseID) {
+	t.Helper()
+	for _, testCase := range coverage.InvariantTests {
+		if testCase.Invariant == caseID {
+			require.Equal(t, ServiceRequiredTestInvariant, testCase.Kind)
+			require.NotEmpty(t, testCase.TestName)
+			require.NotEmpty(t, testCase.EvidenceHash)
+			return
+		}
+	}
+	t.Fatalf("missing invariant coverage %s", caseID)
+}
+
+func requireServiceFuzzCoverage(t *testing.T, coverage ServiceRequiredTestCoverage, caseID ServiceFuzzTestCaseID) {
+	t.Helper()
+	for _, testCase := range coverage.FuzzTests {
+		if testCase.Fuzz == caseID {
+			require.Equal(t, ServiceRequiredTestFuzz, testCase.Kind)
+			require.NotEmpty(t, testCase.TestName)
+			require.NotEmpty(t, testCase.EvidenceHash)
+			return
+		}
+	}
+	t.Fatalf("missing fuzz coverage %s", caseID)
+}
+
+func requireServicePerformanceCoverage(t *testing.T, coverage ServiceRequiredTestCoverage, caseID ServicePerformanceTestCaseID) {
+	t.Helper()
+	for _, testCase := range coverage.PerformanceTests {
+		if testCase.Performance == caseID {
+			require.Equal(t, ServiceRequiredTestPerformance, testCase.Kind)
+			require.NotEmpty(t, testCase.TestName)
+			require.NotEmpty(t, testCase.EvidenceHash)
+			return
+		}
+	}
+	t.Fatalf("missing performance coverage %s", caseID)
+}
+
 func removeServiceUnitCoverageForTest(testCases []ServiceRequiredTestCase, target ServiceUnitTestCaseID) []ServiceRequiredTestCase {
 	out := make([]ServiceRequiredTestCase, 0, len(testCases))
 	for _, testCase := range testCases {
@@ -104,6 +189,36 @@ func removeServiceIntegrationCoverageForTest(testCases []ServiceRequiredTestCase
 	out := make([]ServiceRequiredTestCase, 0, len(testCases))
 	for _, testCase := range testCases {
 		if testCase.Integration != target {
+			out = append(out, testCase)
+		}
+	}
+	return out
+}
+
+func removeServiceInvariantCoverageForTest(testCases []ServiceRequiredTestCase, target ServiceInvariantTestCaseID) []ServiceRequiredTestCase {
+	out := make([]ServiceRequiredTestCase, 0, len(testCases))
+	for _, testCase := range testCases {
+		if testCase.Invariant != target {
+			out = append(out, testCase)
+		}
+	}
+	return out
+}
+
+func removeServiceFuzzCoverageForTest(testCases []ServiceRequiredTestCase, target ServiceFuzzTestCaseID) []ServiceRequiredTestCase {
+	out := make([]ServiceRequiredTestCase, 0, len(testCases))
+	for _, testCase := range testCases {
+		if testCase.Fuzz != target {
+			out = append(out, testCase)
+		}
+	}
+	return out
+}
+
+func removeServicePerformanceCoverageForTest(testCases []ServiceRequiredTestCase, target ServicePerformanceTestCaseID) []ServiceRequiredTestCase {
+	out := make([]ServiceRequiredTestCase, 0, len(testCases))
+	for _, testCase := range testCases {
+		if testCase.Performance != target {
 			out = append(out, testCase)
 		}
 	}
