@@ -574,7 +574,9 @@ func (msg MsgRegisterStorageObject) Validate(params StorageChunkParams) error {
 	if err := validateStorageChunkDescriptors(msg.Chunks, params); err != nil {
 		return err
 	}
-	if err := VerifyStorageObjectContentHash(msg.Object, msg.Chunks, params); err != nil {
+	validationParams := DefaultStorageValidationParams()
+	validationParams.ChunkParams = params
+	if err := ValidateStorageObjectAgainstChunks(msg.Object, msg.Chunks, validationParams); err != nil {
 		return err
 	}
 	if err := msg.Replication.Validate(); err != nil {
@@ -929,7 +931,9 @@ func validateStorageChunkRecords(records []StorageChunkDescriptorRecord, objects
 		if len(descriptors) == 0 {
 			return fmt.Errorf("storage object %s requires chunk descriptors", object.ObjectID)
 		}
-		if err := VerifyStorageObjectContentHash(object, descriptors, params); err != nil {
+		validationParams := DefaultStorageValidationParams()
+		validationParams.ChunkParams = params
+		if err := ValidateStorageObjectAgainstChunks(object, descriptors, validationParams); err != nil {
 			return err
 		}
 	}
