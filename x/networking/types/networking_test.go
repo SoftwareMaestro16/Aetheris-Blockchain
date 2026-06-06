@@ -4136,7 +4136,7 @@ func TestXNetworkStateRejectsInvalidKeysMessagesAndConsensusReputation(t *testin
 func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *testing.T) {
 	roadmap := DefaultNetworkingImplementationRoadmap()
 	require.NoError(t, ValidateNetworkingImplementationRoadmap(roadmap))
-	require.Len(t, roadmap.Phases, 5)
+	require.Len(t, roadmap.Phases, 7)
 	require.Equal(t, ComputeNetworkingRoadmapRoot(roadmap), roadmap.RoadmapRoot)
 
 	phase0 := roadmap.Phases[0]
@@ -4155,7 +4155,7 @@ func TestNetworkingImplementationRoadmapValidatesPhasesTasksAndExitCriteria(t *t
 	require.ErrorContains(t, ValidateNetworkingImplementationRoadmap(broken), "root mismatch")
 }
 
-func TestNetworkingRoadmapReadinessForPhasesZeroToFour(t *testing.T) {
+func TestNetworkingRoadmapReadinessForPhasesZeroToSix(t *testing.T) {
 	evidence := testRoadmapEvidence(t)
 
 	phase0, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseBaselineInstrumentation, evidence)
@@ -4192,6 +4192,20 @@ func TestNetworkingRoadmapReadinessForPhasesZeroToFour(t *testing.T) {
 	require.Contains(t, phase4.SatisfiedExitCriteria, ExitChunkedStreamingPayloads)
 	require.Contains(t, phase4.SatisfiedExitCriteria, ExitInterruptedTransfersResume)
 	require.Contains(t, phase4.SatisfiedExitCriteria, ExitInvalidChunksRejected)
+
+	phase5, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseDiscoveryLayer, evidence)
+	require.NoError(t, err)
+	require.True(t, phase5.Ready)
+	require.Contains(t, phase5.SatisfiedExitCriteria, ExitDiscoveryObjectsDiscoverable)
+	require.Contains(t, phase5.SatisfiedExitCriteria, ExitDiscoveryRecordsExpireVerify)
+	require.Contains(t, phase5.SatisfiedExitCriteria, ExitForgedExpiredRecordsRejected)
+
+	phase6, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseHybridBroadcast, evidence)
+	require.NoError(t, err)
+	require.True(t, phase6.Ready)
+	require.Contains(t, phase6.SatisfiedExitCriteria, ExitBlocksHeaderChunksProofSet)
+	require.Contains(t, phase6.SatisfiedExitCriteria, ExitDuplicateConflictingHandled)
+	require.Contains(t, phase6.SatisfiedExitCriteria, ExitFallbackGossipResilient)
 }
 
 func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
@@ -4229,6 +4243,20 @@ func TestNetworkingRoadmapReadinessRejectsMissingEvidence(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, phase4.Ready)
 	require.NotContains(t, phase4.SatisfiedExitCriteria, ExitInvalidChunksRejected)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.DiscoveryExpiredRejected = false
+	phase5, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseDiscoveryLayer, evidence)
+	require.NoError(t, err)
+	require.False(t, phase5.Ready)
+	require.NotContains(t, phase5.SatisfiedExitCriteria, ExitForgedExpiredRecordsRejected)
+
+	evidence = testRoadmapEvidence(t)
+	evidence.BroadcastConflictHandled = false
+	phase6, err := EvaluateRoadmapPhaseReadiness(RoadmapPhaseHybridBroadcast, evidence)
+	require.NoError(t, err)
+	require.False(t, phase6.Ready)
+	require.NotContains(t, phase6.SatisfiedExitCriteria, ExitDuplicateConflictingHandled)
 }
 
 func TestAdvisorySignalsCannotDriveConsensusUntilCommitted(t *testing.T) {
@@ -4692,6 +4720,74 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 	badChunk := chunks[0]
 	badChunk.ChunkHash = HashParts("roadmap-invalid-chunk")
 	invalidChunkErr := VerifyRL2Chunk(offer.Transfer, rl2Descriptors[0], badChunk)
+	zoneOwner := signedNodeRecordWithCapabilities(t, 0x8a, salt, 100, []NodeRole{NodeRoleZoneExecution}, []string{"zone-roadmap"}, nil)
+	rpcOwner := signedNodeRecord(t, 0x8b, salt, 100, NodeRoleFull)
+	storageOwner := signedNodeRecord(t, 0x8c, salt, 100, NodeRoleStorageProvider)
+	nodeDiscovery := testSignedDiscoveryObjectRecord(t, local, 0x88, salt, DRTObjectNode, local.NodeID, HashParts("roadmap-node-ad"), "", "", "", 90)
+	zoneDiscovery := testSignedDiscoveryObjectRecord(t, zoneOwner, 0x8a, salt, DRTObjectExecutionZone, HashParts("roadmap-zone-target"), HashParts("roadmap-zone-ad"), "zone-roadmap", "", "", 90)
+	rpcDiscovery := testSignedDiscoveryObjectRecord(t, rpcOwner, 0x8b, salt, DRTObjectRPCEndpoint, rpcOwner.NodeID, HashParts("roadmap-rpc-endpoint"), "", "", "", 90)
+	storageDiscovery := testSignedDiscoveryObjectRecord(t, storageOwner, 0x8c, salt, DRTObjectStorageProvider, storageOwner.NodeID, HashParts("roadmap-storage-endpoint"), "", "", "", 90)
+	discoveryTable := EmptyDistributedRoutingTable()
+	for _, record := range []DiscoveryRecord{nodeDiscovery, discovery, zoneDiscovery, rpcDiscovery, storageDiscovery} {
+		discoveryTable, err = discoveryTable.Store(record, salt, 20)
+		require.NoError(t, err)
+	}
+	renewedDiscovery, err := RenewDiscoveryRecord(discovery, 95, deterministicPrivateKey(0x89), salt)
+	require.NoError(t, err)
+	discoveryTable, err = discoveryTable.UpdateLease(renewedDiscovery, salt, 30)
+	require.NoError(t, err)
+	resultHash, err := ComputeDiscoveryResponseResultHash(discoveryTable.FindService("svc.roadmap", 30))
+	require.NoError(t, err)
+	stateRoot := HashParts("roadmap-discovery-state-root")
+	discoveryProof := DiscoveryOnChainProof{
+		ProofHeight: 30,
+		StateRoot:   stateRoot,
+		ProofHash:   ComputeDiscoveryOnChainProofHash(resultHash, stateRoot, 30),
+	}
+	discoveryResponse, err := BuildDiscoveryResponse(discoveryTable, DRTQuery{ObjectType: DRTObjectServiceEndpoint, ServiceID: "svc.roadmap", CurrentHeight: 30}, local, deterministicPrivateKey(0x88), salt, discoveryProof, 30)
+	require.NoError(t, err)
+	require.NoError(t, discoveryResponse.Validate(local.NodePubKey, salt, 30))
+	forgedDiscovery := discovery
+	forgedDiscovery.Signature = cloneBytes(forgedDiscovery.Signature)
+	forgedDiscovery.Signature[0] ^= 0xff
+	forgedDiscoveryErr := ValidateSignedDiscoveryRecord(forgedDiscovery, salt, 20)
+	expiredDiscoveryErr := ValidateSignedDiscoveryRecord(discovery, salt, 91)
+	broadcastOrigin := signedNodeRecord(t, 0x8d, salt, 100, NodeRoleRouting)
+	broadcastMsg, err := SignBroadcastMessage(BroadcastMessage{
+		OverlayID:   serviceDesc.OverlayID,
+		PayloadHash: HashParts("roadmap-broadcast-payload"),
+		PayloadType: BroadcastPayloadService,
+		Height:      20,
+		TTL:         6,
+		Priority:    PriorityForChannel(ChannelService),
+		FanoutPolicy: BroadcastFanoutPolicy{
+			TreeFanout:   serviceDesc.Fanout + 10,
+			GossipFanout: serviceDesc.Fanout + 10,
+			OverlayBound: true,
+		},
+	}, deterministicPrivateKey(0x8d), salt)
+	require.NoError(t, err)
+	broadcastGraph := RoutingGraph{
+		OverlayID: serviceDesc.OverlayID,
+		Version:   11,
+		Edges: []RoutingEdge{
+			{FromNodeID: local.NodeID, ToNodeID: remote.NodeID, LatencyMillis: 10, Weight: 9_000, Priority: 1},
+			{FromNodeID: local.NodeID, ToNodeID: peerC.NodeID, LatencyMillis: 20, Weight: 8_000, Priority: 2},
+		},
+	}
+	broadcastGraph.GraphHash = ComputeRoutingGraphHash(broadcastGraph)
+	_, broadcastPlan, err := PlanBroadcastForwarding(broadcastMsg, serviceDesc, broadcastGraph, local.NodeID, []string{local.NodeID, broadcastOrigin.NodeID, remote.NodeID, peerC.NodeID, HashParts("roadmap-broadcast-peer-d")}, BroadcastDeduper{}, 20)
+	require.NoError(t, err)
+	broadcastCache := NewBroadcastDedupCache(64)
+	broadcastCache, acceptDecision, err := broadcastCache.Accept(broadcastMsg, remote.NodeID, 20)
+	require.NoError(t, err)
+	require.True(t, acceptDecision.Accepted)
+	broadcastCache, duplicateDecision, err := broadcastCache.Accept(broadcastMsg, remote.NodeID, 21)
+	require.NoError(t, err)
+	conflictMsg := broadcastMsg
+	conflictMsg.PayloadHash = HashParts("roadmap-conflicting-broadcast-payload")
+	broadcastCache, conflictDecision, err := broadcastCache.Accept(conflictMsg, remote.NodeID, 21)
+	require.NoError(t, err)
 	return NetworkingRoadmapEvidence{
 		CometBFTInventory: adapter,
 		PerformanceSnapshot: PerformanceMetricsSnapshot{
@@ -4718,7 +4814,7 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 		XNetworkParams:          DefaultXNetworkParams(salt),
 		Session:                 session,
 		NodeRecords:             []NodeRecord{local, remote},
-		SignedDiscoveryRecords:  []DiscoveryRecord{discovery},
+		SignedDiscoveryRecords:  []DiscoveryRecord{discovery, nodeDiscovery, zoneDiscovery, rpcDiscovery, storageDiscovery},
 		HandshakeReplayRejected: true,
 		KeyRotationAvailable:    true,
 		OverlayDescriptors:      descriptors,
@@ -4730,15 +4826,29 @@ func testRoadmapEvidence(t *testing.T) NetworkingRoadmapEvidence {
 			Committed:                  true,
 			UsedForExecutionScheduling: true,
 		},
-		PeerRotationPreserved:   true,
-		RL2Offer:                offer,
-		RL2ChunkDescriptors:     rl2Descriptors,
-		RL2Session:              resumed,
-		RL2StreamingPlan:        resumed.StreamingPlan,
-		RL2PayloadTypes:         []RL2PayloadType{RL2PayloadLargeBlock, RL2PayloadStateSyncStream, RL2PayloadProofSet},
-		RL2BackpressureSignal:   signal,
-		RL2InvalidChunkRejected: invalidChunkErr != nil,
-		RL2InterruptedResumed:   true,
+		PeerRotationPreserved:     true,
+		RL2Offer:                  offer,
+		RL2ChunkDescriptors:       rl2Descriptors,
+		RL2Session:                resumed,
+		RL2StreamingPlan:          resumed.StreamingPlan,
+		RL2PayloadTypes:           []RL2PayloadType{RL2PayloadLargeBlock, RL2PayloadStateSyncStream, RL2PayloadProofSet},
+		RL2BackpressureSignal:     signal,
+		RL2InvalidChunkRejected:   invalidChunkErr != nil,
+		RL2InterruptedResumed:     true,
+		DiscoveryTable:            discoveryTable,
+		DiscoveryResponse:         discoveryResponse,
+		DiscoveryObjectTypes:      []DRTObjectType{DRTObjectNode, DRTObjectExecutionZone, DRTObjectServiceEndpoint, DRTObjectRPCEndpoint, DRTObjectStorageProvider},
+		DiscoveryLeaseRenewed:     renewedDiscovery.ExpiresHeight == 95,
+		DiscoveryForgedRejected:   forgedDiscoveryErr != nil,
+		DiscoveryExpiredRejected:  expiredDiscoveryErr != nil,
+		BroadcastMessage:          broadcastMsg,
+		BroadcastPlan:             broadcastPlan,
+		BroadcastDedupCache:       broadcastCache,
+		BroadcastDuplicateHandled: duplicateDecision.DroppedDuplicate,
+		BroadcastConflictHandled:  conflictDecision.FaultEvidence.EvidenceHash != "",
+		BlockSession:              testPerformanceBlockSession(t),
+		ParallelChunkPlan:         testPerformanceStreamPlan(),
+		GossipFallbackUsed:        broadcastPlan.FallbackUsed,
 	}
 }
 
