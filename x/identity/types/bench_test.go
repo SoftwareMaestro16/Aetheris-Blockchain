@@ -109,6 +109,28 @@ func BenchmarkIdentityBlockSTMBatchResolverUpdates(b *testing.B) {
 	}
 }
 
+func BenchmarkIdentityResolverUpdateSpamGasCostModelV2(b *testing.B) {
+	params := DefaultIdentitySpamCostParamsV2()
+	request := IdentitySpamCostRequestV2{
+		ResolverUpdateCount:       MaxIdentityTxBatchResolverUpdatesV2,
+		ResolverPayloadBytes:      MaxUnifiedPayloadBytesV2,
+		BatchResolverGasPerUpdate: MinIdentityBatchResolverUpdateGasV2,
+		ServiceEndpointCount:      MaxUnifiedServiceEndpoints,
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		quote, err := EstimateIdentitySpamCostV2(request, params)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if quote.ResolverUpdateGas == 0 || quote.ResolverPayloadCost.IsZero() {
+			b.Fatal("resolver update spam gas cost model returned empty cost")
+		}
+	}
+}
+
 const (
 	benchmarkIdentityRevealHeight  = uint64(11)
 	benchmarkIdentityResolveHeight = uint64(12)
