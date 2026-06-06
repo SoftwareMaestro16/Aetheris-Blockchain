@@ -12,6 +12,9 @@ import (
 )
 
 const (
+	DelegationStatusActive             = "active"
+	DelegationStatusCommissionExceeded = "commission_exceeded"
+
 	RiskAppetiteConservative = "conservative"
 	RiskAppetiteBalanced     = "balanced"
 	RiskAppetiteAggressive   = "aggressive"
@@ -35,6 +38,7 @@ type DelegationRecord struct {
 	Validator              string
 	Amount                 sdkmath.Int
 	ActivationEpoch        uint64
+	Status                 string
 	RiskAppetite           string
 	CommissionTolerance    uint32
 	LockDurationPreference string
@@ -56,6 +60,30 @@ type DelegationCapitalState struct {
 	Records []DelegationRecord
 }
 
+type DelegationCommissionAlert struct {
+	Delegator              string
+	Validator              string
+	PreviousStatus         string
+	NewStatus              string
+	CommissionToleranceBps uint32
+	CurrentCommissionBps   uint32
+	Height                 uint64
+	RedelegationAdvisory   bool
+}
+
+type LockDurationRewardEligibility struct {
+	Delegator                     string
+	Validator                     string
+	LockDurationPreference        string
+	ProtocolUnbondingSeconds      uint64
+	EffectiveUnbondingSeconds     uint64
+	SlashableWindowEpochs         uint64
+	RequiredSlashableWindowEpochs uint64
+	RewardMultiplierBps           uint32
+	EligibleForRewardMultiplier   bool
+	RedelegationKeepsRiskHistory  bool
+}
+
 func BuildDelegationRecord(params postypes.Params, requestedEpoch uint64, createdHeight uint64, delegator string, validator string, amount sdkmath.Int, preferences DelegationPreferences) (DelegationRecord, error) {
 	activationEpoch, err := postypes.DelegationEffectiveElectionEpoch(params, requestedEpoch)
 	if err != nil {
@@ -66,6 +94,7 @@ func BuildDelegationRecord(params postypes.Params, requestedEpoch uint64, create
 		Validator:              strings.TrimSpace(validator),
 		Amount:                 amount,
 		ActivationEpoch:        activationEpoch,
+		Status:                 DelegationStatusActive,
 		RiskAppetite:           normalizeDefault(preferences.RiskAppetite, RiskAppetiteBalanced),
 		CommissionTolerance:    preferences.CommissionTolerance,
 		LockDurationPreference: normalizeDefault(preferences.LockDurationPreference, LockDurationEpoch),
@@ -107,6 +136,9 @@ func (r DelegationRecord) Validate(params postypes.Params) error {
 	if r.ActivationEpoch == 0 {
 		return errors.New("delegation activation epoch is required")
 	}
+	if !isDelegationStatus(r.Status) {
+		return fmt.Errorf("unsupported delegation status %q", r.Status)
+	}
 	if !isRiskAppetite(r.RiskAppetite) {
 		return fmt.Errorf("unsupported risk appetite %q", r.RiskAppetite)
 	}
@@ -144,6 +176,7 @@ func NewDelegationCapitalState(params postypes.Params, records []DelegationRecor
 	for i, record := range records {
 		record.Delegator = strings.TrimSpace(record.Delegator)
 		record.Validator = strings.TrimSpace(record.Validator)
+		record.Status = normalizeDefault(record.Status, DelegationStatusActive)
 		record.RiskAppetite = strings.TrimSpace(record.RiskAppetite)
 		record.LockDurationPreference = strings.TrimSpace(record.LockDurationPreference)
 		record.RewardStrategy = strings.TrimSpace(record.RewardStrategy)
@@ -194,6 +227,75 @@ func (s DelegationCapitalState) TotalDelegatedToValidator(validator string) sdkm
 	return total
 }
 
+func CheckCommissionTolerance(params postypes.Params, record DelegationRecord, currentCommissionBps uint32, height uint64, emitRedelegationAlert bool) (DelegationRecord, *DelegationCommissionAlert, error) {
+	if err := record.Validate(params); err != nil {
+		return DelegationRecord{}, nil, err
+	}
+	if currentCommissionBps > params.MaxCommissionBps {
+		return DelegationRecord{}, nil, fmt.Errorf("current commission must be <= %d bps", params.MaxCommissionBps)
+	}
+	updated := record
+	updated.UpdatedHeight = height
+	if currentCommissionBps <= record.CommissionTolerance {
+		updated.Status = DelegationStatusActive
+		return updated, nil, nil
+	}
+	previous := record.Status
+	updated.Status = DelegationStatusCommissionExceeded
+	alert := &DelegationCommissionAlert{
+		Delegator:              record.Delegator,
+		Validator:              record.Validator,
+		PreviousStatus:         previous,
+		NewStatus:              updated.Status,
+		CommissionToleranceBps: record.CommissionTolerance,
+		CurrentCommissionBps:   currentCommissionBps,
+		Height:                 height,
+		RedelegationAdvisory:   emitRedelegationAlert,
+	}
+	return updated, alert, nil
+}
+
+func EvaluateLockDurationPreference(params postypes.Params, record DelegationRecord, slashableWindowEpochs uint64) (LockDurationRewardEligibility, error) {
+	if err := record.Validate(params); err != nil {
+		return LockDurationRewardEligibility{}, err
+	}
+	if slashableWindowEpochs == 0 {
+		return LockDurationRewardEligibility{}, errors.New("slashable window must be positive")
+	}
+	requiredWindow := params.EvidenceWindowEpochs
+	effectiveUnbonding := params.UnbondingSeconds
+	multiplier := uint32(postypes.BasisPoints)
+	eligible := false
+	switch record.LockDurationPreference {
+	case LockDurationFlexible:
+		effectiveUnbonding = params.UnbondingSeconds
+	case LockDurationEpoch:
+		effectiveUnbonding = params.UnbondingSeconds
+	case LockDurationLongTerm:
+		effectiveUnbonding = params.UnbondingSeconds * 2
+		requiredWindow = params.EvidenceWindowEpochs * 2
+		if slashableWindowEpochs >= requiredWindow {
+			multiplier = 11_000
+			eligible = true
+		}
+	}
+	if effectiveUnbonding < postypes.MinUnbondingSeconds {
+		return LockDurationRewardEligibility{}, errors.New("effective unbonding period cannot be below protocol minimum")
+	}
+	return LockDurationRewardEligibility{
+		Delegator:                     record.Delegator,
+		Validator:                     record.Validator,
+		LockDurationPreference:        record.LockDurationPreference,
+		ProtocolUnbondingSeconds:      params.UnbondingSeconds,
+		EffectiveUnbondingSeconds:     effectiveUnbonding,
+		SlashableWindowEpochs:         slashableWindowEpochs,
+		RequiredSlashableWindowEpochs: requiredWindow,
+		RewardMultiplierBps:           multiplier,
+		EligibleForRewardMultiplier:   eligible,
+		RedelegationKeepsRiskHistory:  true,
+	}, nil
+}
+
 func sortDelegationRecords(records []DelegationRecord) {
 	sort.SliceStable(records, func(i, j int) bool {
 		left := records[i]
@@ -233,6 +335,15 @@ func validateEconomyToken(fieldName string, value string) error {
 func isRiskAppetite(value string) bool {
 	switch value {
 	case RiskAppetiteConservative, RiskAppetiteBalanced, RiskAppetiteAggressive:
+		return true
+	default:
+		return false
+	}
+}
+
+func isDelegationStatus(value string) bool {
+	switch value {
+	case DelegationStatusActive, DelegationStatusCommissionExceeded:
 		return true
 	default:
 		return false

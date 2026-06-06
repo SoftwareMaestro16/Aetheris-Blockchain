@@ -69,6 +69,25 @@ type DelegationRiskExposure struct {
 	HistoricalSlashNaet    sdkmath.Int
 }
 
+type DelegationCommissionStatus struct {
+	Delegator              string
+	Validator              string
+	Status                 string
+	CommissionToleranceBps uint32
+	CurrentCommissionBps   uint32
+	CommissionExceeded     bool
+	Alert                  *DelegationCommissionAlert
+}
+
+type FirstLossSelfBondAccounting struct {
+	Validator                  string
+	TargetSlashNaet            sdkmath.Int
+	SelfBondAvailableNaet      sdkmath.Int
+	SelfBondAbsorbedNaet       sdkmath.Int
+	DelegatorResidualSlashNaet sdkmath.Int
+	FirstLossApplied           bool
+}
+
 type SlashPropagationInput struct {
 	Validator         string
 	SelfBondNaet      sdkmath.Int
@@ -234,6 +253,27 @@ func PropagateSlash(input SlashPropagationInput) (SlashPropagationResult, error)
 	return result, nil
 }
 
+func BuildFirstLossSelfBondAccounting(input SlashPropagationInput) (FirstLossSelfBondAccounting, error) {
+	propagation, err := PropagateSlash(input)
+	if err != nil {
+		return FirstLossSelfBondAccounting{}, err
+	}
+	validatorDelegations := filterDelegationsForValidator(input.Delegations, input.Validator)
+	totalDelegated := sdkmath.ZeroInt()
+	for _, record := range validatorDelegations {
+		totalDelegated = totalDelegated.Add(record.Amount)
+	}
+	targetSlash := mulIntBps(input.SelfBondNaet.Add(totalDelegated), input.SlashFractionBps)
+	return FirstLossSelfBondAccounting{
+		Validator:                  strings.TrimSpace(input.Validator),
+		TargetSlashNaet:            targetSlash,
+		SelfBondAvailableNaet:      input.SelfBondNaet,
+		SelfBondAbsorbedNaet:       propagation.SelfBondSlashedNaet,
+		DelegatorResidualSlashNaet: propagation.TotalDelegatorSlashed,
+		FirstLossApplied:           input.SelfBondFirstLoss,
+	}, nil
+}
+
 func (s ValidatorMarketState) QueryValidatorRisk(validator string) (ValidatorRisk, bool) {
 	validator = strings.TrimSpace(validator)
 	history := s.QueryValidatorSlashHistory(validator)
@@ -355,6 +395,46 @@ func (s ValidatorMarketState) QueryDelegationActivationEpoch(delegator string, v
 		return 0, false
 	}
 	return record.ActivationEpoch, true
+}
+
+func (s ValidatorMarketState) QueryDelegationCommissionStatus(delegator string, validator string, height uint64, emitRedelegationAlert bool) (DelegationCommissionStatus, bool, error) {
+	delegator = strings.TrimSpace(delegator)
+	validator = strings.TrimSpace(validator)
+	record, found := s.findDelegation(delegator, validator)
+	if !found {
+		return DelegationCommissionStatus{}, false, nil
+	}
+	candidate, candidateFound := s.findCandidate(validator)
+	fallback := uint32(0)
+	if candidateFound {
+		fallback = candidate.CommissionBps
+	}
+	currentCommission := latestCommissionBps(s.CommissionHistory, validator, fallback)
+	updated, alert, err := CheckCommissionTolerance(s.Params, record, currentCommission, height, emitRedelegationAlert)
+	if err != nil {
+		return DelegationCommissionStatus{}, false, err
+	}
+	return DelegationCommissionStatus{
+		Delegator:              delegator,
+		Validator:              validator,
+		Status:                 updated.Status,
+		CommissionToleranceBps: record.CommissionTolerance,
+		CurrentCommissionBps:   currentCommission,
+		CommissionExceeded:     updated.Status == DelegationStatusCommissionExceeded,
+		Alert:                  alert,
+	}, true, nil
+}
+
+func (s ValidatorMarketState) QueryDelegationLockEligibility(delegator string, validator string, slashableWindowEpochs uint64) (LockDurationRewardEligibility, bool, error) {
+	record, found := s.findDelegation(strings.TrimSpace(delegator), strings.TrimSpace(validator))
+	if !found {
+		return LockDurationRewardEligibility{}, false, nil
+	}
+	eligibility, err := EvaluateLockDurationPreference(s.Params, record, slashableWindowEpochs)
+	if err != nil {
+		return LockDurationRewardEligibility{}, false, err
+	}
+	return eligibility, true, nil
 }
 
 func (s ValidatorMarketState) QueryValidatorCommissionHistory(validator string) []ValidatorCommissionRecord {

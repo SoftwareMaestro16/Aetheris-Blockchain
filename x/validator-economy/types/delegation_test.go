@@ -24,6 +24,7 @@ func TestBuildDelegationRecordCapturesCapitalLayerAttributes(t *testing.T) {
 		Validator:              "val-a",
 		Amount:                 sdkmath.NewInt(1_000),
 		ActivationEpoch:        21,
+		Status:                 DelegationStatusActive,
 		RiskAppetite:           RiskAppetiteAggressive,
 		CommissionTolerance:    700,
 		LockDurationPreference: LockDurationLongTerm,
@@ -41,6 +42,7 @@ func TestBuildDelegationRecordAppliesSafeDefaults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, RiskAppetiteBalanced, record.RiskAppetite)
+	require.Equal(t, DelegationStatusActive, record.Status)
 	require.Equal(t, LockDurationEpoch, record.LockDurationPreference)
 	require.Equal(t, RewardStrategyLiquid, record.RewardStrategy)
 	require.Empty(t, record.RiskTrancheOptional)
@@ -88,6 +90,10 @@ func TestDelegationRecordValidationRejectsUnsafePreferences(t *testing.T) {
 	require.ErrorContains(t, invalid.Validate(params), "amount")
 
 	invalid = valid
+	invalid.Status = "moved"
+	require.ErrorContains(t, invalid.Validate(params), "delegation status")
+
+	invalid = valid
 	invalid.RiskAppetite = "reckless"
 	require.ErrorContains(t, invalid.Validate(params), "risk appetite")
 
@@ -129,4 +135,50 @@ func TestDelegationCapitalStateQueriesByDelegatorAndValidator(t *testing.T) {
 
 	_, err = NewDelegationCapitalState(params, []DelegationRecord{b, b})
 	require.ErrorContains(t, err, "duplicate delegation record")
+}
+
+func TestCommissionToleranceMarksExceededAndEmitsAdvisoryAlert(t *testing.T) {
+	params := testParams()
+	record, err := BuildDelegationRecord(params, 5, 100, "del-a", "val-a", sdkmath.NewInt(500), DelegationPreferences{
+		CommissionTolerance: 600,
+	})
+	require.NoError(t, err)
+
+	updated, alert, err := CheckCommissionTolerance(params, record, 700, 120, true)
+	require.NoError(t, err)
+	require.Equal(t, DelegationStatusCommissionExceeded, updated.Status)
+	require.Equal(t, uint64(120), updated.UpdatedHeight)
+	require.NotNil(t, alert)
+	require.Equal(t, DelegationStatusActive, alert.PreviousStatus)
+	require.Equal(t, DelegationStatusCommissionExceeded, alert.NewStatus)
+	require.Equal(t, uint32(600), alert.CommissionToleranceBps)
+	require.Equal(t, uint32(700), alert.CurrentCommissionBps)
+	require.True(t, alert.RedelegationAdvisory)
+
+	recovered, alert, err := CheckCommissionTolerance(params, updated, 500, 130, true)
+	require.NoError(t, err)
+	require.Nil(t, alert)
+	require.Equal(t, DelegationStatusActive, recovered.Status)
+}
+
+func TestLockDurationPreferencePreservesUnbondingAndRequiresExtendedSlashWindow(t *testing.T) {
+	params := testParams()
+	record, err := BuildDelegationRecord(params, 5, 100, "del-long", "val-a", sdkmath.NewInt(500), DelegationPreferences{
+		CommissionTolerance:    500,
+		LockDurationPreference: LockDurationLongTerm,
+	})
+	require.NoError(t, err)
+
+	withoutWindow, err := EvaluateLockDurationPreference(params, record, params.EvidenceWindowEpochs)
+	require.NoError(t, err)
+	require.Equal(t, params.UnbondingSeconds*2, withoutWindow.EffectiveUnbondingSeconds)
+	require.False(t, withoutWindow.EligibleForRewardMultiplier)
+	require.Equal(t, uint32(postypes.BasisPoints), withoutWindow.RewardMultiplierBps)
+	require.True(t, withoutWindow.RedelegationKeepsRiskHistory)
+
+	withWindow, err := EvaluateLockDurationPreference(params, record, params.EvidenceWindowEpochs*2)
+	require.NoError(t, err)
+	require.True(t, withWindow.EligibleForRewardMultiplier)
+	require.Equal(t, uint32(11_000), withWindow.RewardMultiplierBps)
+	require.GreaterOrEqual(t, withWindow.EffectiveUnbondingSeconds, postypes.MinUnbondingSeconds)
 }

@@ -39,6 +39,19 @@ func TestPropagateSlashAppliesProportionalAndFirstLossRules(t *testing.T) {
 	require.Equal(t, sdkmath.NewInt(40), firstLoss.DelegatorSlashes[0].SlashedNaet)
 	require.Equal(t, sdkmath.NewInt(60), firstLoss.DelegatorSlashes[1].SlashedNaet)
 	require.Equal(t, sdkmath.NewInt(1_100), firstLoss.TotalSlashedNaet)
+
+	accounting, err := BuildFirstLossSelfBondAccounting(SlashPropagationInput{
+		Validator:         "val-risk",
+		SelfBondNaet:      sdkmath.NewInt(1_000),
+		Delegations:       delegations,
+		SlashFractionBps:  1_000,
+		SelfBondFirstLoss: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, sdkmath.NewInt(1_100), accounting.TargetSlashNaet)
+	require.Equal(t, sdkmath.NewInt(1_000), accounting.SelfBondAbsorbedNaet)
+	require.Equal(t, sdkmath.NewInt(100), accounting.DelegatorResidualSlashNaet)
+	require.True(t, accounting.FirstLossApplied)
 }
 
 func TestDelegationMarketQueriesExposeRiskYieldSaturationAndHistory(t *testing.T) {
@@ -105,9 +118,44 @@ func TestDelegationMarketQueriesExposeRiskYieldSaturationAndHistory(t *testing.T
 	activation, found := state.QueryDelegationActivationEpoch("del-a", "val-risk")
 	require.True(t, found)
 	require.Equal(t, uint64(11), activation)
+
+	commissionStatus, found, err := state.QueryDelegationCommissionStatus("del-a", "val-risk", 44, true)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, DelegationStatusActive, commissionStatus.Status)
+	require.False(t, commissionStatus.CommissionExceeded)
+	require.Nil(t, commissionStatus.Alert)
+
+	lockEligibility, found, err := state.QueryDelegationLockEligibility("del-a", "val-risk", params.EvidenceWindowEpochs)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, LockDurationEpoch, lockEligibility.LockDurationPreference)
+	require.False(t, lockEligibility.EligibleForRewardMultiplier)
+	require.Equal(t, params.UnbondingSeconds, lockEligibility.EffectiveUnbondingSeconds)
+
 	require.Equal(t, commissions, state.QueryValidatorCommissionHistory("val-risk"))
 	require.Equal(t, []ValidatorSlashHistoryRecord{slash}, state.QueryValidatorSlashHistory("val-risk"))
 	require.Equal(t, []ValidatorScoreRecord{score}, state.QueryValidatorPerformanceHistory("val-risk"))
+}
+
+func TestDelegationMarketCommissionQueryEmitsAlertWithoutMovingStake(t *testing.T) {
+	params := testParams()
+	candidate := marketCandidate("val-commission", 1_000, 1_000, 500)
+	delegation := marketDelegation("del-a", "val-commission", 1_000, "")
+	delegation.CommissionTolerance = 600
+	state, err := NewValidatorMarketState(params, []postypes.Candidate{candidate}, []DelegationRecord{delegation}, nil, nil, []ValidatorCommissionRecord{
+		{EpochID: 5, Height: 50, Validator: "val-commission", CommissionBps: 700},
+	})
+	require.NoError(t, err)
+
+	status, found, err := state.QueryDelegationCommissionStatus("del-a", "val-commission", 55, true)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, status.CommissionExceeded)
+	require.Equal(t, DelegationStatusCommissionExceeded, status.Status)
+	require.NotNil(t, status.Alert)
+	require.True(t, status.Alert.RedelegationAdvisory)
+	require.Equal(t, sdkmath.NewInt(1_000), state.totalDelegatedAtValidator("val-commission"))
 }
 
 func TestDelegationRiskExposureSurvivesRedelegationRecords(t *testing.T) {
