@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 func (s IdentityState) Validate() error {
@@ -18,6 +19,9 @@ func (s IdentityState) Validate() error {
 		return err
 	}
 	if err := validateDomainCommits(s.Commits); err != nil {
+		return err
+	}
+	if err := validateUsedDomainCommitments(s.UsedCommitments); err != nil {
 		return err
 	}
 	if err := validateResolvers(s.Resolvers, s.Domains); err != nil {
@@ -163,6 +167,56 @@ func validateDomainCommit(commit DomainCommit) error {
 	}
 	if commit.CommitHeight == 0 || commit.ExpiresHeight <= commit.CommitHeight {
 		return errors.New("identity commit expiry must be after commit height")
+	}
+	return nil
+}
+
+func validateUsedDomainCommitments(commitments []UsedDomainCommitment) error {
+	seen := make(map[string]struct{}, len(commitments))
+	for i, commitment := range commitments {
+		if err := validateUsedDomainCommitment(commitment); err != nil {
+			return err
+		}
+		if _, found := seen[commitment.CommitmentHash]; found {
+			return errors.New("duplicate identity used commitment tombstone")
+		}
+		seen[commitment.CommitmentHash] = struct{}{}
+		if i > 0 && compareUsedDomainCommitments(commitments[i-1], commitment) >= 0 {
+			return errors.New("identity used commitment tombstones must be sorted canonically")
+		}
+	}
+	return nil
+}
+
+func validateUsedDomainCommitment(commitment UsedDomainCommitment) error {
+	if err := validateHexHash("identity used commitment hash", commitment.CommitmentHash); err != nil {
+		return err
+	}
+	if normalized, err := NormalizeAETDomain(commitment.Name); err != nil {
+		return err
+	} else if commitment.Name != normalized {
+		return errors.New("identity used commitment name must be normalized")
+	}
+	if err := validateSpecAddress("identity used commitment owner", commitment.Owner); err != nil {
+		return err
+	}
+	if commitment.RevealedHeight == 0 {
+		return errors.New("identity used commitment revealed height is required")
+	}
+	if commitment.ExpiresHeight < commitment.RevealedHeight {
+		return errors.New("identity used commitment expiry must not precede reveal")
+	}
+	if commitment.ModuleVersion == 0 {
+		return errors.New("identity used commitment module version is required")
+	}
+	if strings.TrimSpace(commitment.ModuleName) == "" {
+		return errors.New("identity used commitment module name is required")
+	}
+	if strings.TrimSpace(commitment.RegistrationClass) == "" {
+		return errors.New("identity used commitment registration class is required")
+	}
+	if strings.TrimSpace(commitment.MaxPrice) == "" {
+		return errors.New("identity used commitment max price is required")
 	}
 	return nil
 }
