@@ -138,6 +138,8 @@ func TestValidatorSetPhasePoliciesMatchAetraGrowthPlan(t *testing.T) {
 		Name:                     AetraValidatorPhaseGenesis,
 		MinActiveValidators:      100,
 		MaxActiveValidators:      128,
+		BlockTimeMinSeconds:      5,
+		BlockTimeMaxSeconds:      6,
 		TargetBlockTimeSeconds:   6,
 		NormalFinalityMinSeconds: 5,
 		NormalFinalityMaxSeconds: 10,
@@ -147,6 +149,8 @@ func TestValidatorSetPhasePoliciesMatchAetraGrowthPlan(t *testing.T) {
 		Name:                     AetraValidatorPhaseGrowth,
 		MinActiveValidators:      150,
 		MaxActiveValidators:      200,
+		BlockTimeMinSeconds:      6,
+		BlockTimeMaxSeconds:      6,
 		TargetBlockTimeSeconds:   6,
 		NormalFinalityMinSeconds: 6,
 		NormalFinalityMaxSeconds: 12,
@@ -156,11 +160,32 @@ func TestValidatorSetPhasePoliciesMatchAetraGrowthPlan(t *testing.T) {
 		Name:                      AetraValidatorPhaseMature,
 		MinActiveValidators:       250,
 		MaxActiveValidators:       300,
+		BlockTimeMinSeconds:       7,
+		BlockTimeMaxSeconds:       8,
 		TargetBlockTimeSeconds:    8,
 		NormalFinalityMinSeconds:  8,
 		NormalFinalityMaxSeconds:  15,
 		RequiresOperatorReadiness: true,
 	}, phases[2])
+}
+
+func TestBlockTimeTargetRangesMatchConsensusPolicy(t *testing.T) {
+	profile := DefaultNetworkProfile()
+
+	min, max, err := profile.BlockTimeTargetRange(100)
+	require.NoError(t, err)
+	require.Equal(t, 5, min)
+	require.Equal(t, 6, max)
+
+	min, max, err = profile.BlockTimeTargetRange(200)
+	require.NoError(t, err)
+	require.Equal(t, 6, min)
+	require.Equal(t, 6, max)
+
+	min, max, err = profile.BlockTimeTargetRange(300)
+	require.NoError(t, err)
+	require.Equal(t, 7, min)
+	require.Equal(t, 8, max)
 }
 
 func TestNetworkProfileSelectsValidatorSetPhase(t *testing.T) {
@@ -222,7 +247,12 @@ func TestNetworkProfileRejectsUnsafePhasePolicy(t *testing.T) {
 	require.ErrorContains(t, profile.Validate(), "invalid validator range")
 
 	profile = DefaultNetworkProfile()
+	profile.ValidatorSetPhases[1].BlockTimeMinSeconds = 2
 	profile.ValidatorSetPhases[1].TargetBlockTimeSeconds = 2
+	require.ErrorContains(t, profile.Validate(), "invalid block time range")
+
+	profile = DefaultNetworkProfile()
+	profile.ValidatorSetPhases[1].TargetBlockTimeSeconds = 5
 	require.ErrorContains(t, profile.Validate(), "invalid target block time")
 
 	profile = DefaultNetworkProfile()

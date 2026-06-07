@@ -35,6 +35,7 @@ const (
 	AetraStressFinalityMinSeconds    = 20
 	AetraStressFinalityMaxSeconds    = 90
 	AetraWorstFinalityTargetSeconds  = 120
+	AetraHealthyVotingPowerBps       = int64(6_667)
 	AetraTargetBondedRatioMinBps     = int64(5_500)
 	AetraTargetBondedRatioMaxBps     = int64(6_500)
 	AetraTargetBondedRatioDefaultBps = int64(6_000)
@@ -56,6 +57,8 @@ type ValidatorSetPhasePolicy struct {
 	Name                      string
 	MinActiveValidators       int
 	MaxActiveValidators       int
+	BlockTimeMinSeconds       int
+	BlockTimeMaxSeconds       int
 	TargetBlockTimeSeconds    int
 	NormalFinalityMinSeconds  int
 	NormalFinalityMaxSeconds  int
@@ -156,6 +159,8 @@ func DefaultValidatorSetPhasePolicies() []ValidatorSetPhasePolicy {
 			Name:                     AetraValidatorPhaseGenesis,
 			MinActiveValidators:      AetraValidatorSetGenesisMin,
 			MaxActiveValidators:      AetraValidatorSetGenesisMax,
+			BlockTimeMinSeconds:      5,
+			BlockTimeMaxSeconds:      6,
 			TargetBlockTimeSeconds:   6,
 			NormalFinalityMinSeconds: 5,
 			NormalFinalityMaxSeconds: 10,
@@ -164,6 +169,8 @@ func DefaultValidatorSetPhasePolicies() []ValidatorSetPhasePolicy {
 			Name:                     AetraValidatorPhaseGrowth,
 			MinActiveValidators:      AetraValidatorSetGrowthMin,
 			MaxActiveValidators:      AetraValidatorSetGrowthMax,
+			BlockTimeMinSeconds:      6,
+			BlockTimeMaxSeconds:      6,
 			TargetBlockTimeSeconds:   6,
 			NormalFinalityMinSeconds: 6,
 			NormalFinalityMaxSeconds: 12,
@@ -172,6 +179,8 @@ func DefaultValidatorSetPhasePolicies() []ValidatorSetPhasePolicy {
 			Name:                      AetraValidatorPhaseMature,
 			MinActiveValidators:       AetraValidatorSetMatureMin,
 			MaxActiveValidators:       AetraValidatorSetMatureMax,
+			BlockTimeMinSeconds:       7,
+			BlockTimeMaxSeconds:       8,
 			TargetBlockTimeSeconds:    8,
 			NormalFinalityMinSeconds:  8,
 			NormalFinalityMaxSeconds:  15,
@@ -265,6 +274,14 @@ func (p NetworkProfile) ValidatorSetPhase(activeValidators int) (ValidatorSetPha
 	return ValidatorSetPhasePolicy{}, fmt.Errorf("active validator count %d is outside configured growth phases", activeValidators)
 }
 
+func (p NetworkProfile) BlockTimeTargetRange(activeValidators int) (int, int, error) {
+	phase, err := p.ValidatorSetPhase(activeValidators)
+	if err != nil {
+		return 0, 0, err
+	}
+	return phase.BlockTimeMinSeconds, phase.BlockTimeMaxSeconds, nil
+}
+
 func (p NetworkProfile) ValidateMatureLaunch(activeValidators int, operatorReadinessConfirmed bool) error {
 	phase, err := p.ValidatorSetPhase(activeValidators)
 	if err != nil {
@@ -315,7 +332,10 @@ func (p NetworkProfile) validateValidatorSetPhases() error {
 		if phase.MinActiveValidators < p.ValidatorSetMin || phase.MaxActiveValidators > p.ValidatorSetMax || phase.MinActiveValidators > phase.MaxActiveValidators {
 			return fmt.Errorf("validator phase %q has invalid validator range", phase.Name)
 		}
-		if phase.TargetBlockTimeSeconds < p.BlockTimeMinSeconds || phase.TargetBlockTimeSeconds > p.BlockTimeMaxSeconds {
+		if phase.BlockTimeMinSeconds < p.BlockTimeMinSeconds || phase.BlockTimeMaxSeconds > p.BlockTimeMaxSeconds || phase.BlockTimeMinSeconds > phase.BlockTimeMaxSeconds {
+			return fmt.Errorf("validator phase %q has invalid block time range", phase.Name)
+		}
+		if phase.TargetBlockTimeSeconds < phase.BlockTimeMinSeconds || phase.TargetBlockTimeSeconds > phase.BlockTimeMaxSeconds {
 			return fmt.Errorf("validator phase %q has invalid target block time", phase.Name)
 		}
 		if phase.NormalFinalityMinSeconds < p.NormalFinalityMinSeconds || phase.NormalFinalityMaxSeconds > p.NormalFinalityMaxSeconds || phase.NormalFinalityMinSeconds > phase.NormalFinalityMaxSeconds {
