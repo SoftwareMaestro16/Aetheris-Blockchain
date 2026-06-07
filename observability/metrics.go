@@ -9,15 +9,19 @@ const (
 	MetricTelemetryEnabled             = "aetra_telemetry_enabled"
 	MetricBlockHeight                  = "aetra_block_height"
 	MetricBlockTimeSeconds             = "aetra_block_time_seconds"
+	MetricFinalityLatencySeconds       = "aetra_finality_latency_seconds"
 	MetricBlockProcessing              = "aetra_block_processing_seconds"
 	MetricTxLatency                    = "aetra_tx_latency_seconds"
 	MetricModuleErrors                 = "aetra_module_errors_total"
+	MetricFailedTxReasons              = "aetra_failed_tx_reasons_total"
 	MetricDexPoolCount                 = "aetra_dex_pool_count"
 	MetricDexLiquidityNaet             = "aetra_dex_liquidity_naet"
 	MetricDexSwaps                     = "aetra_dex_swaps_total"
 	MetricFeesAccepted                 = "aetra_fees_accepted_total"
 	MetricFeesRejected                 = "aetra_fees_rejected_total"
 	MetricEconomyInflationBps          = "aetra_economy_inflation_bps"
+	MetricEconomyBondedRatioBps        = "aetra_economy_bonded_ratio_bps"
+	MetricEconomyEstimatedAPRBps       = "aetra_economy_estimated_apr_bps"
 	MetricEconomyBurnRatioBps          = "aetra_economy_burn_ratio_bps"
 	MetricEconomyValidatorFeeRatioBps  = "aetra_economy_validator_fee_ratio_bps"
 	MetricEconomyDeflationGuard        = "aetra_economy_deflation_guard"
@@ -25,7 +29,9 @@ const (
 	MetricEconomyRateLimited           = "aetra_economy_rate_limited"
 	MetricEconomyTotalChargesNaet      = "aetra_economy_total_charges_naet"
 	MetricEconomyBurnNaet              = "aetra_economy_burn_naet"
+	MetricEconomyBurnedFeesNaet        = "aetra_economy_burned_fees_naet"
 	MetricEconomyTreasuryNaet          = "aetra_economy_treasury_naet"
+	MetricEconomyTreasuryBalanceNaet   = "aetra_economy_treasury_balance_naet"
 	MetricEconomyValidatorRewardsNaet  = "aetra_economy_validator_rewards_naet"
 	MetricEconomyOptimalState          = "aetra_economy_optimal_state"
 	MetricEconomyFailedConditions      = "aetra_economy_failed_conditions"
@@ -45,11 +51,19 @@ const (
 	MetricValidatorRewardPerPowerNaet  = "aetra_validator_reward_per_power_naet"
 	MetricValidatorProfitabilityBps    = "aetra_validator_profitability_bps"
 	MetricSlashingPenaltyNaet          = "aetra_slashing_penalty_naet"
+	MetricSlashingEventsTotal          = "aetra_slashing_events_total"
+	MetricValidatorJailEventsTotal     = "aetra_validator_jail_events_total"
+	MetricValidatorUnjailEventsTotal   = "aetra_validator_unjail_events_total"
 	MetricSlashingBurnNaet             = "aetra_slashing_burn_naet"
 	MetricSlashingTreasuryNaet         = "aetra_slashing_treasury_naet"
 	MetricSlashingReporterNaet         = "aetra_slashing_reporter_naet"
+	MetricValidatorMissedBlocks        = "aetra_validator_missed_blocks_total"
+	MetricValidatorUptimeBps           = "aetra_validator_uptime_bps"
+	MetricValidatorConcentrationBps    = "aetra_validator_concentration_bps"
 	MetricValidatorTopNPowerBps        = "aetra_validator_top_n_power_bps"
 	MetricValidatorConcentrationRisks  = "aetra_validator_concentration_risks"
+	MetricContractExecutionGas         = "aetra_contract_execution_gas"
+	MetricNodeSyncStatus               = "aetra_node_sync_status"
 	MetricLocalnetHealth               = "aetra_localnet_health"
 	MetricProcessUptimeSeconds         = "aetra_process_uptime_seconds"
 	MetricProcessMemoryBytes           = "aetra_process_memory_bytes"
@@ -72,15 +86,19 @@ var Definitions = []Definition{
 	{MetricTelemetryEnabled, "Whether Aetra process telemetry is enabled.", kindGauge},
 	{MetricBlockHeight, "Last finalized block height observed by the app process.", kindGauge},
 	{MetricBlockTimeSeconds, "Unix timestamp of the last finalized block time observed by the app process.", kindGauge},
+	{MetricFinalityLatencySeconds, "Observed block finality latency from proposal time to commit.", kindSummary},
 	{MetricBlockProcessing, "FinalizeBlock processing duration observed by the app process.", kindSummary},
 	{MetricTxLatency, "Approximate per-transaction FinalizeBlock processing latency.", kindSummary},
 	{MetricModuleErrors, "Custom module errors counted with bounded labels.", kindCounter},
+	{MetricFailedTxReasons, "Failed transaction reasons counted with bounded reason labels.", kindCounter},
 	{MetricDexPoolCount, "DEX pools observed by this process since startup.", kindGauge},
 	{MetricDexLiquidityNaet, "DEX native naet liquidity observed by this process since startup.", kindGauge},
 	{MetricDexSwaps, "Successful DEX swaps observed by this process.", kindCounter},
 	{MetricFeesAccepted, "Transactions whose fees passed custom fee policy.", kindCounter},
 	{MetricFeesRejected, "Transactions rejected by custom fee policy.", kindCounter},
 	{MetricEconomyInflationBps, "Last economic controller inflation output in basis points.", kindGauge},
+	{MetricEconomyBondedRatioBps, "Last bonded stake ratio in basis points.", kindGauge},
+	{MetricEconomyEstimatedAPRBps, "Last estimated staking APR in basis points.", kindGauge},
 	{MetricEconomyBurnRatioBps, "Last economic controller burn ratio output in basis points.", kindGauge},
 	{MetricEconomyValidatorFeeRatioBps, "Last economic controller validator fee ratio output in basis points.", kindGauge},
 	{MetricEconomyDeflationGuard, "Whether the deflation guard was active in the last economic controller output.", kindGauge},
@@ -88,7 +106,9 @@ var Definitions = []Definition{
 	{MetricEconomyRateLimited, "Whether rate limiting was active in the last economic controller output.", kindGauge},
 	{MetricEconomyTotalChargesNaet, "Last protocol economic flow total charges in naet.", kindGauge},
 	{MetricEconomyBurnNaet, "Last protocol economic flow burn amount in naet.", kindGauge},
+	{MetricEconomyBurnedFeesNaet, "Total fee amount routed to burn in naet.", kindGauge},
 	{MetricEconomyTreasuryNaet, "Last protocol economic flow treasury amount in naet.", kindGauge},
+	{MetricEconomyTreasuryBalanceNaet, "Protocol treasury balance in naet.", kindGauge},
 	{MetricEconomyValidatorRewardsNaet, "Last protocol economic flow validator reward amount in naet.", kindGauge},
 	{MetricEconomyOptimalState, "Whether the last evaluated economic state met all optimality conditions.", kindGauge},
 	{MetricEconomyFailedConditions, "Number of failed optimal economic state conditions in the last evaluation.", kindGauge},
@@ -108,11 +128,19 @@ var Definitions = []Definition{
 	{MetricValidatorRewardPerPowerNaet, "Validator reward per unit of voting power in naet, labeled by validator state.", kindGauge},
 	{MetricValidatorProfitabilityBps, "Validator profitability margin in basis points, labeled by validator state.", kindGauge},
 	{MetricSlashingPenaltyNaet, "Last slashing penalty amount in naet, labeled by bounded reason.", kindGauge},
+	{MetricSlashingEventsTotal, "Slashing events counted with bounded reason labels.", kindCounter},
+	{MetricValidatorJailEventsTotal, "Validator jail events counted with bounded reason labels.", kindCounter},
+	{MetricValidatorUnjailEventsTotal, "Validator unjail events counted with bounded reason labels.", kindCounter},
 	{MetricSlashingBurnNaet, "Last slashing burn routing amount in naet, labeled by bounded reason.", kindGauge},
 	{MetricSlashingTreasuryNaet, "Last slashing treasury routing amount in naet, labeled by bounded reason.", kindGauge},
 	{MetricSlashingReporterNaet, "Last slashing reporter reward amount in naet, labeled by bounded reason.", kindGauge},
+	{MetricValidatorMissedBlocks, "Validator missed blocks counted with bounded validator state labels.", kindCounter},
+	{MetricValidatorUptimeBps, "Validator uptime in basis points over the configured scoring window.", kindGauge},
+	{MetricValidatorConcentrationBps, "Validator voting power concentration in basis points.", kindGauge},
 	{MetricValidatorTopNPowerBps, "Last validator active-set top-N voting power share in basis points.", kindGauge},
 	{MetricValidatorConcentrationRisks, "Number of validator concentration warnings in the last report.", kindGauge},
+	{MetricContractExecutionGas, "Contract execution gas observed by VM and contract result labels.", kindSummary},
+	{MetricNodeSyncStatus, "Node sync status where 1 means catching up and 0 means caught up.", kindGauge},
 	{MetricLocalnetHealth, "Localnet metrics endpoint health marker.", kindGauge},
 	{MetricProcessUptimeSeconds, "Aetra process uptime in seconds.", kindGauge},
 	{MetricProcessMemoryBytes, "Go runtime memory allocation bytes.", kindGauge},
