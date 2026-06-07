@@ -463,6 +463,71 @@ non-standard. Slashing inheritance remains pro rata for delegators because the
 delegated stake contributed to the validator's voting power during the
 downtime window.
 
+### 25.3 Evidence And Unbonding
+
+Evidence handling must cover every stake lifecycle state where the validator or
+delegator was slashable at the infraction height.
+
+Tests must cover:
+
+- evidence submitted while validator bonded;
+- evidence submitted while validator unbonding;
+- evidence submitted after unbonding but before evidence expiration;
+- evidence submitted after expiration;
+- slashing delegators who were bonded at infraction height;
+- tombstone cap behavior.
+
+Acceptance rules:
+
+- bonded validators are slashable immediately when valid evidence is committed;
+- unbonding validators remain slashable for infractions inside the configured
+  evidence window;
+- validators whose unbonding completed remain slashable only when evidence is
+  submitted before evidence expiration and the infraction height is inside the
+  slashable historical window;
+- expired evidence must be rejected before stake mutation;
+- delegator slash accounting must use stake/shares at infraction height, not
+  only current delegation state;
+- tombstone behavior is capped to one terminal tombstone per consensus identity
+  and duplicate evidence must not multiply critical penalties.
+
+`SlashingAccountabilityPolicy` must require test coverage flags for bonded
+evidence, unbonding evidence, post-unbonding pre-expiry evidence, expired
+evidence rejection, delegator infraction-height slashing, and tombstone cap
+behavior.
+
+### 25.4 Invalid Proposal Policy
+
+Invalid proposal handling must be conservative:
+
+- reject objectively invalid proposals;
+- do not slash unless there is signed, reproducible evidence;
+- do not depend on local wall clock;
+- do not depend on external APIs;
+- do not make `ProcessProposal` fragile.
+
+Required tests:
+
+- invalid tx proposal rejected;
+- oversized proposal rejected;
+- malformed special tx rejected;
+- valid proposal accepted;
+- same proposal accepted/rejected identically by all validators in test harness.
+
+Acceptance rules:
+
+- `ProcessProposal` must use only deterministic proposal bytes, consensus
+  params, local app state, and consensus-provided block metadata;
+- local system time, remote RPC, indexers, price feeds, HTTP APIs, or other
+  process-local dependencies are forbidden in proposal validation;
+- invalid proposals are rejected deterministically without automatic slashing;
+- slashing for proposal behavior requires repeated signed, reproducible,
+  objective evidence;
+- oversized proposals must be rejected before expensive decoding or VM work;
+- malformed special transactions must fail closed without panics;
+- the same proposal fixture must produce the same accept/reject result across
+  every validator harness instance.
+
 ## Exact Penalty Structure
 
 Default public-testnet penalty parameters:

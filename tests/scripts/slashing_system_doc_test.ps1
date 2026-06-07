@@ -1,7 +1,9 @@
 param(
   [string]$Doc = "docs\security\slashing-system.md",
   [string]$AuditPack = "docs\security\security-audit-pack.md",
-  [string]$PosDoc = "docs\security\pos-staking-correctness.md"
+  [string]$PosDoc = "docs\security\pos-staking-correctness.md",
+  [string]$Policy = "app\params\slashing_policy.go",
+  [string]$PolicyTests = "app\params\slashing_policy_test.go"
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,6 +12,8 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $DocPath = if ([System.IO.Path]::IsPathRooted($Doc)) { $Doc } else { Join-Path $RepoRoot $Doc }
 $AuditPath = if ([System.IO.Path]::IsPathRooted($AuditPack)) { $AuditPack } else { Join-Path $RepoRoot $AuditPack }
 $PosPath = if ([System.IO.Path]::IsPathRooted($PosDoc)) { $PosDoc } else { Join-Path $RepoRoot $PosDoc }
+$PolicyPath = if ([System.IO.Path]::IsPathRooted($Policy)) { $Policy } else { Join-Path $RepoRoot $Policy }
+$PolicyTestsPath = if ([System.IO.Path]::IsPathRooted($PolicyTests)) { $PolicyTests } else { Join-Path $RepoRoot $PolicyTests }
 
 function Assert-Contains {
   param([string]$Text, [string]$Pattern, [string]$Message)
@@ -19,6 +23,8 @@ function Assert-Contains {
 $docText = Get-Content -Raw -LiteralPath $DocPath
 $auditText = Get-Content -Raw -LiteralPath $AuditPath
 $posText = Get-Content -Raw -LiteralPath $PosPath
+$policyText = Get-Content -Raw -LiteralPath $PolicyPath
+$policyTestsText = Get-Content -Raw -LiteralPath $PolicyTestsPath
 
 foreach ($term in @(
     'Aetra Slashing System',
@@ -112,6 +118,32 @@ foreach ($term in @(
     'unjail does not erase slash history immediately',
     'downtime_offense_clean_decay_period = 30 days',
     'downtime_offense_status_query       = QueryDowntimeOffenseStatus',
+    '25.3 Evidence And Unbonding',
+    'evidence submitted while validator bonded',
+    'evidence submitted while validator unbonding',
+    'evidence submitted after unbonding but before evidence expiration',
+    'evidence submitted after expiration',
+    'slashing delegators who were bonded at infraction height',
+    'tombstone cap behavior',
+    'bonded validators are slashable immediately',
+    'unbonding validators remain slashable',
+    'expired evidence must be rejected before stake mutation',
+    'delegator slash accounting must use stake/shares at infraction height',
+    'duplicate evidence must not multiply critical penalties',
+    '25.4 Invalid Proposal Policy',
+    'reject objectively invalid proposals',
+    'do not slash unless there is signed, reproducible evidence',
+    'do not depend on local wall clock',
+    'do not depend on external APIs',
+    'do not make `ProcessProposal` fragile',
+    'invalid tx proposal rejected',
+    'oversized proposal rejected',
+    'malformed special tx rejected',
+    'valid proposal accepted',
+    'same proposal accepted/rejected identically by all validators in test harness',
+    'ProcessProposal` must use only deterministic proposal bytes',
+    'local system time, remote RPC, indexers, price feeds, HTTP APIs',
+    'oversized proposals must be rejected before expensive decoding or VM work',
     'Exact Penalty Structure',
     'double_sign_slash_fraction        = 0.05',
     'downtime_slash_fraction           = 0.0001',
@@ -127,6 +159,47 @@ foreach ($term in @(
   )) {
   Assert-Contains -Text $auditText -Pattern ([regex]::Escape($term)) -Message "security audit pack missing slashing doc link: $term"
   Assert-Contains -Text $posText -Pattern ([regex]::Escape($term)) -Message "PoS doc missing slashing doc link: $term"
+}
+
+foreach ($term in @(
+    'EvidenceWhileValidatorBondedTest',
+    'EvidenceWhileValidatorUnbondingTest',
+    'EvidenceAfterUnbondingBeforeExpiryTest',
+    'EvidenceAfterExpirationRejectedTest',
+    'DelegatorInfractionHeightSlashTest',
+    'TombstoneCapBehaviorTest',
+    'InvalidTxProposalRejectedTest',
+    'OversizedProposalRejectedTest',
+    'MalformedSpecialTxRejectedTest',
+    'ValidProposalAcceptedTest',
+    'AllValidatorsProposalDeterminismTest',
+    'InvalidProposalWallClockForbidden',
+    'InvalidProposalExternalAPIsForbidden',
+    'ProcessProposalFragilityForbidden',
+    'InvalidProposalMaxBytesDefault'
+  )) {
+  Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "slashing policy missing: $term"
+}
+
+foreach ($term in @(
+    'TestSlashingAccountabilityPolicyRequiresEvidenceAndUnbondingCoverage',
+    'TestSlashingAccountabilityPolicyRequiresInvalidProposalCoverage',
+    'validator bonded',
+    'validator unbonding',
+    'before evidence expiration',
+    'after expiration',
+    'delegators bonded at infraction height',
+    'tombstone cap',
+    'invalid tx proposal',
+    'oversized proposal',
+    'malformed special tx',
+    'valid proposal',
+    'across validators',
+    'local wall clock',
+    'external APIs',
+    'not be fragile'
+  )) {
+  Assert-Contains -Text $policyTestsText -Pattern ([regex]::Escape($term)) -Message "slashing policy tests missing: $term"
 }
 
 Write-Host "slashing system doc test passed"

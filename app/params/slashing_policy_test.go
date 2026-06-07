@@ -74,6 +74,21 @@ func TestDefaultSlashingAccountabilityPolicyMatchesAetraModel(t *testing.T) {
 	require.True(t, policy.UnbondingEvidenceTimingChecked)
 	require.Equal(t, uint64(100_000), policy.HeightEvidenceMaxAgeBlocks)
 	require.Equal(t, uint64(30_000), policy.HeightUnbondingEvidenceWindowBlocks)
+	require.True(t, policy.EvidenceWhileValidatorBondedTest)
+	require.True(t, policy.EvidenceWhileValidatorUnbondingTest)
+	require.True(t, policy.EvidenceAfterUnbondingBeforeExpiryTest)
+	require.True(t, policy.EvidenceAfterExpirationRejectedTest)
+	require.True(t, policy.DelegatorInfractionHeightSlashTest)
+	require.True(t, policy.TombstoneCapBehaviorTest)
+	require.True(t, policy.InvalidTxProposalRejectedTest)
+	require.True(t, policy.OversizedProposalRejectedTest)
+	require.True(t, policy.MalformedSpecialTxRejectedTest)
+	require.True(t, policy.ValidProposalAcceptedTest)
+	require.True(t, policy.AllValidatorsProposalDeterminismTest)
+	require.True(t, policy.InvalidProposalWallClockForbidden)
+	require.True(t, policy.InvalidProposalExternalAPIsForbidden)
+	require.True(t, policy.ProcessProposalFragilityForbidden)
+	require.Equal(t, uint64(2*1024*1024), policy.InvalidProposalMaxBytes)
 }
 
 func TestSlashingAccountabilityPolicyRejectsSubjectiveOrWeakDoubleSignRules(t *testing.T) {
@@ -314,4 +329,72 @@ func TestSlashingAccountabilityPolicyRejectsUnsafeHeightManipulationRules(t *tes
 	policy = DefaultSlashingAccountabilityPolicy()
 	policy.HeightUnbondingEvidenceWindowBlocks = 0
 	require.ErrorContains(t, policy.Validate(), "unbonding evidence window")
+}
+
+func TestSlashingAccountabilityPolicyRequiresEvidenceAndUnbondingCoverage(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.HeightUnbondingEvidenceWindowBlocks = policy.HeightEvidenceMaxAgeBlocks + 1
+	require.ErrorContains(t, policy.Validate(), "must not exceed evidence max age")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.EvidenceWhileValidatorBondedTest = false
+	require.ErrorContains(t, policy.Validate(), "validator bonded")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.EvidenceWhileValidatorUnbondingTest = false
+	require.ErrorContains(t, policy.Validate(), "validator unbonding")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.EvidenceAfterUnbondingBeforeExpiryTest = false
+	require.ErrorContains(t, policy.Validate(), "before evidence expiration")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.EvidenceAfterExpirationRejectedTest = false
+	require.ErrorContains(t, policy.Validate(), "after expiration")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DelegatorInfractionHeightSlashTest = false
+	require.ErrorContains(t, policy.Validate(), "delegators bonded at infraction height")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.TombstoneCapBehaviorTest = false
+	require.ErrorContains(t, policy.Validate(), "tombstone cap")
+}
+
+func TestSlashingAccountabilityPolicyRequiresInvalidProposalCoverage(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.InvalidTxProposalRejectedTest = false
+	require.ErrorContains(t, policy.Validate(), "invalid tx proposal")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.OversizedProposalRejectedTest = false
+	require.ErrorContains(t, policy.Validate(), "oversized proposal")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.MalformedSpecialTxRejectedTest = false
+	require.ErrorContains(t, policy.Validate(), "malformed special tx")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.ValidProposalAcceptedTest = false
+	require.ErrorContains(t, policy.Validate(), "valid proposal")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.AllValidatorsProposalDeterminismTest = false
+	require.ErrorContains(t, policy.Validate(), "across validators")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalWallClockForbidden = false
+	require.ErrorContains(t, policy.Validate(), "local wall clock")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalExternalAPIsForbidden = false
+	require.ErrorContains(t, policy.Validate(), "external APIs")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.ProcessProposalFragilityForbidden = false
+	require.ErrorContains(t, policy.Validate(), "not be fragile")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalMaxBytes = 0
+	require.ErrorContains(t, policy.Validate(), "max bytes")
 }

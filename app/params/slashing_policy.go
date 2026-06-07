@@ -44,6 +44,8 @@ const (
 	DowntimeOffenseMaxPenaltyBps     = DowntimeChronicSlashMaxBps
 	DowntimeOffenseMaxJailMinutes    = DowntimeChronicJailMinutes
 	DowntimeOffenseQueryStatusMethod = "QueryDowntimeOffenseStatus"
+
+	InvalidProposalMaxBytesDefault = uint64(2 * 1024 * 1024)
 )
 
 type SlashingAccountabilityPolicy struct {
@@ -108,6 +110,21 @@ type SlashingAccountabilityPolicy struct {
 	UnbondingEvidenceTimingChecked         bool
 	HeightEvidenceMaxAgeBlocks             uint64
 	HeightUnbondingEvidenceWindowBlocks    uint64
+	EvidenceWhileValidatorBondedTest       bool
+	EvidenceWhileValidatorUnbondingTest    bool
+	EvidenceAfterUnbondingBeforeExpiryTest bool
+	EvidenceAfterExpirationRejectedTest    bool
+	DelegatorInfractionHeightSlashTest     bool
+	TombstoneCapBehaviorTest               bool
+	InvalidTxProposalRejectedTest          bool
+	OversizedProposalRejectedTest          bool
+	MalformedSpecialTxRejectedTest         bool
+	ValidProposalAcceptedTest              bool
+	AllValidatorsProposalDeterminismTest   bool
+	InvalidProposalWallClockForbidden      bool
+	InvalidProposalExternalAPIsForbidden   bool
+	ProcessProposalFragilityForbidden      bool
+	InvalidProposalMaxBytes                uint64
 }
 
 func DefaultSlashingAccountabilityPolicy() SlashingAccountabilityPolicy {
@@ -173,6 +190,21 @@ func DefaultSlashingAccountabilityPolicy() SlashingAccountabilityPolicy {
 		UnbondingEvidenceTimingChecked:         true,
 		HeightEvidenceMaxAgeBlocks:             HeightEvidenceMaxAgeBlocks,
 		HeightUnbondingEvidenceWindowBlocks:    HeightUnbondingEvidenceWindowBlocks,
+		EvidenceWhileValidatorBondedTest:       true,
+		EvidenceWhileValidatorUnbondingTest:    true,
+		EvidenceAfterUnbondingBeforeExpiryTest: true,
+		EvidenceAfterExpirationRejectedTest:    true,
+		DelegatorInfractionHeightSlashTest:     true,
+		TombstoneCapBehaviorTest:               true,
+		InvalidTxProposalRejectedTest:          true,
+		OversizedProposalRejectedTest:          true,
+		MalformedSpecialTxRejectedTest:         true,
+		ValidProposalAcceptedTest:              true,
+		AllValidatorsProposalDeterminismTest:   true,
+		InvalidProposalWallClockForbidden:      true,
+		InvalidProposalExternalAPIsForbidden:   true,
+		ProcessProposalFragilityForbidden:      true,
+		InvalidProposalMaxBytes:                InvalidProposalMaxBytesDefault,
 	}
 }
 
@@ -367,6 +399,54 @@ func (p SlashingAccountabilityPolicy) Validate() error {
 	}
 	if p.HeightUnbondingEvidenceWindowBlocks == 0 {
 		return fmt.Errorf("height unbonding evidence window must be positive")
+	}
+	if p.HeightUnbondingEvidenceWindowBlocks > p.HeightEvidenceMaxAgeBlocks {
+		return fmt.Errorf("unbonding evidence window must not exceed evidence max age")
+	}
+	if !p.EvidenceWhileValidatorBondedTest {
+		return fmt.Errorf("tests must cover evidence submitted while validator bonded")
+	}
+	if !p.EvidenceWhileValidatorUnbondingTest {
+		return fmt.Errorf("tests must cover evidence submitted while validator unbonding")
+	}
+	if !p.EvidenceAfterUnbondingBeforeExpiryTest {
+		return fmt.Errorf("tests must cover evidence after unbonding before evidence expiration")
+	}
+	if !p.EvidenceAfterExpirationRejectedTest {
+		return fmt.Errorf("tests must cover evidence submitted after expiration")
+	}
+	if !p.DelegatorInfractionHeightSlashTest {
+		return fmt.Errorf("tests must cover slashing delegators bonded at infraction height")
+	}
+	if !p.TombstoneCapBehaviorTest {
+		return fmt.Errorf("tests must cover tombstone cap behavior")
+	}
+	if !p.InvalidTxProposalRejectedTest {
+		return fmt.Errorf("tests must cover invalid tx proposal rejection")
+	}
+	if !p.OversizedProposalRejectedTest {
+		return fmt.Errorf("tests must cover oversized proposal rejection")
+	}
+	if !p.MalformedSpecialTxRejectedTest {
+		return fmt.Errorf("tests must cover malformed special tx rejection")
+	}
+	if !p.ValidProposalAcceptedTest {
+		return fmt.Errorf("tests must cover valid proposal acceptance")
+	}
+	if !p.AllValidatorsProposalDeterminismTest {
+		return fmt.Errorf("tests must cover identical proposal decisions across validators")
+	}
+	if !p.InvalidProposalWallClockForbidden {
+		return fmt.Errorf("invalid proposal handling must not depend on local wall clock")
+	}
+	if !p.InvalidProposalExternalAPIsForbidden {
+		return fmt.Errorf("invalid proposal handling must not depend on external APIs")
+	}
+	if !p.ProcessProposalFragilityForbidden {
+		return fmt.Errorf("ProcessProposal must not be fragile")
+	}
+	if p.InvalidProposalMaxBytes == 0 {
+		return fmt.Errorf("invalid proposal max bytes must be positive")
 	}
 	return nil
 }
