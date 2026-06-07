@@ -215,6 +215,92 @@ func TestAetraEconomicsFeeSplitRulesRejectMissingRequiredItems(t *testing.T) {
 	require.Error(t, ValidateAetraEconomicsFeeSplitRules(evidence))
 }
 
+func TestDefaultAetraEconomicsAPRQueryCoversSection235(t *testing.T) {
+	evidence := DefaultAetraEconomicsAPRQueryEvidence()
+
+	report := BuildAetraEconomicsAPRQueryReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraEconomicsModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 7, report.Required)
+	require.NoError(t, ValidateAetraEconomicsAPRQuery(evidence))
+}
+
+func TestAetraEconomicsAPRQueryRejectsMissingRequiredItems(t *testing.T) {
+	evidence := DefaultAetraEconomicsAPRQueryEvidence()
+	evidence.ModuleName = ""
+	evidence.InflationOnlyAPR = false
+	evidence.FeeAdjustedAPR = false
+	evidence.ValidatorCommissionImpact = false
+	evidence.EstimatedDelegatorAPR = false
+	evidence.EstimatedValidatorGrossAPR = false
+	evidence.EstimatedValidatorNetAPR = false
+	evidence.LabeledAsEstimate = false
+
+	report := BuildAetraEconomicsAPRQueryReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_required")
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryInflationOnly)
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryFeeAdjusted)
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryCommissionImpact)
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryDelegatorEstimate)
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryValidatorGross)
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryValidatorNet)
+	require.Contains(t, report.Failed, AetraEconomicsAPRQueryLabeledAsEstimate)
+	require.Error(t, ValidateAetraEconomicsAPRQuery(evidence))
+}
+
+func TestDefaultAetraEconomicsTestingRequirementsCoverSection236(t *testing.T) {
+	evidence := DefaultAetraEconomicsTestingRequirementsEvidence()
+
+	report := BuildAetraEconomicsTestingRequirementsReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraEconomicsModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 14, report.Required)
+	require.NoError(t, ValidateAetraEconomicsTestingRequirements(evidence))
+}
+
+func TestAetraEconomicsTestingRequirementsRejectMissingRequiredItems(t *testing.T) {
+	evidence := DefaultAetraEconomicsTestingRequirementsEvidence()
+	evidence.ModuleName = "x/economics"
+	evidence.InflationIncreasesBelowTarget = false
+	evidence.InflationDecreasesAboveTarget = false
+	evidence.InflationWithinMinMax = false
+	evidence.InflationChangeRateBounded = false
+	evidence.FeeSplitExactAccounting = false
+	evidence.BurnAccounting = false
+	evidence.TreasuryAccounting = false
+	evidence.RewardsAccounting = false
+	evidence.APRMath = false
+	evidence.ZeroFeeBlockHandling = false
+	evidence.HighFeeBlockHandling = false
+	evidence.ExportImportEconomicsState = false
+	evidence.SupplyInvariantAfterManyEpochs = false
+	evidence.GovernanceInvalidParamsRejected = false
+
+	report := BuildAetraEconomicsTestingRequirementsReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_must_be_"+AetraEconomicsModuleName)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestInflationBelowTarget)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestInflationAboveTarget)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestInflationMinMax)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestInflationChangeBounded)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestFeeSplitAccounting)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestBurnAccounting)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestTreasuryAccounting)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestRewardsAccounting)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestAPRMath)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestZeroFeeBlock)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestHighFeeBlock)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestExportImportState)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestSupplyInvariantManyEpochs)
+	require.Contains(t, report.Failed, AetraEconomicsRequiredTestGovernanceInvalidParams)
+	require.Error(t, ValidateAetraEconomicsTestingRequirements(evidence))
+}
+
 func removeEconomicsString(values []string, targets ...string) []string {
 	targetSet := map[string]bool{}
 	for _, target := range targets {

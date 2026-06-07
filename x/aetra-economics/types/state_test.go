@@ -109,6 +109,26 @@ func TestAPREstimate(t *testing.T) {
 	require.Equal(t, uint32(0), types.EstimateAPRBps(400, 0))
 }
 
+func TestAPRBreakdownLabelsEstimateAndCommissionImpact(t *testing.T) {
+	params := fastEpochParams()
+	state, summary, err := types.ApplyEpoch(params, types.DefaultGenesisState(authority).State, epochInput(1, 1_000_000_000, 600_000_000, 100_000))
+	require.NoError(t, err)
+
+	apr, err := types.EstimateAPRBreakdown(params, state, types.QueryEstimatedAPRRequest{
+		ValidatorCommissionBps:    1_000,
+		ValidatorOperatingCostBps: 50,
+	})
+	require.NoError(t, err)
+	require.True(t, apr.IsEstimate)
+	require.Equal(t, "estimate_not_guaranteed_return", apr.EstimateLabel)
+	require.Equal(t, summary.EstimatedAPRBps, apr.InflationOnlyAPRBps)
+	require.Greater(t, apr.FeeAdjustedAPRBps, apr.InflationOnlyAPRBps)
+	require.Equal(t, uint32(64), apr.ValidatorCommissionImpactBps)
+	require.Equal(t, apr.FeeAdjustedAPRBps-apr.ValidatorCommissionImpactBps, apr.EstimatedDelegatorAPRBps)
+	require.Equal(t, apr.FeeAdjustedAPRBps+apr.ValidatorCommissionImpactBps, apr.EstimatedValidatorGrossAPRBps)
+	require.Equal(t, apr.EstimatedValidatorGrossAPRBps-50, apr.EstimatedValidatorNetAPRBps)
+}
+
 func TestEpochRewardSmoothing(t *testing.T) {
 	params := fastEpochParams()
 	params.RewardSmoothingWindow = 2
@@ -123,6 +143,28 @@ func TestEpochRewardSmoothing(t *testing.T) {
 	require.Len(t, next.RewardHistory, 2)
 }
 
+func TestZeroFeeBlockHandling(t *testing.T) {
+	params := fastEpochParams()
+	_, summary, err := types.ApplyEpoch(params, types.DefaultGenesisState(authority).State, epochInput(1, 1_000_000_000, 600_000_000, 0))
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), summary.BurnedAmount)
+	require.Equal(t, uint64(0), summary.TreasuryAmount)
+	require.Equal(t, uint64(0), summary.ValidatorDelegatorRewards)
+	require.Equal(t, summary.MintedRewards, summary.GrossRewards)
+	require.Equal(t, summary.StartingSupply+summary.MintedRewards, summary.EndingSupply)
+}
+
+func TestHighFeeBlockHandling(t *testing.T) {
+	params := fastEpochParams()
+	_, summary, err := types.ApplyEpoch(params, types.DefaultGenesisState(authority).State, epochInput(1, 1_000_000_000, 600_000_000, 10_000_000))
+	require.NoError(t, err)
+	require.Equal(t, uint64(5_000_000), summary.BurnedAmount)
+	require.Equal(t, uint64(1_500_000), summary.TreasuryAmount)
+	require.Equal(t, uint64(3_500_000), summary.ValidatorDelegatorRewards)
+	require.Equal(t, summary.MintedRewards+summary.ValidatorDelegatorRewards, summary.GrossRewards)
+	require.Equal(t, int64(summary.MintedRewards)-int64(summary.BurnedAmount), summary.NetSupplyChange)
+}
+
 func TestSupplyInvariantForEpochSummary(t *testing.T) {
 	params := fastEpochParams()
 	_, summary, err := types.ApplyEpoch(params, types.DefaultGenesisState(authority).State, epochInput(1, 1_000_000_000, 600_000_000, 500_000))
@@ -130,6 +172,28 @@ func TestSupplyInvariantForEpochSummary(t *testing.T) {
 	require.NoError(t, summary.Validate(params))
 	require.Equal(t, summary.FeesCollected, summary.BurnedAmount+summary.TreasuryAmount+summary.ValidatorDelegatorRewards)
 	require.Equal(t, summary.EndingSupply, summary.StartingSupply+summary.MintedRewards-summary.BurnedAmount)
+}
+
+func TestSupplyInvariantAfterManyEpochs(t *testing.T) {
+	params := fastEpochParams()
+	state := types.DefaultGenesisState(authority).State
+	supply := uint64(1_000_000_000)
+
+	for epoch := uint64(1); epoch <= 50; epoch++ {
+		bonded := supply * 60 / 100
+		fees := epoch * 10_000
+		next, summary, err := types.ApplyEpoch(params, state, epochInput(epoch, supply, bonded, fees))
+		require.NoError(t, err)
+		require.NoError(t, summary.Validate(params))
+		require.Equal(t, summary.StartingSupply+summary.MintedRewards-summary.BurnedAmount, summary.EndingSupply)
+		require.Equal(t, summary.EndingSupply, next.TotalSupply)
+		require.Equal(t, summary.BurnedSupply, next.BurnedSupply)
+		require.Equal(t, summary.TreasuryBalance, next.TreasuryBalance)
+		state = next
+		supply = next.TotalSupply
+	}
+
+	require.NoError(t, state.Validate(params))
 }
 
 func TestGenesisExportStateValidation(t *testing.T) {

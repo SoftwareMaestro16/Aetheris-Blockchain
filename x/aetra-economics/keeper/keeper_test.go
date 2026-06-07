@@ -27,9 +27,16 @@ func TestKeeperQueriesExposeEconomicsState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint32(6_000), bonded.BondedRatioBps)
 
-	apr, err := k.QueryEstimatedAPR(types.QueryEstimatedAPRRequest{})
+	apr, err := k.QueryEstimatedAPR(types.QueryEstimatedAPRRequest{ValidatorCommissionBps: 1_000, ValidatorOperatingCostBps: 50})
 	require.NoError(t, err)
-	require.Equal(t, summary.EstimatedAPRBps, apr.APRBps)
+	require.True(t, apr.IsEstimate)
+	require.Equal(t, "estimate_not_guaranteed_return", apr.EstimateLabel)
+	require.Equal(t, summary.EstimatedAPRBps, apr.InflationOnlyAPRBps)
+	require.GreaterOrEqual(t, apr.FeeAdjustedAPRBps, apr.InflationOnlyAPRBps)
+	require.Greater(t, apr.ValidatorCommissionImpactBps, uint32(0))
+	require.Less(t, apr.EstimatedDelegatorAPRBps, apr.FeeAdjustedAPRBps)
+	require.Greater(t, apr.EstimatedValidatorGrossAPRBps, apr.FeeAdjustedAPRBps)
+	require.Less(t, apr.EstimatedValidatorNetAPRBps, apr.EstimatedValidatorGrossAPRBps)
 
 	feeSplit, err := k.QueryFeeSplitParams(types.QueryFeeSplitParamsRequest{})
 	require.NoError(t, err)
@@ -119,6 +126,21 @@ func TestGovernanceAuthorityRequiredForMessages(t *testing.T) {
 		Authority: authority,
 		Input:     epochInput(1, 1_000_000_000, 600_000_000, 100_000),
 	}))
+}
+
+func TestGovernanceInvalidParamsRejected(t *testing.T) {
+	k := economicskeeper.NewKeeper(authority)
+	msgServer := economicskeeper.NewMsgServerImpl(&k)
+	params := fastEpochParams()
+	params.BurnCurrentBps = 6_001
+	params.ValidatorRewardBps = 2_499
+
+	err := msgServer.UpdateEconomicsParams(types.MsgUpdateEconomicsParams{
+		Authority: authority,
+		Params:    params,
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, types.ErrInvalidParams)
 }
 
 func fastEpochParams() types.Params {

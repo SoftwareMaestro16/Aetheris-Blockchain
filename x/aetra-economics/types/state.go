@@ -99,8 +99,21 @@ type QueryCurrentInflationResponse struct{ InflationBps uint32 }
 type QueryCurrentBondedRatioRequest struct{}
 type QueryCurrentBondedRatioResponse struct{ BondedRatioBps uint32 }
 
-type QueryEstimatedAPRRequest struct{}
-type QueryEstimatedAPRResponse struct{ APRBps uint32 }
+type QueryEstimatedAPRRequest struct {
+	ValidatorCommissionBps    uint32 `json:"validator_commission_bps"`
+	ValidatorOperatingCostBps uint32 `json:"validator_operating_cost_bps"`
+}
+
+type QueryEstimatedAPRResponse struct {
+	IsEstimate                    bool   `json:"is_estimate"`
+	EstimateLabel                 string `json:"estimate_label"`
+	InflationOnlyAPRBps           uint32 `json:"inflation_only_apr_bps"`
+	FeeAdjustedAPRBps             uint32 `json:"fee_adjusted_apr_bps"`
+	ValidatorCommissionImpactBps  uint32 `json:"validator_commission_impact_bps"`
+	EstimatedDelegatorAPRBps      uint32 `json:"estimated_delegator_apr_bps"`
+	EstimatedValidatorGrossAPRBps uint32 `json:"estimated_validator_gross_apr_bps"`
+	EstimatedValidatorNetAPRBps   uint32 `json:"estimated_validator_net_apr_bps"`
+}
 
 type QueryFeeSplitParamsRequest struct{}
 type QueryFeeSplitParamsResponse struct {
@@ -207,6 +220,45 @@ func EstimateAPRBps(inflationBps, bondedRatioBps uint32) uint32 {
 		return 0
 	}
 	return uint32((uint64(inflationBps)*uint64(BasisPoints) + uint64(bondedRatioBps)/2) / uint64(bondedRatioBps))
+}
+
+func EstimateAPRBreakdown(params Params, state EconomicsState, req QueryEstimatedAPRRequest) (QueryEstimatedAPRResponse, error) {
+	if err := params.Validate(); err != nil {
+		return QueryEstimatedAPRResponse{}, ErrInvalidParams.Wrap(err.Error())
+	}
+	if req.ValidatorCommissionBps > BasisPoints {
+		return QueryEstimatedAPRResponse{}, ErrInvalidParams.Wrap("validator commission cannot exceed basis points")
+	}
+	if req.ValidatorOperatingCostBps > BasisPoints {
+		return QueryEstimatedAPRResponse{}, ErrInvalidParams.Wrap("validator operating cost cannot exceed basis points")
+	}
+
+	inflationOnly := EstimateAPRBps(state.CurrentInflationBps, state.CurrentBondedRatioBps)
+	feeAdjusted := inflationOnly
+	if len(state.RewardHistory) > 0 {
+		latest := state.RewardHistory[len(state.RewardHistory)-1]
+		if latest.BondedTokens > 0 {
+			feeAdjusted = annualizedRewardAPRBps(latest.GrossRewards, params.EpochsPerYear, latest.BondedTokens)
+		}
+	}
+	commissionImpact := applyBpsUint32(feeAdjusted, req.ValidatorCommissionBps)
+	delegatorAPR := subtractUint32Floor(feeAdjusted, commissionImpact)
+	validatorGrossAPR, err := checkedAddUint32(feeAdjusted, commissionImpact)
+	if err != nil {
+		return QueryEstimatedAPRResponse{}, err
+	}
+	validatorNetAPR := subtractUint32Floor(validatorGrossAPR, req.ValidatorOperatingCostBps)
+
+	return QueryEstimatedAPRResponse{
+		IsEstimate:                    true,
+		EstimateLabel:                 "estimate_not_guaranteed_return",
+		InflationOnlyAPRBps:           inflationOnly,
+		FeeAdjustedAPRBps:             feeAdjusted,
+		ValidatorCommissionImpactBps:  commissionImpact,
+		EstimatedDelegatorAPRBps:      delegatorAPR,
+		EstimatedValidatorGrossAPRBps: validatorGrossAPR,
+		EstimatedValidatorNetAPRBps:   validatorNetAPR,
+	}, nil
 }
 
 func ComputeFeeSplit(params Params, fees uint64) (FeeSplit, error) {
@@ -536,6 +588,40 @@ func checkedAddUint64(a, b uint64) (uint64, error) {
 		return 0, ErrInvalidState.Wrap("uint64 accounting overflow")
 	}
 	return sum, nil
+}
+
+func checkedAddUint32(a, b uint32) (uint32, error) {
+	sum := uint64(a) + uint64(b)
+	if sum > uint64(^uint32(0)) {
+		return 0, ErrInvalidState.Wrap("uint32 accounting overflow")
+	}
+	return uint32(sum), nil
+}
+
+func subtractUint32Floor(value, decrement uint32) uint32 {
+	if decrement >= value {
+		return 0
+	}
+	return value - decrement
+}
+
+func applyBpsUint32(value, bps uint32) uint32 {
+	return uint32((uint64(value)*uint64(bps) + uint64(BasisPoints)/2) / uint64(BasisPoints))
+}
+
+func annualizedRewardAPRBps(epochRewards, epochsPerYear, bondedTokens uint64) uint32 {
+	if epochRewards == 0 || epochsPerYear == 0 || bondedTokens == 0 {
+		return 0
+	}
+	numerator := new(big.Int).Mul(new(big.Int).SetUint64(epochRewards), new(big.Int).SetUint64(epochsPerYear))
+	numerator.Mul(numerator, new(big.Int).SetUint64(uint64(BasisPoints)))
+	numerator.Add(numerator, new(big.Int).SetUint64(bondedTokens/2))
+	numerator.Quo(numerator, new(big.Int).SetUint64(bondedTokens))
+	max := new(big.Int).SetUint64(uint64(^uint32(0)))
+	if numerator.Cmp(max) > 0 {
+		return ^uint32(0)
+	}
+	return uint32(numerator.Uint64())
 }
 
 func supplyDeltaInt64(minted, burned uint64) (int64, error) {

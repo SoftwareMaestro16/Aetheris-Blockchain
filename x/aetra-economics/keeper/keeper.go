@@ -53,7 +53,7 @@ func (k Keeper) QueryCurrentBondedRatio(req types.QueryCurrentBondedRatioRequest
 }
 
 func (k Keeper) QueryEstimatedAPR(req types.QueryEstimatedAPRRequest) (types.QueryEstimatedAPRResponse, error) {
-	return types.QueryEstimatedAPRResponse{APRBps: k.state.State.EstimatedAPRBps}, nil
+	return types.EstimateAPRBreakdown(k.state.Params, k.state.State, req)
 }
 
 func (k Keeper) QueryFeeSplitParams(req types.QueryFeeSplitParamsRequest) (types.QueryFeeSplitParamsResponse, error) {

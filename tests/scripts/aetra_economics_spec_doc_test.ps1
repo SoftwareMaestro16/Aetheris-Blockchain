@@ -3,7 +3,8 @@ param(
   [string]$Policy = "app\params\aetra_economics_spec.go",
   [string]$Tests = "app\params\aetra_economics_spec_test.go",
   [string]$ModuleTypes = "x\aetra-economics\types\state.go",
-  [string]$ModuleTypesTests = "x\aetra-economics\types\state_test.go"
+  [string]$ModuleTypesTests = "x\aetra-economics\types\state_test.go",
+  [string]$ModuleKeeperTests = "x\aetra-economics\keeper\keeper_test.go"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,7 @@ $policyText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Policy)
 $testText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Tests)
 $moduleTypesText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $ModuleTypes)
 $moduleTypesTestText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $ModuleTypesTests)
+$moduleKeeperTestText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $ModuleKeeperTests)
 
 foreach ($term in @(
     'x/aetra-economics Module Specification',
@@ -111,7 +113,34 @@ foreach ($term in @(
     'rewards share is zero unless explicitly permitted by emergency governance',
     'BuildAetraEconomicsFeeSplitRulesReport',
     'ComputeFeeSplit',
-    'QueryFeeSplitParams'
+    'QueryFeeSplitParams',
+    '23.5 APR query',
+    'inflation-only APR',
+    'fee-adjusted APR',
+    'validator commission impact',
+    'estimated delegator APR',
+    'estimated validator gross APR',
+    'estimated validator net APR',
+    'APR must be labeled as estimate, not guaranteed return.',
+    'BuildAetraEconomicsAPRQueryReport',
+    'EstimateAPRBreakdown',
+    'QueryEstimatedAPR',
+    '23.6 Tests',
+    'inflation increases when bonded ratio below target',
+    'inflation decreases when bonded ratio above target',
+    'inflation remains within min/max',
+    'inflation change rate bounded',
+    'fee split exact accounting',
+    'burn accounting',
+    'treasury accounting',
+    'rewards accounting',
+    'APR estimate math',
+    'zero-fee block handling',
+    'high-fee block handling',
+    'export/import economics state',
+    'supply invariant after many epochs',
+    'governance invalid params rejected',
+    'BuildAetraEconomicsTestingRequirementsReport'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec doc missing: $term"
 }
@@ -201,7 +230,38 @@ foreach ($term in @(
     'AetraEconomicsFeeSplitRejectsNegativeShares',
     'AetraEconomicsFeeSplitRejectsBurnAboveGovernanceMax',
     'AetraEconomicsFeeSplitRejectsTreasuryAboveMax',
-    'AetraEconomicsFeeSplitRejectsZeroRewards'
+    'AetraEconomicsFeeSplitRejectsZeroRewards',
+    'AetraEconomicsAPRQueryEvidence',
+    'AetraEconomicsAPRQueryReport',
+    'DefaultAetraEconomicsAPRQueryEvidence',
+    'ValidateAetraEconomicsAPRQuery',
+    'BuildAetraEconomicsAPRQueryReport',
+    'AetraEconomicsAPRQueryInflationOnly',
+    'AetraEconomicsAPRQueryFeeAdjusted',
+    'AetraEconomicsAPRQueryCommissionImpact',
+    'AetraEconomicsAPRQueryDelegatorEstimate',
+    'AetraEconomicsAPRQueryValidatorGross',
+    'AetraEconomicsAPRQueryValidatorNet',
+    'AetraEconomicsAPRQueryLabeledAsEstimate',
+    'AetraEconomicsTestingRequirementsEvidence',
+    'AetraEconomicsTestingRequirementsReport',
+    'DefaultAetraEconomicsTestingRequirementsEvidence',
+    'ValidateAetraEconomicsTestingRequirements',
+    'BuildAetraEconomicsTestingRequirementsReport',
+    'AetraEconomicsRequiredTestInflationBelowTarget',
+    'AetraEconomicsRequiredTestInflationAboveTarget',
+    'AetraEconomicsRequiredTestInflationMinMax',
+    'AetraEconomicsRequiredTestInflationChangeBounded',
+    'AetraEconomicsRequiredTestFeeSplitAccounting',
+    'AetraEconomicsRequiredTestBurnAccounting',
+    'AetraEconomicsRequiredTestTreasuryAccounting',
+    'AetraEconomicsRequiredTestRewardsAccounting',
+    'AetraEconomicsRequiredTestAPRMath',
+    'AetraEconomicsRequiredTestZeroFeeBlock',
+    'AetraEconomicsRequiredTestHighFeeBlock',
+    'AetraEconomicsRequiredTestExportImportState',
+    'AetraEconomicsRequiredTestSupplyInvariantManyEpochs',
+    'AetraEconomicsRequiredTestGovernanceInvalidParams'
   )) {
   Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec policy missing: $term"
 }
@@ -218,7 +278,11 @@ foreach ($term in @(
     'TestDefaultAetraEconomicsInflationCurveCoversSection233',
     'TestAetraEconomicsInflationCurveRejectsMissingRequiredItems',
     'TestDefaultAetraEconomicsFeeSplitRulesCoverSection234',
-    'TestAetraEconomicsFeeSplitRulesRejectMissingRequiredItems'
+    'TestAetraEconomicsFeeSplitRulesRejectMissingRequiredItems',
+    'TestDefaultAetraEconomicsAPRQueryCoversSection235',
+    'TestAetraEconomicsAPRQueryRejectsMissingRequiredItems',
+    'TestDefaultAetraEconomicsTestingRequirementsCoverSection236',
+    'TestAetraEconomicsTestingRequirementsRejectMissingRequiredItems'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec tests missing: $term"
 }
@@ -239,7 +303,17 @@ foreach ($term in @(
     'TreasuryMaxBps',
     'TreasuryBps',
     'EmergencyAllowZeroRewardShare',
-    'ComputeFeeSplit'
+    'ComputeFeeSplit',
+    'QueryEstimatedAPRResponse',
+    'IsEstimate',
+    'EstimateLabel',
+    'InflationOnlyAPRBps',
+    'FeeAdjustedAPRBps',
+    'ValidatorCommissionImpactBps',
+    'EstimatedDelegatorAPRBps',
+    'EstimatedValidatorGrossAPRBps',
+    'EstimatedValidatorNetAPRBps',
+    'EstimateAPRBreakdown'
   )) {
   Assert-Contains -Text $moduleTypesText -Pattern ([regex]::Escape($term)) -Message "aetra economics module types missing: $term"
 }
@@ -250,9 +324,21 @@ foreach ($term in @(
     'TestInflationChangePerEpochIsBounded',
     'TestApplyEpochUsesBoundedInflationStep',
     'TestFeeSplitAccounting',
-    'TestFeeSplitParamsRejectUnsafeRules'
+    'TestFeeSplitParamsRejectUnsafeRules',
+    'TestAPRBreakdownLabelsEstimateAndCommissionImpact',
+    'TestZeroFeeBlockHandling',
+    'TestHighFeeBlockHandling',
+    'TestSupplyInvariantAfterManyEpochs'
   )) {
   Assert-Contains -Text $moduleTypesTestText -Pattern ([regex]::Escape($term)) -Message "aetra economics module tests missing: $term"
+}
+
+foreach ($term in @(
+    'TestKeeperExportImportPreservesEconomicsState',
+    'TestGovernanceInvalidParamsRejected',
+    'QueryEstimatedAPR'
+  )) {
+  Assert-Contains -Text $moduleKeeperTestText -Pattern ([regex]::Escape($term)) -Message "aetra economics keeper tests missing: $term"
 }
 
 Write-Host "aetra economics spec doc test passed"

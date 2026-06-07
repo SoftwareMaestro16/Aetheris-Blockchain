@@ -179,3 +179,58 @@ Required catalog properties:
 - `x/aetra-economics/types.Params.Validate` must reject invalid fee split params before keeper state is updated;
 - `x/aetra-economics/types.ComputeFeeSplit` must allocate burn, validators/delegators, and treasury from validated bps only;
 - `x/aetra-economics/keeper.QueryFeeSplitParams` must expose current shares and governance bounds.
+
+## 23.5 APR query
+
+APR query must clearly distinguish:
+
+- inflation-only APR;
+- fee-adjusted APR;
+- validator commission impact;
+- estimated delegator APR;
+- estimated validator gross APR;
+- estimated validator net APR.
+
+APR must be labeled as estimate, not guaranteed return.
+
+### APR Query Implementation Contract
+
+Required catalog properties:
+
+- `AetraEconomicsAPRQueryEvidence` must represent every APR query output listed in section 23.5;
+- `DefaultAetraEconomicsAPRQueryEvidence` must enable all APR query requirements;
+- `BuildAetraEconomicsAPRQueryReport` must require inflation-only APR, fee-adjusted APR, validator commission impact, estimated delegator APR, estimated validator gross APR, estimated validator net APR, and estimate labeling;
+- `ValidateAetraEconomicsAPRQuery` must reject missing APR query requirements;
+- `x/aetra-economics/types.EstimateAPRBreakdown` must calculate APR values deterministically without floating point;
+- `x/aetra-economics/keeper.QueryEstimatedAPR` must expose the full APR breakdown;
+- APR query responses must set `IsEstimate` and `EstimateLabel`, and must not present APR as guaranteed return.
+
+## 23.6 Tests
+
+Required tests:
+
+- inflation increases when bonded ratio below target;
+- inflation decreases when bonded ratio above target;
+- inflation remains within min/max;
+- inflation change rate bounded;
+- fee split exact accounting;
+- burn accounting;
+- treasury accounting;
+- rewards accounting;
+- APR estimate math;
+- zero-fee block handling;
+- high-fee block handling;
+- export/import economics state;
+- supply invariant after many epochs;
+- governance invalid params rejected.
+
+### Tests Implementation Contract
+
+Required catalog properties:
+
+- `AetraEconomicsTestingRequirementsEvidence` must represent every test requirement listed in section 23.6;
+- `DefaultAetraEconomicsTestingRequirementsEvidence` must enable all required tests;
+- `BuildAetraEconomicsTestingRequirementsReport` must require all fourteen test categories;
+- `ValidateAetraEconomicsTestingRequirements` must reject missing test coverage;
+- `x/aetra-economics/types` tests must cover inflation, fee split, burn, treasury, rewards, APR math, zero/high fee blocks, and many-epoch supply invariants;
+- `x/aetra-economics/keeper` tests must cover export/import economics state and governance invalid params rejected.
