@@ -10,6 +10,7 @@ import (
 	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/x/internal/prototype"
 	"github.com/sovereign-l1/l1/x/nominator-pool/types"
+	reputationtypes "github.com/sovereign-l1/l1/x/reputation/types"
 	validatorregistrytypes "github.com/sovereign-l1/l1/x/validator-registry/types"
 )
 
@@ -732,23 +733,71 @@ func TestStakingRewardsCompatibilityIsInternalOnly(t *testing.T) {
 func TestStakingProofQueryIsBoundedAndReturnsMetadata(t *testing.T) {
 	k := NewKeeper()
 	k.ResetOperationCounters()
-
-	metadata, err := k.StakingProof(types.StakingProofRequest{
-		Kind:     types.StakingProofReward,
-		Height:   42,
-		PoolID:   "pool-a",
-		Account:  proofUserAddress("55"),
-		AppHash:  "app-root-ref",
-		RootHash: "nominator-pool-root-ref",
-	})
-	require.NoError(t, err)
-	require.Equal(t, types.StoreKey, metadata.StoreKey)
-	require.Equal(t, uint64(42), metadata.Height)
-	require.Len(t, metadata.ProofPath, 2)
-	require.True(t, metadata.BoundedLookup)
+	account := proofUserAddress("55")
+	appHash := "app-root-ref"
+	poolRoot := "nominator-pool-root-ref"
+	reputationRoot := "reputation-root-ref"
+	cases := []struct {
+		name     string
+		req      types.StakingProofRequest
+		storeKey string
+		stateKey string
+		rootHash string
+	}{
+		{
+			name:     "deposit",
+			req:      types.StakingProofRequest{Kind: types.StakingProofDeposit, Height: 42, PoolID: "pool-a", Account: account, AppHash: appHash, RootHash: poolRoot},
+			storeKey: types.StoreKey,
+			stateKey: types.PoolDepositProofStateKey("pool-a", account),
+			rootHash: poolRoot,
+		},
+		{
+			name:     "share",
+			req:      types.StakingProofRequest{Kind: types.StakingProofShare, Height: 42, PoolID: "pool-a", Account: account, AppHash: appHash, RootHash: poolRoot},
+			storeKey: types.StoreKey,
+			stateKey: types.PoolShareProofStateKey("pool-a", account),
+			rootHash: poolRoot,
+		},
+		{
+			name:     "allocation",
+			req:      types.StakingProofRequest{Kind: types.StakingProofAllocation, Height: 42, PoolID: "pool-a", Epoch: 7, AppHash: appHash, RootHash: poolRoot},
+			storeKey: types.StoreKey,
+			stateKey: types.PoolAllocationProofStateKey("pool-a", 7),
+			rootHash: poolRoot,
+		},
+		{
+			name:     "reward",
+			req:      types.StakingProofRequest{Kind: types.StakingProofReward, Height: 42, PoolID: "pool-a", Account: account, AppHash: appHash, RootHash: poolRoot},
+			storeKey: types.StoreKey,
+			stateKey: types.PoolRewardProofStateKey("pool-a", account),
+			rootHash: poolRoot,
+		},
+		{
+			name:     "reputation",
+			req:      types.StakingProofRequest{Kind: types.StakingProofReputation, Height: 42, Account: account, AppHash: appHash, RootHash: reputationRoot},
+			storeKey: reputationtypes.StoreKey,
+			stateKey: types.StakeReputationProofStateKey(account),
+			rootHash: reputationRoot,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			metadata, err := k.StakingProof(tc.req)
+			require.NoError(t, err)
+			require.Equal(t, tc.storeKey, metadata.StoreKey)
+			require.Equal(t, tc.stateKey, metadata.StateKey)
+			require.Equal(t, uint64(42), metadata.Height)
+			require.Equal(t, appHash, metadata.AppHash)
+			require.Equal(t, tc.rootHash, metadata.RootHash)
+			require.Len(t, metadata.ProofPath, 2)
+			require.Equal(t, tc.storeKey, metadata.ProofPath[1].StoreKey)
+			require.Equal(t, tc.stateKey, metadata.ProofPath[1].StateKey)
+			require.True(t, metadata.BoundedLookup)
+		})
+	}
 
 	counters := k.OperationCounters()
-	require.Equal(t, uint64(1), counters.ProofQueries)
+	require.Equal(t, uint64(len(cases)), counters.ProofQueries)
 	require.Zero(t, counters.PoolLookups)
 	require.Zero(t, counters.DelegatorLookups)
 	require.Zero(t, counters.DelegatorRewardUpdates)
