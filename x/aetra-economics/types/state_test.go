@@ -1,0 +1,101 @@
+package types_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/sovereign-l1/l1/x/aetra-economics/types"
+)
+
+const authority = "ae1economicsgov"
+
+func TestInflationCurveRespondsToBondedRatio(t *testing.T) {
+	params := types.DefaultParams(authority)
+	atTarget := types.ComputeInflationBps(params, params.TargetBondedRatioBps)
+	lowBonded := types.ComputeInflationBps(params, 3_000)
+	highBonded := types.ComputeInflationBps(params, 8_000)
+
+	require.Greater(t, lowBonded, atTarget)
+	require.Less(t, highBonded, atTarget)
+	require.Equal(t, uint32(350), atTarget)
+}
+
+func TestBoundedInflation(t *testing.T) {
+	params := types.DefaultParams(authority)
+	require.Equal(t, params.InflationMaxBps, types.ComputeInflationBps(params, 0))
+	require.Equal(t, params.InflationMinBps, types.ComputeInflationBps(params, types.BasisPoints))
+}
+
+func TestFeeSplitAccounting(t *testing.T) {
+	split, err := types.ComputeFeeSplit(types.DefaultParams(authority), 1_000_000)
+	require.NoError(t, err)
+	require.Equal(t, uint64(400_000), split.BurnAmount)
+	require.Equal(t, uint64(200_000), split.TreasuryAmount)
+	require.Equal(t, uint64(400_000), split.ValidatorDelegatorRewards)
+	require.Equal(t, split.FeesCollected, split.BurnAmount+split.TreasuryAmount+split.ValidatorDelegatorRewards)
+}
+
+func TestBurnTreasuryAndSupplyAccounting(t *testing.T) {
+	params := fastEpochParams()
+	state := types.DefaultGenesisState(authority).State
+	next, summary, err := types.ApplyEpoch(params, state, epochInput(1, 1_000_000_000, 600_000_000, 100_000))
+	require.NoError(t, err)
+
+	require.Equal(t, uint64(40_000), summary.BurnedAmount)
+	require.Equal(t, uint64(20_000), summary.TreasuryAmount)
+	require.Equal(t, summary.BurnedAmount, next.BurnedSupply)
+	require.Equal(t, summary.TreasuryAmount, next.TreasuryBalance)
+	require.Equal(t, summary.StartingSupply+summary.MintedRewards-summary.BurnedAmount, summary.EndingSupply)
+}
+
+func TestAPREstimate(t *testing.T) {
+	require.Equal(t, uint32(667), types.EstimateAPRBps(400, 6_000))
+	require.Equal(t, uint32(0), types.EstimateAPRBps(400, 0))
+}
+
+func TestEpochRewardSmoothing(t *testing.T) {
+	params := fastEpochParams()
+	params.RewardSmoothingWindow = 2
+	state := types.DefaultGenesisState(authority).State
+
+	next, first, err := types.ApplyEpoch(params, state, epochInput(1, 1_000_000_000, 600_000_000, 0))
+	require.NoError(t, err)
+	next, second, err := types.ApplyEpoch(params, next, epochInput(2, first.EndingSupply, 600_000_000, 1_000_000))
+	require.NoError(t, err)
+
+	require.Equal(t, (first.GrossRewards+second.GrossRewards)/2, second.SmoothedRewards)
+	require.Len(t, next.RewardHistory, 2)
+}
+
+func TestSupplyInvariantForEpochSummary(t *testing.T) {
+	params := fastEpochParams()
+	_, summary, err := types.ApplyEpoch(params, types.DefaultGenesisState(authority).State, epochInput(1, 1_000_000_000, 600_000_000, 500_000))
+	require.NoError(t, err)
+	require.NoError(t, summary.Validate(params))
+	require.Equal(t, summary.FeesCollected, summary.BurnedAmount+summary.TreasuryAmount+summary.ValidatorDelegatorRewards)
+	require.Equal(t, summary.EndingSupply, summary.StartingSupply+summary.MintedRewards-summary.BurnedAmount)
+}
+
+func TestGenesisExportStateValidation(t *testing.T) {
+	params := fastEpochParams()
+	state, _, err := types.ApplyEpoch(params, types.DefaultGenesisState(authority).State, epochInput(1, 1_000_000_000, 600_000_000, 100_000))
+	require.NoError(t, err)
+	genesis := types.GenesisState{Params: params, State: state}
+	require.NoError(t, genesis.Validate())
+}
+
+func fastEpochParams() types.Params {
+	params := types.DefaultParams(authority)
+	params.EpochsPerYear = 100
+	return params
+}
+
+func epochInput(epoch, supply, bonded, fees uint64) types.EpochEconomicsInput {
+	return types.EpochEconomicsInput{
+		Epoch:         epoch,
+		TotalSupply:   supply,
+		BondedTokens:  bonded,
+		FeesCollected: fees,
+	}
+}
