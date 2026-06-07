@@ -221,6 +221,19 @@ func (k *Keeper) SetValidatorCapabilities(msg types.MsgSetValidatorCapabilities)
 	})
 }
 
+func (k *Keeper) UpdateValidatorCommission(msg types.MsgUpdateValidatorCommission) (types.ValidatorRecord, error) {
+	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
+		return types.ValidatorRecord{}, err
+	}
+	return k.transition(msg.OperatorAddress, msg.Height, func(v types.ValidatorRecord) (types.ValidatorRecord, error) {
+		if err := k.genesis.Params.ValidateCommissionChange(v.CommissionPolicy.CurrentRateBps, msg.NewRateBps); err != nil {
+			return types.ValidatorRecord{}, err
+		}
+		v.CommissionPolicy.CurrentRateBps = msg.NewRateBps
+		return types.AddHistory(v, msg.Height, "commission-updated", "validator commission updated", k.genesis.Params), nil
+	})
+}
+
 func (k *Keeper) SetValidatorStatus(authority, operator, status string, height uint64) (types.ValidatorRecord, error) {
 	if err := k.genesis.Params.Authorize(authority); err != nil {
 		return types.ValidatorRecord{}, err
@@ -279,6 +292,13 @@ func (k Keeper) ValidatorHistory(operator string) ([]types.ValidatorHistoryEvent
 		return nil, found, err
 	}
 	return append([]types.ValidatorHistoryEvent(nil), validator.History...), true, nil
+}
+
+func (k Keeper) ValidatorAllocationInputs(req types.ValidatorAllocationQueryRequest) ([]types.ValidatorAllocationEngineInput, error) {
+	if err := k.genesis.Validate(); err != nil {
+		return nil, err
+	}
+	return k.genesis.State.ValidatorAllocationEngineInputs(k.genesis.Params, req)
 }
 
 type Migrator struct {

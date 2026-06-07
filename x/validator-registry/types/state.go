@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/sovereign-l1/l1/app/addressing"
+	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/x/internal/prototype"
 )
 
@@ -38,25 +39,66 @@ const (
 	MaxSlashReasonBytesV1  = uint32(256)
 	MaxBasisPoints         = uint32(10_000)
 	DefaultRotationDelay   = uint64(100)
+	DefaultAETBaseUnits    = uint64(appparams.BaseUnitsPerDisplay)
+
+	DefaultMinValidatorStake                    = uint64(1_000_000) * DefaultAETBaseUnits
+	DefaultSoloValidatorMinSelfStake            = uint64(1_000_000) * DefaultAETBaseUnits
+	DefaultPoolBackedValidatorMinSelfStake      = uint64(400_000) * DefaultAETBaseUnits
+	DefaultPoolBackedValidatorMaxNominatorStake = uint64(600_000) * DefaultAETBaseUnits
+	DefaultMinActiveValidators                  = uint32(100)
+	DefaultMaxActiveValidators                  = uint32(300)
+	DefaultValidatorCommissionFloorBps          = uint32(500)
+	DefaultValidatorCommissionBps               = uint32(1_000)
+	DefaultValidatorCommissionCeilingBps        = uint32(2_000)
+	DefaultValidatorCommissionMaxDailyChangeBps = uint32(100)
 )
 
 type Params struct {
-	Authority                 string
-	MaxValidators             uint32
-	MaxMetadataBytes          uint32
-	MaxConsensusKeyBytes      uint32
-	MaxCapabilities           uint32
-	MaxCapabilityBytes        uint32
-	MaxHistoryEntries         uint32
-	MaxAuditFlags             uint32
-	MaxAuditFlagBytes         uint32
-	ConsensusKeyRotationDelay uint64
+	Authority                   string
+	MaxValidators               uint32
+	MinValidatorStake           uint64
+	SoloMinSelfStake            uint64
+	PoolBackedMinSelfStake      uint64
+	PoolBackedMaxNominatorStake uint64
+	MinActiveValidators         uint32
+	MaxActiveValidators         uint32
+	CommissionFloorBps          uint32
+	DefaultCommissionBps        uint32
+	CommissionCeilingBps        uint32
+	CommissionMaxDailyChangeBps uint32
+	PowerCapSchedule            []ValidatorPowerCapPhase
+	MaxMetadataBytes            uint32
+	MaxConsensusKeyBytes        uint32
+	MaxCapabilities             uint32
+	MaxCapabilityBytes          uint32
+	MaxHistoryEntries           uint32
+	MaxAuditFlags               uint32
+	MaxAuditFlagBytes           uint32
+	ConsensusKeyRotationDelay   uint64
 }
 
 type CommissionPolicy struct {
 	CurrentRateBps   uint32
 	MaxRateBps       uint32
 	MaxChangeRateBps uint32
+}
+
+type ValidatorPowerCapPhase struct {
+	MaxActiveValidators uint32
+	PowerCapBps         uint32
+}
+
+type ValidatorFundingMode string
+
+const (
+	ValidatorFundingSolo       ValidatorFundingMode = "solo"
+	ValidatorFundingPoolBacked ValidatorFundingMode = "pool_backed"
+)
+
+type ValidatorFunding struct {
+	Mode          ValidatorFundingMode
+	SelfStake     uint64
+	NominatorBond uint64
 }
 
 type UptimeSample struct {
@@ -100,6 +142,7 @@ type ValidatorRecord struct {
 	Status                       string
 	Capabilities                 []string
 	SelfBond                     uint64
+	NominatorBond                uint64
 	ExternalAuditFlags           []string
 	History                      []ValidatorHistoryEvent
 }
@@ -132,6 +175,27 @@ type ValidatorSecurityStatus struct {
 	Status             string
 	SlashingHistory    []SlashingEvent
 	ExternalAuditFlags []string
+}
+
+type ValidatorAllocationQueryRequest struct {
+	IncludeCandidates   bool
+	IncludeJailed       bool
+	EnforceActiveBounds bool
+	TestnetOverride     bool
+}
+
+type ValidatorAllocationEngineInput struct {
+	OperatorAddress    string
+	ConsensusPublicKey string
+	Status             string
+	SelfBond           uint64
+	NominatorBond      uint64
+	CommissionBps      uint32
+	PerformanceScore   uint32
+	ReputationScore    uint32
+	PowerCapBps        uint32
+	Jailed             bool
+	Tombstoned         bool
 }
 
 type MsgRegisterValidator struct {
@@ -182,10 +246,32 @@ type MsgSetValidatorCapabilities struct {
 	Height          uint64
 }
 
+type MsgUpdateValidatorCommission struct {
+	Authority       string
+	OperatorAddress string
+	NewRateBps      uint32
+	Height          uint64
+}
+
 func DefaultParams() Params {
 	return Params{
-		Authority:                 prototype.DefaultAuthority,
-		MaxValidators:             MaxValidatorsV1,
+		Authority:                   prototype.DefaultAuthority,
+		MaxValidators:               MaxValidatorsV1,
+		MinValidatorStake:           DefaultMinValidatorStake,
+		SoloMinSelfStake:            DefaultSoloValidatorMinSelfStake,
+		PoolBackedMinSelfStake:      DefaultPoolBackedValidatorMinSelfStake,
+		PoolBackedMaxNominatorStake: DefaultPoolBackedValidatorMaxNominatorStake,
+		MinActiveValidators:         DefaultMinActiveValidators,
+		MaxActiveValidators:         DefaultMaxActiveValidators,
+		CommissionFloorBps:          DefaultValidatorCommissionFloorBps,
+		DefaultCommissionBps:        DefaultValidatorCommissionBps,
+		CommissionCeilingBps:        DefaultValidatorCommissionCeilingBps,
+		CommissionMaxDailyChangeBps: DefaultValidatorCommissionMaxDailyChangeBps,
+		PowerCapSchedule: []ValidatorPowerCapPhase{
+			{MaxActiveValidators: 150, PowerCapBps: 300},
+			{MaxActiveValidators: 250, PowerCapBps: 250},
+			{MaxActiveValidators: 0, PowerCapBps: 200},
+		},
 		MaxMetadataBytes:          MaxMetadataBytesV1,
 		MaxConsensusKeyBytes:      MaxConsensusKeyBytesV1,
 		MaxCapabilities:           MaxCapabilitiesV1,
@@ -199,9 +285,9 @@ func DefaultParams() Params {
 
 func DefaultCommissionPolicy() CommissionPolicy {
 	return CommissionPolicy{
-		CurrentRateBps:   500,
-		MaxRateBps:       2_000,
-		MaxChangeRateBps: 500,
+		CurrentRateBps:   DefaultValidatorCommissionBps,
+		MaxRateBps:       DefaultValidatorCommissionCeilingBps,
+		MaxChangeRateBps: DefaultValidatorCommissionMaxDailyChangeBps,
 	}
 }
 
@@ -211,6 +297,21 @@ func (p Params) Validate() error {
 	}
 	if p.MaxValidators == 0 || p.MaxValidators > MaxValidatorsV1 {
 		return fmt.Errorf("validator registry max validators must be between 1 and %d", MaxValidatorsV1)
+	}
+	if err := p.ValidateValidatorFunding(ValidatorFunding{Mode: ValidatorFundingSolo, SelfStake: p.SoloMinSelfStake}); err != nil {
+		return err
+	}
+	if err := p.ValidateValidatorFunding(ValidatorFunding{Mode: ValidatorFundingPoolBacked, SelfStake: p.PoolBackedMinSelfStake, NominatorBond: p.PoolBackedMaxNominatorStake}); err != nil {
+		return err
+	}
+	if p.MinActiveValidators == 0 || p.MaxActiveValidators == 0 || p.MinActiveValidators > p.MaxActiveValidators || p.MaxActiveValidators > p.MaxValidators {
+		return errors.New("validator registry active validator bounds are invalid")
+	}
+	if err := validateCommissionParams(p); err != nil {
+		return err
+	}
+	if err := validatePowerCapSchedule(p.PowerCapSchedule); err != nil {
+		return err
 	}
 	if p.MaxMetadataBytes == 0 || p.MaxMetadataBytes > MaxMetadataBytesV1 {
 		return fmt.Errorf("validator registry max metadata bytes must be between 1 and %d", MaxMetadataBytesV1)
@@ -239,6 +340,80 @@ func (p Params) Validate() error {
 	return nil
 }
 
+func (p Params) ValidateValidatorFunding(funding ValidatorFunding) error {
+	totalStake, err := checkedAddUint64(funding.SelfStake, funding.NominatorBond)
+	if err != nil {
+		return err
+	}
+	switch funding.Mode {
+	case ValidatorFundingSolo:
+		if funding.NominatorBond != 0 {
+			return errors.New("validator registry solo validator cannot use nominator stake")
+		}
+		if funding.SelfStake < p.SoloMinSelfStake {
+			return errors.New("validator registry solo validator self-stake below configured minimum")
+		}
+	case ValidatorFundingPoolBacked:
+		if funding.SelfStake < p.PoolBackedMinSelfStake {
+			return errors.New("validator registry pool-backed validator self-stake below configured minimum")
+		}
+		if funding.NominatorBond > p.PoolBackedMaxNominatorStake {
+			return errors.New("validator registry pool-backed validator nominator contribution exceeds configured maximum")
+		}
+		if p.MinValidatorStake > funding.SelfStake && p.MinValidatorStake-funding.SelfStake > p.PoolBackedMaxNominatorStake {
+			return errors.New("validator registry pool-backed validator cannot satisfy minimum stake with configured nominator cap")
+		}
+	default:
+		return fmt.Errorf("validator registry unsupported validator funding mode %q", funding.Mode)
+	}
+	if totalStake < p.MinValidatorStake {
+		return errors.New("validator registry validator below minimum validator stake")
+	}
+	return nil
+}
+
+func (p Params) ValidateActiveValidatorCount(count uint32, testnetOverride bool) error {
+	if count > p.MaxActiveValidators {
+		return errors.New("validator registry active validator count exceeds configured maximum")
+	}
+	if !testnetOverride && count < p.MinActiveValidators {
+		return errors.New("validator registry active validator count below configured minimum")
+	}
+	return nil
+}
+
+func (p Params) ValidateCommissionRate(rateBps uint32) error {
+	if rateBps < p.CommissionFloorBps {
+		return errors.New("validator registry commission below configured floor")
+	}
+	if rateBps > p.CommissionCeilingBps {
+		return errors.New("validator registry commission above configured ceiling")
+	}
+	return nil
+}
+
+func (p Params) ValidateCommissionChange(previousRateBps, nextRateBps uint32) error {
+	if err := p.ValidateCommissionRate(nextRateBps); err != nil {
+		return err
+	}
+	if nextRateBps > previousRateBps && nextRateBps-previousRateBps > p.CommissionMaxDailyChangeBps {
+		return errors.New("validator registry commission daily change exceeds configured maximum")
+	}
+	return nil
+}
+
+func (p Params) PowerCapBpsForValidatorCount(count uint32) (uint32, error) {
+	if len(p.PowerCapSchedule) == 0 {
+		return 0, errors.New("validator registry power cap schedule is required")
+	}
+	for _, phase := range p.PowerCapSchedule {
+		if phase.MaxActiveValidators == 0 || count <= phase.MaxActiveValidators {
+			return phase.PowerCapBps, nil
+		}
+	}
+	return 0, errors.New("validator registry power cap schedule did not cover validator count")
+}
+
 func (p Params) Authorize(authority string) error {
 	if err := p.Validate(); err != nil {
 		return err
@@ -265,6 +440,22 @@ func (p CommissionPolicy) Validate() error {
 	return nil
 }
 
+func (p Params) ValidateCommissionPolicy(policy CommissionPolicy) error {
+	if err := policy.Validate(); err != nil {
+		return err
+	}
+	if err := p.ValidateCommissionRate(policy.CurrentRateBps); err != nil {
+		return err
+	}
+	if policy.MaxRateBps > p.CommissionCeilingBps {
+		return errors.New("validator registry commission policy max exceeds configured ceiling")
+	}
+	if policy.MaxChangeRateBps > p.CommissionMaxDailyChangeBps {
+		return errors.New("validator registry commission policy daily change exceeds configured maximum")
+	}
+	return nil
+}
+
 func (s State) Validate(params Params) error {
 	if err := params.Validate(); err != nil {
 		return err
@@ -274,10 +465,14 @@ func (s State) Validate(params Params) error {
 	}
 	byOperator := map[string]struct{}{}
 	byConsensus := map[string]string{}
+	activeCount := uint32(0)
 	for _, validator := range s.Validators {
 		normalized := validator.Normalize(params)
 		if err := normalized.Validate(params); err != nil {
 			return err
+		}
+		if normalized.Status == StatusActive {
+			activeCount++
 		}
 		if _, found := byOperator[normalized.OperatorAddress]; found {
 			return fmt.Errorf("validator registry duplicate operator %q", normalized.OperatorAddress)
@@ -289,6 +484,9 @@ func (s State) Validate(params Params) error {
 			}
 			byConsensus[key] = normalized.OperatorAddress
 		}
+	}
+	if activeCount > params.MaxActiveValidators {
+		return errors.New("validator registry active validator count exceeds configured maximum")
 	}
 	return nil
 }
@@ -331,7 +529,14 @@ func (v ValidatorRecord) Validate(params Params) error {
 	if uint32(len(v.Metadata)) > params.MaxMetadataBytes {
 		return fmt.Errorf("validator registry metadata exceeds %d bytes", params.MaxMetadataBytes)
 	}
-	if err := v.CommissionPolicy.Validate(); err != nil {
+	if err := params.ValidateCommissionPolicy(v.CommissionPolicy); err != nil {
+		return err
+	}
+	mode := ValidatorFundingPoolBacked
+	if v.NominatorBond == 0 {
+		mode = ValidatorFundingSolo
+	}
+	if err := params.ValidateValidatorFunding(ValidatorFunding{Mode: mode, SelfStake: v.SelfBond, NominatorBond: v.NominatorBond}); err != nil {
 		return err
 	}
 	if !IsStatus(v.Status) {
@@ -459,6 +664,55 @@ func (s State) Validator(operator string) (ValidatorRecord, bool) {
 		}
 	}
 	return ValidatorRecord{}, false
+}
+
+func (s State) ValidatorAllocationEngineInputs(params Params, req ValidatorAllocationQueryRequest) ([]ValidatorAllocationEngineInput, error) {
+	normalized := s.Normalize(params)
+	activeCount := uint32(0)
+	for _, validator := range normalized.Validators {
+		if validator.Status == StatusActive {
+			activeCount++
+		}
+	}
+	if req.EnforceActiveBounds {
+		if err := params.ValidateActiveValidatorCount(activeCount, req.TestnetOverride); err != nil {
+			return nil, err
+		}
+	}
+	powerCap, err := params.PowerCapBpsForValidatorCount(activeCount)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ValidatorAllocationEngineInput, 0, len(normalized.Validators))
+	for _, validator := range normalized.Validators {
+		switch validator.Status {
+		case StatusActive:
+		case StatusCandidate:
+			if !req.IncludeCandidates {
+				continue
+			}
+		case StatusJailed:
+			if !req.IncludeJailed {
+				continue
+			}
+		default:
+			continue
+		}
+		out = append(out, ValidatorAllocationEngineInput{
+			OperatorAddress:    validator.OperatorAddress,
+			ConsensusPublicKey: validator.ConsensusPublicKey,
+			Status:             validator.Status,
+			SelfBond:           validator.SelfBond,
+			NominatorBond:      validator.NominatorBond,
+			CommissionBps:      validator.CommissionPolicy.CurrentRateBps,
+			PerformanceScore:   validator.PerformanceScore,
+			ReputationScore:    validator.ReputationScore,
+			PowerCapBps:        powerCap,
+			Jailed:             validator.Status == StatusJailed,
+			Tombstoned:         validator.Status == StatusTombstoned,
+		})
+	}
+	return out, nil
 }
 
 func SortValidators(validators []ValidatorRecord) []ValidatorRecord {
@@ -662,6 +916,48 @@ func validateValidatorHistory(values []ValidatorHistoryEvent, maxEntries uint32)
 		previousType = value.Type
 	}
 	return nil
+}
+
+func validateCommissionParams(p Params) error {
+	if p.CommissionFloorBps > p.DefaultCommissionBps ||
+		p.DefaultCommissionBps > p.CommissionCeilingBps ||
+		p.CommissionCeilingBps > MaxBasisPoints {
+		return errors.New("validator registry commission floor/default/ceiling are invalid")
+	}
+	if p.CommissionMaxDailyChangeBps == 0 || p.CommissionMaxDailyChangeBps > p.CommissionCeilingBps {
+		return errors.New("validator registry commission daily change is invalid")
+	}
+	return nil
+}
+
+func validatePowerCapSchedule(schedule []ValidatorPowerCapPhase) error {
+	if len(schedule) == 0 {
+		return errors.New("validator registry power cap schedule is required")
+	}
+	previousMax := uint32(0)
+	for idx, phase := range schedule {
+		if phase.PowerCapBps == 0 || phase.PowerCapBps > MaxBasisPoints {
+			return errors.New("validator registry power cap phase is invalid")
+		}
+		if idx < len(schedule)-1 {
+			if phase.MaxActiveValidators <= previousMax {
+				return errors.New("validator registry power cap schedule must be sorted")
+			}
+			previousMax = phase.MaxActiveValidators
+			continue
+		}
+		if phase.MaxActiveValidators != 0 {
+			return errors.New("validator registry final power cap phase must be open-ended")
+		}
+	}
+	return nil
+}
+
+func checkedAddUint64(a, b uint64) (uint64, error) {
+	if ^uint64(0)-a < b {
+		return 0, errors.New("validator registry uint64 overflow")
+	}
+	return a + b, nil
 }
 
 func sortedUptime(values []UptimeSample) []UptimeSample {
