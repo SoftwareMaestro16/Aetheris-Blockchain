@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -61,8 +62,7 @@ func TestPoSDelegationUpdatesValidatorPower(t *testing.T) {
 	))
 	require.NoError(t, err)
 
-	valAddr, err := sdk.ValAddressFromBech32(validator.OperatorAddress)
-	require.NoError(t, err)
+	valAddr := parseValidatorAddress(t, app, validator.OperatorAddress)
 	updatedValidator, err := app.StakingKeeper.GetValidator(ctx, valAddr)
 	require.NoError(t, err)
 	require.Equal(t, beforeTokens.Add(delegation), updatedValidator.Tokens)
@@ -108,8 +108,7 @@ func TestPoSUnbondingFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, undelegateRes.CompletionTime.After(ctx.BlockTime()))
 
-	valAddr, err := sdk.ValAddressFromBech32(validator.OperatorAddress)
-	require.NoError(t, err)
+	valAddr := parseValidatorAddress(t, app, validator.OperatorAddress)
 	remaining, err := app.StakingKeeper.GetDelegation(ctx, delegator, valAddr)
 	require.NoError(t, err)
 	require.True(t, remaining.Shares.IsPositive())
@@ -127,7 +126,7 @@ func TestPoSRedelegationFlow(t *testing.T) {
 
 	source := GetBondedTestValidator(t, app, ctx)
 	dstValAddr, destination := createFundedValidator(t, app, ctx, "phase4-redelegate-dst", sdk.TokensFromConsensusPower(10, sdk.DefaultPowerReduction))
-	require.Equal(t, dstValAddr.String(), destination.OperatorAddress)
+	require.Equal(t, formatValidatorAddress(t, app, dstValAddr), destination.OperatorAddress)
 
 	delegation := sdk.TokensFromConsensusPower(4, sdk.DefaultPowerReduction)
 	redelegate := sdk.TokensFromConsensusPower(2, sdk.DefaultPowerReduction)
@@ -150,8 +149,7 @@ func TestPoSRedelegationFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, redelegateRes.CompletionTime.After(ctx.BlockTime()))
 
-	srcValAddr, err := sdk.ValAddressFromBech32(source.OperatorAddress)
-	require.NoError(t, err)
+	srcValAddr := parseValidatorAddress(t, app, source.OperatorAddress)
 	sourceDelegation, err := app.StakingKeeper.GetDelegation(ctx, delegator, srcValAddr)
 	require.NoError(t, err)
 	require.True(t, sourceDelegation.Shares.IsPositive())
@@ -261,13 +259,12 @@ func TestStakingRewardsDistributionCanBeWithdrawn(t *testing.T) {
 	ctx := app.NewContext(false).WithBlockTime(time.Now().UTC())
 
 	validator := GetBondedTestValidator(t, app, ctx)
-	valAddr, err := sdk.ValAddressFromBech32(validator.OperatorAddress)
-	require.NoError(t, err)
+	valAddr := parseValidatorAddress(t, app, validator.OperatorAddress)
 	delegation := sdk.TokensFromConsensusPower(5, sdk.DefaultPowerReduction)
 	delegator := AddTestAddrsIncremental(app, ctx, 1, delegation.MulRaw(2))[0]
 
 	msgServer := stakingkeeper.NewMsgServerImpl(app.StakingKeeper)
-	_, err = msgServer.Delegate(ctx, stakingtypes.NewMsgDelegate(
+	_, err := msgServer.Delegate(ctx, stakingtypes.NewMsgDelegate(
 		delegator.String(),
 		validator.OperatorAddress,
 		sdk.NewCoin(BondDenom, delegation),
@@ -331,8 +328,9 @@ func createFundedValidator(t *testing.T, app *L1App, ctx sdk.Context, moniker st
 	t.Helper()
 	operator := AddTestAddrsIncremental(app, ctx, 1, selfDelegation.MulRaw(2))[0]
 	valAddr := sdk.ValAddress(operator)
+	valText := formatValidatorAddress(t, app, valAddr)
 	msg, err := stakingtypes.NewMsgCreateValidator(
-		valAddr.String(),
+		valText,
 		ed25519.GenPrivKey().PubKey(),
 		sdk.NewCoin(BondDenom, selfDelegation),
 		stakingtypes.Description{Moniker: moniker},
@@ -351,4 +349,22 @@ func createFundedValidator(t *testing.T, app *L1App, ctx sdk.Context, moniker st
 	validator, err := app.StakingKeeper.GetValidator(ctx, valAddr)
 	require.NoError(t, err)
 	return valAddr, validator
+}
+
+func parseValidatorAddress(t *testing.T, app *L1App, text string) sdk.ValAddress {
+	t.Helper()
+
+	bz, err := app.StakingKeeper.ValidatorAddressCodec().StringToBytes(text)
+	require.NoError(t, err)
+	return sdk.ValAddress(bz)
+}
+
+func formatValidatorAddress(t *testing.T, app *L1App, addr sdk.ValAddress) string {
+	t.Helper()
+
+	text, err := app.StakingKeeper.ValidatorAddressCodec().BytesToString(addr)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(text, ValidatorAddressPrefix), text)
+	require.False(t, strings.HasPrefix(text, "aevaloper"), text)
+	return text
 }

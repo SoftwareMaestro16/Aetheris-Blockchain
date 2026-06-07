@@ -41,11 +41,7 @@ func (Codec) BytesToString(bz []byte) (string, error) {
 	if len(bz) == 0 {
 		return "", nil
 	}
-	raw, err := ToRawPayload(bz)
-	if err != nil {
-		return "", err
-	}
-	return RawPrefix + hex.EncodeToString(raw), nil
+	return FormatUserFriendly(bz)
 }
 
 func (Codec) StringToBytes(text string) ([]byte, error) {
@@ -53,11 +49,11 @@ func (Codec) StringToBytes(text string) ([]byte, error) {
 }
 
 func Format(bz []byte) string {
-	text, err := Codec{}.BytesToString(bz)
+	raw, err := ToRawPayload(bz)
 	if err != nil {
 		panic(err)
 	}
-	return text
+	return RawPrefix + hex.EncodeToString(raw)
 }
 
 func IsSystemRawAddress(text string) bool {
@@ -85,11 +81,15 @@ func FormatSystemRawAddress(raw []byte) string {
 }
 
 func FormatAccAddress(addr sdk.AccAddress) string {
-	return Format(addr.Bytes())
+	return mustFormatUserFriendly(addr.Bytes())
 }
 
 func FormatValAddress(addr sdk.ValAddress) string {
-	return Format(addr.Bytes())
+	return mustFormatUserFriendly(addr.Bytes())
+}
+
+func FormatConsAddress(addr sdk.ConsAddress) string {
+	return mustFormatUserFriendly(addr.Bytes())
 }
 
 func IsZero(bz []byte) bool {
@@ -119,6 +119,14 @@ func FormatUserFriendly(bz []byte) (string, error) {
 	payload = append(payload, userFriendlyVersion)
 	payload = append(payload, raw...)
 	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func mustFormatUserFriendly(bz []byte) string {
+	text, err := FormatUserFriendly(bz)
+	if err != nil {
+		panic(err)
+	}
+	return text
 }
 
 func ParseAccAddress(text string) (sdk.AccAddress, error) {

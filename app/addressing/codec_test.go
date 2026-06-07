@@ -14,7 +14,7 @@ import (
 func TestRawAddressFormat(t *testing.T) {
 	addr := sdk.AccAddress(bytes20(0x11))
 
-	text := addressing.FormatAccAddress(addr)
+	text := addressing.Format(addr)
 
 	require.Len(t, text, addressing.RawAddressLength)
 	require.True(t, strings.HasPrefix(text, "4:"))
@@ -26,19 +26,18 @@ func TestRawAddressFormat(t *testing.T) {
 	require.Equal(t, addr, parsed)
 }
 
-func TestUserFriendlyAddressFormat(t *testing.T) {
+func TestUserFacingAddressFormats(t *testing.T) {
 	addr := sdk.AccAddress(bytes20(0x22))
 
-	text, err := addressing.FormatUserFriendly(addr)
-	require.NoError(t, err)
-
-	require.Len(t, text, addressing.UserFriendlyLength)
-	require.True(t, strings.HasPrefix(text, addressing.UserFriendlyPrefix))
-	require.Regexp(t, `^[A-Za-z0-9_-]{48}$`, text)
+	text := addressing.FormatAccAddress(addr)
+	requireUserFriendlyAddress(t, text)
 
 	parsed, err := addressing.ParseAccAddress(text)
 	require.NoError(t, err)
 	require.Equal(t, addr, parsed)
+
+	requireUserFriendlyAddress(t, addressing.FormatValAddress(sdk.ValAddress(addr)))
+	requireUserFriendlyAddress(t, addressing.FormatConsAddress(sdk.ConsAddress(addr)))
 }
 
 func TestRawLongAddressRoundTrip(t *testing.T) {
@@ -73,7 +72,8 @@ func TestSystemRawAddressRoundTrip(t *testing.T) {
 func TestZeroAddressFormats(t *testing.T) {
 	zero := sdk.AccAddress(bytes20(0))
 
-	require.Equal(t, addressing.ZeroRawAddress, addressing.FormatAccAddress(zero))
+	require.Equal(t, addressing.ZeroRawAddress, addressing.Format(zero))
+	require.Equal(t, addressing.ZeroUserFriendly, addressing.FormatAccAddress(zero))
 	require.True(t, addressing.IsZeroAccAddress(zero))
 
 	userFriendly, err := addressing.FormatUserFriendly(zero)
@@ -156,4 +156,14 @@ func bytes20(fill byte) []byte {
 		out[i] = fill
 	}
 	return out
+}
+
+func requireUserFriendlyAddress(t *testing.T, text string) {
+	t.Helper()
+
+	require.Len(t, text, addressing.UserFriendlyLength)
+	require.True(t, strings.HasPrefix(text, addressing.UserFriendlyPrefix))
+	require.Regexp(t, `^[A-Za-z0-9_-]{48}$`, text)
+	require.False(t, strings.HasPrefix(text, "aevaloper"))
+	require.False(t, strings.HasPrefix(text, "aevalcons"))
 }

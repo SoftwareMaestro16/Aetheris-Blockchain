@@ -351,7 +351,10 @@ func initTestnetFiles(
 		genAccounts = append(genAccounts, authtypes.NewBaseAccount(addr, nil, 0, 0))
 
 		valAddr := sdk.ValAddress(addr)
-		valStr := valAddr.String()
+		valStr, err := clientCtx.TxConfig.SigningContext().ValidatorAddressCodec().BytesToString(valAddr)
+		if err != nil {
+			return err
+		}
 		valTokens := sdk.TokensFromConsensusPower(100, sdk.DefaultPowerReduction)
 		createValMsg, err := stakingtypes.NewMsgCreateValidator(
 			valStr,

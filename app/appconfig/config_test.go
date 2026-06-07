@@ -16,8 +16,8 @@ func TestConfigureSDKSetsSDKBech32CompatibilityAndBondDenom(t *testing.T) {
 
 	require.True(t, strings.HasSuffix(home, ".aetra"), home)
 	require.Equal(t, SDKBech32AccountPrefix, sdk.GetConfig().GetBech32AccountAddrPrefix())
-	require.Equal(t, SDKBech32ValidatorPrefix, sdk.GetConfig().GetBech32ValidatorAddrPrefix())
-	require.Equal(t, SDKBech32ConsensusPrefix, sdk.GetConfig().GetBech32ConsensusAddrPrefix())
+	require.Equal(t, SDKBech32AccountPrefix, sdk.GetConfig().GetBech32ValidatorAddrPrefix())
+	require.Equal(t, SDKBech32AccountPrefix, sdk.GetConfig().GetBech32ConsensusAddrPrefix())
 	require.Equal(t, appparams.BaseDenom, sdk.DefaultBondDenom)
 }
 
@@ -34,4 +34,7 @@ func TestUserFacingAddressFormatIsAEBase64URLNotSDKBech32(t *testing.T) {
 	require.True(t, strings.HasPrefix(userFacing, "AE"))
 	require.Regexp(t, `^[A-Za-z0-9_-]{48}$`, userFacing)
 	require.False(t, strings.HasPrefix(userFacing, SDKBech32AccountPrefix+"1"))
+	require.Equal(t, "AE", AccountAddressPrefix)
+	require.Equal(t, "AE", ValidatorAddressPrefix)
+	require.Equal(t, "AE", ConsensusAddressPrefix)
 }

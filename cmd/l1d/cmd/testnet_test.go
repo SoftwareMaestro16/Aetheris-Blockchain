@@ -133,7 +133,9 @@ func assertPrototypeGenesisProfile(
 		sdk.NewCoin(appparams.BaseDenom, sdk.TokensFromConsensusPower(500, sdk.DefaultPowerReduction)),
 	).Sort()
 	for _, balance := range bankGenState.Balances {
-		require.True(t, strings.HasPrefix(balance.Address, l1app.AccountAddressPrefix), balance.Address)
+		_, err := sdk.AccAddressFromBech32(balance.Address)
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(balance.Address, l1app.SDKBech32AccountPrefix+"1"), balance.Address)
 		require.Equal(t, expectedAccountCoins, balance.Coins)
 	}
 
@@ -166,6 +168,7 @@ func assertPrototypeGenesisProfile(
 		require.Equal(t, expectedSelfDelegation, createValMsg.Value)
 		require.True(t, createValMsg.MinSelfDelegation.IsPositive())
 		require.True(t, strings.HasPrefix(createValMsg.ValidatorAddress, l1app.ValidatorAddressPrefix), createValMsg.ValidatorAddress)
+		require.False(t, strings.HasPrefix(createValMsg.ValidatorAddress, "aevaloper"), createValMsg.ValidatorAddress)
 	}
 }
 
