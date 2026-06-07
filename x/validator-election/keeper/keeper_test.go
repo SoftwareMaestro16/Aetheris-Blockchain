@@ -155,7 +155,7 @@ func applyCandidate(t *testing.T, k *Keeper, fill byte, requestedPower, selfBond
 		Authority: prototype.DefaultAuthority,
 		Application: types.CandidateApplication{
 			OperatorAddress:    testAddress(fill),
-			ConsensusPublicKey: "ed25519:" + testAddress(fill)[60:],
+			ConsensusPublicKey: "ed25519:" + testAddress(fill),
 			RequestedPower:     requestedPower,
 			SelfBond:           selfBond,
 			ValidatorStatus:    validatorregistrytypes.StatusCandidate,

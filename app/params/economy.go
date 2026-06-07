@@ -14,10 +14,10 @@ const (
 	MaxCommissionBps            = int64(2_000)
 	MaxDailyCommissionChangeBps = int64(100)
 
-	MinInflationBps             = int64(100)
+	MinInflationBps             = int64(150)
 	MaxInflationBps             = int64(500)
 	DefaultTargetInflationBps   = int64(300)
-	DefaultTargetStakeBps       = int64(6_700)
+	DefaultTargetStakeBps       = int64(6_000)
 	DefaultResponsivenessBps    = int64(800)
 	DefaultActivityCouplingBps  = int64(100)
 	NormalBurnRatioBps          = int64(3_000)

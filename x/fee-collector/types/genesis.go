@@ -8,13 +8,23 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
+const (
+	FeeSplitBurnMinBps       uint32 = 3_000
+	FeeSplitBurnMaxBps       uint32 = 6_000
+	FeeSplitValidatorsMinBps uint32 = 2_000
+	FeeSplitValidatorsMaxBps uint32 = 4_000
+	FeeSplitTreasuryMinBps   uint32 = 1_000
+	FeeSplitTreasuryMaxBps   uint32 = 2_000
+	FeeSplitProtectionBps    uint32 = 0
+)
+
 func DefaultParams() Params {
 	return Params{
 		BaseDenom:        BaseDenom,
-		TreasuryBps:      4_000,
-		ProtectionBps:    2_000,
-		ValidatorsBps:    3_800,
-		BurnBps:          200,
+		TreasuryBps:      1_500,
+		ProtectionBps:    FeeSplitProtectionBps,
+		ValidatorsBps:    3_500,
+		BurnBps:          5_000,
 		CollectorModule:  CollectorModuleName,
 		TreasuryModule:   TreasuryModuleName,
 		ProtectionModule: ProtectionModuleName,
@@ -85,6 +95,18 @@ func (p Params) Validate() error {
 	}
 	if p.ValidatorsModule != authtypes.FeeCollectorName {
 		return fmt.Errorf("validators_module must be %s", authtypes.FeeCollectorName)
+	}
+	if err := validateUint32Bps("burn_bps", p.BurnBps, FeeSplitBurnMinBps, FeeSplitBurnMaxBps); err != nil {
+		return err
+	}
+	if err := validateUint32Bps("validators_bps", p.ValidatorsBps, FeeSplitValidatorsMinBps, FeeSplitValidatorsMaxBps); err != nil {
+		return err
+	}
+	if err := validateUint32Bps("treasury_bps", p.TreasuryBps, FeeSplitTreasuryMinBps, FeeSplitTreasuryMaxBps); err != nil {
+		return err
+	}
+	if p.ProtectionBps != FeeSplitProtectionBps {
+		return fmt.Errorf("protection_bps must be %d for Aetra fee split v1", FeeSplitProtectionBps)
 	}
 	total := uint64(p.TreasuryBps) + uint64(p.ProtectionBps) + uint64(p.ValidatorsBps) + uint64(p.BurnBps)
 	if total != uint64(BasisPoints) {
@@ -240,6 +262,13 @@ func validateBaseCoins(name, baseDenom string, coins sdk.Coins) error {
 		if coin.Denom != baseDenom {
 			return fmt.Errorf("%s only supports denom %s", name, baseDenom)
 		}
+	}
+	return nil
+}
+
+func validateUint32Bps(name string, value, min, max uint32) error {
+	if value < min || value > max {
+		return fmt.Errorf("%s must be between %d and %d bps", name, min, max)
 	}
 	return nil
 }

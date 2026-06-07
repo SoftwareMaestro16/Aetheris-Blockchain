@@ -33,19 +33,27 @@ func TestDefaultNetworkProfileMatchesAetraBaseModel(t *testing.T) {
 	require.Equal(t, 90, profile.StressFinalityMaxSeconds)
 	require.Equal(t, 120, profile.WorstFinalityTargetSeconds)
 
-	require.Equal(t, int64(200), profile.NormalInflationMinBps)
-	require.Equal(t, int64(500), profile.NormalInflationMaxBps)
-	require.Equal(t, int64(500), profile.DelegatorAPRTargetMinBps)
-	require.Equal(t, int64(800), profile.DelegatorAPRTargetMaxBps)
+	require.Equal(t, int64(5_500), profile.TargetBondedRatioMinBps)
+	require.Equal(t, int64(6_500), profile.TargetBondedRatioMaxBps)
+	require.Equal(t, int64(6_000), profile.TargetBondedRatioDefaultBps)
+	require.Equal(t, int64(300), profile.NormalInflationMinBps)
+	require.Equal(t, int64(400), profile.NormalInflationMaxBps)
+	require.Equal(t, int64(400), profile.DelegatorAPRTargetMinBps)
+	require.Equal(t, int64(700), profile.DelegatorAPRTargetMaxBps)
+	require.Equal(t, int64(600), profile.ValidatorNetAPRTargetMinBps)
+	require.Equal(t, int64(900), profile.ValidatorNetAPRTargetMaxBps)
 }
 
-func TestNetworkProfileKeepsMintTargetInsideNormalInflationRange(t *testing.T) {
+func TestNetworkProfileKeepsMintTargetsInsideEconomicsRanges(t *testing.T) {
 	profile := DefaultNetworkProfile()
 
 	require.GreaterOrEqual(t, DefaultTargetInflationBps, profile.NormalInflationMinBps)
 	require.LessOrEqual(t, DefaultTargetInflationBps, profile.NormalInflationMaxBps)
 	require.LessOrEqual(t, MinInflationBps, profile.NormalInflationMinBps)
 	require.GreaterOrEqual(t, MaxInflationBps, profile.NormalInflationMaxBps)
+	require.Equal(t, profile.TargetBondedRatioDefaultBps, DefaultTargetStakeBps)
+	require.GreaterOrEqual(t, DefaultTargetStakeBps, profile.TargetBondedRatioMinBps)
+	require.LessOrEqual(t, DefaultTargetStakeBps, profile.TargetBondedRatioMaxBps)
 }
 
 func TestNetworkProfileFeeRangesMatchBurnRewardTreasuryModel(t *testing.T) {
@@ -100,12 +108,20 @@ func TestNetworkProfileRejectsUnsafeLatencyTargets(t *testing.T) {
 
 func TestNetworkProfileRejectsUnsafeEconomicTargets(t *testing.T) {
 	profile := DefaultNetworkProfile()
-	profile.NormalInflationMinBps = 100
+	profile.TargetBondedRatioDefaultBps = 6_700
+	require.ErrorContains(t, profile.Validate(), "target bonded ratio")
+
+	profile = DefaultNetworkProfile()
+	profile.NormalInflationMinBps = 200
 	require.ErrorContains(t, profile.Validate(), "normal_inflation")
 
 	profile = DefaultNetworkProfile()
-	profile.DelegatorAPRTargetMaxBps = 1_500
+	profile.DelegatorAPRTargetMaxBps = 800
 	require.ErrorContains(t, profile.Validate(), "delegator_apr_target")
+
+	profile = DefaultNetworkProfile()
+	profile.ValidatorNetAPRTargetMinBps = 500
+	require.ErrorContains(t, profile.Validate(), "validator_net_apr_target")
 
 	profile = DefaultNetworkProfile()
 	profile.FeeBurnShareMinBps = 2_000

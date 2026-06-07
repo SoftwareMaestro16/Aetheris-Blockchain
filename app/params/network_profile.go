@@ -19,32 +19,37 @@ const (
 	AetraValidatorSetRiskWeakOperators     = "weak_operators"
 	AetraValidatorSetRiskInfrastructureQA  = "infrastructure_quality_control"
 
-	AetraValidatorSetMin            = 100
-	AetraValidatorSetGenesisMin     = 100
-	AetraValidatorSetGenesisMax     = 128
-	AetraValidatorSetGrowthMin      = 150
-	AetraValidatorSetGrowthMax      = 200
-	AetraValidatorSetMatureMin      = 250
-	AetraValidatorSetMatureMax      = 300
-	AetraValidatorSetMax            = 300
-	AetraValidatorSetTooLargeStart  = 500
-	AetraBlockTimeMinSeconds        = 5
-	AetraBlockTimeMaxSeconds        = 8
-	AetraNormalFinalityMinSeconds   = 5
-	AetraNormalFinalityMaxSeconds   = 15
-	AetraStressFinalityMinSeconds   = 20
-	AetraStressFinalityMaxSeconds   = 90
-	AetraWorstFinalityTargetSeconds = 120
-	AetraNormalInflationMinBps      = int64(200)
-	AetraNormalInflationMaxBps      = int64(500)
-	AetraDelegatorAPRTargetMinBps   = int64(500)
-	AetraDelegatorAPRTargetMaxBps   = int64(800)
-	AetraFeeBurnShareMinBps         = int64(3_000)
-	AetraFeeBurnShareMaxBps         = int64(6_000)
-	AetraFeeRewardShareMinBps       = int64(2_000)
-	AetraFeeRewardShareMaxBps       = int64(4_000)
-	AetraFeeTreasuryShareMinBps     = int64(1_000)
-	AetraFeeTreasuryShareMaxBps     = int64(2_000)
+	AetraValidatorSetMin             = 100
+	AetraValidatorSetGenesisMin      = 100
+	AetraValidatorSetGenesisMax      = 128
+	AetraValidatorSetGrowthMin       = 150
+	AetraValidatorSetGrowthMax       = 200
+	AetraValidatorSetMatureMin       = 250
+	AetraValidatorSetMatureMax       = 300
+	AetraValidatorSetMax             = 300
+	AetraValidatorSetTooLargeStart   = 500
+	AetraBlockTimeMinSeconds         = 5
+	AetraBlockTimeMaxSeconds         = 8
+	AetraNormalFinalityMinSeconds    = 5
+	AetraNormalFinalityMaxSeconds    = 15
+	AetraStressFinalityMinSeconds    = 20
+	AetraStressFinalityMaxSeconds    = 90
+	AetraWorstFinalityTargetSeconds  = 120
+	AetraTargetBondedRatioMinBps     = int64(5_500)
+	AetraTargetBondedRatioMaxBps     = int64(6_500)
+	AetraTargetBondedRatioDefaultBps = int64(6_000)
+	AetraNormalInflationMinBps       = int64(300)
+	AetraNormalInflationMaxBps       = int64(400)
+	AetraDelegatorAPRTargetMinBps    = int64(400)
+	AetraDelegatorAPRTargetMaxBps    = int64(700)
+	AetraValidatorNetAPRTargetMinBps = int64(600)
+	AetraValidatorNetAPRTargetMaxBps = int64(900)
+	AetraFeeBurnShareMinBps          = int64(3_000)
+	AetraFeeBurnShareMaxBps          = int64(6_000)
+	AetraFeeRewardShareMinBps        = int64(2_000)
+	AetraFeeRewardShareMaxBps        = int64(4_000)
+	AetraFeeTreasuryShareMinBps      = int64(1_000)
+	AetraFeeTreasuryShareMaxBps      = int64(2_000)
 )
 
 type ValidatorSetPhasePolicy struct {
@@ -66,72 +71,82 @@ type ValidatorSetLaunchAssessment struct {
 }
 
 type NetworkProfile struct {
-	ConsensusEngine            string
-	StakingModel               string
-	PrimaryVM                  string
-	OptionalVM                 string
-	HardwareProfile            string
-	ValidatorSetMin            int
-	ValidatorSetGenesisMin     int
-	ValidatorSetGenesisMax     int
-	ValidatorSetGrowthMin      int
-	ValidatorSetGrowthMax      int
-	ValidatorSetMatureMin      int
-	ValidatorSetMatureMax      int
-	ValidatorSetMax            int
-	BlockTimeMinSeconds        int
-	BlockTimeMaxSeconds        int
-	NormalFinalityMinSeconds   int
-	NormalFinalityMaxSeconds   int
-	StressFinalityMinSeconds   int
-	StressFinalityMaxSeconds   int
-	WorstFinalityTargetSeconds int
-	NormalInflationMinBps      int64
-	NormalInflationMaxBps      int64
-	DelegatorAPRTargetMinBps   int64
-	DelegatorAPRTargetMaxBps   int64
-	FeeBurnShareMinBps         int64
-	FeeBurnShareMaxBps         int64
-	FeeRewardShareMinBps       int64
-	FeeRewardShareMaxBps       int64
-	FeeTreasuryShareMinBps     int64
-	FeeTreasuryShareMaxBps     int64
-	ValidatorSetPhases         []ValidatorSetPhasePolicy
+	ConsensusEngine             string
+	StakingModel                string
+	PrimaryVM                   string
+	OptionalVM                  string
+	HardwareProfile             string
+	ValidatorSetMin             int
+	ValidatorSetGenesisMin      int
+	ValidatorSetGenesisMax      int
+	ValidatorSetGrowthMin       int
+	ValidatorSetGrowthMax       int
+	ValidatorSetMatureMin       int
+	ValidatorSetMatureMax       int
+	ValidatorSetMax             int
+	BlockTimeMinSeconds         int
+	BlockTimeMaxSeconds         int
+	NormalFinalityMinSeconds    int
+	NormalFinalityMaxSeconds    int
+	StressFinalityMinSeconds    int
+	StressFinalityMaxSeconds    int
+	WorstFinalityTargetSeconds  int
+	TargetBondedRatioMinBps     int64
+	TargetBondedRatioMaxBps     int64
+	TargetBondedRatioDefaultBps int64
+	NormalInflationMinBps       int64
+	NormalInflationMaxBps       int64
+	DelegatorAPRTargetMinBps    int64
+	DelegatorAPRTargetMaxBps    int64
+	ValidatorNetAPRTargetMinBps int64
+	ValidatorNetAPRTargetMaxBps int64
+	FeeBurnShareMinBps          int64
+	FeeBurnShareMaxBps          int64
+	FeeRewardShareMinBps        int64
+	FeeRewardShareMaxBps        int64
+	FeeTreasuryShareMinBps      int64
+	FeeTreasuryShareMaxBps      int64
+	ValidatorSetPhases          []ValidatorSetPhasePolicy
 }
 
 func DefaultNetworkProfile() NetworkProfile {
 	return NetworkProfile{
-		ConsensusEngine:            AetraConsensusEngine,
-		StakingModel:               AetraStakingModel,
-		PrimaryVM:                  AetraPrimaryVM,
-		OptionalVM:                 AetraOptionalVM,
-		HardwareProfile:            AetraHardwareProfile,
-		ValidatorSetMin:            AetraValidatorSetMin,
-		ValidatorSetGenesisMin:     AetraValidatorSetGenesisMin,
-		ValidatorSetGenesisMax:     AetraValidatorSetGenesisMax,
-		ValidatorSetGrowthMin:      AetraValidatorSetGrowthMin,
-		ValidatorSetGrowthMax:      AetraValidatorSetGrowthMax,
-		ValidatorSetMatureMin:      AetraValidatorSetMatureMin,
-		ValidatorSetMatureMax:      AetraValidatorSetMatureMax,
-		ValidatorSetMax:            AetraValidatorSetMax,
-		BlockTimeMinSeconds:        AetraBlockTimeMinSeconds,
-		BlockTimeMaxSeconds:        AetraBlockTimeMaxSeconds,
-		NormalFinalityMinSeconds:   AetraNormalFinalityMinSeconds,
-		NormalFinalityMaxSeconds:   AetraNormalFinalityMaxSeconds,
-		StressFinalityMinSeconds:   AetraStressFinalityMinSeconds,
-		StressFinalityMaxSeconds:   AetraStressFinalityMaxSeconds,
-		WorstFinalityTargetSeconds: AetraWorstFinalityTargetSeconds,
-		NormalInflationMinBps:      AetraNormalInflationMinBps,
-		NormalInflationMaxBps:      AetraNormalInflationMaxBps,
-		DelegatorAPRTargetMinBps:   AetraDelegatorAPRTargetMinBps,
-		DelegatorAPRTargetMaxBps:   AetraDelegatorAPRTargetMaxBps,
-		FeeBurnShareMinBps:         AetraFeeBurnShareMinBps,
-		FeeBurnShareMaxBps:         AetraFeeBurnShareMaxBps,
-		FeeRewardShareMinBps:       AetraFeeRewardShareMinBps,
-		FeeRewardShareMaxBps:       AetraFeeRewardShareMaxBps,
-		FeeTreasuryShareMinBps:     AetraFeeTreasuryShareMinBps,
-		FeeTreasuryShareMaxBps:     AetraFeeTreasuryShareMaxBps,
-		ValidatorSetPhases:         DefaultValidatorSetPhasePolicies(),
+		ConsensusEngine:             AetraConsensusEngine,
+		StakingModel:                AetraStakingModel,
+		PrimaryVM:                   AetraPrimaryVM,
+		OptionalVM:                  AetraOptionalVM,
+		HardwareProfile:             AetraHardwareProfile,
+		ValidatorSetMin:             AetraValidatorSetMin,
+		ValidatorSetGenesisMin:      AetraValidatorSetGenesisMin,
+		ValidatorSetGenesisMax:      AetraValidatorSetGenesisMax,
+		ValidatorSetGrowthMin:       AetraValidatorSetGrowthMin,
+		ValidatorSetGrowthMax:       AetraValidatorSetGrowthMax,
+		ValidatorSetMatureMin:       AetraValidatorSetMatureMin,
+		ValidatorSetMatureMax:       AetraValidatorSetMatureMax,
+		ValidatorSetMax:             AetraValidatorSetMax,
+		BlockTimeMinSeconds:         AetraBlockTimeMinSeconds,
+		BlockTimeMaxSeconds:         AetraBlockTimeMaxSeconds,
+		NormalFinalityMinSeconds:    AetraNormalFinalityMinSeconds,
+		NormalFinalityMaxSeconds:    AetraNormalFinalityMaxSeconds,
+		StressFinalityMinSeconds:    AetraStressFinalityMinSeconds,
+		StressFinalityMaxSeconds:    AetraStressFinalityMaxSeconds,
+		WorstFinalityTargetSeconds:  AetraWorstFinalityTargetSeconds,
+		TargetBondedRatioMinBps:     AetraTargetBondedRatioMinBps,
+		TargetBondedRatioMaxBps:     AetraTargetBondedRatioMaxBps,
+		TargetBondedRatioDefaultBps: AetraTargetBondedRatioDefaultBps,
+		NormalInflationMinBps:       AetraNormalInflationMinBps,
+		NormalInflationMaxBps:       AetraNormalInflationMaxBps,
+		DelegatorAPRTargetMinBps:    AetraDelegatorAPRTargetMinBps,
+		DelegatorAPRTargetMaxBps:    AetraDelegatorAPRTargetMaxBps,
+		ValidatorNetAPRTargetMinBps: AetraValidatorNetAPRTargetMinBps,
+		ValidatorNetAPRTargetMaxBps: AetraValidatorNetAPRTargetMaxBps,
+		FeeBurnShareMinBps:          AetraFeeBurnShareMinBps,
+		FeeBurnShareMaxBps:          AetraFeeBurnShareMaxBps,
+		FeeRewardShareMinBps:        AetraFeeRewardShareMinBps,
+		FeeRewardShareMaxBps:        AetraFeeRewardShareMaxBps,
+		FeeTreasuryShareMinBps:      AetraFeeTreasuryShareMinBps,
+		FeeTreasuryShareMaxBps:      AetraFeeTreasuryShareMaxBps,
+		ValidatorSetPhases:          DefaultValidatorSetPhasePolicies(),
 	}
 }
 
@@ -199,10 +214,25 @@ func (p NetworkProfile) Validate() error {
 	if p.WorstFinalityTargetSeconds > 120 || p.WorstFinalityTargetSeconds < p.StressFinalityMaxSeconds {
 		return fmt.Errorf("worst finality target must be <= 120 seconds and cover stress finality")
 	}
-	if err := validateBpsRange("normal_inflation", p.NormalInflationMinBps, p.NormalInflationMaxBps, 200, 500); err != nil {
+	if err := validateBpsRange("target_bonded_ratio", p.TargetBondedRatioMinBps, p.TargetBondedRatioMaxBps, 5_500, 6_500); err != nil {
 		return err
 	}
-	if err := validateBpsRange("delegator_apr_target", p.DelegatorAPRTargetMinBps, p.DelegatorAPRTargetMaxBps, 500, 800); err != nil {
+	if p.TargetBondedRatioDefaultBps < p.TargetBondedRatioMinBps || p.TargetBondedRatioDefaultBps > p.TargetBondedRatioMaxBps {
+		return fmt.Errorf("target bonded ratio default must stay within configured range")
+	}
+	if DefaultTargetStakeBps != p.TargetBondedRatioDefaultBps {
+		return fmt.Errorf("default target stake must equal network target bonded ratio default")
+	}
+	if MinInflationBps < 150 || MinInflationBps > 200 || MaxInflationBps > 600 {
+		return fmt.Errorf("mint inflation bounds must stay within 1.5-6 percent")
+	}
+	if err := validateBpsRange("normal_inflation", p.NormalInflationMinBps, p.NormalInflationMaxBps, 300, 400); err != nil {
+		return err
+	}
+	if err := validateBpsRange("delegator_apr_target", p.DelegatorAPRTargetMinBps, p.DelegatorAPRTargetMaxBps, 400, 700); err != nil {
+		return err
+	}
+	if err := validateBpsRange("validator_net_apr_target", p.ValidatorNetAPRTargetMinBps, p.ValidatorNetAPRTargetMaxBps, 600, 900); err != nil {
 		return err
 	}
 	if err := validateBpsRange("fee_burn_share", p.FeeBurnShareMinBps, p.FeeBurnShareMaxBps, 3_000, 6_000); err != nil {

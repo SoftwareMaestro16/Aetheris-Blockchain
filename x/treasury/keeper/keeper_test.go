@@ -27,14 +27,14 @@ func TestFeeDistributionEntersTreasuryAccounting(t *testing.T) {
 	require.NoError(t, app.TreasuryKeeper.SyncIncomingFunds(ctx))
 
 	moduleBalance := app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.TreasuryModuleName))
-	require.Equal(t, sdk.NewCoins(coin(400)), moduleBalance)
+	require.Equal(t, sdk.NewCoins(coin(150)), moduleBalance)
 	allocations, err := app.TreasuryKeeper.GetAllocations(ctx)
 	require.NoError(t, err)
 	require.Equal(t, moduleBalance, allocations.AccountingBalance())
-	require.Equal(t, sdk.NewCoins(coin(200)), allocations.ReserveBalance)
-	require.Equal(t, sdk.NewCoins(coin(120)), allocations.EcosystemBalance)
-	require.Equal(t, sdk.NewCoins(coin(60)), allocations.ValidatorIncentiveBalance)
-	require.Equal(t, sdk.NewCoins(coin(20)), allocations.BurnBalance)
+	require.Equal(t, sdk.NewCoins(coin(76)), allocations.ReserveBalance)
+	require.Equal(t, sdk.NewCoins(coin(45)), allocations.EcosystemBalance)
+	require.Equal(t, sdk.NewCoins(coin(22)), allocations.ValidatorIncentiveBalance)
+	require.Equal(t, sdk.NewCoins(coin(7)), allocations.BurnBalance)
 	require.NoError(t, app.TreasuryKeeper.AssertTreasuryAccountingInvariant(ctx))
 }
 

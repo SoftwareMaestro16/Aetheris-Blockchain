@@ -45,16 +45,16 @@ func TestDistributeFeesRoutesTreasuryProtectionValidatorsAndBurn(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(7), history.Epoch)
-	require.Equal(t, sdk.NewCoins(coin(400)), history.Treasury)
-	require.Equal(t, sdk.NewCoins(coin(200)), history.Protection)
-	require.Equal(t, sdk.NewCoins(coin(380)), history.Validators)
-	require.Equal(t, sdk.NewCoins(coin(20)), history.Burn)
+	require.Equal(t, sdk.NewCoins(coin(150)), history.Treasury)
+	require.True(t, history.Protection.Empty())
+	require.Equal(t, sdk.NewCoins(coin(350)), history.Validators)
+	require.Equal(t, sdk.NewCoins(coin(500)), history.Burn)
 
 	require.Equal(t, sdk.NewCoins(), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.CollectorModuleName)))
-	require.Equal(t, sdk.NewCoins(coin(400)), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.TreasuryModuleName)))
-	require.Equal(t, sdk.NewCoins(coin(200)), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.ProtectionModuleName)))
-	require.Equal(t, validatorsBefore.Add(coin(380)), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName)))
-	require.Equal(t, supplyBefore.Amount.Sub(sdkmath.NewInt(20)), app.BankKeeper.GetSupply(ctx, types.BaseDenom).Amount)
+	require.Equal(t, sdk.NewCoins(coin(150)), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.TreasuryModuleName)))
+	require.Equal(t, sdk.NewCoins(), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(types.ProtectionModuleName)))
+	require.Equal(t, validatorsBefore.Add(coin(350)), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName)))
+	require.Equal(t, supplyBefore.Amount.Sub(sdkmath.NewInt(500)), app.BankKeeper.GetSupply(ctx, types.BaseDenom).Amount)
 	require.NoError(t, collector.AssertModuleAccountingInvariant(ctx))
 }
 
@@ -65,10 +65,10 @@ func TestRoundingRemainderIsDeterministicAndCannotCreateCoins(t *testing.T) {
 	user := l1app.AddTestAddrsWithCoins(t, app, ctx, 1, sdk.NewCoins(coin(100)))[0]
 
 	params := types.DefaultParams()
-	params.TreasuryBps = 3_333
-	params.ProtectionBps = 3_333
-	params.ValidatorsBps = 3_333
-	params.BurnBps = 1
+	params.TreasuryBps = 1_500
+	params.ProtectionBps = 0
+	params.ValidatorsBps = 3_500
+	params.BurnBps = 5_000
 	msgServer := feecollectorkeeper.NewMsgServerImpl(collector)
 	_, err := msgServer.UpdateFeeDistributionParams(ctx, &types.MsgUpdateFeeDistributionParams{
 		Authority: collector.Authority(),
@@ -81,10 +81,10 @@ func TestRoundingRemainderIsDeterministicAndCannotCreateCoins(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, sdk.NewCoins(coin(10)), history.Collected)
-	require.Equal(t, sdk.NewCoins(coin(4)), history.Treasury)
-	require.Equal(t, sdk.NewCoins(coin(3)), history.Protection)
+	require.Equal(t, sdk.NewCoins(coin(2)), history.Treasury)
+	require.True(t, history.Protection.Empty())
 	require.Equal(t, sdk.NewCoins(coin(3)), history.Validators)
-	require.True(t, history.Burn.Empty())
+	require.Equal(t, sdk.NewCoins(coin(5)), history.Burn)
 	require.Equal(t, sdk.NewCoins(coin(1)), history.RoundingRemainder)
 	require.Equal(t, history.Collected, history.Treasury.Add(history.Protection...).Add(history.Validators...).Add(history.Burn...))
 }
