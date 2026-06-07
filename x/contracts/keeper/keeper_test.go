@@ -164,6 +164,13 @@ func TestContractOwnersAdminsAndAssetQueriesUseAEAndRegistryState(t *testing.T) 
 	assetOwner := aeAddress("13")
 	k := NewKeeperWithAccountStatus(testAccountStatus{wallet: accountStatusActive})
 	codeHash := storeContractCode(t, &k, wallet)
+	rawAdmin, err := types.RawAddressForUserAddress(admin)
+	require.NoError(t, err)
+	_, err = k.InstantiateContract(types.MsgInstantiateContract{
+		Creator: wallet, CodeID: codeHash, Admin: rawAdmin, Salt: "raw-admin", Height: 9,
+	})
+	require.ErrorContains(t, err, "AE user-facing")
+
 	created, err := k.InstantiateContract(types.MsgInstantiateContract{
 		Creator: wallet, CodeID: codeHash, Admin: admin, Salt: "asset-contract", Height: 10,
 	})
@@ -196,7 +203,7 @@ func TestOfficialLiquidStakingContractCapabilityAllowsNativeHookOnlyForAuthorize
 	unauthorized := instantiateContract(t, &k, wallet, codeHash, "other-contract", 11, 100, 0)
 
 	capability, err := k.GrantNativeStakingCapability(types.MsgGrantNativeStakingCapability{
-		Authority:           "gov",
+		Authority:           types.DefaultParams().Authority,
 		ContractAddressUser: official.ContractAddressUser,
 		ContractAddressRaw:  official.ContractAddressRaw,
 		PoolID:              "official-pool",
@@ -225,6 +232,49 @@ func TestOfficialLiquidStakingContractCapabilityAllowsNativeHookOnlyForAuthorize
 		Height:             14,
 	})
 	require.ErrorContains(t, err, types.ErrUnauthorized)
+}
+
+func TestNativeStakingCapabilityRejectsBadAuthorityAndFrozenContract(t *testing.T) {
+	wallet := aeAddress("11")
+	k := NewKeeperWithAccountStatus(testAccountStatus{wallet: accountStatusActive})
+	codeHash := storeContractCode(t, &k, wallet)
+	official := instantiateContract(t, &k, wallet, codeHash, "official-frozen", 10, 100, 0)
+
+	_, err := k.GrantNativeStakingCapability(types.MsgGrantNativeStakingCapability{
+		Authority:           wallet,
+		ContractAddressUser: official.ContractAddressUser,
+		ContractAddressRaw:  official.ContractAddressRaw,
+		PoolID:              "official-pool",
+		Height:              11,
+	})
+	require.ErrorContains(t, err, types.ErrUnauthorized)
+
+	_, err = k.GrantNativeStakingCapability(types.MsgGrantNativeStakingCapability{
+		Authority:           types.DefaultParams().Authority,
+		ContractAddressUser: official.ContractAddressUser,
+		ContractAddressRaw:  official.ContractAddressRaw,
+		PoolID:              "official-pool",
+		Height:              12,
+	})
+	require.NoError(t, err)
+
+	gs := k.ExportGenesis()
+	gs.State.Contracts[0].Status = types.ContractStatusFrozen
+	require.NoError(t, k.InitGenesis(gs))
+
+	_, err = k.InjectNativeStaking(types.MsgInjectNativeStaking{
+		CallerContractUser: official.ContractAddressUser,
+		CallerContractRaw:  official.ContractAddressRaw,
+		PoolID:             "official-pool",
+		Amount:             500,
+		Height:             13,
+	})
+	require.ErrorContains(t, err, types.ErrAccountFrozen)
+
+	query, err := k.Contract(types.QueryContractRequest{ContractAddress: official.ContractAddressUser})
+	require.NoError(t, err)
+	require.True(t, query.Found)
+	require.Equal(t, types.ContractStatusFrozen, query.Contract.Status)
 }
 
 func TestInternalMessagesAndExportImportAreDeterministic(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	coretypes "github.com/sovereign-l1/l1/x/aetracore/types"
+	"github.com/sovereign-l1/l1/x/internal/prototype"
 )
 
 const (
@@ -22,6 +23,7 @@ const (
 )
 
 type Params struct {
+	Authority               string
 	Enabled                 bool
 	MaxCodeBytes            uint64
 	MaxContractStorageBytes uint64
@@ -68,6 +70,7 @@ type QueryServer interface {
 
 func DefaultParams() Params {
 	return Params{
+		Authority:               prototype.DefaultAuthority,
 		Enabled:                 true,
 		MaxCodeBytes:            4 * 1024 * 1024,
 		MaxContractStorageBytes: 64 * 1024 * 1024,
@@ -84,6 +87,9 @@ func DefaultGenesis() GenesisState {
 }
 
 func (p Params) Validate() error {
+	if strings.TrimSpace(p.Authority) == "" {
+		return errors.New(ErrInvalidParams + ": authority is required")
+	}
 	if p.MaxCodeBytes == 0 {
 		return errors.New(ErrInvalidParams + ": max code bytes must be positive")
 	}
@@ -92,6 +98,13 @@ func (p Params) Validate() error {
 	}
 	if p.MaxGasPerExecution == 0 {
 		return errors.New(ErrInvalidParams + ": max gas per execution must be positive")
+	}
+	return nil
+}
+
+func (p Params) Authorize(authority string) error {
+	if strings.TrimSpace(authority) != p.Authority {
+		return errors.New(ErrUnauthorized + ": authority mismatch")
 	}
 	return nil
 }
@@ -125,7 +138,8 @@ func ComputeContractsStateRoot(gs GenesisState) string {
 		panic(err)
 	}
 	return coretypes.DeterministicEmptyRootCommitment(coretypes.RootType(ModuleName), fmt.Sprintf(
-		"enabled=%t/code=%020d/storage=%020d/gas=%020d/rent=%020d/state=%s",
+		"authority=%s/enabled=%t/code=%020d/storage=%020d/gas=%020d/rent=%020d/state=%s",
+		gs.Params.Authority,
 		gs.Params.Enabled,
 		gs.Params.MaxCodeBytes,
 		gs.Params.MaxContractStorageBytes,

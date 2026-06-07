@@ -313,8 +313,8 @@ func (k *Keeper) UnfreezeContract(msg types.MsgUnfreezeContract) (types.Contract
 }
 
 func (k *Keeper) GrantNativeStakingCapability(msg types.MsgGrantNativeStakingCapability) (types.ContractCapability, error) {
-	if msg.Authority == "" {
-		return types.ContractCapability{}, errors.New(types.ErrUnauthorized + ": authority is required")
+	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
+		return types.ContractCapability{}, err
 	}
 	if msg.Height == 0 {
 		return types.ContractCapability{}, errors.New("contract capability height must be positive")

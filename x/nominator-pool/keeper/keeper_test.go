@@ -421,6 +421,33 @@ func TestFrozenLimitedOfficialPoolRejectsDeposits(t *testing.T) {
 	require.ErrorContains(t, err, "must be active for deposits")
 }
 
+func TestFrozenLimitedOfficialPoolRejectsPooledStakeInjection(t *testing.T) {
+	k := NewKeeper()
+	pool := createOfficialLiquidStakingPool(t, &k, "official-pool")
+	_, err := k.DepositToOfficialLiquidStaking(types.MsgDepositToOfficialLiquidStaking{
+		Authority:   prototype.DefaultAuthority,
+		PoolID:      pool.PoolID,
+		UserAddress: aePoolAddress(t, "22"),
+		Amount:      types.DefaultMinPoolDeposit,
+		Height:      2,
+	})
+	require.NoError(t, err)
+
+	gs := k.ExportGenesis()
+	gs.State.Pools[0].Status = types.PoolStatusFrozenLimited
+	gs.State.LiquidStakingPools[0].Status = types.PoolStatusFrozenLimited
+	require.NoError(t, k.InitGenesis(gs))
+
+	_, err = k.InjectPooledStake(types.MsgInjectPooledStake{
+		CallerContractUser: pool.ContractAddressUser,
+		PoolID:             pool.PoolID,
+		ValidatorAddress:   aePoolAddress(t, "33"),
+		Amount:             types.DefaultMinPoolDeposit,
+		Height:             3,
+	})
+	require.ErrorContains(t, err, "must be active for stake injection")
+}
+
 func TestWithdrawalBurnsShares(t *testing.T) {
 	k := NewKeeper()
 	pool := createPool(t, &k, "pool-a")
