@@ -154,3 +154,43 @@ Acceptance gate:
 - Missing governance attack threat definition must fail validation.
 - Missing param bounds, delayed activation, emergency review window, explicit authority checks, or event monitoring control must fail validation.
 - Missing malicious proposal rejection, out-of-range rejection, authority spoofing rejection, or delayed activation test must fail validation.
+
+## 29.5 Contract Attack
+
+Threat:
+
+- malicious CosmWasm contract consumes gas/storage, exploits permissions, or causes state bloat.
+
+Controls:
+
+- gas limits;
+- storage pricing;
+- upload policy;
+- migration controls;
+- contract size limit;
+- malicious contract test suite.
+
+Tests:
+
+- gas exhaustion;
+- storage abuse;
+- unauthorized migration;
+- invalid instantiate;
+- export/import with malicious-but-contained contract state.
+
+Security requirements:
+
+- Gas limits must bound instantiate, execute, query, migrate, reply, and submessage paths.
+- Storage pricing must make large writes economically bounded and must prevent free state bloat.
+- Upload policy must be governance-gated or permissioned before security review and must require explicit fees/deposits before permissionless upload.
+- Migration controls must reject unauthorized admin changes, disabled migration paths, and malformed migration targets.
+- Contract size limit must reject oversized wasm code before it can enter contract state.
+- Malicious contract test suite must include infinite loop, large storage write, failed execution rollback, unauthorized migration, invalid instantiate, query no-mutation, and export/import with contained malicious state.
+- Export/import with malicious-but-contained contract state must preserve app hash and must not leak contract access to reserved module funds.
+
+Acceptance gate:
+
+- `BuildAetraContractAttackThreatReport` must pass.
+- Missing contract attack threat definition must fail validation.
+- Missing gas, storage pricing, upload, migration, code size, or malicious contract test-suite control must fail validation.
+- Missing gas exhaustion, storage abuse, unauthorized migration, invalid instantiate, or malicious-contained export/import test must fail validation.

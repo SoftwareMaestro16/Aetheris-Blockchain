@@ -91,7 +91,27 @@ foreach ($term in @(
     'Critical params must activate after a deterministic delay or epoch boundary',
     'Governance and params messages must verify explicit authority and reject spoofed signers',
     'Param update execution must emit stable events with old value, new value, activation height or epoch, authority, and criticality',
-    'BuildAetraGovernanceAttackThreatReport'
+    'BuildAetraGovernanceAttackThreatReport',
+    '29.5 Contract Attack',
+    'malicious CosmWasm contract consumes gas/storage, exploits permissions, or causes state bloat',
+    'gas limits',
+    'storage pricing',
+    'upload policy',
+    'migration controls',
+    'contract size limit',
+    'malicious contract test suite',
+    'gas exhaustion',
+    'storage abuse',
+    'unauthorized migration',
+    'invalid instantiate',
+    'export/import with malicious-but-contained contract state',
+    'Gas limits must bound instantiate, execute, query, migrate, reply, and submessage paths',
+    'Storage pricing must make large writes economically bounded',
+    'Upload policy must be governance-gated or permissioned before security review',
+    'Migration controls must reject unauthorized admin changes',
+    'Contract size limit must reject oversized wasm code',
+    'Export/import with malicious-but-contained contract state must preserve app hash',
+    'BuildAetraContractAttackThreatReport'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "threat model doc missing: $term"
 }
@@ -102,6 +122,7 @@ foreach ($term in @(
     'AetraThreatStakeCentralizationThroughRewards',
     'AetraThreatDowntimeWeakOperators',
     'AetraThreatGovernanceAttack',
+    'AetraThreatContractAttack',
     'AetraThreatControlValidatorSetTarget',
     'AetraThreatControlValidatorPowerCap',
     'AetraThreatControlTopNMonitoring',
@@ -124,6 +145,12 @@ foreach ($term in @(
     'AetraThreatControlEmergencyReviewWindow',
     'AetraThreatControlExplicitAuthorityChecks',
     'AetraThreatControlEventMonitoring',
+    'AetraThreatControlGasLimits',
+    'AetraThreatControlStoragePricing',
+    'AetraThreatControlUploadPolicy',
+    'AetraThreatControlMigrationControls',
+    'AetraThreatControlContractSizeLimit',
+    'AetraThreatControlMaliciousContractTestSuite',
     'AetraThreatSimulationTop10Concentration',
     'AetraThreatSimulationSplitIdentityValidator',
     'AetraThreatSimulationDelegationOverflow',
@@ -139,6 +166,11 @@ foreach ($term in @(
     'AetraThreatTestOutOfRangeValuesRejected',
     'AetraThreatTestAuthoritySpoofingRejected',
     'AetraThreatTestDelayedActivationWorks',
+    'AetraThreatTestContractGasExhaustion',
+    'AetraThreatTestContractStorageAbuse',
+    'AetraThreatTestUnauthorizedMigration',
+    'AetraThreatTestInvalidInstantiate',
+    'AetraThreatTestMaliciousContainedExportImport',
     'AetraValidatorCartelThreatEvidence',
     'DefaultAetraValidatorCartelThreatEvidence',
     'ValidateAetraValidatorCartelThreat',
@@ -158,7 +190,11 @@ foreach ($term in @(
     'AetraGovernanceAttackThreatEvidence',
     'DefaultAetraGovernanceAttackThreatEvidence',
     'ValidateAetraGovernanceAttackThreat',
-    'BuildAetraGovernanceAttackThreatReport'
+    'BuildAetraGovernanceAttackThreatReport',
+    'AetraContractAttackThreatEvidence',
+    'DefaultAetraContractAttackThreatEvidence',
+    'ValidateAetraContractAttackThreat',
+    'BuildAetraContractAttackThreatReport'
   )) {
   Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "threat model gate missing: $term"
 }
@@ -171,7 +207,9 @@ foreach ($term in @(
     'TestDefaultAetraDowntimeWeakOperatorsThreatCoversSection293',
     'TestAetraDowntimeWeakOperatorsThreatRejectsMissingControlsAndTests',
     'TestDefaultAetraGovernanceAttackThreatCoversSection294',
-    'TestAetraGovernanceAttackThreatRejectsMissingControlsAndTests'
+    'TestAetraGovernanceAttackThreatRejectsMissingControlsAndTests',
+    'TestDefaultAetraContractAttackThreatCoversSection295',
+    'TestAetraContractAttackThreatRejectsMissingControlsAndTests'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "threat model tests missing: $term"
 }

@@ -12,6 +12,7 @@ const (
 	AetraThreatStakeCentralizationThroughRewards = "large_validators_grow_faster_because_delegators_chase_apparent_safety_apr"
 	AetraThreatDowntimeWeakOperators             = "too_many_low_quality_validators_reduce_liveness"
 	AetraThreatGovernanceAttack                  = "malicious_proposal_changes_economics_slashing_cap_or_vm_params_dangerously"
+	AetraThreatContractAttack                    = "malicious_cosmwasm_contract_consumes_gas_storage_exploits_permissions_or_causes_state_bloat"
 
 	AetraThreatControlValidatorSetTarget             = "100_300_validator_target"
 	AetraThreatControlValidatorPowerCap              = "validator_power_cap"
@@ -35,6 +36,12 @@ const (
 	AetraThreatControlEmergencyReviewWindow          = "emergency_review_window_for_critical_params"
 	AetraThreatControlExplicitAuthorityChecks        = "explicit_authority_checks"
 	AetraThreatControlEventMonitoring                = "event_monitoring"
+	AetraThreatControlGasLimits                      = "gas_limits"
+	AetraThreatControlStoragePricing                 = "storage_pricing"
+	AetraThreatControlUploadPolicy                   = "upload_policy"
+	AetraThreatControlMigrationControls              = "migration_controls"
+	AetraThreatControlContractSizeLimit              = "contract_size_limit"
+	AetraThreatControlMaliciousContractTestSuite     = "malicious_contract_test_suite"
 
 	AetraThreatSimulationTop10Concentration         = "top_10_concentration_simulation"
 	AetraThreatSimulationSplitIdentityValidator     = "split_identity_validator_simulation"
@@ -52,6 +59,11 @@ const (
 	AetraThreatTestOutOfRangeValuesRejected       = "out_of_range_values_rejected"
 	AetraThreatTestAuthoritySpoofingRejected      = "authority_spoofing_rejected"
 	AetraThreatTestDelayedActivationWorks         = "delayed_activation_works"
+	AetraThreatTestContractGasExhaustion          = "gas_exhaustion"
+	AetraThreatTestContractStorageAbuse           = "storage_abuse"
+	AetraThreatTestUnauthorizedMigration          = "unauthorized_migration"
+	AetraThreatTestInvalidInstantiate             = "invalid_instantiate"
+	AetraThreatTestMaliciousContainedExportImport = "export_import_with_malicious_but_contained_contract_state"
 )
 
 type AetraValidatorCartelThreatEvidence struct {
@@ -116,6 +128,22 @@ type AetraGovernanceAttackThreatEvidence struct {
 }
 
 type AetraGovernanceAttackThreatReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraContractAttackThreatEvidence struct {
+	ModuleName string
+
+	Threats  []string
+	Controls []string
+	Tests    []string
+}
+
+type AetraContractAttackThreatReport struct {
 	ModuleName string
 	Required   int
 	Passed     int
@@ -294,6 +322,44 @@ func BuildAetraGovernanceAttackThreatReport(evidence AetraGovernanceAttackThreat
 	}
 }
 
+func DefaultAetraContractAttackThreatEvidence() AetraContractAttackThreatEvidence {
+	return AetraContractAttackThreatEvidence{
+		ModuleName: AetraThreatModelModuleName,
+		Threats: []string{
+			AetraThreatContractAttack,
+		},
+		Controls: requiredAetraContractAttackControls(),
+		Tests:    requiredAetraContractAttackTests(),
+	}
+}
+
+func ValidateAetraContractAttackThreat(evidence AetraContractAttackThreatEvidence) error {
+	report := BuildAetraContractAttackThreatReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra contract attack threat model failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraContractAttackThreatReport(evidence AetraContractAttackThreatEvidence) AetraContractAttackThreatReport {
+	failed := validateAetraThreatModelModuleName(evidence.ModuleName)
+	passedThreats, failedThreats := validateAetraThreatModelCatalog("threats", evidence.Threats, []string{AetraThreatContractAttack})
+	passedControls, failedControls := validateAetraThreatModelCatalog("controls", evidence.Controls, requiredAetraContractAttackControls())
+	passedTests, failedTests := validateAetraThreatModelCatalog("tests", evidence.Tests, requiredAetraContractAttackTests())
+	failed = append(failed, failedThreats...)
+	failed = append(failed, failedControls...)
+	failed = append(failed, failedTests...)
+
+	sort.Strings(failed)
+	return AetraContractAttackThreatReport{
+		ModuleName: evidence.ModuleName,
+		Required:   12,
+		Passed:     passedThreats + passedControls + passedTests,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
+}
+
 func requiredAetraValidatorCartelControls() []string {
 	return []string{
 		AetraThreatControlValidatorSetTarget,
@@ -369,6 +435,27 @@ func requiredAetraGovernanceAttackTests() []string {
 		AetraThreatTestOutOfRangeValuesRejected,
 		AetraThreatTestAuthoritySpoofingRejected,
 		AetraThreatTestDelayedActivationWorks,
+	}
+}
+
+func requiredAetraContractAttackControls() []string {
+	return []string{
+		AetraThreatControlGasLimits,
+		AetraThreatControlStoragePricing,
+		AetraThreatControlUploadPolicy,
+		AetraThreatControlMigrationControls,
+		AetraThreatControlContractSizeLimit,
+		AetraThreatControlMaliciousContractTestSuite,
+	}
+}
+
+func requiredAetraContractAttackTests() []string {
+	return []string{
+		AetraThreatTestContractGasExhaustion,
+		AetraThreatTestContractStorageAbuse,
+		AetraThreatTestUnauthorizedMigration,
+		AetraThreatTestInvalidInstantiate,
+		AetraThreatTestMaliciousContainedExportImport,
 	}
 }
 
