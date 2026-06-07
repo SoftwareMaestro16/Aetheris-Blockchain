@@ -181,18 +181,81 @@ Acceptance:
 - malicious contracts cannot halt chain;
 - contract state survives export/import.
 
+## Phase 6 - Finality and Performance Profile
+
+Tasks:
+
+- configure block time targets;
+- configure block size/gas limits;
+- profile 100 validator localnet;
+- profile 150-200 validator scenario if feasible;
+- estimate 250-300 validator operational requirements;
+- measure finality under load;
+- measure finality under partial validator failure.
+
+Tests:
+
+- localnet load profile;
+- mempool pressure test;
+- block time measurement;
+- finality measurement;
+- validator failure scenario;
+- restart scenario;
+- state sync/snapshot scenario.
+
+Acceptance:
+
+- normal finality remains within target;
+- stressed finality remains below 120 seconds in healthy majority scenario;
+- node requirements remain medium-level;
+- no excessive consensus payloads.
+
+## Phase 7 - Public Testnet Readiness
+
+Tasks:
+
+- write validator setup docs;
+- write sentry architecture docs;
+- write monitoring docs;
+- publish genesis parameter explanation;
+- publish economic model explanation;
+- publish slashing risk explanation;
+- publish delegation and nomination pool guide;
+- publish CosmWasm developer guide;
+- prepare public dashboards;
+- prepare incident response process.
+
+Tests:
+
+- clean node bootstrap from docs;
+- validator join from docs;
+- snapshot restore from docs;
+- state sync from docs;
+- tx flow smoke tests;
+- governance proposal smoke tests;
+- public RPC/gRPC/REST smoke tests.
+
+Acceptance:
+
+- new validator can join using docs;
+- public endpoints are observable;
+- network can recover from node restarts;
+- core economic and staking flows work end to end.
+
 ## Implementation Contract
 
 The implementation phase gate is `app/params/implementation_phases.go`.
 
 Required catalog properties:
 
-- `DefaultImplementationPhasePlans` must include Phase 0 through Phase 5;
+- `DefaultImplementationPhasePlans` must include Phase 0 through Phase 7;
 - Phase 0 must include baseline audit tasks, deliverables, and current test evidence;
 - Phase 1 must include staking cap tasks, tests, and acceptance checks;
 - Phase 2 must include economics, fee split, burn, treasury, APR, reward smoothing, and supply invariant checks;
 - Phase 3 must include validator score, accountability metrics, objective reward modifier, and consensus-safety checks;
 - Phase 4 must include objective slashing hardening, evidence lifecycle, tombstone, downtime, and stake/share safety checks;
 - Phase 5 must include CosmWasm module wiring, upload policy, gas/size limits, storage pricing, indexer events, developer flow, malicious contract safety, and export/import checks;
+- Phase 6 must include finality, block timing, load profile, validator-failure profile, restart, and state sync/snapshot checks;
+- Phase 7 must include public testnet docs, dashboards, endpoint smoke tests, incident response, and end-to-end economic/staking flow checks;
 - phase items require evidence;
 - missing tasks, deliverables, tests, or acceptance checks fail validation.

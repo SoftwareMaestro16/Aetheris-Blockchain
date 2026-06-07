@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultImplementationPhasePlansCoverPhase0ThroughPhase5(t *testing.T) {
+func TestDefaultImplementationPhasePlansCoverPhase0ThroughPhase7(t *testing.T) {
 	plans := DefaultImplementationPhasePlans()
-	require.Len(t, plans, 6)
+	require.Len(t, plans, 8)
 
 	for _, plan := range plans {
 		report := BuildImplementationPhaseReport(plan)
@@ -165,6 +165,75 @@ func TestImplementationPhaseCosmWasmIntegrationRequiresAllAcceptanceGates(t *tes
 		PhaseAcceptanceContractGasBounded,
 		PhaseAcceptanceMaliciousContractsSafe,
 		PhaseAcceptanceContractStateExportImport,
+	} {
+		require.True(t, ids[requiredID], requiredID)
+	}
+}
+
+func TestImplementationPhaseFinalityPerformanceRequiresAllAcceptanceGates(t *testing.T) {
+	plan := DefaultImplementationPhasePlans()[6]
+	report := BuildImplementationPhaseReport(plan)
+	require.True(t, report.Ready, report.Failed)
+
+	ids := map[string]bool{}
+	for _, item := range plan.Items {
+		ids[item.ID] = true
+	}
+	for _, requiredID := range []string{
+		PhaseTaskConfigureBlockTimeTargets,
+		PhaseTaskConfigureBlockSizeGasLimits,
+		PhaseTaskProfile100ValidatorLocalnet,
+		PhaseTaskProfile150To200Validators,
+		PhaseTaskEstimate250To300Requirements,
+		PhaseTaskMeasureFinalityUnderLoad,
+		PhaseTaskMeasureFinalityUnderValidatorFailure,
+		PhaseTestLocalnetLoadProfile,
+		PhaseTestMempoolPressure,
+		PhaseTestBlockTimeMeasurement,
+		PhaseTestFinalityMeasurement,
+		PhaseTestValidatorFailureScenario,
+		PhaseTestRestartScenario,
+		PhaseTestStateSyncSnapshotScenario,
+		PhaseAcceptanceNormalFinalityWithinTarget,
+		PhaseAcceptanceStressedFinalityUnderLimit,
+		PhaseAcceptanceMediumNodeRequirements,
+		PhaseAcceptanceNoExcessiveConsensusPayloads,
+	} {
+		require.True(t, ids[requiredID], requiredID)
+	}
+}
+
+func TestImplementationPhasePublicTestnetReadinessRequiresAllAcceptanceGates(t *testing.T) {
+	plan := DefaultImplementationPhasePlans()[7]
+	report := BuildImplementationPhaseReport(plan)
+	require.True(t, report.Ready, report.Failed)
+
+	ids := map[string]bool{}
+	for _, item := range plan.Items {
+		ids[item.ID] = true
+	}
+	for _, requiredID := range []string{
+		PhaseTaskWriteValidatorSetupDocs,
+		PhaseTaskWriteSentryArchitectureDocs,
+		PhaseTaskWriteMonitoringDocs,
+		PhaseTaskPublishGenesisParamExplanation,
+		PhaseTaskPublishEconomicModelExplanation,
+		PhaseTaskPublishSlashingRiskExplanation,
+		PhaseTaskPublishDelegationPoolGuide,
+		PhaseTaskPublishCosmWasmDeveloperGuide,
+		PhaseTaskPreparePublicDashboards,
+		PhaseTaskPrepareIncidentResponseProcess,
+		PhaseTestCleanNodeBootstrapDocs,
+		PhaseTestValidatorJoinDocs,
+		PhaseTestSnapshotRestoreDocs,
+		PhaseTestStateSyncDocs,
+		PhaseTestTxFlowSmoke,
+		PhaseTestGovernanceProposalSmoke,
+		PhaseTestPublicEndpointSmoke,
+		PhaseAcceptanceValidatorCanJoinFromDocs,
+		PhaseAcceptancePublicEndpointsObservable,
+		PhaseAcceptanceNetworkRecoversRestarts,
+		PhaseAcceptanceCoreFlowsEndToEnd,
 	} {
 		require.True(t, ids[requiredID], requiredID)
 	}
