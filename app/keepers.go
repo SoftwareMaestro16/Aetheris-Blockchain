@@ -39,82 +39,10 @@ import (
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
+	"github.com/sovereign-l1/l1/app/accounts"
 	aetraaddress "github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/app/keeperconfig"
-	actorregistrykeeper "github.com/sovereign-l1/l1/x/actor-registry/keeper"
-	actorregistrytypes "github.com/sovereign-l1/l1/x/actor-registry/types"
-	aetracorekeeper "github.com/sovereign-l1/l1/x/aetracore/keeper"
-	aetracoretypes "github.com/sovereign-l1/l1/x/aetracore/types"
-	avmschedulerkeeper "github.com/sovereign-l1/l1/x/avm-scheduler/keeper"
-	avmschedulertypes "github.com/sovereign-l1/l1/x/avm-scheduler/types"
-	bridgehubkeeper "github.com/sovereign-l1/l1/x/bridge-hub/keeper"
-	bridgehubtypes "github.com/sovereign-l1/l1/x/bridge-hub/types"
-	burnkeeper "github.com/sovereign-l1/l1/x/burn/keeper"
-	burntypes "github.com/sovereign-l1/l1/x/burn/types"
-	configvotingkeeper "github.com/sovereign-l1/l1/x/config-voting/keeper"
-	configvotingtypes "github.com/sovereign-l1/l1/x/config-voting/types"
-	configkeeper "github.com/sovereign-l1/l1/x/config/keeper"
-	configtypes "github.com/sovereign-l1/l1/x/config/types"
-	constitutionkeeper "github.com/sovereign-l1/l1/x/constitution/keeper"
-	constitutiontypes "github.com/sovereign-l1/l1/x/constitution/types"
-	crosschainregistrykeeper "github.com/sovereign-l1/l1/x/cross-chain-registry/keeper"
-	crosschainregistrytypes "github.com/sovereign-l1/l1/x/cross-chain-registry/types"
-	delegatorprotectionkeeper "github.com/sovereign-l1/l1/x/delegator-protection/keeper"
-	delegatorprotectiontypes "github.com/sovereign-l1/l1/x/delegator-protection/types"
-	dynamiccommissionkeeper "github.com/sovereign-l1/l1/x/dynamic-commission/keeper"
-	dynamiccommissiontypes "github.com/sovereign-l1/l1/x/dynamic-commission/types"
-	emissionskeeper "github.com/sovereign-l1/l1/x/emissions/keeper"
-	emissionstypes "github.com/sovereign-l1/l1/x/emissions/types"
-	nativeevidencekeeper "github.com/sovereign-l1/l1/x/evidence/keeper"
-	nativeevidencetypes "github.com/sovereign-l1/l1/x/evidence/types"
-	feecollectorkeeper "github.com/sovereign-l1/l1/x/fee-collector/keeper"
-	feecollectortypes "github.com/sovereign-l1/l1/x/fee-collector/types"
-	feeskeeper "github.com/sovereign-l1/l1/x/fees/keeper"
-	feestypes "github.com/sovereign-l1/l1/x/fees/types"
-	identityrootkeeper "github.com/sovereign-l1/l1/x/identity-root/keeper"
-	identityroottypes "github.com/sovereign-l1/l1/x/identity-root/types"
-	loadkeeper "github.com/sovereign-l1/l1/x/load/keeper"
-	loadtypes "github.com/sovereign-l1/l1/x/load/types"
-	meshkeeper "github.com/sovereign-l1/l1/x/mesh/keeper"
-	meshtypes "github.com/sovereign-l1/l1/x/mesh/types"
-	mintauthoritykeeper "github.com/sovereign-l1/l1/x/mint-authority/keeper"
-	mintauthoritytypes "github.com/sovereign-l1/l1/x/mint-authority/types"
-	networkingkeeper "github.com/sovereign-l1/l1/x/networking/keeper"
-	networkingtypes "github.com/sovereign-l1/l1/x/networking/types"
-	nominatorpoolkeeper "github.com/sovereign-l1/l1/x/nominator-pool/keeper"
-	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
-	paymentskeeper "github.com/sovereign-l1/l1/x/payments/keeper"
-	paymentstypes "github.com/sovereign-l1/l1/x/payments/types"
-	performancekeeper "github.com/sovereign-l1/l1/x/performance/keeper"
-	performancetypes "github.com/sovereign-l1/l1/x/performance/types"
-	reporterkeeper "github.com/sovereign-l1/l1/x/reporter/keeper"
-	reportertypes "github.com/sovereign-l1/l1/x/reporter/types"
-	reputationkeeper "github.com/sovereign-l1/l1/x/reputation/keeper"
-	reputationtypes "github.com/sovereign-l1/l1/x/reputation/types"
-	routingkeeper "github.com/sovereign-l1/l1/x/routing/keeper"
-	routingtypes "github.com/sovereign-l1/l1/x/routing/types"
-	schedulerkeeper "github.com/sovereign-l1/l1/x/scheduler/keeper"
-	schedulertypes "github.com/sovereign-l1/l1/x/scheduler/types"
-	shardingcoordinatorkeeper "github.com/sovereign-l1/l1/x/sharding-coordinator/keeper"
-	shardingcoordinatortypes "github.com/sovereign-l1/l1/x/sharding-coordinator/types"
-	singlenominatorpoolkeeper "github.com/sovereign-l1/l1/x/single-nominator-pool/keeper"
-	singlenominatorpooltypes "github.com/sovereign-l1/l1/x/single-nominator-pool/types"
-	stakeconcentrationkeeper "github.com/sovereign-l1/l1/x/stake-concentration/keeper"
-	stakeconcentrationtypes "github.com/sovereign-l1/l1/x/stake-concentration/types"
-	storagerentkeeper "github.com/sovereign-l1/l1/x/storage-rent/keeper"
-	storagerenttypes "github.com/sovereign-l1/l1/x/storage-rent/types"
-	systemregistrykeeper "github.com/sovereign-l1/l1/x/system-registry/keeper"
-	systemregistrytypes "github.com/sovereign-l1/l1/x/system-registry/types"
-	treasurykeeper "github.com/sovereign-l1/l1/x/treasury/keeper"
-	treasurytypes "github.com/sovereign-l1/l1/x/treasury/types"
-	validatorelectionkeeper "github.com/sovereign-l1/l1/x/validator-election/keeper"
-	validatorelectiontypes "github.com/sovereign-l1/l1/x/validator-election/types"
-	validatorinsurancekeeper "github.com/sovereign-l1/l1/x/validator-insurance/keeper"
-	validatorinsurancetypes "github.com/sovereign-l1/l1/x/validator-insurance/types"
-	validatorregistrykeeper "github.com/sovereign-l1/l1/x/validator-registry/keeper"
-	validatorregistrytypes "github.com/sovereign-l1/l1/x/validator-registry/types"
-	zoneskeeper "github.com/sovereign-l1/l1/x/zones/keeper"
-	zonestypes "github.com/sovereign-l1/l1/x/zones/types"
+	"github.com/sovereign-l1/l1/app/keeperwiring"
 )
 
 func (app *L1App) initKeepers(
@@ -137,7 +65,7 @@ func (app *L1App) initKeepers(
 		appCodec,
 		runtime.NewKVStoreService(keys[authtypes.StoreKey]),
 		authtypes.ProtoBaseAccount,
-		GetMaccPerms(),
+		accounts.ModuleAccountPermissions(),
 		aetraaddress.Codec{},
 		AccountAddressPrefix,
 		govAuthority,
@@ -148,7 +76,7 @@ func (app *L1App) initKeepers(
 		appCodec,
 		runtime.NewKVStoreService(keys[banktypes.StoreKey]),
 		app.AccountKeeper,
-		BlockedAddresses(),
+		accounts.BlockedAddresses(),
 		govAuthority,
 		logger,
 	)
@@ -254,91 +182,53 @@ func (app *L1App) initKeepers(
 	epochsKeeper := epochskeeper.NewKeeper(runtime.NewKVStoreService(keys[epochstypes.StoreKey]), appCodec)
 	app.EpochsKeeper = &epochsKeeper
 	app.EpochsKeeper.SetHooks(epochstypes.NewMultiEpochHooks())
-	app.ConstitutionKeeper = constitutionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[constitutiontypes.StoreKey]))
-	app.ConfigKeeper = configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey]))
-	app.ConfigVotingKeeper = configvotingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configvotingtypes.StoreKey]))
-	app.SystemRegistryKeeper = systemregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[systemregistrytypes.StoreKey]))
-	app.NativeEvidenceKeeper = nativeevidencekeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nativeevidencetypes.StoreKey]))
-	app.ReporterKeeper = reporterkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[reportertypes.StoreKey]))
-	app.NominatorPoolKeeper = nominatorpoolkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nominatorpooltypes.StoreKey]))
-	app.SingleNominatorPoolKeeper = singlenominatorpoolkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[singlenominatorpooltypes.StoreKey]))
-	app.ValidatorElectionKeeper = validatorelectionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorelectiontypes.StoreKey]))
-	app.ValidatorInsuranceKeeper = validatorinsurancekeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorinsurancetypes.StoreKey]))
-	app.ValidatorRegistryKeeper = validatorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[validatorregistrytypes.StoreKey]))
-	app.BurnKeeper = burnkeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[burntypes.StoreKey]),
-		app.BankKeeper,
-		govAuthority,
-	)
-	app.TreasuryKeeper = treasurykeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[treasurytypes.StoreKey]),
-		app.AccountKeeper,
-		app.BankKeeper,
-		govAuthority,
-	)
-	app.EmissionsKeeper = emissionskeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[emissionstypes.StoreKey]),
-		govAuthority,
-	)
-	app.MintAuthorityKeeper = mintauthoritykeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[mintauthoritytypes.StoreKey]),
-		app.BankKeeper,
-		govAuthority,
-	)
-	app.DelegatorProtectionKeeper = delegatorprotectionkeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[delegatorprotectiontypes.StoreKey]),
-		govAuthority,
-	)
-	app.ReputationKeeper = reputationkeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[reputationtypes.StoreKey]),
-		govAuthority,
-	)
-	app.PerformanceKeeper = performancekeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[performancetypes.StoreKey]),
-		govAuthority,
-	)
-	app.DynamicCommissionKeeper = dynamiccommissionkeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[dynamiccommissiontypes.StoreKey]),
-		govAuthority,
-	)
-	app.StakeConcentrationKeeper = stakeconcentrationkeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[stakeconcentrationtypes.StoreKey]),
-		govAuthority,
-	)
-	app.FeeCollectorKeeper = feecollectorkeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[feecollectortypes.StoreKey]),
-		app.AccountKeeper,
-		app.BankKeeper,
-		govAuthority,
-	)
-	app.FeesKeeper = feeskeeper.NewKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[feestypes.StoreKey]),
-		app.AccountKeeper,
-		app.BankKeeper,
-		app.DistrKeeper,
-		govAuthority,
-	)
-	app.AetraCoreKeeper = aetracorekeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[aetracoretypes.StoreKey]))
-	app.LoadKeeper = loadkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[loadtypes.StoreKey]))
-	app.RoutingKeeper = routingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[routingtypes.StoreKey]))
-	app.ZonesKeeper = zoneskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[zonestypes.StoreKey]))
-	app.MeshKeeper = meshkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[meshtypes.StoreKey]))
-	app.NetworkingKeeper = networkingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[networkingtypes.StoreKey]))
-	app.PaymentsKeeper = paymentskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[paymentstypes.StoreKey]))
-	app.SchedulerKeeper = schedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[schedulertypes.StoreKey]))
-	app.AVMSchedulerKeeper = avmschedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[avmschedulertypes.StoreKey]))
-	app.ActorRegistryKeeper = actorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[actorregistrytypes.StoreKey]))
-	app.StorageRentKeeper = storagerentkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[storagerenttypes.StoreKey]))
-	app.IdentityRootKeeper = identityrootkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[identityroottypes.StoreKey]))
-	app.BridgeHubKeeper = bridgehubkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[bridgehubtypes.StoreKey]))
-	app.CrossChainRegistryKeeper = crosschainregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[crosschainregistrytypes.StoreKey]))
-	app.ShardingCoordinatorKeeper = shardingcoordinatorkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[shardingcoordinatortypes.StoreKey]))
+
+	persistentKeepers := keeperwiring.NewPersistentKeepers(keys)
+	app.ConstitutionKeeper = persistentKeepers.ConstitutionKeeper
+	app.ConfigKeeper = persistentKeepers.ConfigKeeper
+	app.ConfigVotingKeeper = persistentKeepers.ConfigVotingKeeper
+	app.SystemRegistryKeeper = persistentKeepers.SystemRegistryKeeper
+	app.NativeEvidenceKeeper = persistentKeepers.NativeEvidenceKeeper
+	app.ReporterKeeper = persistentKeepers.ReporterKeeper
+	app.NominatorPoolKeeper = persistentKeepers.NominatorPoolKeeper
+	app.SingleNominatorPoolKeeper = persistentKeepers.SingleNominatorPoolKeeper
+	app.ValidatorElectionKeeper = persistentKeepers.ValidatorElectionKeeper
+	app.ValidatorInsuranceKeeper = persistentKeepers.ValidatorInsuranceKeeper
+	app.ValidatorRegistryKeeper = persistentKeepers.ValidatorRegistryKeeper
+	app.AetraCoreKeeper = persistentKeepers.AetraCoreKeeper
+	app.LoadKeeper = persistentKeepers.LoadKeeper
+	app.RoutingKeeper = persistentKeepers.RoutingKeeper
+	app.ZonesKeeper = persistentKeepers.ZonesKeeper
+	app.MeshKeeper = persistentKeepers.MeshKeeper
+	app.NetworkingKeeper = persistentKeepers.NetworkingKeeper
+	app.PaymentsKeeper = persistentKeepers.PaymentsKeeper
+	app.SchedulerKeeper = persistentKeepers.SchedulerKeeper
+	app.AVMSchedulerKeeper = persistentKeepers.AVMSchedulerKeeper
+	app.ActorRegistryKeeper = persistentKeepers.ActorRegistryKeeper
+	app.StorageRentKeeper = persistentKeepers.StorageRentKeeper
+	app.IdentityRootKeeper = persistentKeepers.IdentityRootKeeper
+	app.BridgeHubKeeper = persistentKeepers.BridgeHubKeeper
+	app.CrossChainRegistryKeeper = persistentKeepers.CrossChainRegistryKeeper
+	app.ShardingCoordinatorKeeper = persistentKeepers.ShardingCoordinatorKeeper
+
+	nativeKeepers := keeperwiring.NewNativeKeepers(keeperwiring.NativeKeeperDeps{
+		AppCodec:      appCodec,
+		Keys:          keys,
+		AccountKeeper: app.AccountKeeper,
+		BankKeeper:    app.BankKeeper,
+		DistrKeeper:   app.DistrKeeper,
+		GovAuthority:  govAuthority,
+	})
+	app.BurnKeeper = nativeKeepers.BurnKeeper
+	app.TreasuryKeeper = nativeKeepers.TreasuryKeeper
+	app.EmissionsKeeper = nativeKeepers.EmissionsKeeper
+	app.MintAuthorityKeeper = nativeKeepers.MintAuthorityKeeper
+	app.DelegatorProtectionKeeper = nativeKeepers.DelegatorProtectionKeeper
+	app.ReputationKeeper = nativeKeepers.ReputationKeeper
+	app.PerformanceKeeper = nativeKeepers.PerformanceKeeper
+	app.DynamicCommissionKeeper = nativeKeepers.DynamicCommissionKeeper
+	app.StakeConcentrationKeeper = nativeKeepers.StakeConcentrationKeeper
+	app.FeeCollectorKeeper = nativeKeepers.FeeCollectorKeeper
+	app.FeesKeeper = nativeKeepers.FeesKeeper
 	return txConfig
 }
