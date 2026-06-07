@@ -137,6 +137,44 @@ func TestAetraEconomicsStateSpecRejectsDuplicateUnexpectedAndWrongModule(t *test
 	require.Error(t, ValidateAetraEconomicsStateSpec(evidence))
 }
 
+func TestDefaultAetraEconomicsInflationCurveCoversSection233(t *testing.T) {
+	evidence := DefaultAetraEconomicsInflationCurveEvidence()
+
+	report := BuildAetraEconomicsInflationCurveReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraEconomicsModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 8, report.Required)
+	require.NoError(t, ValidateAetraEconomicsInflationCurve(evidence))
+}
+
+func TestAetraEconomicsInflationCurveRejectsMissingRequiredItems(t *testing.T) {
+	evidence := DefaultAetraEconomicsInflationCurveEvidence()
+	evidence.ModuleName = ""
+	evidence.BondedRatioBelowTargetIncreasesInflation = false
+	evidence.BondedRatioAboveTargetDecreasesInflation = false
+	evidence.InflationNeverBelowMin = false
+	evidence.InflationNeverAboveMax = false
+	evidence.InflationChangePerEpochBounded = false
+	evidence.NoFloatingPoint = false
+	evidence.NoPerBlockInstability = false
+	evidence.AllCalculationsDeterministic = false
+
+	report := BuildAetraEconomicsInflationCurveReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_required")
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveBelowTargetIncreases)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveAboveTargetDecreases)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveNeverBelowMin)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveNeverAboveMax)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveEpochChangeBounded)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveNoFloatingPoint)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveNoPerBlockInstability)
+	require.Contains(t, report.Failed, AetraEconomicsInflationCurveDeterministic)
+	require.Error(t, ValidateAetraEconomicsInflationCurve(evidence))
+}
+
 func removeEconomicsString(values []string, targets ...string) []string {
 	targetSet := map[string]bool{}
 	for _, target := range targets {

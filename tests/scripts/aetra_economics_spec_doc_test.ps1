@@ -1,7 +1,9 @@
 param(
   [string]$Doc = "docs\architecture\aetra-economics-spec.md",
   [string]$Policy = "app\params\aetra_economics_spec.go",
-  [string]$Tests = "app\params\aetra_economics_spec_test.go"
+  [string]$Tests = "app\params\aetra_economics_spec_test.go",
+  [string]$ModuleTypes = "x\aetra-economics\types\state.go",
+  [string]$ModuleTypesTests = "x\aetra-economics\types\state_test.go"
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +24,8 @@ function Assert-Contains {
 $docText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Doc)
 $policyText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Policy)
 $testText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $Tests)
+$moduleTypesText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $ModuleTypes)
+$moduleTypesTestText = Get-Content -Raw -LiteralPath (Resolve-RepoPath $ModuleTypesTests)
 
 foreach ($term in @(
     'x/aetra-economics Module Specification',
@@ -75,7 +79,23 @@ foreach ($term in @(
     'TotalMinted',
     'TotalBurned',
     'NetIssuance',
-    'BuildAetraEconomicsStateSpecReport'
+    'BuildAetraEconomicsStateSpecReport',
+    '23.3 Inflation curve',
+    'if bonded_ratio < target:',
+    'increase inflation gradually',
+    'if bonded_ratio > target:',
+    'decrease inflation gradually',
+    'inflation never below min',
+    'inflation never above max',
+    'inflation change per epoch bounded',
+    'no floating point',
+    'no per-block instability',
+    'all calculations deterministic',
+    'BuildAetraEconomicsInflationCurveReport',
+    'ComputeInflationBps',
+    'ComputeNextInflationBps',
+    'InflationChangeRateBps',
+    'ApplyEpoch'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec doc missing: $term"
 }
@@ -138,7 +158,20 @@ foreach ($term in @(
     'AetraEconomicsStateEpochMintedRewards',
     'AetraEconomicsStateSupplyTotalMinted',
     'AetraEconomicsStateSupplyTotalBurned',
-    'AetraEconomicsStateSupplyNetIssuance'
+    'AetraEconomicsStateSupplyNetIssuance',
+    'AetraEconomicsInflationCurveEvidence',
+    'AetraEconomicsInflationCurveReport',
+    'DefaultAetraEconomicsInflationCurveEvidence',
+    'ValidateAetraEconomicsInflationCurve',
+    'BuildAetraEconomicsInflationCurveReport',
+    'AetraEconomicsInflationCurveBelowTargetIncreases',
+    'AetraEconomicsInflationCurveAboveTargetDecreases',
+    'AetraEconomicsInflationCurveNeverBelowMin',
+    'AetraEconomicsInflationCurveNeverAboveMax',
+    'AetraEconomicsInflationCurveEpochChangeBounded',
+    'AetraEconomicsInflationCurveNoFloatingPoint',
+    'AetraEconomicsInflationCurveNoPerBlockInstability',
+    'AetraEconomicsInflationCurveDeterministic'
   )) {
   Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec policy missing: $term"
 }
@@ -151,9 +184,30 @@ foreach ($term in @(
     'TestAetraEconomicsResponsibilitiesRejectMissingRequiredItems',
     'TestDefaultAetraEconomicsStateSpecCoversSection232',
     'TestAetraEconomicsStateSpecRejectsMissingFields',
-    'TestAetraEconomicsStateSpecRejectsDuplicateUnexpectedAndWrongModule'
+    'TestAetraEconomicsStateSpecRejectsDuplicateUnexpectedAndWrongModule',
+    'TestDefaultAetraEconomicsInflationCurveCoversSection233',
+    'TestAetraEconomicsInflationCurveRejectsMissingRequiredItems'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec tests missing: $term"
+}
+
+foreach ($term in @(
+    'InflationChangeRateBps',
+    'ComputeInflationBps',
+    'ComputeNextInflationBps',
+    'ApplyEpoch',
+    'state.CurrentInflationBps'
+  )) {
+  Assert-Contains -Text $moduleTypesText -Pattern ([regex]::Escape($term)) -Message "aetra economics module types missing: $term"
+}
+
+foreach ($term in @(
+    'TestInflationCurveRespondsToBondedRatio',
+    'TestBoundedInflation',
+    'TestInflationChangePerEpochIsBounded',
+    'TestApplyEpochUsesBoundedInflationStep'
+  )) {
+  Assert-Contains -Text $moduleTypesTestText -Pattern ([regex]::Escape($term)) -Message "aetra economics module tests missing: $term"
 }
 
 Write-Host "aetra economics spec doc test passed"

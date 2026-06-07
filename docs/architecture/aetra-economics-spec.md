@@ -106,3 +106,36 @@ Required catalog properties:
 - `BuildAetraEconomicsStateSpecReport` must reject missing, duplicate, and unexpected state fields;
 - `ValidateAetraEconomicsStateSpec` must reject wrong module identity and incomplete state catalogs;
 - state field coverage must be tested before implementation work is considered complete.
+
+## 23.3 Inflation curve
+
+Inflation should respond to bonded ratio:
+
+```text
+if bonded_ratio < target:
+  increase inflation gradually
+
+if bonded_ratio > target:
+  decrease inflation gradually
+```
+
+Hard requirements:
+
+- inflation never below min;
+- inflation never above max;
+- inflation change per epoch bounded;
+- no floating point;
+- no per-block instability;
+- all calculations deterministic.
+
+### Inflation Curve Implementation Contract
+
+Required catalog properties:
+
+- `AetraEconomicsInflationCurveEvidence` must represent every hard requirement listed in section 23.3;
+- `DefaultAetraEconomicsInflationCurveEvidence` must enable all inflation curve requirements;
+- `BuildAetraEconomicsInflationCurveReport` must require directionality, min/max bounds, bounded epoch changes, integer accounting, epoch-level stability, and determinism;
+- `ValidateAetraEconomicsInflationCurve` must reject missing requirements;
+- `x/aetra-economics/types.ComputeInflationBps` must calculate the deterministic bonded-ratio target without floating point;
+- `x/aetra-economics/types.ComputeNextInflationBps` must move toward the target by no more than `InflationChangeRateBps` per epoch;
+- `x/aetra-economics/types.ApplyEpoch` must use the bounded next-inflation calculation, not an unbounded direct jump to target.

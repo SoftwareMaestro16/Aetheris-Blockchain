@@ -27,6 +27,32 @@ func TestBoundedInflation(t *testing.T) {
 	require.Equal(t, params.InflationMinBps, types.ComputeInflationBps(params, types.BasisPoints))
 }
 
+func TestInflationChangePerEpochIsBounded(t *testing.T) {
+	params := types.DefaultParams(authority)
+	params.InflationChangeRateBps = 25
+
+	increase := types.ComputeNextInflationBps(params, 350, 0)
+	decrease := types.ComputeNextInflationBps(params, 350, types.BasisPoints)
+
+	require.Equal(t, uint32(375), increase)
+	require.Equal(t, uint32(325), decrease)
+	require.LessOrEqual(t, increase-350, params.InflationChangeRateBps)
+	require.LessOrEqual(t, uint32(350)-decrease, params.InflationChangeRateBps)
+}
+
+func TestApplyEpochUsesBoundedInflationStep(t *testing.T) {
+	params := fastEpochParams()
+	params.InflationChangeRateBps = 10
+	state := types.DefaultGenesisState(authority).State
+	state.CurrentInflationBps = 350
+
+	next, summary, err := types.ApplyEpoch(params, state, epochInput(1, 1_000_000_000, 0, 0))
+	require.NoError(t, err)
+	require.Equal(t, uint32(360), summary.InflationBps)
+	require.Equal(t, summary.InflationBps, next.CurrentInflationBps)
+	require.LessOrEqual(t, summary.InflationBps-state.CurrentInflationBps, params.InflationChangeRateBps)
+}
+
 func TestFeeSplitAccounting(t *testing.T) {
 	split, err := types.ComputeFeeSplit(types.DefaultParams(authority), 1_000_000)
 	require.NoError(t, err)

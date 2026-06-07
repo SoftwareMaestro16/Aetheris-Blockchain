@@ -10,19 +10,20 @@ import (
 )
 
 type Params struct {
-	Authority             string `json:"authority"`
-	InflationMinBps       uint32 `json:"inflation_min_bps"`
-	InflationMaxBps       uint32 `json:"inflation_max_bps"`
-	TargetBondedRatioBps  uint32 `json:"target_bonded_ratio_bps"`
-	BurnMinBps            uint32 `json:"burn_min_bps"`
-	BurnMaxBps            uint32 `json:"burn_max_bps"`
-	BurnCurrentBps        uint32 `json:"burn_current_bps"`
-	ValidatorRewardBps    uint32 `json:"validator_reward_bps"`
-	TreasuryBps           uint32 `json:"treasury_bps"`
-	RewardSmoothingWindow uint64 `json:"reward_smoothing_window"`
-	APRTargetMinBps       uint32 `json:"apr_target_min_bps"`
-	APRTargetMaxBps       uint32 `json:"apr_target_max_bps"`
-	EpochsPerYear         uint64 `json:"epochs_per_year"`
+	Authority              string `json:"authority"`
+	InflationMinBps        uint32 `json:"inflation_min_bps"`
+	InflationMaxBps        uint32 `json:"inflation_max_bps"`
+	InflationChangeRateBps uint32 `json:"inflation_change_rate_bps"`
+	TargetBondedRatioBps   uint32 `json:"target_bonded_ratio_bps"`
+	BurnMinBps             uint32 `json:"burn_min_bps"`
+	BurnMaxBps             uint32 `json:"burn_max_bps"`
+	BurnCurrentBps         uint32 `json:"burn_current_bps"`
+	ValidatorRewardBps     uint32 `json:"validator_reward_bps"`
+	TreasuryBps            uint32 `json:"treasury_bps"`
+	RewardSmoothingWindow  uint64 `json:"reward_smoothing_window"`
+	APRTargetMinBps        uint32 `json:"apr_target_min_bps"`
+	APRTargetMaxBps        uint32 `json:"apr_target_max_bps"`
+	EpochsPerYear          uint64 `json:"epochs_per_year"`
 }
 
 type EconomicsState struct {
@@ -116,19 +117,20 @@ type QueryEpochRewardSummaryResponse struct{ Summary EpochRewardSummary }
 
 func DefaultParams(authority string) Params {
 	return Params{
-		Authority:             authority,
-		InflationMinBps:       200,
-		InflationMaxBps:       500,
-		TargetBondedRatioBps:  6_000,
-		BurnMinBps:            3_000,
-		BurnMaxBps:            6_000,
-		BurnCurrentBps:        4_000,
-		ValidatorRewardBps:    4_000,
-		TreasuryBps:           2_000,
-		RewardSmoothingWindow: 7,
-		APRTargetMinBps:       500,
-		APRTargetMaxBps:       800,
-		EpochsPerYear:         6_307_200,
+		Authority:              authority,
+		InflationMinBps:        200,
+		InflationMaxBps:        500,
+		InflationChangeRateBps: 25,
+		TargetBondedRatioBps:   6_000,
+		BurnMinBps:             3_000,
+		BurnMaxBps:             6_000,
+		BurnCurrentBps:         4_000,
+		ValidatorRewardBps:     4_000,
+		TreasuryBps:            2_000,
+		RewardSmoothingWindow:  7,
+		APRTargetMinBps:        500,
+		APRTargetMaxBps:        800,
+		EpochsPerYear:          6_307_200,
 	}
 }
 
@@ -165,6 +167,25 @@ func ComputeInflationBps(params Params, bondedRatioBps uint32) uint32 {
 	gap := uint64(bondedRatioBps - params.TargetBondedRatioBps)
 	room := uint64(midpoint - params.InflationMinBps)
 	return clampBps(uint32(uint64(midpoint)-room*gap/uint64(upperRange)), params.InflationMinBps, params.InflationMaxBps)
+}
+
+func ComputeNextInflationBps(params Params, currentInflationBps, bondedRatioBps uint32) uint32 {
+	target := ComputeInflationBps(params, bondedRatioBps)
+	if target == currentInflationBps {
+		return currentInflationBps
+	}
+	if target > currentInflationBps {
+		delta := target - currentInflationBps
+		if delta > params.InflationChangeRateBps {
+			delta = params.InflationChangeRateBps
+		}
+		return clampBps(currentInflationBps+delta, params.InflationMinBps, params.InflationMaxBps)
+	}
+	delta := currentInflationBps - target
+	if delta > params.InflationChangeRateBps {
+		delta = params.InflationChangeRateBps
+	}
+	return clampBps(currentInflationBps-delta, params.InflationMinBps, params.InflationMaxBps)
 }
 
 func EstimateAPRBps(inflationBps, bondedRatioBps uint32) uint32 {
@@ -210,7 +231,7 @@ func ApplyEpoch(params Params, state EconomicsState, input EpochEconomicsInput) 
 		return EconomicsState{}, EpochRewardSummary{}, ErrInvalidState.Wrap(err.Error())
 	}
 	bondedRatio := ratioBps(input.BondedTokens, input.TotalSupply)
-	inflation := ComputeInflationBps(params, bondedRatio)
+	inflation := ComputeNextInflationBps(params, state.CurrentInflationBps, bondedRatio)
 	estimatedAPR := EstimateAPRBps(inflation, bondedRatio)
 	annualMint, err := mulDivUint64(input.TotalSupply, uint64(inflation), uint64(BasisPoints))
 	if err != nil {
@@ -311,6 +332,9 @@ func (p Params) Validate() error {
 	}
 	if p.InflationMinBps > p.InflationMaxBps || p.InflationMaxBps > BasisPoints {
 		return fmt.Errorf("inflation bounds are invalid")
+	}
+	if p.InflationChangeRateBps == 0 || p.InflationChangeRateBps > BasisPoints {
+		return fmt.Errorf("inflation change rate must be between 1 and %d bps", BasisPoints)
 	}
 	if p.TargetBondedRatioBps == 0 || p.TargetBondedRatioBps >= BasisPoints {
 		return fmt.Errorf("target bonded ratio must be between 1 and %d bps", BasisPoints-1)

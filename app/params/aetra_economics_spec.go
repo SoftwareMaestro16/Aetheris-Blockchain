@@ -55,6 +55,15 @@ const (
 	AetraEconomicsStateSupplyTotalMinted = "TotalMinted"
 	AetraEconomicsStateSupplyTotalBurned = "TotalBurned"
 	AetraEconomicsStateSupplyNetIssuance = "NetIssuance"
+
+	AetraEconomicsInflationCurveBelowTargetIncreases  = "bonded_ratio_below_target_increases_inflation"
+	AetraEconomicsInflationCurveAboveTargetDecreases  = "bonded_ratio_above_target_decreases_inflation"
+	AetraEconomicsInflationCurveNeverBelowMin         = "inflation_never_below_min"
+	AetraEconomicsInflationCurveNeverAboveMax         = "inflation_never_above_max"
+	AetraEconomicsInflationCurveEpochChangeBounded    = "inflation_change_per_epoch_bounded"
+	AetraEconomicsInflationCurveNoFloatingPoint       = "no_floating_point"
+	AetraEconomicsInflationCurveNoPerBlockInstability = "no_per_block_instability"
+	AetraEconomicsInflationCurveDeterministic         = "all_calculations_deterministic"
 )
 
 type AetraEconomicsSpecEvidence struct {
@@ -107,6 +116,27 @@ type AetraEconomicsStateSpecEvidence struct {
 }
 
 type AetraEconomicsStateSpecReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraEconomicsInflationCurveEvidence struct {
+	ModuleName string
+
+	BondedRatioBelowTargetIncreasesInflation bool
+	BondedRatioAboveTargetDecreasesInflation bool
+	InflationNeverBelowMin                   bool
+	InflationNeverAboveMax                   bool
+	InflationChangePerEpochBounded           bool
+	NoFloatingPoint                          bool
+	NoPerBlockInstability                    bool
+	AllCalculationsDeterministic             bool
+}
+
+type AetraEconomicsInflationCurveReport struct {
 	ModuleName string
 	Required   int
 	Passed     int
@@ -300,6 +330,66 @@ func BuildAetraEconomicsStateSpecReport(evidence AetraEconomicsStateSpecEvidence
 		ModuleName: evidence.ModuleName,
 		Required:   len(requiredParams) + len(requiredEpoch) + len(requiredSupply),
 		Passed:     passedParams + passedEpoch + passedSupply,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
+}
+
+func DefaultAetraEconomicsInflationCurveEvidence() AetraEconomicsInflationCurveEvidence {
+	return AetraEconomicsInflationCurveEvidence{
+		ModuleName: AetraEconomicsModuleName,
+
+		BondedRatioBelowTargetIncreasesInflation: true,
+		BondedRatioAboveTargetDecreasesInflation: true,
+		InflationNeverBelowMin:                   true,
+		InflationNeverAboveMax:                   true,
+		InflationChangePerEpochBounded:           true,
+		NoFloatingPoint:                          true,
+		NoPerBlockInstability:                    true,
+		AllCalculationsDeterministic:             true,
+	}
+}
+
+func ValidateAetraEconomicsInflationCurve(evidence AetraEconomicsInflationCurveEvidence) error {
+	report := BuildAetraEconomicsInflationCurveReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra economics inflation curve failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraEconomicsInflationCurveReport(evidence AetraEconomicsInflationCurveEvidence) AetraEconomicsInflationCurveReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != AetraEconomicsModuleName {
+		failed = append(failed, "module_name_must_be_"+AetraEconomicsModuleName)
+	}
+
+	checks := []requirementCheck{
+		{AetraEconomicsInflationCurveBelowTargetIncreases, evidence.BondedRatioBelowTargetIncreasesInflation},
+		{AetraEconomicsInflationCurveAboveTargetDecreases, evidence.BondedRatioAboveTargetDecreasesInflation},
+		{AetraEconomicsInflationCurveNeverBelowMin, evidence.InflationNeverBelowMin},
+		{AetraEconomicsInflationCurveNeverAboveMax, evidence.InflationNeverAboveMax},
+		{AetraEconomicsInflationCurveEpochChangeBounded, evidence.InflationChangePerEpochBounded},
+		{AetraEconomicsInflationCurveNoFloatingPoint, evidence.NoFloatingPoint},
+		{AetraEconomicsInflationCurveNoPerBlockInstability, evidence.NoPerBlockInstability},
+		{AetraEconomicsInflationCurveDeterministic, evidence.AllCalculationsDeterministic},
+	}
+	passed := 0
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraEconomicsInflationCurveReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(checks),
+		Passed:     passed,
 		Failed:     failed,
 		Ready:      len(failed) == 0,
 	}
