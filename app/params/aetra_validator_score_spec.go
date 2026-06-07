@@ -53,6 +53,26 @@ const (
 	AetraValidatorScoreStateScoreJailCount          = "JailCount"
 	AetraValidatorScoreStateScoreSlashCount         = "SlashCount"
 	AetraValidatorScoreStateScoreLastUpdatedHeight  = "LastUpdatedHeight"
+
+	AetraValidatorScoreRequirementDeterministic               = "score_deterministic"
+	AetraValidatorScoreRequirementChainStateOnly              = "score_based_only_on_chain_state"
+	AetraValidatorScoreRequirementExplainable                 = "score_explainable"
+	AetraValidatorScoreRequirementQueryable                   = "score_queryable"
+	AetraValidatorScoreRequirementBounded                     = "score_bounded"
+	AetraValidatorScoreRequirementExportImportSafe            = "score_export_import_safe"
+	AetraValidatorScoreRequirementOverflowUnderflowResistant  = "score_resistant_to_overflow_underflow"
+	AetraValidatorScoreRequiredTestPerfectUptime              = "perfect_uptime_score"
+	AetraValidatorScoreRequiredTestPartialUptime              = "partial_uptime_score"
+	AetraValidatorScoreRequiredTestMissedBlockPenalty         = "missed_block_penalty"
+	AetraValidatorScoreRequiredTestJailPenalty                = "jail_penalty"
+	AetraValidatorScoreRequiredTestSlashPenalty               = "slash_penalty"
+	AetraValidatorScoreRequiredTestGovernanceParticipation    = "governance_participation_score"
+	AetraValidatorScoreRequiredTestConcentrationPenalty       = "concentration_penalty"
+	AetraValidatorScoreRequiredTestRewardModifierBounded      = "reward_modifier_bounded"
+	AetraValidatorScoreRequiredTestScoreCannotGoBelowMin      = "score_cannot_go_below_min"
+	AetraValidatorScoreRequiredTestScoreCannotExceedMax       = "score_cannot_exceed_max"
+	AetraValidatorScoreRequiredTestExportImport               = "export_import"
+	AetraValidatorScoreRequiredTestDeterministicRecomputation = "deterministic_recomputation"
 )
 
 type AetraValidatorScoreSpecEvidence struct {
@@ -118,6 +138,51 @@ type AetraValidatorScoreStateSpecEvidence struct {
 }
 
 type AetraValidatorScoreStateSpecReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraValidatorScoreRequirementsEvidence struct {
+	ModuleName string
+
+	Deterministic              bool
+	BasedOnlyOnChainState      bool
+	Explainable                bool
+	Queryable                  bool
+	Bounded                    bool
+	ExportImportSafe           bool
+	OverflowUnderflowResistant bool
+}
+
+type AetraValidatorScoreRequirementsReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraValidatorScoreTestingRequirementsEvidence struct {
+	ModuleName string
+
+	PerfectUptimeScore           bool
+	PartialUptimeScore           bool
+	MissedBlockPenalty           bool
+	JailPenalty                  bool
+	SlashPenalty                 bool
+	GovernanceParticipationScore bool
+	ConcentrationPenalty         bool
+	RewardModifierBounded        bool
+	ScoreCannotGoBelowMin        bool
+	ScoreCannotExceedMax         bool
+	ExportImport                 bool
+	DeterministicRecomputation   bool
+}
+
+type AetraValidatorScoreTestingRequirementsReport struct {
 	ModuleName string
 	Required   int
 	Passed     int
@@ -384,6 +449,132 @@ func requiredAetraValidatorScoreValidatorScoreFields() []string {
 		AetraValidatorScoreStateScoreJailCount,
 		AetraValidatorScoreStateScoreSlashCount,
 		AetraValidatorScoreStateScoreLastUpdatedHeight,
+	}
+}
+
+func DefaultAetraValidatorScoreRequirementsEvidence() AetraValidatorScoreRequirementsEvidence {
+	return AetraValidatorScoreRequirementsEvidence{
+		ModuleName: AetraValidatorScoreModuleName,
+
+		Deterministic:              true,
+		BasedOnlyOnChainState:      true,
+		Explainable:                true,
+		Queryable:                  true,
+		Bounded:                    true,
+		ExportImportSafe:           true,
+		OverflowUnderflowResistant: true,
+	}
+}
+
+func ValidateAetraValidatorScoreRequirements(evidence AetraValidatorScoreRequirementsEvidence) error {
+	report := BuildAetraValidatorScoreRequirementsReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra validator score requirements failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraValidatorScoreRequirementsReport(evidence AetraValidatorScoreRequirementsEvidence) AetraValidatorScoreRequirementsReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != AetraValidatorScoreModuleName {
+		failed = append(failed, "module_name_must_be_"+AetraValidatorScoreModuleName)
+	}
+
+	checks := []requirementCheck{
+		{AetraValidatorScoreRequirementDeterministic, evidence.Deterministic},
+		{AetraValidatorScoreRequirementChainStateOnly, evidence.BasedOnlyOnChainState},
+		{AetraValidatorScoreRequirementExplainable, evidence.Explainable},
+		{AetraValidatorScoreRequirementQueryable, evidence.Queryable},
+		{AetraValidatorScoreRequirementBounded, evidence.Bounded},
+		{AetraValidatorScoreRequirementExportImportSafe, evidence.ExportImportSafe},
+		{AetraValidatorScoreRequirementOverflowUnderflowResistant, evidence.OverflowUnderflowResistant},
+	}
+	passed := 0
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraValidatorScoreRequirementsReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
+}
+
+func DefaultAetraValidatorScoreTestingRequirementsEvidence() AetraValidatorScoreTestingRequirementsEvidence {
+	return AetraValidatorScoreTestingRequirementsEvidence{
+		ModuleName: AetraValidatorScoreModuleName,
+
+		PerfectUptimeScore:           true,
+		PartialUptimeScore:           true,
+		MissedBlockPenalty:           true,
+		JailPenalty:                  true,
+		SlashPenalty:                 true,
+		GovernanceParticipationScore: true,
+		ConcentrationPenalty:         true,
+		RewardModifierBounded:        true,
+		ScoreCannotGoBelowMin:        true,
+		ScoreCannotExceedMax:         true,
+		ExportImport:                 true,
+		DeterministicRecomputation:   true,
+	}
+}
+
+func ValidateAetraValidatorScoreTestingRequirements(evidence AetraValidatorScoreTestingRequirementsEvidence) error {
+	report := BuildAetraValidatorScoreTestingRequirementsReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra validator score testing requirements failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraValidatorScoreTestingRequirementsReport(evidence AetraValidatorScoreTestingRequirementsEvidence) AetraValidatorScoreTestingRequirementsReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != AetraValidatorScoreModuleName {
+		failed = append(failed, "module_name_must_be_"+AetraValidatorScoreModuleName)
+	}
+
+	checks := []requirementCheck{
+		{AetraValidatorScoreRequiredTestPerfectUptime, evidence.PerfectUptimeScore},
+		{AetraValidatorScoreRequiredTestPartialUptime, evidence.PartialUptimeScore},
+		{AetraValidatorScoreRequiredTestMissedBlockPenalty, evidence.MissedBlockPenalty},
+		{AetraValidatorScoreRequiredTestJailPenalty, evidence.JailPenalty},
+		{AetraValidatorScoreRequiredTestSlashPenalty, evidence.SlashPenalty},
+		{AetraValidatorScoreRequiredTestGovernanceParticipation, evidence.GovernanceParticipationScore},
+		{AetraValidatorScoreRequiredTestConcentrationPenalty, evidence.ConcentrationPenalty},
+		{AetraValidatorScoreRequiredTestRewardModifierBounded, evidence.RewardModifierBounded},
+		{AetraValidatorScoreRequiredTestScoreCannotGoBelowMin, evidence.ScoreCannotGoBelowMin},
+		{AetraValidatorScoreRequiredTestScoreCannotExceedMax, evidence.ScoreCannotExceedMax},
+		{AetraValidatorScoreRequiredTestExportImport, evidence.ExportImport},
+		{AetraValidatorScoreRequiredTestDeterministicRecomputation, evidence.DeterministicRecomputation},
+	}
+	passed := 0
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraValidatorScoreTestingRequirementsReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
 	}
 }
 

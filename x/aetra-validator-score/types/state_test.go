@@ -22,11 +22,45 @@ func TestUptimeAccountingScoresSignedWindow(t *testing.T) {
 	require.Less(t, scores[0].RewardMultiplierBps, types.BasisPoints)
 }
 
+func TestPerfectUptimeScore(t *testing.T) {
+	scores, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{
+		validatorMetrics("val-a", 10_000, 0),
+	})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.Equal(t, types.BasisPoints, scores[0].UptimeScoreBps)
+	require.Equal(t, types.BasisPoints, scores[0].MissedBlockScoreBps)
+}
+
+func TestPartialUptimeScore(t *testing.T) {
+	scores, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{
+		validatorMetrics("val-a", 7_500, 2_500),
+	})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.Equal(t, uint32(7_500), scores[0].UptimeScoreBps)
+	require.Equal(t, uint32(7_500), scores[0].MissedBlockScoreBps)
+	require.Less(t, scores[0].OverallScoreBps, types.BasisPoints)
+}
+
 func TestMissedBlockWindowRejectsImpossibleCounts(t *testing.T) {
 	input := validatorMetrics("val-a", 9_800, 300)
 	input.UptimeWindow = 10_000
 	_, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{input})
 	require.ErrorIs(t, err, types.ErrInvalidScore)
+}
+
+func TestMissedBlockPenaltyReducesRewardModifier(t *testing.T) {
+	perfect := validatorMetrics("val-a", 10_000, 0)
+	missed := validatorMetrics("val-b", 8_000, 2_000)
+
+	scores, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{missed, perfect})
+	require.NoError(t, err)
+	require.Len(t, scores, 2)
+	require.Equal(t, "val-a", scores[0].OperatorAddress)
+	require.Equal(t, "val-b", scores[1].OperatorAddress)
+	require.Less(t, scores[1].MissedBlockScoreBps, scores[0].MissedBlockScoreBps)
+	require.Less(t, scores[1].RewardMultiplierBps, scores[0].RewardMultiplierBps)
 }
 
 func TestScoreUpdateEpochDeterministicAndSorted(t *testing.T) {
@@ -100,6 +134,90 @@ func TestCommissionSelfBondAndConcentrationMetricsAffectScore(t *testing.T) {
 	require.Equal(t, types.ConcentrationStatusOverloaded, scores[0].ConcentrationStatus)
 }
 
+func TestRewardModifierBounded(t *testing.T) {
+	input := validatorMetrics("val-a", 0, 10_000)
+	input.JailEvents = 20
+	input.SlashEvents = []types.SlashEvent{
+		{Height: 1, FractionBps: 5_000, Reason: "double_sign"},
+		{Height: 2, FractionBps: 5_000, Reason: "downtime"},
+	}
+	input.ConcentrationBps = types.BasisPoints
+	input.ConcentrationStatus = types.ConcentrationStatusOverloaded
+
+	params := types.DefaultParams(authority)
+	scores, err := types.ComputeValidatorScores(params, 1, []types.ValidatorMetricInput{input})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.GreaterOrEqual(t, scores[0].RewardMultiplierBps, params.MinRewardMultiplierBps)
+	require.LessOrEqual(t, scores[0].RewardMultiplierBps, types.BasisPoints)
+}
+
+func TestScoreCannotGoBelowMin(t *testing.T) {
+	input := validatorMetrics("val-a", 0, 10_000)
+	input.JailEvents = 20
+	input.SlashEvents = []types.SlashEvent{
+		{Height: 1, FractionBps: 5_000, Reason: "double_sign"},
+		{Height: 2, FractionBps: 5_000, Reason: "downtime"},
+	}
+	input.SelfBond = 0
+	input.CommissionHistory = []types.CommissionPoint{
+		{Epoch: 1, CommissionBps: 0},
+		{Epoch: 2, CommissionBps: types.BasisPoints},
+	}
+	input.GovernanceVotes = 0
+	input.GovernanceProposals = 10
+	input.ConcentrationBps = types.BasisPoints
+	input.ConcentrationStatus = types.ConcentrationStatusOverloaded
+	input.IdentityMetadataComplete = false
+
+	scores, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{input})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.Equal(t, uint32(0), scores[0].UptimeScoreBps)
+	require.Equal(t, uint32(0), scores[0].MissedBlockScoreBps)
+	require.Equal(t, uint32(0), scores[0].JailScoreBps)
+	require.Equal(t, uint32(0), scores[0].SlashHistoryScoreBps)
+	require.Equal(t, uint32(0), scores[0].SelfBondScoreBps)
+	require.Equal(t, uint32(0), scores[0].CommissionScoreBps)
+	require.Equal(t, uint32(0), scores[0].GovernanceScoreBps)
+	require.Equal(t, uint32(0), scores[0].DecentralizationScoreBps)
+	require.LessOrEqual(t, scores[0].OverallScoreBps, types.BasisPoints)
+}
+
+func TestScoreCannotExceedMax(t *testing.T) {
+	scores, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{
+		validatorMetrics("val-a", 10_000, 0),
+	})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	score := scores[0]
+	require.LessOrEqual(t, score.UptimeScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.MissedBlockScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.JailScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.SlashHistoryScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.SelfBondScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.CommissionScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.GovernanceScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.DecentralizationScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.IdentityScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.OverallScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, score.RewardMultiplierBps, types.BasisPoints)
+}
+
+func TestScoreResistsOverflowAndUnderflowInputs(t *testing.T) {
+	input := validatorMetrics("val-a", ^uint64(0)-1, 1)
+	input.UptimeWindow = ^uint64(0)
+	input.JailEvents = ^uint64(0)
+
+	scores, err := types.ComputeValidatorScores(types.DefaultParams(authority), 1, []types.ValidatorMetricInput{input})
+	require.NoError(t, err)
+	require.Len(t, scores, 1)
+	require.LessOrEqual(t, scores[0].UptimeScoreBps, types.BasisPoints)
+	require.LessOrEqual(t, scores[0].MissedBlockScoreBps, types.BasisPoints)
+	require.Equal(t, uint32(0), scores[0].JailScoreBps)
+	require.LessOrEqual(t, scores[0].OverallScoreBps, types.BasisPoints)
+}
+
 func TestPublicMetricsExposeExplorerFriendlyFields(t *testing.T) {
 	input := validatorMetrics("val-a", 9_850, 150)
 	input.JailEvents = 1
@@ -146,6 +264,19 @@ func TestDeterministicScoringIndependentOfInputOrder(t *testing.T) {
 	first, err := types.ComputeValidatorScores(types.DefaultParams(authority), 9, inputs)
 	require.NoError(t, err)
 	second, err := types.ComputeValidatorScores(types.DefaultParams(authority), 9, reversed)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+}
+
+func TestDeterministicRecomputation(t *testing.T) {
+	inputs := []types.ValidatorMetricInput{
+		validatorMetrics("val-b", 9_900, 100),
+		validatorMetrics("val-a", 9_700, 300),
+	}
+
+	first, err := types.ComputeValidatorScores(types.DefaultParams(authority), 11, inputs)
+	require.NoError(t, err)
+	second, err := types.ComputeValidatorScores(types.DefaultParams(authority), 11, inputs)
 	require.NoError(t, err)
 	require.Equal(t, first, second)
 }

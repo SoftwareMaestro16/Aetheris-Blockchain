@@ -109,3 +109,79 @@ Current code uses more explicit field names while preserving the 24.2 intent:
 - `JailCount` maps to `JailEvents`;
 - `SlashCount` maps to `SlashEventCount`;
 - `LastUpdatedHeight` is represented by deterministic score update context and should become an explicit height field if score updates are moved from epoch-only accounting to height-indexed accounting.
+
+## 24.3 Score Requirements
+
+Score must be:
+
+- deterministic;
+- based only on chain state;
+- explainable;
+- queryable;
+- bounded;
+- export/import safe;
+- resistant to overflow/underflow.
+
+### Score Requirements Implementation Contract
+
+The implementation must treat the score as an auditable chain-state product, not as an operator opinion.
+
+Required catalog properties:
+
+- `AetraValidatorScoreRequirementsEvidence` must cover all seven score requirements from section 24.3;
+- `DefaultAetraValidatorScoreRequirementsEvidence` must assert deterministic, chain-state-only, explainable, queryable, bounded, export/import safe, and overflow/underflow resistant scoring;
+- `BuildAetraValidatorScoreRequirementsReport` must reject missing score requirement evidence;
+- `ValidateAetraValidatorScoreRequirements` must fail if any score requirement is not covered.
+
+Concrete module expectations:
+
+- `ComputeValidatorScores` must sort/canonicalize metric inputs before scoring so recomputation is deterministic;
+- score inputs must come from chain state or deterministic module state such as signing info, jail/slash history, governance votes, self-bond, commission history, and concentration state;
+- `ValidatorScore` must expose component scores so wallets and explorers can explain the final `OverallScoreBps`;
+- `QueryValidatorScore`, `QueryPublicValidatorMetrics`, and `QueryAllValidatorScores` must make scores queryable without off-chain interpretation;
+- all score components and reward multipliers must stay inside the `0..10000` bps domain;
+- `GenesisState.Validate` must require canonical score ordering and valid bounded scores for export/import safety;
+- arithmetic must use integer math and saturating/subtracting helpers so penalties cannot overflow or underflow.
+
+## 24.4 Tests
+
+Required tests:
+
+- perfect uptime score;
+- partial uptime score;
+- missed block penalty;
+- jail penalty;
+- slash penalty;
+- governance participation score;
+- concentration penalty;
+- reward modifier bounded;
+- score cannot go below min;
+- score cannot exceed max;
+- export/import;
+- deterministic recomputation.
+
+### Tests Implementation Contract
+
+The testing gate is split between the policy catalog tests, module type tests, and keeper export/import tests.
+
+Required catalog properties:
+
+- `AetraValidatorScoreTestingRequirementsEvidence` must cover all twelve required tests from section 24.4;
+- `DefaultAetraValidatorScoreTestingRequirementsEvidence` must assert each required test category;
+- `BuildAetraValidatorScoreTestingRequirementsReport` must reject missing test coverage evidence;
+- `ValidateAetraValidatorScoreTestingRequirements` must fail if any required test category is not covered.
+
+Required implementation tests:
+
+- `TestPerfectUptimeScore` must prove a validator with all blocks signed receives perfect uptime and missed-block scores;
+- `TestPartialUptimeScore` must prove partial signing produces proportional uptime and missed-block scores;
+- `TestMissedBlockPenaltyReducesRewardModifier` must prove missed blocks reduce objective reward influence;
+- `TestJailHistoryReducesScoreAndRewardMultiplier` must prove jail history lowers score and reward multiplier;
+- `TestSlashHistoryReducesScore` must prove slash events lower slash-history score and overall score;
+- `TestGovernanceParticipationScore` must prove governance participation is calculated from votes/proposals;
+- `TestCommissionSelfBondAndConcentrationMetricsAffectScore` must prove concentration status applies a decentralization penalty;
+- `TestRewardModifierBounded` must prove reward multipliers stay between configured minimum and 10000 bps;
+- `TestScoreCannotGoBelowMin` must prove worst-case penalties saturate instead of underflowing;
+- `TestScoreCannotExceedMax` must prove perfect inputs cannot exceed the maximum bps domain;
+- `TestKeeperExportImportPreservesScores` must prove score state survives export/import;
+- `TestDeterministicRecomputation` must prove repeated scoring with equivalent canonical inputs returns identical results.

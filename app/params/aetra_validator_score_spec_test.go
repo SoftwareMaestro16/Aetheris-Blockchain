@@ -144,6 +144,88 @@ func TestAetraValidatorScoreStateSpecRejectsDuplicateUnexpectedAndWrongModule(t 
 	require.Error(t, ValidateAetraValidatorScoreStateSpec(evidence))
 }
 
+func TestDefaultAetraValidatorScoreRequirementsCoverSection243(t *testing.T) {
+	evidence := DefaultAetraValidatorScoreRequirementsEvidence()
+
+	report := BuildAetraValidatorScoreRequirementsReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraValidatorScoreModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 7, report.Required)
+	require.NoError(t, ValidateAetraValidatorScoreRequirements(evidence))
+}
+
+func TestAetraValidatorScoreRequirementsRejectMissingRequiredItems(t *testing.T) {
+	evidence := DefaultAetraValidatorScoreRequirementsEvidence()
+	evidence.ModuleName = ""
+	evidence.Deterministic = false
+	evidence.BasedOnlyOnChainState = false
+	evidence.Explainable = false
+	evidence.Queryable = false
+	evidence.Bounded = false
+	evidence.ExportImportSafe = false
+	evidence.OverflowUnderflowResistant = false
+
+	report := BuildAetraValidatorScoreRequirementsReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_required")
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementDeterministic)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementChainStateOnly)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementExplainable)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementQueryable)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementBounded)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementExportImportSafe)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequirementOverflowUnderflowResistant)
+	require.Error(t, ValidateAetraValidatorScoreRequirements(evidence))
+}
+
+func TestDefaultAetraValidatorScoreTestingRequirementsCoverSection244(t *testing.T) {
+	evidence := DefaultAetraValidatorScoreTestingRequirementsEvidence()
+
+	report := BuildAetraValidatorScoreTestingRequirementsReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraValidatorScoreModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 12, report.Required)
+	require.NoError(t, ValidateAetraValidatorScoreTestingRequirements(evidence))
+}
+
+func TestAetraValidatorScoreTestingRequirementsRejectMissingRequiredItems(t *testing.T) {
+	evidence := DefaultAetraValidatorScoreTestingRequirementsEvidence()
+	evidence.ModuleName = "x/validator-score"
+	evidence.PerfectUptimeScore = false
+	evidence.PartialUptimeScore = false
+	evidence.MissedBlockPenalty = false
+	evidence.JailPenalty = false
+	evidence.SlashPenalty = false
+	evidence.GovernanceParticipationScore = false
+	evidence.ConcentrationPenalty = false
+	evidence.RewardModifierBounded = false
+	evidence.ScoreCannotGoBelowMin = false
+	evidence.ScoreCannotExceedMax = false
+	evidence.ExportImport = false
+	evidence.DeterministicRecomputation = false
+
+	report := BuildAetraValidatorScoreTestingRequirementsReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_must_be_"+AetraValidatorScoreModuleName)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestPerfectUptime)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestPartialUptime)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestMissedBlockPenalty)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestJailPenalty)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestSlashPenalty)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestGovernanceParticipation)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestConcentrationPenalty)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestRewardModifierBounded)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestScoreCannotGoBelowMin)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestScoreCannotExceedMax)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestExportImport)
+	require.Contains(t, report.Failed, AetraValidatorScoreRequiredTestDeterministicRecomputation)
+	require.Error(t, ValidateAetraValidatorScoreTestingRequirements(evidence))
+}
+
 func removeValidatorScoreString(values []string, targets ...string) []string {
 	targetSet := map[string]bool{}
 	for _, target := range targets {
