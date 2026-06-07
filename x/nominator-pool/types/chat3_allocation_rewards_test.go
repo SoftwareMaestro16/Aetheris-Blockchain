@@ -63,6 +63,42 @@ func TestCHAT3AllocationPlanTouchesBoundedPoolAllocationKeysOnly(t *testing.T) {
 	require.Equal(t, []string{string(PoolAllocationKey("pool-chat3", valA))}, plan.InternalMetadata.TouchedKeys)
 }
 
+func TestCHAT3AllocationPlanAppliesDeterministicBoundedStateTransition(t *testing.T) {
+	params := DefaultParams()
+	valA := chat3AEAddress(0xa1)
+	valB := chat3AEAddress(0xa2)
+	valOther := chat3AEAddress(0xa3)
+	existing := []PoolValidatorAllocation{
+		{PoolID: "pool-chat3", Validator: valA, TargetWeightBps: 25, UpdatedHeight: 10},
+		{PoolID: "pool-other", Validator: valOther, TargetWeightBps: 25, UpdatedHeight: 10},
+	}
+	receipt := PoolRebalanceReceipt{
+		PoolID: "pool-chat3",
+		Epoch:  2,
+		Height: 20,
+		Allocations: []PoolValidatorAllocation{
+			{PoolID: "pool-chat3", Validator: valB, TargetWeightBps: 100},
+			{PoolID: "pool-chat3", Validator: valA, TargetWeightBps: 200},
+		},
+	}
+
+	next, touched, err := ApplyPoolAllocationPlan(params, existing, receipt)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		string(PoolAllocationKey("pool-chat3", valA)),
+		string(PoolAllocationKey("pool-chat3", valB)),
+	}, touched)
+	require.Equal(t, []PoolValidatorAllocation{
+		{PoolID: "pool-chat3", Validator: valA, TargetWeightBps: 200, UpdatedHeight: 20},
+		{PoolID: "pool-chat3", Validator: valB, TargetWeightBps: 100, UpdatedHeight: 20},
+		{PoolID: "pool-other", Validator: valOther, TargetWeightBps: 25, UpdatedHeight: 10},
+	}, next)
+
+	receipt.Allocations[0].TargetWeightBps = params.MaxPoolValidatorAllocationBps + 1
+	_, _, err = ApplyPoolAllocationPlan(params, existing, receipt)
+	require.ErrorContains(t, err, "exceeds configured cap")
+}
+
 func TestCHAT3PoolRewardsDeductCommissionThenPoolFeeAndCapRewards(t *testing.T) {
 	params := DefaultParams()
 	pool := chat3RewardPool()

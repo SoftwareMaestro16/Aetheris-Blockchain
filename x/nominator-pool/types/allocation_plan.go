@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 )
 
@@ -51,4 +52,57 @@ func BuildPoolAllocationPlan(input PoolAllocationPlanInput) (PoolRebalanceReceip
 		return PoolRebalanceReceipt{}, errors.New("pool allocation plan requires at least one positive allocation")
 	}
 	return receipt, nil
+}
+
+func ApplyPoolAllocationPlan(params Params, existing []PoolValidatorAllocation, receipt PoolRebalanceReceipt) ([]PoolValidatorAllocation, []string, error) {
+	if err := params.Validate(); err != nil {
+		return nil, nil, err
+	}
+	if err := validateID("pool allocation transition pool id", receipt.PoolID, params.MaxPoolIDBytes); err != nil {
+		return nil, nil, err
+	}
+	if receipt.Epoch == 0 || receipt.Height == 0 {
+		return nil, nil, errors.New("pool allocation transition epoch and height must be positive")
+	}
+	if len(receipt.Allocations) == 0 {
+		return nil, nil, errors.New("pool allocation transition requires allocations")
+	}
+
+	byKey := make(map[string]PoolValidatorAllocation, len(existing)+len(receipt.Allocations))
+	for _, allocation := range existing {
+		key := allocation.PoolID + "\x00" + allocation.Validator
+		byKey[key] = allocation
+	}
+	touched := make([]string, 0, len(receipt.Allocations))
+	seenPlanKeys := map[string]struct{}{}
+	for _, allocation := range SortPoolValidatorAllocations(receipt.Allocations) {
+		if allocation.PoolID != receipt.PoolID {
+			return nil, nil, errors.New("pool allocation transition allocation pool mismatch")
+		}
+		if err := ValidateUserFacingAEAddress("pool allocation transition validator", allocation.Validator); err != nil {
+			return nil, nil, err
+		}
+		if allocation.TargetWeightBps == 0 {
+			return nil, nil, errors.New("pool allocation transition target weight must be positive")
+		}
+		if allocation.TargetWeightBps > params.MaxPoolValidatorAllocationBps || allocation.TargetWeightBps > params.ValidatorPowerCapBps {
+			return nil, nil, fmt.Errorf("pool allocation transition target weight %d exceeds configured cap", allocation.TargetWeightBps)
+		}
+		allocation.UpdatedHeight = receipt.Height
+		key := allocation.PoolID + "\x00" + allocation.Validator
+		if _, found := seenPlanKeys[key]; found {
+			return nil, nil, errors.New("pool allocation transition duplicate validator")
+		}
+		seenPlanKeys[key] = struct{}{}
+		byKey[key] = allocation
+		touched = append(touched, string(PoolAllocationKey(allocation.PoolID, allocation.Validator)))
+	}
+
+	next := make([]PoolValidatorAllocation, 0, len(byKey))
+	for _, allocation := range byKey {
+		next = append(next, allocation)
+	}
+	next = SortPoolValidatorAllocations(next)
+	sort.Strings(touched)
+	return next, touched, nil
 }
