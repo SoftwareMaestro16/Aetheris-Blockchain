@@ -251,6 +251,64 @@ Required W11 tests:
 - unsupported version rejected safely;
 - lazy migration preserves address and sequence.
 
+## W12 Scalability And Invariants Requirements
+
+W12 ownership:
+
+- invariant registration;
+- bounded-iteration tests;
+- benchmarks/simulations.
+
+W12 tasks:
+
+- Assert no O(N users) BeginBlock/EndBlock paths.
+- Add invariant tests for bank/module accounting, rewards cap, rent, pool
+  shares, validator entry, and direct delegation rejection.
+- Add million-user style simulation for pool shares and reward claims.
+
+W12 depends on all core state modules.
+
+W12 must not touch feature implementation except small instrumentation hooks.
+
+Required W12 tests:
+
+- BeginBlock/EndBlock bounded;
+- reward claim bounded;
+- reputation claim bounded;
+- rent charge bounded;
+- invariant failure fixtures.
+
+## W13 Docs, CLI, Query Surface Requirements
+
+W13 ownership:
+
+- docs;
+- CLI examples;
+- query docs;
+- static doc tests.
+
+W13 tasks:
+
+- Update docs to say normal users stake only through official liquid staking
+  pools.
+- Document validator entry:
+  - `1_000_000 AET`;
+  - solo full self-stake;
+  - pool-backed `400_000/600_000`.
+- Document `100-300` validator range.
+- Document unbonding `18 days`.
+- Document min tx fee `0.003 AET`.
+- Document storage rent and recoverable freeze/unfreeze.
+
+W13 depends on final names from W1/W2/W5.
+
+W13 must not touch keeper logic.
+
+Required W13 tests:
+
+- static doc tests for required terms;
+- command examples compile or are validated.
+
 ## W0 Address Compatibility Requirements
 
 W0 owns:
