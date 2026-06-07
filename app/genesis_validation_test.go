@@ -186,7 +186,7 @@ func TestGenesisRejectsInvalidCoreBankAndStakingState(t *testing.T) {
 		},
 		"zero bank balance address": {
 			mutate: func(app *L1App, genesis GenesisState) {
-				zeroBech32, err := sdk.Bech32ifyAddressBytes(AccountAddressPrefix, bytes.Repeat([]byte{0}, 20))
+				zeroBech32, err := sdk.Bech32ifyAddressBytes(SDKBech32AccountPrefix, bytes.Repeat([]byte{0}, 20))
 				require.NoError(t, err)
 				bankGenesis := banktypes.GetGenesisStateFromAppState(app.AppCodec(), genesis)
 				bankGenesis.Balances = append(bankGenesis.Balances, banktypes.Balance{

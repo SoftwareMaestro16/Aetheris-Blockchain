@@ -67,7 +67,7 @@ func (app *L1App) initKeepers(
 		authtypes.ProtoBaseAccount,
 		accounts.ModuleAccountPermissions(),
 		aetraaddress.Codec{},
-		AccountAddressPrefix,
+		SDKBech32AccountPrefix,
 		govAuthority,
 		authkeeper.WithUnorderedTransactions(true),
 	)

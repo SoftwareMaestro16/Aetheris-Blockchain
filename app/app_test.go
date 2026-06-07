@@ -28,6 +28,9 @@ const fixtureTestAssetDenom = "testtoken"
 
 func TestAetraChainConstants(t *testing.T) {
 	require.Equal(t, "Aetra", appName)
+	require.Equal(t, "ae", SDKBech32AccountPrefix)
+	require.Equal(t, "aevaloper", SDKBech32ValidatorPrefix)
+	require.Equal(t, "aevalcons", SDKBech32ConsensusPrefix)
 	require.Equal(t, "ae", AccountAddressPrefix)
 	require.Equal(t, "aevaloper", ValidatorAddressPrefix)
 	require.Equal(t, "aevalcons", ConsensusAddressPrefix)

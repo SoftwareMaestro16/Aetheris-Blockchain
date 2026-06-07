@@ -10,10 +10,22 @@ import (
 const AppName = appparams.ChainName
 
 const (
-	AccountAddressPrefix   = "ae"
-	ValidatorAddressPrefix = "aevaloper"
-	ConsensusAddressPrefix = "aevalcons"
-	BondDenom              = appparams.BaseDenom
+	// SDKBech32AccountPrefix is a Cosmos SDK compatibility prefix only.
+	// User-facing Aetra addresses use app/addressing's AE... base64url format.
+	SDKBech32AccountPrefix   = "ae"
+	SDKBech32ValidatorPrefix = "aevaloper"
+	SDKBech32ConsensusPrefix = "aevalcons"
+	BondDenom                = appparams.BaseDenom
+)
+
+const (
+	// Deprecated: use SDKBech32AccountPrefix for SDK compatibility code, or
+	// app/addressing FormatUserFriendly/Parse for user-facing addresses.
+	AccountAddressPrefix = SDKBech32AccountPrefix
+	// Deprecated: use SDKBech32ValidatorPrefix.
+	ValidatorAddressPrefix = SDKBech32ValidatorPrefix
+	// Deprecated: use SDKBech32ConsensusPrefix.
+	ConsensusAddressPrefix = SDKBech32ConsensusPrefix
 )
 
 func ConfigureSDK(homeName string) string {
@@ -22,9 +34,9 @@ func ConfigureSDK(homeName string) string {
 		panic(err)
 	}
 	cfg := sdk.GetConfig()
-	cfg.SetBech32PrefixForAccount(AccountAddressPrefix, AccountAddressPrefix+"pub")
-	cfg.SetBech32PrefixForValidator(ValidatorAddressPrefix, ValidatorAddressPrefix+"pub")
-	cfg.SetBech32PrefixForConsensusNode(ConsensusAddressPrefix, ConsensusAddressPrefix+"pub")
+	cfg.SetBech32PrefixForAccount(SDKBech32AccountPrefix, SDKBech32AccountPrefix+"pub")
+	cfg.SetBech32PrefixForValidator(SDKBech32ValidatorPrefix, SDKBech32ValidatorPrefix+"pub")
+	cfg.SetBech32PrefixForConsensusNode(SDKBech32ConsensusPrefix, SDKBech32ConsensusPrefix+"pub")
 	sdk.DefaultBondDenom = BondDenom
 	return nodeHome
 }
