@@ -255,3 +255,95 @@ Required catalog properties:
 - Stage 2 must require slashing to slash underlying raw stake;
 - Stage 2 must require evidence handling to remain correct;
 - missing cap-scope definition, unknown stage, or wrong module identity must fail validation.
+
+## 22.5 Messages
+
+Required governance-only or authority-only messages:
+
+```text
+MsgUpdateStakingPolicyParams
+MsgUpdateValidatorPowerCapSchedule
+MsgSetCommissionPolicy
+```
+
+Optional validator messages:
+
+```text
+MsgRegisterValidatorIdentity
+MsgUpdateValidatorIdentity
+MsgAcknowledgeOverCapWarning
+```
+
+All messages must:
+
+- validate authority;
+- validate signer;
+- reject malformed addresses;
+- reject invalid params;
+- emit events;
+- be covered by tests.
+
+### Message Requirements
+
+`MsgUpdateStakingPolicyParams`, `MsgUpdateValidatorPowerCapSchedule`, and `MsgSetCommissionPolicy` must be governance-only or authority-only. They must never be callable by normal user accounts unless the account is the configured governance/authority address.
+
+Validator identity and warning acknowledgement messages are optional because they support operator metadata and UX, not consensus-critical cap enforcement. If implemented, they must validate the validator/operator signer and must not allow one validator to mutate another validator's identity or warning state.
+
+Malformed bech32 addresses, empty authority, wrong signer, invalid params, duplicate identity keys, and invalid over-cap warning acknowledgements must be rejected before state mutation. Successful messages must emit stable events for explorers, indexers, wallets, governance dashboards, and audit trails.
+
+### Message Implementation Contract
+
+The message gate is `BuildAetraStakingPolicyMessageSpecReport` in `app/params/aetra_staking_policy_spec.go`.
+
+Required catalog properties:
+
+- `DefaultAetraStakingPolicyMessageSpecEvidence` must include all required governance/authority messages;
+- `DefaultAetraStakingPolicyMessageSpecEvidence` must include all optional validator message names if the optional surface is enabled;
+- missing required messages must fail validation;
+- duplicate or unexpected message names must fail validation;
+- every message must validate authority;
+- every message must validate signer;
+- every message must reject malformed addresses;
+- every message must reject invalid params;
+- every message must emit events;
+- every message must be covered by tests;
+- wrong module identity must fail validation.
+
+## 22.6 Queries
+
+Required queries:
+
+```text
+Query/Params
+Query/ValidatorPolicy
+Query/ValidatorEffectivePower
+Query/ValidatorOverflow
+Query/TopNConcentration
+Query/DelegationWarning
+Query/CommissionPolicy
+Query/ConcentrationSnapshot
+Query/NakamotoCoefficient
+```
+
+Query responses must be stable and indexer-friendly.
+
+### Query Requirements
+
+Queries must return deterministic, versionable, indexer-friendly response shapes. Response field names should remain stable across releases unless there is a documented migration. Numeric values must use integer token amounts, basis points, or SDK decimal strings consistently.
+
+`Query/ValidatorPolicy` must expose the full validator policy view for wallets and explorers. `Query/ValidatorEffectivePower` and `Query/ValidatorOverflow` must provide focused views for validator-set and delegation UX. `Query/TopNConcentration`, `Query/ConcentrationSnapshot`, and `Query/NakamotoCoefficient` must support public decentralization dashboards and governance alerts.
+
+`Query/CommissionPolicy` must expose commission floor, max commission, and max daily change. `Query/DelegationWarning` must expose over-cap and near-cap warnings without requiring clients to recompute cap math incorrectly.
+
+### Query Implementation Contract
+
+The query gate is `BuildAetraStakingPolicyQuerySpecReport` in `app/params/aetra_staking_policy_spec.go`.
+
+Required catalog properties:
+
+- `DefaultAetraStakingPolicyQuerySpecEvidence` must include all required query names;
+- missing required queries must fail validation;
+- duplicate or unexpected query names must fail validation;
+- query responses must be stable;
+- query responses must be indexer-friendly;
+- wrong module identity must fail validation.

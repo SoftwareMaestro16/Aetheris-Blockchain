@@ -322,6 +322,111 @@ func TestAetraStakingPolicyEffectivePowerRejectsMissingScopeStageAndModule(t *te
 	require.Contains(t, report.Failed, "module_name_must_be_"+AetraStakingPolicyModuleName)
 }
 
+func TestDefaultAetraStakingPolicyMessageSpecCoversRequiredAndOptionalMessages(t *testing.T) {
+	evidence := DefaultAetraStakingPolicyMessageSpecEvidence()
+
+	report := BuildAetraStakingPolicyMessageSpecReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 12, report.Required)
+	require.Contains(t, evidence.GovernanceAuthorityMessages, AetraStakingPolicyMessageMsgUpdateStakingPolicyParams)
+	require.Contains(t, evidence.GovernanceAuthorityMessages, AetraStakingPolicyMessageMsgUpdateValidatorPowerCapSchedule)
+	require.Contains(t, evidence.GovernanceAuthorityMessages, AetraStakingPolicyMessageMsgSetCommissionPolicy)
+	require.Contains(t, evidence.OptionalValidatorMessages, AetraStakingPolicyMessageMsgRegisterValidatorIdentity)
+	require.Contains(t, evidence.OptionalValidatorMessages, AetraStakingPolicyMessageMsgUpdateValidatorIdentity)
+	require.Contains(t, evidence.OptionalValidatorMessages, AetraStakingPolicyMessageMsgAcknowledgeOverCapWarning)
+	require.NoError(t, ValidateAetraStakingPolicyMessageSpec(evidence))
+}
+
+func TestAetraStakingPolicyMessageSpecRejectsMissingMessagesAndChecks(t *testing.T) {
+	evidence := DefaultAetraStakingPolicyMessageSpecEvidence()
+	evidence.GovernanceAuthorityMessages = removeString(evidence.GovernanceAuthorityMessages, AetraStakingPolicyMessageMsgSetCommissionPolicy)
+	evidence.OptionalValidatorMessages = removeString(evidence.OptionalValidatorMessages, AetraStakingPolicyMessageMsgUpdateValidatorIdentity)
+	evidence.ValidateAuthority = false
+	evidence.ValidateSigner = false
+	evidence.RejectMalformedAddresses = false
+	evidence.RejectInvalidParams = false
+	evidence.EmitEvents = false
+	evidence.CoveredByTests = false
+
+	report := BuildAetraStakingPolicyMessageSpecReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageGovernanceOrAuthorityOnly+"."+AetraStakingPolicyMessageMsgSetCommissionPolicy+":missing")
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageOptionalValidatorMessages+"."+AetraStakingPolicyMessageMsgUpdateValidatorIdentity+":missing")
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageValidateAuthority)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageValidateSigner)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageRejectMalformedAddresses)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageRejectInvalidParams)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageEmitEvents)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageCoveredByTests)
+	require.Error(t, ValidateAetraStakingPolicyMessageSpec(evidence))
+}
+
+func TestAetraStakingPolicyMessageSpecRejectsDuplicateUnexpectedAndWrongModule(t *testing.T) {
+	evidence := DefaultAetraStakingPolicyMessageSpecEvidence()
+	evidence.ModuleName = "x/other"
+	evidence.GovernanceAuthorityMessages = append(evidence.GovernanceAuthorityMessages, AetraStakingPolicyMessageMsgSetCommissionPolicy)
+	evidence.OptionalValidatorMessages = append(evidence.OptionalValidatorMessages, "MsgUnsafeValidatorOverride")
+
+	report := BuildAetraStakingPolicyMessageSpecReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_must_be_"+AetraStakingPolicyModuleName)
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageGovernanceOrAuthorityOnly+"."+AetraStakingPolicyMessageMsgSetCommissionPolicy+":duplicate")
+	require.Contains(t, report.Failed, AetraStakingPolicyMessageOptionalValidatorMessages+".MsgUnsafeValidatorOverride:unexpected")
+}
+
+func TestDefaultAetraStakingPolicyQuerySpecCoversRequiredQueries(t *testing.T) {
+	evidence := DefaultAetraStakingPolicyQuerySpecEvidence()
+
+	report := BuildAetraStakingPolicyQuerySpecReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 11, report.Required)
+	for _, query := range []string{
+		AetraStakingPolicyQueryParams,
+		AetraStakingPolicyQueryValidatorPolicy,
+		AetraStakingPolicyQueryValidatorEffectivePower,
+		AetraStakingPolicyQueryValidatorOverflow,
+		AetraStakingPolicyQueryTopNConcentration,
+		AetraStakingPolicyQueryDelegationWarning,
+		AetraStakingPolicyQueryCommissionPolicy,
+		AetraStakingPolicyQueryConcentrationSnapshot,
+		AetraStakingPolicyQueryNakamotoCoefficient,
+	} {
+		require.Contains(t, evidence.RequiredQueries, query)
+	}
+	require.True(t, evidence.StableResponses)
+	require.True(t, evidence.IndexerFriendlyResponses)
+	require.NoError(t, ValidateAetraStakingPolicyQuerySpec(evidence))
+}
+
+func TestAetraStakingPolicyQuerySpecRejectsMissingUnstableAndNonIndexerFriendlyQueries(t *testing.T) {
+	evidence := DefaultAetraStakingPolicyQuerySpecEvidence()
+	evidence.RequiredQueries = removeString(evidence.RequiredQueries, AetraStakingPolicyQueryValidatorOverflow, AetraStakingPolicyQueryNakamotoCoefficient)
+	evidence.StableResponses = false
+	evidence.IndexerFriendlyResponses = false
+
+	report := BuildAetraStakingPolicyQuerySpecReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "queries."+AetraStakingPolicyQueryValidatorOverflow+":missing")
+	require.Contains(t, report.Failed, "queries."+AetraStakingPolicyQueryNakamotoCoefficient+":missing")
+	require.Contains(t, report.Failed, AetraStakingPolicyQueryStableResponses)
+	require.Contains(t, report.Failed, AetraStakingPolicyQueryIndexerFriendlyResponses)
+	require.Error(t, ValidateAetraStakingPolicyQuerySpec(evidence))
+}
+
+func TestAetraStakingPolicyQuerySpecRejectsDuplicateUnexpectedAndWrongModule(t *testing.T) {
+	evidence := DefaultAetraStakingPolicyQuerySpecEvidence()
+	evidence.ModuleName = ""
+	evidence.RequiredQueries = append(evidence.RequiredQueries, AetraStakingPolicyQueryParams, "Query/UnstableDebug")
+
+	report := BuildAetraStakingPolicyQuerySpecReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_required")
+	require.Contains(t, report.Failed, "queries."+AetraStakingPolicyQueryParams+":duplicate")
+	require.Contains(t, report.Failed, "queries.Query/UnstableDebug:unexpected")
+}
+
 func removeString(values []string, targets ...string) []string {
 	targetSet := map[string]bool{}
 	for _, target := range targets {

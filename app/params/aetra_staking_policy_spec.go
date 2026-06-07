@@ -87,6 +87,35 @@ const (
 	AetraStakingPolicyEffectivePowerSharesCorrect              = "delegation_and_unbonding_shares_remain_correct"
 	AetraStakingPolicyEffectivePowerSlashingRawStake           = "slashing_can_still_slash_underlying_raw_stake"
 	AetraStakingPolicyEffectivePowerEvidenceHandlingCorrect    = "evidence_handling_remains_correct"
+
+	AetraStakingPolicyMessageMsgUpdateStakingPolicyParams       = "MsgUpdateStakingPolicyParams"
+	AetraStakingPolicyMessageMsgUpdateValidatorPowerCapSchedule = "MsgUpdateValidatorPowerCapSchedule"
+	AetraStakingPolicyMessageMsgSetCommissionPolicy             = "MsgSetCommissionPolicy"
+	AetraStakingPolicyMessageMsgRegisterValidatorIdentity       = "MsgRegisterValidatorIdentity"
+	AetraStakingPolicyMessageMsgUpdateValidatorIdentity         = "MsgUpdateValidatorIdentity"
+	AetraStakingPolicyMessageMsgAcknowledgeOverCapWarning       = "MsgAcknowledgeOverCapWarning"
+
+	AetraStakingPolicyMessageGovernanceOrAuthorityOnly = "governance_or_authority_only_messages"
+	AetraStakingPolicyMessageOptionalValidatorMessages = "optional_validator_messages"
+	AetraStakingPolicyMessageValidateAuthority         = "validate_authority"
+	AetraStakingPolicyMessageValidateSigner            = "validate_signer"
+	AetraStakingPolicyMessageRejectMalformedAddresses  = "reject_malformed_addresses"
+	AetraStakingPolicyMessageRejectInvalidParams       = "reject_invalid_params"
+	AetraStakingPolicyMessageEmitEvents                = "emit_events"
+	AetraStakingPolicyMessageCoveredByTests            = "covered_by_tests"
+
+	AetraStakingPolicyQueryParams                  = "Query/Params"
+	AetraStakingPolicyQueryValidatorPolicy         = "Query/ValidatorPolicy"
+	AetraStakingPolicyQueryValidatorEffectivePower = "Query/ValidatorEffectivePower"
+	AetraStakingPolicyQueryValidatorOverflow       = "Query/ValidatorOverflow"
+	AetraStakingPolicyQueryTopNConcentration       = "Query/TopNConcentration"
+	AetraStakingPolicyQueryDelegationWarning       = "Query/DelegationWarning"
+	AetraStakingPolicyQueryCommissionPolicy        = "Query/CommissionPolicy"
+	AetraStakingPolicyQueryConcentrationSnapshot   = "Query/ConcentrationSnapshot"
+	AetraStakingPolicyQueryNakamotoCoefficient     = "Query/NakamotoCoefficient"
+
+	AetraStakingPolicyQueryStableResponses          = "query_responses_stable"
+	AetraStakingPolicyQueryIndexerFriendlyResponses = "query_responses_indexer_friendly"
 )
 
 type AetraStakingPolicySpecEvidence struct {
@@ -194,6 +223,45 @@ type AetraStakingPolicyEffectivePowerEvidence struct {
 type AetraStakingPolicyEffectivePowerReport struct {
 	ModuleName string
 	Stage      string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraStakingPolicyMessageSpecEvidence struct {
+	ModuleName string
+
+	GovernanceAuthorityMessages []string
+	OptionalValidatorMessages   []string
+
+	ValidateAuthority        bool
+	ValidateSigner           bool
+	RejectMalformedAddresses bool
+	RejectInvalidParams      bool
+	EmitEvents               bool
+	CoveredByTests           bool
+}
+
+type AetraStakingPolicyMessageSpecReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraStakingPolicyQuerySpecEvidence struct {
+	ModuleName string
+
+	RequiredQueries []string
+
+	StableResponses          bool
+	IndexerFriendlyResponses bool
+}
+
+type AetraStakingPolicyQuerySpecReport struct {
+	ModuleName string
 	Required   int
 	Passed     int
 	Failed     []string
@@ -662,4 +730,198 @@ func BuildAetraStakingPolicyEffectivePowerReport(evidence AetraStakingPolicyEffe
 		Failed:     failed,
 		Ready:      len(failed) == 0,
 	}
+}
+
+func DefaultAetraStakingPolicyMessageSpecEvidence() AetraStakingPolicyMessageSpecEvidence {
+	return AetraStakingPolicyMessageSpecEvidence{
+		ModuleName: AetraStakingPolicyModuleName,
+		GovernanceAuthorityMessages: []string{
+			AetraStakingPolicyMessageMsgUpdateStakingPolicyParams,
+			AetraStakingPolicyMessageMsgUpdateValidatorPowerCapSchedule,
+			AetraStakingPolicyMessageMsgSetCommissionPolicy,
+		},
+		OptionalValidatorMessages: []string{
+			AetraStakingPolicyMessageMsgRegisterValidatorIdentity,
+			AetraStakingPolicyMessageMsgUpdateValidatorIdentity,
+			AetraStakingPolicyMessageMsgAcknowledgeOverCapWarning,
+		},
+		ValidateAuthority:        true,
+		ValidateSigner:           true,
+		RejectMalformedAddresses: true,
+		RejectInvalidParams:      true,
+		EmitEvents:               true,
+		CoveredByTests:           true,
+	}
+}
+
+func ValidateAetraStakingPolicyMessageSpec(evidence AetraStakingPolicyMessageSpecEvidence) error {
+	report := BuildAetraStakingPolicyMessageSpecReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra staking policy message spec failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraStakingPolicyMessageSpecReport(evidence AetraStakingPolicyMessageSpecEvidence) AetraStakingPolicyMessageSpecReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != AetraStakingPolicyModuleName {
+		failed = append(failed, "module_name_must_be_"+AetraStakingPolicyModuleName)
+	}
+
+	requiredGovMessages := requiredAetraStakingPolicyGovernanceMessages()
+	requiredValidatorMessages := optionalAetraStakingPolicyValidatorMessages()
+	passedGov, failedGov := validateAetraStakingPolicyCatalog(AetraStakingPolicyMessageGovernanceOrAuthorityOnly, evidence.GovernanceAuthorityMessages, requiredGovMessages)
+	passedValidator, failedValidator := validateAetraStakingPolicyCatalog(AetraStakingPolicyMessageOptionalValidatorMessages, evidence.OptionalValidatorMessages, requiredValidatorMessages)
+	failed = append(failed, failedGov...)
+	failed = append(failed, failedValidator...)
+
+	checks := []requirementCheck{
+		{AetraStakingPolicyMessageValidateAuthority, evidence.ValidateAuthority},
+		{AetraStakingPolicyMessageValidateSigner, evidence.ValidateSigner},
+		{AetraStakingPolicyMessageRejectMalformedAddresses, evidence.RejectMalformedAddresses},
+		{AetraStakingPolicyMessageRejectInvalidParams, evidence.RejectInvalidParams},
+		{AetraStakingPolicyMessageEmitEvents, evidence.EmitEvents},
+		{AetraStakingPolicyMessageCoveredByTests, evidence.CoveredByTests},
+	}
+	passed := passedGov + passedValidator
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraStakingPolicyMessageSpecReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(requiredGovMessages) + len(requiredValidatorMessages) + len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
+}
+
+func DefaultAetraStakingPolicyQuerySpecEvidence() AetraStakingPolicyQuerySpecEvidence {
+	return AetraStakingPolicyQuerySpecEvidence{
+		ModuleName: AetraStakingPolicyModuleName,
+		RequiredQueries: []string{
+			AetraStakingPolicyQueryParams,
+			AetraStakingPolicyQueryValidatorPolicy,
+			AetraStakingPolicyQueryValidatorEffectivePower,
+			AetraStakingPolicyQueryValidatorOverflow,
+			AetraStakingPolicyQueryTopNConcentration,
+			AetraStakingPolicyQueryDelegationWarning,
+			AetraStakingPolicyQueryCommissionPolicy,
+			AetraStakingPolicyQueryConcentrationSnapshot,
+			AetraStakingPolicyQueryNakamotoCoefficient,
+		},
+		StableResponses:          true,
+		IndexerFriendlyResponses: true,
+	}
+}
+
+func ValidateAetraStakingPolicyQuerySpec(evidence AetraStakingPolicyQuerySpecEvidence) error {
+	report := BuildAetraStakingPolicyQuerySpecReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra staking policy query spec failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraStakingPolicyQuerySpecReport(evidence AetraStakingPolicyQuerySpecEvidence) AetraStakingPolicyQuerySpecReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != AetraStakingPolicyModuleName {
+		failed = append(failed, "module_name_must_be_"+AetraStakingPolicyModuleName)
+	}
+
+	requiredQueries := requiredAetraStakingPolicyQueries()
+	passed, queryFailures := validateAetraStakingPolicyCatalog("queries", evidence.RequiredQueries, requiredQueries)
+	failed = append(failed, queryFailures...)
+	checks := []requirementCheck{
+		{AetraStakingPolicyQueryStableResponses, evidence.StableResponses},
+		{AetraStakingPolicyQueryIndexerFriendlyResponses, evidence.IndexerFriendlyResponses},
+	}
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraStakingPolicyQuerySpecReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(requiredQueries) + len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
+}
+
+func requiredAetraStakingPolicyGovernanceMessages() []string {
+	return []string{
+		AetraStakingPolicyMessageMsgUpdateStakingPolicyParams,
+		AetraStakingPolicyMessageMsgUpdateValidatorPowerCapSchedule,
+		AetraStakingPolicyMessageMsgSetCommissionPolicy,
+	}
+}
+
+func optionalAetraStakingPolicyValidatorMessages() []string {
+	return []string{
+		AetraStakingPolicyMessageMsgRegisterValidatorIdentity,
+		AetraStakingPolicyMessageMsgUpdateValidatorIdentity,
+		AetraStakingPolicyMessageMsgAcknowledgeOverCapWarning,
+	}
+}
+
+func requiredAetraStakingPolicyQueries() []string {
+	return []string{
+		AetraStakingPolicyQueryParams,
+		AetraStakingPolicyQueryValidatorPolicy,
+		AetraStakingPolicyQueryValidatorEffectivePower,
+		AetraStakingPolicyQueryValidatorOverflow,
+		AetraStakingPolicyQueryTopNConcentration,
+		AetraStakingPolicyQueryDelegationWarning,
+		AetraStakingPolicyQueryCommissionPolicy,
+		AetraStakingPolicyQueryConcentrationSnapshot,
+		AetraStakingPolicyQueryNakamotoCoefficient,
+	}
+}
+
+func validateAetraStakingPolicyCatalog(group string, actual []string, required []string) (int, []string) {
+	failed := make([]string, 0)
+	requiredSet := map[string]bool{}
+	for _, item := range required {
+		requiredSet[item] = true
+	}
+	seen := map[string]bool{}
+	for _, item := range actual {
+		if item == "" {
+			failed = append(failed, group+".item_required")
+			continue
+		}
+		if seen[item] {
+			failed = append(failed, group+"."+item+":duplicate")
+			continue
+		}
+		seen[item] = true
+		if !requiredSet[item] {
+			failed = append(failed, group+"."+item+":unexpected")
+		}
+	}
+	passed := 0
+	for _, item := range required {
+		if seen[item] {
+			passed++
+		} else {
+			failed = append(failed, group+"."+item+":missing")
+		}
+	}
+	return passed, failed
 }
