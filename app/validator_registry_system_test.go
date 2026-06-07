@@ -44,7 +44,7 @@ func TestValidatorRegistrySystemStateSurvivesFinalizeBlockRestart(t *testing.T) 
 		EmergencyAddress:   rawAddress("14"),
 		CommissionPolicy:   validatorregistrytypes.DefaultCommissionPolicy(),
 		Status:             validatorregistrytypes.StatusCandidate,
-		SelfBond:           1_000_000,
+		SelfBond:           validatorregistrytypes.DefaultMinValidatorStake,
 		History: []validatorregistrytypes.ValidatorHistoryEvent{
 			{Height: 1, Type: validatorregistrytypes.HistoryRegistered, Detail: "genesis"},
 		},

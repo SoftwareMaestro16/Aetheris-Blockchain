@@ -250,3 +250,69 @@ func TestAetraGovernanceAttackThreatRejectsMissingControlsAndTests(t *testing.T)
 	require.Contains(t, report.Failed, "tests.manual_multisig_review_only:unexpected")
 	require.Error(t, ValidateAetraGovernanceAttackThreat(evidence))
 }
+
+func TestDefaultAetraContractAttackThreatCoversSection295(t *testing.T) {
+	evidence := DefaultAetraContractAttackThreatEvidence()
+
+	report := BuildAetraContractAttackThreatReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraThreatModelModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 12, report.Required)
+	require.Contains(t, evidence.Threats, AetraThreatContractAttack)
+	for _, control := range []string{
+		AetraThreatControlGasLimits,
+		AetraThreatControlStoragePricing,
+		AetraThreatControlUploadPolicy,
+		AetraThreatControlMigrationControls,
+		AetraThreatControlContractSizeLimit,
+		AetraThreatControlMaliciousContractTestSuite,
+	} {
+		require.Contains(t, evidence.Controls, control)
+	}
+	for _, testName := range []string{
+		AetraThreatTestContractGasExhaustion,
+		AetraThreatTestContractStorageAbuse,
+		AetraThreatTestUnauthorizedMigration,
+		AetraThreatTestInvalidInstantiate,
+		AetraThreatTestMaliciousContainedExportImport,
+	} {
+		require.Contains(t, evidence.Tests, testName)
+	}
+	require.NoError(t, ValidateAetraContractAttackThreat(evidence))
+}
+
+func TestAetraContractAttackThreatRejectsMissingControlsAndTests(t *testing.T) {
+	evidence := DefaultAetraContractAttackThreatEvidence()
+	evidence.ModuleName = "x/wasm"
+	evidence.Threats = nil
+	evidence.Controls = removeString(evidence.Controls,
+		AetraThreatControlGasLimits,
+		AetraThreatControlStoragePricing,
+		AetraThreatControlMaliciousContractTestSuite,
+	)
+	evidence.Tests = removeString(evidence.Tests,
+		AetraThreatTestContractGasExhaustion,
+		AetraThreatTestInvalidInstantiate,
+		AetraThreatTestMaliciousContainedExportImport,
+	)
+	evidence.Controls = append(evidence.Controls, AetraThreatControlUploadPolicy, "permissionless_unpriced_upload")
+	evidence.Tests = append(evidence.Tests, AetraThreatTestContractStorageAbuse, "manual_contract_review_only")
+
+	report := BuildAetraContractAttackThreatReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_must_be_"+AetraThreatModelModuleName)
+	require.Contains(t, report.Failed, "threats."+AetraThreatContractAttack+":missing")
+	require.Contains(t, report.Failed, "controls."+AetraThreatControlGasLimits+":missing")
+	require.Contains(t, report.Failed, "controls."+AetraThreatControlStoragePricing+":missing")
+	require.Contains(t, report.Failed, "controls."+AetraThreatControlMaliciousContractTestSuite+":missing")
+	require.Contains(t, report.Failed, "controls."+AetraThreatControlUploadPolicy+":duplicate")
+	require.Contains(t, report.Failed, "controls.permissionless_unpriced_upload:unexpected")
+	require.Contains(t, report.Failed, "tests."+AetraThreatTestContractGasExhaustion+":missing")
+	require.Contains(t, report.Failed, "tests."+AetraThreatTestInvalidInstantiate+":missing")
+	require.Contains(t, report.Failed, "tests."+AetraThreatTestMaliciousContainedExportImport+":missing")
+	require.Contains(t, report.Failed, "tests."+AetraThreatTestContractStorageAbuse+":duplicate")
+	require.Contains(t, report.Failed, "tests.manual_contract_review_only:unexpected")
+	require.Error(t, ValidateAetraContractAttackThreat(evidence))
+}

@@ -173,6 +173,105 @@ func TestValidatorSecurityQueries(t *testing.T) {
 	require.Equal(t, uint32(9_000), performance.ReputationScore)
 }
 
+func TestValidatorAdmissionStakePolicy(t *testing.T) {
+	params := types.DefaultParams()
+	require.ErrorContains(t, params.ValidateValidatorFunding(types.ValidatorFunding{
+		Mode:          types.ValidatorFundingPoolBacked,
+		SelfStake:     params.PoolBackedMinSelfStake,
+		NominatorBond: params.MinValidatorStake - params.PoolBackedMinSelfStake - 1,
+	}), "minimum validator stake")
+	require.ErrorContains(t, params.ValidateValidatorFunding(types.ValidatorFunding{
+		Mode:      types.ValidatorFundingSolo,
+		SelfStake: params.SoloMinSelfStake - 1,
+	}), "self-stake")
+	require.ErrorContains(t, params.ValidateValidatorFunding(types.ValidatorFunding{
+		Mode:          types.ValidatorFundingPoolBacked,
+		SelfStake:     params.PoolBackedMinSelfStake - 1,
+		NominatorBond: params.PoolBackedMaxNominatorStake,
+	}), "self-stake")
+	require.ErrorContains(t, params.ValidateValidatorFunding(types.ValidatorFunding{
+		Mode:          types.ValidatorFundingPoolBacked,
+		SelfStake:     params.PoolBackedMinSelfStake,
+		NominatorBond: params.PoolBackedMaxNominatorStake + 1,
+	}), "nominator contribution")
+	require.NoError(t, params.ValidateValidatorFunding(types.ValidatorFunding{
+		Mode:          types.ValidatorFundingPoolBacked,
+		SelfStake:     params.PoolBackedMinSelfStake,
+		NominatorBond: params.PoolBackedMaxNominatorStake,
+	}))
+
+	k := NewKeeper()
+	validator := testValidator(0x31, "ed25519:below-min")
+	validator.SelfBond = params.MinValidatorStake - 1
+	_, err := k.RegisterValidator(types.MsgRegisterValidator{Authority: prototype.DefaultAuthority, Validator: validator, Height: 1})
+	require.ErrorContains(t, err, "self-stake")
+}
+
+func TestValidatorActiveCountCommissionAndPowerCapPolicy(t *testing.T) {
+	params := types.DefaultParams()
+	require.ErrorContains(t, params.ValidateActiveValidatorCount(99, false), "below configured minimum")
+	require.NoError(t, params.ValidateActiveValidatorCount(99, true))
+	require.NoError(t, params.ValidateActiveValidatorCount(100, false))
+	require.NoError(t, params.ValidateActiveValidatorCount(300, false))
+	require.ErrorContains(t, params.ValidateActiveValidatorCount(301, false), "exceeds configured maximum")
+
+	cap150, err := params.PowerCapBpsForValidatorCount(150)
+	require.NoError(t, err)
+	cap250, err := params.PowerCapBpsForValidatorCount(250)
+	require.NoError(t, err)
+	cap251, err := params.PowerCapBpsForValidatorCount(251)
+	require.NoError(t, err)
+	require.Equal(t, uint32(300), cap150)
+	require.Equal(t, uint32(250), cap250)
+	require.Equal(t, uint32(200), cap251)
+
+	require.NoError(t, params.ValidateCommissionChange(params.DefaultCommissionBps, params.DefaultCommissionBps+params.CommissionMaxDailyChangeBps))
+	require.ErrorContains(t, params.ValidateCommissionRate(params.CommissionFloorBps-1), "below configured floor")
+	require.ErrorContains(t, params.ValidateCommissionRate(params.CommissionCeilingBps+1), "above configured ceiling")
+	require.ErrorContains(t, params.ValidateCommissionChange(params.DefaultCommissionBps, params.DefaultCommissionBps+params.CommissionMaxDailyChangeBps+1), "daily change")
+}
+
+func TestValidatorCommissionUpdateEnforcesDailyChange(t *testing.T) {
+	k := NewKeeper()
+	validator := registerValidator(t, &k, 0x41, "ed25519:commission")
+
+	updated, err := k.UpdateValidatorCommission(types.MsgUpdateValidatorCommission{
+		Authority:       prototype.DefaultAuthority,
+		OperatorAddress: validator.OperatorAddress,
+		NewRateBps:      types.DefaultParams().DefaultCommissionBps + types.DefaultParams().CommissionMaxDailyChangeBps,
+		Height:          2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, types.DefaultParams().DefaultCommissionBps+types.DefaultParams().CommissionMaxDailyChangeBps, updated.CommissionPolicy.CurrentRateBps)
+
+	_, err = k.UpdateValidatorCommission(types.MsgUpdateValidatorCommission{
+		Authority:       prototype.DefaultAuthority,
+		OperatorAddress: validator.OperatorAddress,
+		NewRateBps:      updated.CommissionPolicy.CurrentRateBps + types.DefaultParams().CommissionMaxDailyChangeBps + 1,
+		Height:          3,
+	})
+	require.ErrorContains(t, err, "daily change")
+}
+
+func TestValidatorAllocationEngineQueryIsDeterministic(t *testing.T) {
+	k := NewKeeper()
+	second := registerValidator(t, &k, 0x52, "ed25519:alloc-b")
+	first := registerValidator(t, &k, 0x51, "ed25519:alloc-a")
+
+	inputs, err := k.ValidatorAllocationInputs(types.ValidatorAllocationQueryRequest{IncludeCandidates: true})
+	require.NoError(t, err)
+	require.Len(t, inputs, 2)
+	require.Equal(t, first.OperatorAddress, inputs[0].OperatorAddress)
+	require.Equal(t, second.OperatorAddress, inputs[1].OperatorAddress)
+	require.Equal(t, first.SelfBond, inputs[0].SelfBond)
+	require.Equal(t, first.NominatorBond, inputs[0].NominatorBond)
+	require.Equal(t, first.CommissionPolicy.CurrentRateBps, inputs[0].CommissionBps)
+	require.Equal(t, first.PerformanceScore, inputs[0].PerformanceScore)
+	require.Equal(t, first.ReputationScore, inputs[0].ReputationScore)
+	require.Equal(t, uint32(300), inputs[0].PowerCapBps)
+	require.False(t, inputs[0].Jailed)
+}
+
 func TestMaliciousAuthorityCannotRegisterValidator(t *testing.T) {
 	k := NewKeeper()
 	_, err := k.RegisterValidator(types.MsgRegisterValidator{
@@ -207,7 +306,7 @@ func testValidator(fill byte, consensusKey string) types.ValidatorRecord {
 		PerformanceScore:   8_500,
 		Status:             types.StatusCandidate,
 		Capabilities:       []string{"archive", "fast-sync"},
-		SelfBond:           1_000_000,
+		SelfBond:           types.DefaultMinValidatorStake,
 		ExternalAuditFlags: []string{"soc2"},
 		UptimeHistory: []types.UptimeSample{
 			{Height: 1, UptimeBps: 9_900},
