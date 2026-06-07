@@ -233,7 +233,7 @@ func (c ContractRentRecord) Validate() error {
 	if c.LastChargedHeight == 0 {
 		return errors.New("storage rent last charged height must be positive")
 	}
-	if c.Status == ContractStatusFrozen && (c.FreezeHeight == 0 || c.DeletionEligibilityHeight == 0) {
+	if (c.Status == ContractStatusFrozen || c.Status == ContractStatusFrozenLimited) && (c.FreezeHeight == 0 || c.DeletionEligibilityHeight == 0) {
 		return errors.New("storage rent frozen contract requires freeze and deletion eligibility heights")
 	}
 	if (c.Status == ContractStatusDeleted || c.Status == ContractStatusArchived) && c.DeletionEligibilityHeight == 0 {
@@ -362,7 +362,7 @@ func CanExecuteContract(contract ContractRentRecord) bool {
 
 func IsContractStatus(status string) bool {
 	switch status {
-	case ContractStatusActive, ContractStatusFrozen, ContractStatusDeleted, ContractStatusArchived:
+	case ContractStatusActive, ContractStatusFrozen, ContractStatusFrozenLimited, ContractStatusDeleted, ContractStatusArchived:
 		return true
 	default:
 		return false

@@ -22,6 +22,7 @@ const (
 	AuthOperationAuthPolicyUpdate = "auth_policy_update"
 	AuthOperationRecoverAccount   = "recover_account"
 	AuthOperationFreezeAccount    = "freeze_account"
+	AuthOperationPayStorageDebt   = "pay_storage_debt"
 	AuthOperationUnfreezeAccount  = "unfreeze_account"
 	AuthOperationMetadataUpdate   = "metadata_update"
 	AuthOperationParamsUpdate     = "params_update"

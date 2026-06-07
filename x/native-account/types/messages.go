@@ -150,6 +150,13 @@ type MsgUnfreezeAccount struct {
 	OtherFreezeReason bool
 }
 
+type MsgPayStorageDebt struct {
+	AccountUser   string
+	Amount        uint64
+	Signers       []string
+	CurrentHeight uint64
+}
+
 type MsgUpdateAccountMetadata struct {
 	AccountUser   string
 	Metadata      AccountMetadata
@@ -269,7 +276,7 @@ func ApplyMsgUnfreezeAccount(account Account, msg MsgUnfreezeAccount) (Account, 
 	if account.Status != AccountStatusFrozen {
 		return Account{}, errors.New("only frozen accounts can be unfrozen")
 	}
-	if !msg.StorageDebtPaid || msg.OtherFreezeReason {
+	if !msg.StorageDebtPaid || account.StorageRentDebt != 0 || msg.OtherFreezeReason {
 		return Account{}, errors.New("account cannot unfreeze until storage debt is paid and freeze reasons are cleared")
 	}
 	if _, err := AuthorizeAuthPolicy(account, ExternalMessage{
@@ -283,7 +290,37 @@ func ApplyMsgUnfreezeAccount(account Account, msg MsgUnfreezeAccount) (Account, 
 	}
 	next := cloneAccount(account)
 	next.Status = AccountStatusActive
-	next.StorageRentDebt = 0
+	return next, ValidateAccountInvariant(next)
+}
+
+func ApplyMsgPayStorageDebt(account Account, msg MsgPayStorageDebt) (Account, error) {
+	if msg.AccountUser != account.AddressUser {
+		return Account{}, errors.New("storage debt payment account address mismatch")
+	}
+	if account.Status == AccountStatusInactive || account.Status == AccountStatusClosed || account.Status == AccountStatusArchived {
+		return Account{}, fmt.Errorf("%s account cannot pay storage debt", account.Status)
+	}
+	if msg.Amount == 0 {
+		return Account{}, errors.New("storage debt payment amount must be positive")
+	}
+	if _, err := AuthorizeAuthPolicy(account, ExternalMessage{
+		AccountUser:   account.AddressUser,
+		Sequence:      account.Sequence,
+		Signers:       msg.Signers,
+		Operation:     AuthOperationPayStorageDebt,
+		CurrentHeight: msg.CurrentHeight,
+	}); err != nil {
+		return Account{}, err
+	}
+	next := cloneAccount(account)
+	if msg.Amount >= next.StorageRentDebt {
+		next.StorageRentDebt = 0
+	} else {
+		next.StorageRentDebt -= msg.Amount
+	}
+	if msg.CurrentHeight > next.LastStorageChargeHeight {
+		next.LastStorageChargeHeight = msg.CurrentHeight
+	}
 	return next, ValidateAccountInvariant(next)
 }
 
