@@ -13,6 +13,12 @@ const (
 	AetraValidatorPhaseGrowth  = "stable_public_testnet"
 	AetraValidatorPhaseMature  = "mature_network"
 
+	AetraValidatorSetRiskConsensusOverhead = "consensus_overhead"
+	AetraValidatorSetRiskSyncComplexity    = "sync_complexity"
+	AetraValidatorSetRiskLatency           = "latency"
+	AetraValidatorSetRiskWeakOperators     = "weak_operators"
+	AetraValidatorSetRiskInfrastructureQA  = "infrastructure_quality_control"
+
 	AetraValidatorSetMin            = 100
 	AetraValidatorSetGenesisMin     = 100
 	AetraValidatorSetGenesisMax     = 128
@@ -21,6 +27,7 @@ const (
 	AetraValidatorSetMatureMin      = 250
 	AetraValidatorSetMatureMax      = 300
 	AetraValidatorSetMax            = 300
+	AetraValidatorSetTooLargeStart  = 500
 	AetraBlockTimeMinSeconds        = 5
 	AetraBlockTimeMaxSeconds        = 8
 	AetraNormalFinalityMinSeconds   = 5
@@ -48,6 +55,14 @@ type ValidatorSetPhasePolicy struct {
 	NormalFinalityMinSeconds  int
 	NormalFinalityMaxSeconds  int
 	RequiresOperatorReadiness bool
+}
+
+type ValidatorSetLaunchAssessment struct {
+	ActiveValidators int
+	Allowed          bool
+	Phase            string
+	Risks            []string
+	Reason           string
 }
 
 type NetworkProfile struct {
@@ -231,6 +246,33 @@ func (p NetworkProfile) ValidateMatureLaunch(activeValidators int, operatorReadi
 	return nil
 }
 
+func (p NetworkProfile) AssessValidatorSetLaunch(activeValidators int, operatorReadinessConfirmed bool) ValidatorSetLaunchAssessment {
+	assessment := ValidatorSetLaunchAssessment{
+		ActiveValidators: activeValidators,
+		Allowed:          true,
+		Risks:            []string{},
+	}
+	if activeValidators >= AetraValidatorSetTooLargeStart {
+		assessment.Allowed = false
+		assessment.Risks = largeValidatorSetStartupRisks()
+		assessment.Reason = "validator set 500+ is not an acceptable Aetra startup target"
+		return assessment
+	}
+	phase, err := p.ValidatorSetPhase(activeValidators)
+	if err != nil {
+		assessment.Allowed = false
+		assessment.Reason = err.Error()
+		return assessment
+	}
+	assessment.Phase = phase.Name
+	if phase.Name == AetraValidatorPhaseMature && phase.RequiresOperatorReadiness && !operatorReadinessConfirmed {
+		assessment.Allowed = false
+		assessment.Risks = append(assessment.Risks, AetraValidatorSetRiskWeakOperators, AetraValidatorSetRiskInfrastructureQA)
+		assessment.Reason = "mature validator set requires confirmed operator readiness"
+	}
+	return assessment
+}
+
 func (p NetworkProfile) validateValidatorSetPhases() error {
 	if len(p.ValidatorSetPhases) != 3 {
 		return fmt.Errorf("validator set policy must define exactly three growth phases")
@@ -258,4 +300,14 @@ func validateBpsRange(name string, min, max, allowedMin, allowedMax int64) error
 		return fmt.Errorf("%s must stay within %d-%d bps", name, allowedMin, allowedMax)
 	}
 	return nil
+}
+
+func largeValidatorSetStartupRisks() []string {
+	return []string{
+		AetraValidatorSetRiskConsensusOverhead,
+		AetraValidatorSetRiskSyncComplexity,
+		AetraValidatorSetRiskLatency,
+		AetraValidatorSetRiskWeakOperators,
+		AetraValidatorSetRiskInfrastructureQA,
+	}
 }

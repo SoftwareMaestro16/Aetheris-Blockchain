@@ -211,3 +211,56 @@ func TestNetworkProfileRejectsUnsafePhasePolicy(t *testing.T) {
 	profile.ValidatorSetPhases[2].NormalFinalityMaxSeconds = 30
 	require.ErrorContains(t, profile.Validate(), "invalid finality range")
 }
+
+func TestValidatorSetLaunchAssessmentRejectsFiveHundredPlusAtStartup(t *testing.T) {
+	profile := DefaultNetworkProfile()
+
+	assessment := profile.AssessValidatorSetLaunch(500, true)
+
+	require.False(t, assessment.Allowed)
+	require.Equal(t, 500, assessment.ActiveValidators)
+	require.Empty(t, assessment.Phase)
+	require.Equal(t, "validator set 500+ is not an acceptable Aetra startup target", assessment.Reason)
+	require.ElementsMatch(t, []string{
+		AetraValidatorSetRiskConsensusOverhead,
+		AetraValidatorSetRiskSyncComplexity,
+		AetraValidatorSetRiskLatency,
+		AetraValidatorSetRiskWeakOperators,
+		AetraValidatorSetRiskInfrastructureQA,
+	}, assessment.Risks)
+}
+
+func TestValidatorSetLaunchAssessmentAllowsPhasedGrowthOnly(t *testing.T) {
+	profile := DefaultNetworkProfile()
+
+	genesis := profile.AssessValidatorSetLaunch(128, false)
+	require.True(t, genesis.Allowed)
+	require.Equal(t, AetraValidatorPhaseGenesis, genesis.Phase)
+	require.Empty(t, genesis.Risks)
+
+	growth := profile.AssessValidatorSetLaunch(200, false)
+	require.True(t, growth.Allowed)
+	require.Equal(t, AetraValidatorPhaseGrowth, growth.Phase)
+	require.Empty(t, growth.Risks)
+
+	withoutReadiness := profile.AssessValidatorSetLaunch(300, false)
+	require.False(t, withoutReadiness.Allowed)
+	require.Equal(t, AetraValidatorPhaseMature, withoutReadiness.Phase)
+	require.Contains(t, withoutReadiness.Risks, AetraValidatorSetRiskWeakOperators)
+	require.Contains(t, withoutReadiness.Risks, AetraValidatorSetRiskInfrastructureQA)
+
+	withReadiness := profile.AssessValidatorSetLaunch(300, true)
+	require.True(t, withReadiness.Allowed)
+	require.Equal(t, AetraValidatorPhaseMature, withReadiness.Phase)
+	require.Empty(t, withReadiness.Risks)
+}
+
+func TestValidatorSetLaunchAssessmentRejectsPhaseGaps(t *testing.T) {
+	profile := DefaultNetworkProfile()
+
+	assessment := profile.AssessValidatorSetLaunch(201, true)
+
+	require.False(t, assessment.Allowed)
+	require.Empty(t, assessment.Phase)
+	require.Contains(t, assessment.Reason, "outside configured growth phases")
+}
