@@ -1,14 +1,9 @@
 package app
 
 import (
-	"context"
-	"fmt"
-	"sort"
-
-	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+
+	appupgrades "github.com/sovereign-l1/l1/app/upgrades"
 )
 
 // UpgradeName defines the on-chain upgrade name for the sample L1App upgrade
@@ -17,63 +12,17 @@ import (
 // NOTE: This upgrade defines a reference implementation of what an upgrade
 // could look like when an application is migrating from Cosmos SDK version
 // v0.53.x to v0.54.x.
-const UpgradeName = "v053-to-v054"
+const UpgradeName = appupgrades.Name
 
 func (app L1App) RegisterUpgradeHandlers() {
-	app.UpgradeKeeper.SetUpgradeHandler(
-		UpgradeName,
-		func(ctx context.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			sdk.UnwrapSDKContext(ctx).Logger().Debug("this is a debug level message to test that verbose logging mode has properly been enabled during a chain upgrade")
-			if err := ValidateUpgradeVersionMap(fromVM, app.ModuleManager.GetVersionMap()); err != nil {
-				return nil, err
-			}
-			return app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
-		},
-	)
-
-	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
-	if err != nil {
-		panic(err)
-	}
-
-	if upgradeInfo.Name == UpgradeName && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
-		storeUpgrades := storetypes.StoreUpgrades{
-			Added: []string{},
-		}
-
-		// configure store loader that checks if version == upgradeHeight and applies store upgrades
-		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
-	}
+	appupgrades.RegisterHandlers(appupgrades.HandlerDependencies{
+		UpgradeKeeper:  app.UpgradeKeeper,
+		ModuleManager:  app.ModuleManager,
+		Configurator:   app.Configurator(),
+		SetStoreLoader: app.SetStoreLoader,
+	})
 }
 
 func ValidateUpgradeVersionMap(fromVM, currentVM module.VersionMap, allowedNewModules ...string) error {
-	allowed := make(map[string]bool, len(allowedNewModules))
-	for _, moduleName := range allowedNewModules {
-		allowed[moduleName] = true
-	}
-
-	moduleNames := make([]string, 0, len(currentVM))
-	for moduleName := range currentVM {
-		moduleNames = append(moduleNames, moduleName)
-	}
-	sort.Strings(moduleNames)
-
-	for _, moduleName := range moduleNames {
-		currentVersion := currentVM[moduleName]
-		if currentVersion == 0 {
-			return fmt.Errorf("invalid current module version for %s: 0", moduleName)
-		}
-		fromVersion, found := fromVM[moduleName]
-		if !found {
-			if allowed[moduleName] {
-				continue
-			}
-			return fmt.Errorf("missing module version for %s", moduleName)
-		}
-		if fromVersion > currentVersion {
-			return fmt.Errorf("module %s version %d is newer than current version %d", moduleName, fromVersion, currentVersion)
-		}
-	}
-
-	return nil
+	return appupgrades.ValidateVersionMap(fromVM, currentVM, allowedNewModules...)
 }
