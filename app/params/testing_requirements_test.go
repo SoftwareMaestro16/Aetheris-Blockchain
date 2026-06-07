@@ -81,3 +81,44 @@ func TestFeatureTestingEvidenceRejectsMissingIdentityOrImplementation(t *testing
 		FeatureID: "feature",
 	}), "not ready")
 }
+
+func TestModuleProductionReadinessRequiresAcceptanceRule(t *testing.T) {
+	evidence := ModuleProductionReadinessEvidence{
+		ModuleName:             "x/aetra-staking-policy",
+		UnitTestsPass:          true,
+		IntegrationTestsPass:   true,
+		GenesisValidationTests: true,
+		ExportImportTests:      true,
+		DeterministicRestart:   true,
+		AdversarialTests:       true,
+		CriticalCISubset:       true,
+	}
+	report := BuildModuleProductionReadinessReport(evidence)
+	require.True(t, report.Ready)
+	require.Empty(t, report.Failed)
+	require.Equal(t, report.Required, report.Passed)
+	require.NoError(t, ValidateModuleProductionReadiness(evidence))
+
+	evidence.ExportImportTests = false
+	report = BuildModuleProductionReadinessReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, ProductionAcceptanceExportImportPass)
+	require.Error(t, ValidateModuleProductionReadiness(evidence))
+}
+
+func TestModuleProductionReadinessRejectsMissingModuleNameAndCI(t *testing.T) {
+	evidence := ModuleProductionReadinessEvidence{
+		UnitTestsPass:          true,
+		IntegrationTestsPass:   true,
+		GenesisValidationTests: true,
+		ExportImportTests:      true,
+		DeterministicRestart:   true,
+		AdversarialTests:       true,
+		CriticalCISubset:       false,
+	}
+
+	report := BuildModuleProductionReadinessReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_required")
+	require.Contains(t, report.Failed, ProductionAcceptanceCriticalCISubset)
+}

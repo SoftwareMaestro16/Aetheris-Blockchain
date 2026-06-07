@@ -96,6 +96,20 @@ A task is not complete when it only compiles. Completion requires:
 
 Explicit deferral must include a reason and target gate. Missing unit tests cannot be deferred for production code.
 
+## Test Acceptance Rule
+
+No module should be considered production-ready unless:
+
+- unit tests pass;
+- integration tests pass;
+- genesis validation tests pass;
+- export/import tests pass;
+- deterministic restart tests pass;
+- adversarial tests for the relevant module pass;
+- CI runs the critical subset automatically.
+
+Production readiness is stricter than implementation readiness. A module can exist behind a feature gate while local/e2e/performance work continues, but it must not be described as production-ready until every acceptance item is green or the module is explicitly scoped out of production.
+
 ## Implementation Contract
 
 The implementation gate is `app/params/testing_requirements.go`.
@@ -106,4 +120,5 @@ Required catalog properties:
 - every required scenario must have test evidence;
 - optional "where feasible" scenarios must become required once feasible;
 - `ValidateFeatureTestingEvidence` must reject completed features without tests;
-- implementation-ready features without unit tests must fail.
+- implementation-ready features without unit tests must fail;
+- `ValidateModuleProductionReadiness` must reject production-ready claims unless unit, integration, genesis validation, export/import, deterministic restart, adversarial, and CI critical subset evidence is present.

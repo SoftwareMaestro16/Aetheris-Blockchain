@@ -59,6 +59,14 @@ const (
 	TestRequirementMempoolPressure            = "mempool_pressure"
 	TestRequirementCosmWasmExecutionLoad      = "cosmwasm_execution_load"
 	TestRequirementStateGrowthProfile         = "state_growth_profile"
+
+	ProductionAcceptanceUnitTestsPass         = "unit_tests_pass"
+	ProductionAcceptanceIntegrationTestsPass  = "integration_tests_pass"
+	ProductionAcceptanceGenesisValidationPass = "genesis_validation_tests_pass"
+	ProductionAcceptanceExportImportPass      = "export_import_tests_pass"
+	ProductionAcceptanceDeterministicRestart  = "deterministic_restart_tests_pass"
+	ProductionAcceptanceAdversarialModulePass = "adversarial_tests_for_relevant_module_pass"
+	ProductionAcceptanceCriticalCISubset      = "ci_runs_critical_subset_automatically"
 )
 
 type TestingLayerRequirement struct {
@@ -81,12 +89,31 @@ type FeatureTestingEvidence struct {
 	DeferredReason      string
 }
 
+type ModuleProductionReadinessEvidence struct {
+	ModuleName             string
+	UnitTestsPass          bool
+	IntegrationTestsPass   bool
+	GenesisValidationTests bool
+	ExportImportTests      bool
+	DeterministicRestart   bool
+	AdversarialTests       bool
+	CriticalCISubset       bool
+}
+
 type TestingRequirementsReport struct {
 	Requirements []TestingLayerRequirement
 	Required     int
 	Covered      int
 	Failed       []string
 	Passed       bool
+}
+
+type ModuleProductionReadinessReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
 }
 
 func DefaultTestingRequirements() []TestingLayerRequirement {
@@ -253,6 +280,46 @@ func ValidateFeatureTestingEvidence(evidence FeatureTestingEvidence) error {
 		return fmt.Errorf("performance tests require explicit deferral: %s", evidence.DeferredReason)
 	}
 	return nil
+}
+
+func ValidateModuleProductionReadiness(evidence ModuleProductionReadinessEvidence) error {
+	report := BuildModuleProductionReadinessReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("module production readiness failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildModuleProductionReadinessReport(evidence ModuleProductionReadinessEvidence) ModuleProductionReadinessReport {
+	failed := make([]string, 0)
+	checks := []requirementCheck{
+		{ProductionAcceptanceUnitTestsPass, evidence.UnitTestsPass},
+		{ProductionAcceptanceIntegrationTestsPass, evidence.IntegrationTestsPass},
+		{ProductionAcceptanceGenesisValidationPass, evidence.GenesisValidationTests},
+		{ProductionAcceptanceExportImportPass, evidence.ExportImportTests},
+		{ProductionAcceptanceDeterministicRestart, evidence.DeterministicRestart},
+		{ProductionAcceptanceAdversarialModulePass, evidence.AdversarialTests},
+		{ProductionAcceptanceCriticalCISubset, evidence.CriticalCISubset},
+	}
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	}
+	passed := 0
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+	sort.Strings(failed)
+	return ModuleProductionReadinessReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
 }
 
 func testingRequirement(layer, scenarioID string, required bool) TestingLayerRequirement {

@@ -80,6 +80,20 @@ foreach ($term in @(
 }
 
 foreach ($term in @(
+    'Test Acceptance Rule',
+    'No module should be considered production-ready unless',
+    'unit tests pass',
+    'integration tests pass',
+    'genesis validation tests pass',
+    'export/import tests pass',
+    'deterministic restart tests pass',
+    'adversarial tests for the relevant module pass',
+    'CI runs the critical subset automatically'
+  )) {
+  Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "testing acceptance doc missing: $term"
+}
+
+foreach ($term in @(
     'TestingLayerRequirement',
     'FeatureTestingEvidence',
     'TestingRequirementsReport',
@@ -87,6 +101,17 @@ foreach ($term in @(
     'ValidateTestingRequirements',
     'BuildTestingRequirementsReport',
     'ValidateFeatureTestingEvidence',
+    'ModuleProductionReadinessEvidence',
+    'ModuleProductionReadinessReport',
+    'ValidateModuleProductionReadiness',
+    'BuildModuleProductionReadinessReport',
+    'ProductionAcceptanceUnitTestsPass',
+    'ProductionAcceptanceIntegrationTestsPass',
+    'ProductionAcceptanceGenesisValidationPass',
+    'ProductionAcceptanceExportImportPass',
+    'ProductionAcceptanceDeterministicRestart',
+    'ProductionAcceptanceAdversarialModulePass',
+    'ProductionAcceptanceCriticalCISubset',
     'TestLayerUnit',
     'TestLayerIntegration',
     'TestLayerE2ELocalnet',
@@ -135,7 +160,9 @@ foreach ($term in @(
     'TestTestingRequirementsRejectMissingLayerScenarioAndDuplicates',
     'TestTestingRequirementsTreatFeasibleOptionalAsRequiredToImplement',
     'TestFeatureTestingEvidenceRequiresTestsForCompletion',
-    'TestFeatureTestingEvidenceRejectsMissingIdentityOrImplementation'
+    'TestFeatureTestingEvidenceRejectsMissingIdentityOrImplementation',
+    'TestModuleProductionReadinessRequiresAcceptanceRule',
+    'TestModuleProductionReadinessRejectsMissingModuleNameAndCI'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "testing requirements tests missing: $term"
 }
