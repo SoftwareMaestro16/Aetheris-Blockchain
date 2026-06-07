@@ -232,7 +232,7 @@ build\aetrad.exe tx bank send node0 $node1 1000naet `
   --keyring-backend test `
   --chain-id aetra-local-1 `
   --node tcp://127.0.0.1:26657 `
-  --fees 1000000naet `
+  --fees 100naet `
   -y
 ```
 
