@@ -21,6 +21,11 @@ type KernelConsensusContext struct {
 	BlockTimeUnix int64
 }
 
+type KernelTimestampBounds struct {
+	PreviousBlockTimeUnix  int64
+	MaxForwardDriftSeconds int64
+}
+
 type KernelBlockPlan struct {
 	Height             uint64
 	ChainID            string
@@ -110,6 +115,13 @@ func ProcessKernelProposal(ctx KernelConsensusContext, state CoreState, plan Ker
 		return errors.New("aetracore kernel proposal is not in a processable phase")
 	}
 	return nil
+}
+
+func ProcessKernelProposalWithTimestampBounds(ctx KernelConsensusContext, state CoreState, plan KernelBlockPlan, bounds KernelTimestampBounds) error {
+	if err := ValidateKernelTimestampBounds(ctx, bounds); err != nil {
+		return err
+	}
+	return ProcessKernelProposal(ctx, state, plan)
 }
 
 func FinalizeKernelBlock(ctx KernelConsensusContext, state CoreState, plan KernelBlockPlan, input KernelFinalizationInput) (CoreState, KernelFinalization, error) {
@@ -243,6 +255,25 @@ func (ctx KernelConsensusContext) Validate() error {
 	}
 	if ctx.BlockTimeUnix < 0 {
 		return errors.New("aetracore kernel block time must be consensus supplied")
+	}
+	return nil
+}
+
+func ValidateKernelTimestampBounds(ctx KernelConsensusContext, bounds KernelTimestampBounds) error {
+	if err := ctx.Validate(); err != nil {
+		return err
+	}
+	if bounds.PreviousBlockTimeUnix < 0 {
+		return errors.New("aetracore kernel previous block time must be consensus supplied")
+	}
+	if bounds.MaxForwardDriftSeconds <= 0 {
+		return errors.New("aetracore kernel timestamp max forward drift must be positive")
+	}
+	if ctx.BlockTimeUnix <= bounds.PreviousBlockTimeUnix {
+		return errors.New("aetracore kernel block time must be after previous consensus time")
+	}
+	if ctx.BlockTimeUnix-bounds.PreviousBlockTimeUnix > bounds.MaxForwardDriftSeconds {
+		return errors.New("aetracore kernel block time is outside allowed consensus bounds")
 	}
 	return nil
 }

@@ -31,6 +31,20 @@ func TestDefaultSlashingAccountabilityPolicyMatchesAetraModel(t *testing.T) {
 	require.Equal(t, int64(100), policy.DowntimeChronicSlashBps)
 	require.Greater(t, policy.DowntimeChronicJailMinutes, policy.DowntimeRepeatJailMinutes)
 	require.True(t, policy.DowntimeGovernanceReputationFlag)
+	require.True(t, policy.InvalidProposalDeterministicReject)
+	require.False(t, policy.InvalidProposalAutoSlash)
+	require.True(t, policy.InvalidProposalRepeatEvidenceOnly)
+	require.False(t, policy.ProcessProposalExternalInputs)
+	require.True(t, policy.ProcessProposalTestsRequired)
+	require.Equal(t, int64(25), policy.RepeatedInvalidProposalSlashBps)
+	require.Equal(t, int64(24*60), policy.RepeatedInvalidProposalJailMinutes)
+	require.True(t, policy.TimestampRejectOutsideBounds)
+	require.True(t, policy.TimestampCometBFTCompatible)
+	require.False(t, policy.TimestampCustomWallClockLogic)
+	require.True(t, policy.TimestampSlashObjectiveEvidenceOnly)
+	require.Equal(t, int64(25), policy.TimestampRepeatedViolationsSlashBps)
+	require.Equal(t, int64(24*60), policy.TimestampRepeatedViolationsJailMinutes)
+	require.Equal(t, int64(120), policy.TimestampMaxForwardDriftSeconds)
 }
 
 func TestSlashingAccountabilityPolicyRejectsSubjectiveOrWeakDoubleSignRules(t *testing.T) {
@@ -107,4 +121,42 @@ func TestSlashingAccountabilityPolicyRejectsUnsafeDowntimeProgression(t *testing
 	policy = DefaultSlashingAccountabilityPolicy()
 	policy.DowntimeChronicJailMinutes = policy.DowntimeRepeatJailMinutes
 	require.ErrorContains(t, policy.Validate(), "chronic jail")
+}
+
+func TestSlashingAccountabilityPolicyRejectsUnsafeProposalAndTimestampRules(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalDeterministicReject = false
+	require.ErrorContains(t, policy.Validate(), "invalid proposals")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalAutoSlash = true
+	require.ErrorContains(t, policy.Validate(), "auto-slash")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalRepeatEvidenceOnly = false
+	require.ErrorContains(t, policy.Validate(), "repeated objective evidence")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.ProcessProposalExternalInputs = true
+	require.ErrorContains(t, policy.Validate(), "external inputs")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.TimestampRejectOutsideBounds = false
+	require.ErrorContains(t, policy.Validate(), "outside consensus/application bounds")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.TimestampCometBFTCompatible = false
+	require.ErrorContains(t, policy.Validate(), "CometBFT-compatible")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.TimestampCustomWallClockLogic = true
+	require.ErrorContains(t, policy.Validate(), "wall-clock")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.TimestampSlashObjectiveEvidenceOnly = false
+	require.ErrorContains(t, policy.Validate(), "objective reproducible signed evidence")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.TimestampMaxForwardDriftSeconds = 0
+	require.ErrorContains(t, policy.Validate(), "forward drift")
 }

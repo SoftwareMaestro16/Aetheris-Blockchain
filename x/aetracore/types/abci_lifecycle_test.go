@@ -61,6 +61,69 @@ func TestKernelABCIProposalLifecycleIncludesRoutedMessagesAndGasLimits(t *testin
 	require.ErrorContains(t, err, "block gas")
 }
 
+func TestKernelABCIProcessProposalDeterministicAcceptRejectAndTimestampBounds(t *testing.T) {
+	state := abciLifecycleState(t)
+	ctx := KernelConsensusContext{ChainID: "aetra-testnet", Height: 21, BlockTimeUnix: 1_700_000_021}
+	local := KernelMessageEnvelope{
+		Kind:             KernelMessageLocalTx,
+		TxHash:           testHash("abci/deterministic/local"),
+		SourceZone:       ZoneIDFinancial,
+		SourceShard:      "0",
+		DestinationZone:  ZoneIDFinancial,
+		DestinationShard: "0",
+		Sender:           "sender.deterministic",
+		Nonce:            1,
+		GasLimit:         100,
+		PriorityClass:    1,
+		AdmissionHeight:  21,
+	}
+	limits := KernelGasLimits{MaxBlockGas: 1_000, MaxZoneGas: 500}
+	bounds := KernelTimestampBounds{PreviousBlockTimeUnix: 1_700_000_015, MaxForwardDriftSeconds: 120}
+	proposal, err := PrepareKernelABCIProposal(ctx, state, []KernelMessageEnvelope{local}, nil, limits)
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, ProcessKernelABCIProposalWithTimestampBounds(ctx, state, proposal, []KernelMessageEnvelope{local}, limits, bounds))
+	}
+
+	tampered := proposal
+	tampered.BlockGas++
+	errA := ProcessKernelABCIProposalWithTimestampBounds(ctx, state, tampered, []KernelMessageEnvelope{local}, limits, bounds)
+	errB := ProcessKernelABCIProposalWithTimestampBounds(ctx, state, tampered, []KernelMessageEnvelope{local}, limits, bounds)
+	require.Error(t, errA)
+	require.Equal(t, errA.Error(), errB.Error())
+	require.Contains(t, errA.Error(), "block gas mismatch")
+
+	farFuture := ctx
+	farFuture.BlockTimeUnix = bounds.PreviousBlockTimeUnix + bounds.MaxForwardDriftSeconds + 1
+	errA = ProcessKernelABCIProposalWithTimestampBounds(farFuture, state, proposal, []KernelMessageEnvelope{local}, limits, bounds)
+	errB = ProcessKernelABCIProposalWithTimestampBounds(farFuture, state, proposal, []KernelMessageEnvelope{local}, limits, bounds)
+	require.Error(t, errA)
+	require.Equal(t, errA.Error(), errB.Error())
+	require.Contains(t, errA.Error(), "outside allowed consensus bounds")
+}
+
+func TestKernelTimestampBoundsRejectNonCometBFTCompatibleTimes(t *testing.T) {
+	bounds := KernelTimestampBounds{PreviousBlockTimeUnix: 1_700_000_015, MaxForwardDriftSeconds: 120}
+
+	require.NoError(t, ValidateKernelTimestampBounds(
+		KernelConsensusContext{ChainID: "aetra-testnet", Height: 21, BlockTimeUnix: 1_700_000_021},
+		bounds,
+	))
+	require.ErrorContains(t, ValidateKernelTimestampBounds(
+		KernelConsensusContext{ChainID: "aetra-testnet", Height: 21, BlockTimeUnix: bounds.PreviousBlockTimeUnix},
+		bounds,
+	), "after previous consensus time")
+	require.ErrorContains(t, ValidateKernelTimestampBounds(
+		KernelConsensusContext{ChainID: "aetra-testnet", Height: 21, BlockTimeUnix: bounds.PreviousBlockTimeUnix + bounds.MaxForwardDriftSeconds + 1},
+		bounds,
+	), "outside allowed consensus bounds")
+	require.ErrorContains(t, ValidateKernelTimestampBounds(
+		KernelConsensusContext{ChainID: "aetra-testnet", Height: 21, BlockTimeUnix: 1_700_000_021},
+		KernelTimestampBounds{PreviousBlockTimeUnix: -1, MaxForwardDriftSeconds: 120},
+	), "consensus supplied")
+}
+
 func TestKernelABCIFinalizeCommitAndCleanup(t *testing.T) {
 	state := abciLifecycleState(t)
 	ctx := KernelConsensusContext{ChainID: "aetra-testnet", Height: 21, BlockTimeUnix: 1_700_000_021}

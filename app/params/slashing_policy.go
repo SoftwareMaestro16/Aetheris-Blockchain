@@ -30,49 +30,83 @@ const (
 	DowntimeFirstJailDefaultMinutes = DowntimeFirstJailMinMinutes
 	DowntimeRepeatJailMinutes       = int64(24 * 60)
 	DowntimeChronicJailMinutes      = int64(72 * 60)
+
+	RepeatedInvalidProposalSlashBps       = int64(25)
+	RepeatedInvalidProposalJailMinutes    = int64(24 * 60)
+	RepeatedTimestampViolationSlashBps    = int64(25)
+	RepeatedTimestampViolationJailMinutes = int64(24 * 60)
+	TimestampMaxForwardDriftSeconds       = int64(120)
 )
 
 type SlashingAccountabilityPolicy struct {
-	EvidenceStandard                   string
-	ObjectiveCryptographicEvidenceOnly bool
-	SubjectiveSlashingAllowed          bool
-	DoubleSignSlashBps                 int64
-	DoubleSignJailImmediate            bool
-	DoubleSignPermanentTombstone       bool
-	ConsensusKeyReuseForbidden         bool
-	UsesCosmosSlashingAndEvidence      bool
-	ProgressiveDowntimeEnabled         bool
-	StandardDowntimeStatePreserved     bool
-	CustomDowntimeOverlayRequired      bool
-	DowntimeFirstSlashBps              int64
-	DowntimeFirstJailMinutes           int64
-	DowntimeRepeatSlashBps             int64
-	DowntimeRepeatJailMinutes          int64
-	DowntimeChronicSlashBps            int64
-	DowntimeChronicJailMinutes         int64
-	DowntimeGovernanceReputationFlag   bool
+	EvidenceStandard                       string
+	ObjectiveCryptographicEvidenceOnly     bool
+	SubjectiveSlashingAllowed              bool
+	DoubleSignSlashBps                     int64
+	DoubleSignJailImmediate                bool
+	DoubleSignPermanentTombstone           bool
+	ConsensusKeyReuseForbidden             bool
+	UsesCosmosSlashingAndEvidence          bool
+	ProgressiveDowntimeEnabled             bool
+	StandardDowntimeStatePreserved         bool
+	CustomDowntimeOverlayRequired          bool
+	DowntimeFirstSlashBps                  int64
+	DowntimeFirstJailMinutes               int64
+	DowntimeRepeatSlashBps                 int64
+	DowntimeRepeatJailMinutes              int64
+	DowntimeChronicSlashBps                int64
+	DowntimeChronicJailMinutes             int64
+	DowntimeGovernanceReputationFlag       bool
+	InvalidProposalDeterministicReject     bool
+	InvalidProposalAutoSlash               bool
+	InvalidProposalRepeatEvidenceOnly      bool
+	ProcessProposalExternalInputs          bool
+	ProcessProposalTestsRequired           bool
+	RepeatedInvalidProposalSlashBps        int64
+	RepeatedInvalidProposalJailMinutes     int64
+	TimestampRejectOutsideBounds           bool
+	TimestampCometBFTCompatible            bool
+	TimestampCustomWallClockLogic          bool
+	TimestampSlashObjectiveEvidenceOnly    bool
+	TimestampRepeatedViolationsSlashBps    int64
+	TimestampRepeatedViolationsJailMinutes int64
+	TimestampMaxForwardDriftSeconds        int64
 }
 
 func DefaultSlashingAccountabilityPolicy() SlashingAccountabilityPolicy {
 	return SlashingAccountabilityPolicy{
-		EvidenceStandard:                   SlashingEvidenceStandardCosmos,
-		ObjectiveCryptographicEvidenceOnly: true,
-		SubjectiveSlashingAllowed:          false,
-		DoubleSignSlashBps:                 DoubleSignSlashDefaultBps,
-		DoubleSignJailImmediate:            true,
-		DoubleSignPermanentTombstone:       true,
-		ConsensusKeyReuseForbidden:         true,
-		UsesCosmosSlashingAndEvidence:      true,
-		ProgressiveDowntimeEnabled:         true,
-		StandardDowntimeStatePreserved:     true,
-		CustomDowntimeOverlayRequired:      true,
-		DowntimeFirstSlashBps:              DowntimeFirstSlashDefaultBps,
-		DowntimeFirstJailMinutes:           DowntimeFirstJailDefaultMinutes,
-		DowntimeRepeatSlashBps:             DowntimeRepeatSlashDefaultBps,
-		DowntimeRepeatJailMinutes:          DowntimeRepeatJailMinutes,
-		DowntimeChronicSlashBps:            DowntimeChronicSlashDefaultBps,
-		DowntimeChronicJailMinutes:         DowntimeChronicJailMinutes,
-		DowntimeGovernanceReputationFlag:   true,
+		EvidenceStandard:                       SlashingEvidenceStandardCosmos,
+		ObjectiveCryptographicEvidenceOnly:     true,
+		SubjectiveSlashingAllowed:              false,
+		DoubleSignSlashBps:                     DoubleSignSlashDefaultBps,
+		DoubleSignJailImmediate:                true,
+		DoubleSignPermanentTombstone:           true,
+		ConsensusKeyReuseForbidden:             true,
+		UsesCosmosSlashingAndEvidence:          true,
+		ProgressiveDowntimeEnabled:             true,
+		StandardDowntimeStatePreserved:         true,
+		CustomDowntimeOverlayRequired:          true,
+		DowntimeFirstSlashBps:                  DowntimeFirstSlashDefaultBps,
+		DowntimeFirstJailMinutes:               DowntimeFirstJailDefaultMinutes,
+		DowntimeRepeatSlashBps:                 DowntimeRepeatSlashDefaultBps,
+		DowntimeRepeatJailMinutes:              DowntimeRepeatJailMinutes,
+		DowntimeChronicSlashBps:                DowntimeChronicSlashDefaultBps,
+		DowntimeChronicJailMinutes:             DowntimeChronicJailMinutes,
+		DowntimeGovernanceReputationFlag:       true,
+		InvalidProposalDeterministicReject:     true,
+		InvalidProposalAutoSlash:               false,
+		InvalidProposalRepeatEvidenceOnly:      true,
+		ProcessProposalExternalInputs:          false,
+		ProcessProposalTestsRequired:           true,
+		RepeatedInvalidProposalSlashBps:        RepeatedInvalidProposalSlashBps,
+		RepeatedInvalidProposalJailMinutes:     RepeatedInvalidProposalJailMinutes,
+		TimestampRejectOutsideBounds:           true,
+		TimestampCometBFTCompatible:            true,
+		TimestampCustomWallClockLogic:          false,
+		TimestampSlashObjectiveEvidenceOnly:    true,
+		TimestampRepeatedViolationsSlashBps:    RepeatedTimestampViolationSlashBps,
+		TimestampRepeatedViolationsJailMinutes: RepeatedTimestampViolationJailMinutes,
+		TimestampMaxForwardDriftSeconds:        TimestampMaxForwardDriftSeconds,
 	}
 }
 
@@ -138,6 +172,48 @@ func (p SlashingAccountabilityPolicy) Validate() error {
 	}
 	if !p.DowntimeGovernanceReputationFlag {
 		return fmt.Errorf("chronic downtime must expose governance or reputation flag")
+	}
+	if !p.InvalidProposalDeterministicReject {
+		return fmt.Errorf("invalid proposals must be rejected deterministically")
+	}
+	if p.InvalidProposalAutoSlash {
+		return fmt.Errorf("invalid proposals must not auto-slash without objective repeat evidence")
+	}
+	if !p.InvalidProposalRepeatEvidenceOnly {
+		return fmt.Errorf("invalid proposal slashing requires repeated objective evidence")
+	}
+	if p.ProcessProposalExternalInputs {
+		return fmt.Errorf("ProcessProposal must not use non-deterministic external inputs")
+	}
+	if !p.ProcessProposalTestsRequired {
+		return fmt.Errorf("ProcessProposal deterministic accept/reject tests are required")
+	}
+	if err := validateSlashingBpsValue("repeated_invalid_proposal_slash", p.RepeatedInvalidProposalSlashBps, DowntimeRepeatSlashMinBps, DowntimeRepeatSlashMaxBps); err != nil {
+		return err
+	}
+	if p.RepeatedInvalidProposalJailMinutes < DowntimeRepeatJailMinutes {
+		return fmt.Errorf("repeated invalid proposal jail must be at least 24 hours")
+	}
+	if !p.TimestampRejectOutsideBounds {
+		return fmt.Errorf("timestamp policy must reject blocks outside consensus/application bounds")
+	}
+	if !p.TimestampCometBFTCompatible {
+		return fmt.Errorf("timestamp policy must remain CometBFT-compatible")
+	}
+	if p.TimestampCustomWallClockLogic {
+		return fmt.Errorf("timestamp policy must not use custom wall-clock logic")
+	}
+	if !p.TimestampSlashObjectiveEvidenceOnly {
+		return fmt.Errorf("timestamp slashing requires objective reproducible signed evidence")
+	}
+	if err := validateSlashingBpsValue("repeated_timestamp_violation_slash", p.TimestampRepeatedViolationsSlashBps, DowntimeRepeatSlashMinBps, DowntimeRepeatSlashMaxBps); err != nil {
+		return err
+	}
+	if p.TimestampRepeatedViolationsJailMinutes < DowntimeRepeatJailMinutes {
+		return fmt.Errorf("repeated timestamp violation jail must be at least 24 hours")
+	}
+	if p.TimestampMaxForwardDriftSeconds <= 0 {
+		return fmt.Errorf("timestamp max forward drift must be positive")
 	}
 	return nil
 }

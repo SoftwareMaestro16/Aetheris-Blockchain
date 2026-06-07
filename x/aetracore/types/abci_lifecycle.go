@@ -152,6 +152,13 @@ func ProcessKernelABCIProposal(ctx KernelConsensusContext, state CoreState, prop
 	return nil
 }
 
+func ProcessKernelABCIProposalWithTimestampBounds(ctx KernelConsensusContext, state CoreState, proposal KernelABCIProposal, envelopes []KernelMessageEnvelope, limits KernelGasLimits, bounds KernelTimestampBounds) error {
+	if err := ValidateKernelTimestampBounds(ctx, bounds); err != nil {
+		return err
+	}
+	return ProcessKernelABCIProposal(ctx, state, proposal, envelopes, limits)
+}
+
 func FinalizeKernelABCIBlock(ctx KernelConsensusContext, state CoreState, proposal KernelABCIProposal, envelopes []KernelMessageEnvelope, input KernelFinalizationInput, cleanupQueue []KernelCleanupItem, cleanupLimit uint64) (CoreState, KernelFinalization, KernelCleanupResult, error) {
 	if cleanupLimit == 0 {
 		return CoreState{}, KernelFinalization{}, KernelCleanupResult{}, errors.New("aetracore ABCI cleanup limit must be positive")

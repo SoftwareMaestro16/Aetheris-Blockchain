@@ -10,14 +10,16 @@ import (
 )
 
 const (
-	SlashSeverityMinorLivenessFault     = "minor_liveness_fault"
-	SlashSeverityMajorLivenessFault     = "major_liveness_fault"
-	SlashSeverityRepeatedLivenessFault  = "repeated_liveness_fault"
-	SlashSeverityInvalidTaskExecution   = "invalid_task_execution"
-	SlashSeverityInvalidStateTransition = "invalid_state_transition"
-	SlashSeverityEquivocation           = "equivocation"
-	SlashSeverityDoubleSign             = "double_sign"
-	SlashSeverityEvidenceFraud          = "evidence_fraud"
+	SlashSeverityMinorLivenessFault         = "minor_liveness_fault"
+	SlashSeverityMajorLivenessFault         = "major_liveness_fault"
+	SlashSeverityRepeatedLivenessFault      = "repeated_liveness_fault"
+	SlashSeverityInvalidTaskExecution       = "invalid_task_execution"
+	SlashSeverityInvalidStateTransition     = "invalid_state_transition"
+	SlashSeverityRepeatedInvalidProposal    = "repeated_invalid_proposal"
+	SlashSeverityRepeatedTimestampViolation = "repeated_timestamp_violation"
+	SlashSeverityEquivocation               = "equivocation"
+	SlashSeverityDoubleSign                 = "double_sign"
+	SlashSeverityEvidenceFraud              = "evidence_fraud"
 
 	SlashSeverityLow      = "low"
 	SlashSeverityMedium   = "medium"
@@ -155,6 +157,8 @@ func SlashSeverityClasses() []string {
 		SlashSeverityRepeatedLivenessFault,
 		SlashSeverityInvalidTaskExecution,
 		SlashSeverityInvalidStateTransition,
+		SlashSeverityRepeatedInvalidProposal,
+		SlashSeverityRepeatedTimestampViolation,
 		SlashSeverityEquivocation,
 		SlashSeverityDoubleSign,
 		SlashSeverityEvidenceFraud,
@@ -173,6 +177,10 @@ func DefaultSeverityBps(severityLevel string) (uint32, error) {
 		return 750, nil
 	case SlashSeverityInvalidStateTransition:
 		return 1_500, nil
+	case SlashSeverityRepeatedInvalidProposal:
+		return 25, nil
+	case SlashSeverityRepeatedTimestampViolation:
+		return 25, nil
 	case SlashSeverityEquivocation:
 		return 2_000, nil
 	case SlashSeverityDoubleSign:

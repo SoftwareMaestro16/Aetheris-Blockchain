@@ -46,25 +46,66 @@ func TestSlashSeverityClassesUseProtocolNames(t *testing.T) {
 		SlashSeverityRepeatedLivenessFault,
 		SlashSeverityInvalidTaskExecution,
 		SlashSeverityInvalidStateTransition,
+		SlashSeverityRepeatedInvalidProposal,
+		SlashSeverityRepeatedTimestampViolation,
 		SlashSeverityEquivocation,
 		SlashSeverityDoubleSign,
 		SlashSeverityEvidenceFraud,
 	}, SlashSeverityClasses())
 
 	expected := map[string]uint32{
-		SlashSeverityMinorLivenessFault:     5,
-		SlashSeverityMajorLivenessFault:     25,
-		SlashSeverityRepeatedLivenessFault:  100,
-		SlashSeverityInvalidTaskExecution:   750,
-		SlashSeverityInvalidStateTransition: 1_500,
-		SlashSeverityEquivocation:           2_000,
-		SlashSeverityDoubleSign:             500,
-		SlashSeverityEvidenceFraud:          7_500,
+		SlashSeverityMinorLivenessFault:         5,
+		SlashSeverityMajorLivenessFault:         25,
+		SlashSeverityRepeatedLivenessFault:      100,
+		SlashSeverityInvalidTaskExecution:       750,
+		SlashSeverityInvalidStateTransition:     1_500,
+		SlashSeverityRepeatedInvalidProposal:    25,
+		SlashSeverityRepeatedTimestampViolation: 25,
+		SlashSeverityEquivocation:               2_000,
+		SlashSeverityDoubleSign:                 500,
+		SlashSeverityEvidenceFraud:              7_500,
 	}
 	for severity, bps := range expected {
 		actual, err := DefaultSeverityBps(severity)
 		require.NoError(t, err)
 		require.Equal(t, bps, actual)
+	}
+}
+
+func TestRepeatedObjectiveProposalAndTimestampViolationsCanJailSlashWithoutTombstone(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		severity string
+	}{
+		{name: "invalid-proposal", severity: SlashSeverityRepeatedInvalidProposal},
+		{name: "timestamp-violation", severity: SlashSeverityRepeatedTimestampViolation},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := candidate("val-a", 100_000, 0)
+			result, err := ExecuteSlashing(SlashingExecutionInput{
+				EvidenceID:     tc.name + "-evidence-1",
+				ExecutedHeight: 100,
+				CurrentEpoch:   10,
+				Candidate:      candidate,
+				PenaltyInput: SlashingPenaltyInput{
+					PenaltyID:           tc.name + "-penalty-1",
+					SeverityLevel:       tc.severity,
+					StakeExposureNaet:   sdkmath.NewInt(100_000),
+					SelfStakeNaet:       candidate.SelfStakeNaet,
+					TemporaryJailEpochs: 24,
+					EvidenceHeight:      90,
+				},
+				RoutingInput: SlashingPenaltyRoutingInput{
+					BurnBps: BasisPoints,
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, uint32(25), result.SeverityMatrix[tc.severity])
+			require.Equal(t, sdkmath.NewInt(250), result.Record.SlashAmount)
+			require.Equal(t, uint64(34), result.Record.JailUntilEpochOptional)
+			require.True(t, result.UpdatedCandidate.Jailed)
+			require.False(t, result.UpdatedCandidate.Tombstoned)
+		})
 	}
 }
 
