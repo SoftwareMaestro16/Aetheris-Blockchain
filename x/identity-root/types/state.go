@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/sovereign-l1/l1/app/addressing"
 )
 
 const (
@@ -15,18 +17,23 @@ const (
 
 	DefaultResolverRoot  = "0000000000000000000000000000000000000000000000000000000000000000"
 	DefaultRootNamespace = "aet"
+
+	DomainRentPayerOwner    = "owner"
+	DomainRentPayerProtocol = "protocol"
 )
 
 type IdentityRootParams struct {
-	RootNamespace         string
-	RegistrationPeriod    uint64
-	RenewalPeriod         uint64
-	MaxNameBytes          uint32
-	MaxRecords            uint32
-	MaxReservedNames      uint32
-	NFTBindingEnabled     bool
-	AllowPublicSubdomains bool
-	Auction               AuctionParams
+	RootNamespace                string
+	RegistrationPeriod           uint64
+	RenewalPeriod                uint64
+	MaxNameBytes                 uint32
+	MaxRecords                   uint32
+	MaxReservedNames             uint32
+	DomainRentRatePerByteBlock   uint64
+	DefaultDomainRentPayerPolicy string
+	NFTBindingEnabled            bool
+	AllowPublicSubdomains        bool
+	Auction                      AuctionParams
 }
 
 type AuctionParams struct {
@@ -46,16 +53,19 @@ type IdentityRootState struct {
 }
 
 type NameRecord struct {
-	Name            string
-	ParentName      string
-	Owner           string
-	ResolverRoot    string
-	ExpiryHeight    uint64
-	RenewalHeight   uint64
-	SubdomainPolicy string
-	NFTBinding      IdentityNFTBindingReference
-	CreatedHeight   uint64
-	UpdatedHeight   uint64
+	Name                    string
+	ParentName              string
+	Owner                   string
+	ResolverRoot            string
+	ExpiryHeight            uint64
+	RenewalHeight           uint64
+	SubdomainPolicy         string
+	NFTBinding              IdentityNFTBindingReference
+	StorageRentDebt         uint64
+	LastStorageChargeHeight uint64
+	RentPayerPolicy         string
+	CreatedHeight           uint64
+	UpdatedHeight           uint64
 }
 
 type ResolverRecord struct {
@@ -151,12 +161,14 @@ type MsgReleaseReservedName struct {
 
 func DefaultIdentityRootParams() IdentityRootParams {
 	return IdentityRootParams{
-		RootNamespace:      DefaultRootNamespace,
-		RegistrationPeriod: 1_000_000,
-		RenewalPeriod:      1_000_000,
-		MaxNameBytes:       253,
-		MaxRecords:         100_000,
-		MaxReservedNames:   10_000,
+		RootNamespace:                DefaultRootNamespace,
+		RegistrationPeriod:           1_000_000,
+		RenewalPeriod:                1_000_000,
+		MaxNameBytes:                 253,
+		MaxRecords:                   100_000,
+		MaxReservedNames:             10_000,
+		DomainRentRatePerByteBlock:   1,
+		DefaultDomainRentPayerPolicy: DomainRentPayerOwner,
 		Auction: AuctionParams{
 			CommitBlocks:     100,
 			RevealBlocks:     100,
@@ -189,6 +201,12 @@ func (p IdentityRootParams) Validate() error {
 	}
 	if p.MaxNameBytes == 0 || p.MaxRecords == 0 || p.MaxReservedNames == 0 {
 		return errors.New("identity root limits must be positive")
+	}
+	if p.DomainRentRatePerByteBlock == 0 {
+		return errors.New("identity domain storage rent rate must be positive")
+	}
+	if !IsDomainRentPayerPolicy(p.DefaultDomainRentPayerPolicy) {
+		return errors.New("identity domain rent payer policy is invalid")
 	}
 	if p.Auction.Enabled && (p.Auction.CommitBlocks == 0 || p.Auction.RevealBlocks == 0 || p.Auction.MinimumBidAmount == 0) {
 		return errors.New("identity root auction parameters must be positive when enabled")
@@ -324,6 +342,13 @@ func (r NameRecord) Normalize(params IdentityRootParams) NameRecord {
 	if r.SubdomainPolicy == "" {
 		r.SubdomainPolicy = SubdomainPolicyOwnerOnly
 	}
+	r.RentPayerPolicy = strings.TrimSpace(r.RentPayerPolicy)
+	if r.RentPayerPolicy == "" {
+		r.RentPayerPolicy = params.DefaultDomainRentPayerPolicy
+	}
+	if r.LastStorageChargeHeight == 0 && r.CreatedHeight != 0 {
+		r.LastStorageChargeHeight = r.CreatedHeight
+	}
 	r.NFTBinding = r.NFTBinding.Normalize(params)
 	return r
 }
@@ -333,8 +358,8 @@ func (r NameRecord) Validate(params IdentityRootParams) error {
 	if err := ValidateName(r.Name, params); err != nil {
 		return err
 	}
-	if r.Owner == "" {
-		return errors.New("identity name owner is required")
+	if err := ValidateUserFacingAEAddress("identity name owner", r.Owner); err != nil {
+		return err
 	}
 	if err := ValidateResolverRoot(r.ResolverRoot); err != nil {
 		return err
@@ -347,6 +372,15 @@ func (r NameRecord) Validate(params IdentityRootParams) error {
 	}
 	if !IsSubdomainPolicy(r.SubdomainPolicy) {
 		return errors.New("identity subdomain policy is invalid")
+	}
+	if !IsDomainRentPayerPolicy(r.RentPayerPolicy) {
+		return errors.New("identity domain rent payer policy is invalid")
+	}
+	if r.LastStorageChargeHeight == 0 {
+		return errors.New("identity domain last storage charge height must be positive")
+	}
+	if r.LastStorageChargeHeight < r.CreatedHeight {
+		return errors.New("identity domain storage charge height cannot precede creation")
 	}
 	if params.NFTBindingEnabled {
 		if !r.NFTBinding.Enabled {
@@ -388,8 +422,11 @@ func (r ReverseRecord) Normalize(params IdentityRootParams) ReverseRecord {
 
 func (r ReverseRecord) Validate(params IdentityRootParams) error {
 	r = r.Normalize(params)
-	if r.Address == "" || r.Owner == "" {
-		return errors.New("identity reverse address and owner are required")
+	if err := ValidateUserFacingAEAddress("identity reverse address", r.Address); err != nil {
+		return err
+	}
+	if err := ValidateUserFacingAEAddress("identity reverse owner", r.Owner); err != nil {
+		return err
 	}
 	if err := ValidateName(r.Name, params); err != nil {
 		return err
@@ -418,8 +455,11 @@ func (b IdentityNFTBindingReference) Validate(params IdentityRootParams) error {
 			return err
 		}
 	}
-	if b.ClassID == "" || b.NFTID == "" || b.Owner == "" {
+	if b.ClassID == "" || b.NFTID == "" {
 		return errors.New("identity NFT binding class id, nft id, and owner are required")
+	}
+	if err := ValidateUserFacingAEAddress("identity NFT binding owner", b.Owner); err != nil {
+		return err
 	}
 	return nil
 }
@@ -550,6 +590,45 @@ func IsSubdomainPolicy(policy string) bool {
 	default:
 		return false
 	}
+}
+
+func IsDomainRentPayerPolicy(policy string) bool {
+	switch policy {
+	case DomainRentPayerOwner, DomainRentPayerProtocol:
+		return true
+	default:
+		return false
+	}
+}
+
+func ValidateUserFacingAEAddress(field, text string) error {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, addressing.UserFriendlyPrefix) {
+		return fmt.Errorf("%s must use AE user-facing address format", field)
+	}
+	return addressing.ValidateUserAddress(field, text)
+}
+
+func DomainStorageSize(record NameRecord) uint64 {
+	record.ResolverRoot = normalizeResolverRoot(record.ResolverRoot)
+	return uint64(len(record.Name) + len(record.ParentName) + len(record.Owner) + len(record.ResolverRoot) + len(record.SubdomainPolicy) + len(record.RentPayerPolicy))
+}
+
+func DomainStorageRentDelta(record NameRecord, params IdentityRootParams, height uint64) (uint64, error) {
+	record = record.Normalize(params)
+	if height < record.LastStorageChargeHeight {
+		return 0, errors.New("identity domain rent height cannot go backwards")
+	}
+	elapsed := height - record.LastStorageChargeHeight
+	size := DomainStorageSize(record)
+	if size != 0 && elapsed > ^uint64(0)/size {
+		return 0, errors.New("identity domain storage rent overflow")
+	}
+	usage := size * elapsed
+	if params.DomainRentRatePerByteBlock != 0 && usage > ^uint64(0)/params.DomainRentRatePerByteBlock {
+		return 0, errors.New("identity domain storage rent overflow")
+	}
+	return usage * params.DomainRentRatePerByteBlock, nil
 }
 
 func ValidateResolverRoot(root string) error {

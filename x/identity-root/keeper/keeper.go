@@ -122,8 +122,8 @@ func (k *Keeper) RegisterName(msg types.MsgRegisterName) (types.NameRecord, erro
 	if name == root {
 		return types.NameRecord{}, errors.New("identity root namespace cannot be registered")
 	}
-	if msg.Owner == "" {
-		return types.NameRecord{}, errors.New("identity owner is required")
+	if err := types.ValidateUserFacingAEAddress("identity owner", msg.Owner); err != nil {
+		return types.NameRecord{}, err
 	}
 	if _, _, found := recordIndex(k.genesis.State.Records, name); found {
 		return types.NameRecord{}, errors.New("identity name already registered")
@@ -141,16 +141,18 @@ func (k *Keeper) RegisterName(msg types.MsgRegisterName) (types.NameRecord, erro
 	}
 	binding := prepareBinding(name, msg.Owner, msg.NFTBinding, k.genesis.IdentityParams)
 	record := types.NameRecord{
-		Name:            name,
-		ParentName:      parent,
-		Owner:           msg.Owner,
-		ResolverRoot:    msg.ResolverRoot,
-		ExpiryHeight:    expiry,
-		RenewalHeight:   msg.Height,
-		SubdomainPolicy: msg.SubdomainPolicy,
-		NFTBinding:      binding,
-		CreatedHeight:   msg.Height,
-		UpdatedHeight:   msg.Height,
+		Name:                    name,
+		ParentName:              parent,
+		Owner:                   msg.Owner,
+		ResolverRoot:            msg.ResolverRoot,
+		ExpiryHeight:            expiry,
+		RenewalHeight:           msg.Height,
+		SubdomainPolicy:         msg.SubdomainPolicy,
+		NFTBinding:              binding,
+		LastStorageChargeHeight: msg.Height,
+		RentPayerPolicy:         nextDefaultRentPayerPolicy(k.genesis.IdentityParams),
+		CreatedHeight:           msg.Height,
+		UpdatedHeight:           msg.Height,
 	}.Normalize(k.genesis.IdentityParams)
 	next := cloneGenesis(k.genesis)
 	next.State.Records = append(next.State.Records, record)
@@ -184,6 +186,10 @@ func (k *Keeper) RenewName(msg types.MsgRenewName) (types.NameRecord, error) {
 	if err != nil {
 		return types.NameRecord{}, err
 	}
+	record, err = accrueDomainRent(record, k.genesis.IdentityParams, msg.Height)
+	if err != nil {
+		return types.NameRecord{}, err
+	}
 	record.ExpiryHeight = expiry
 	record.RenewalHeight = msg.Height
 	record.UpdatedHeight = msg.Height
@@ -205,8 +211,12 @@ func (k *Keeper) TransferName(msg types.MsgTransferName) (types.NameRecord, erro
 	if err != nil {
 		return types.NameRecord{}, err
 	}
-	if msg.NewOwner == "" {
-		return types.NameRecord{}, errors.New("identity new owner is required")
+	if err := types.ValidateUserFacingAEAddress("identity new owner", msg.NewOwner); err != nil {
+		return types.NameRecord{}, err
+	}
+	record, err = accrueDomainRent(record, k.genesis.IdentityParams, msg.Height)
+	if err != nil {
+		return types.NameRecord{}, err
 	}
 	binding := prepareBinding(record.Name, msg.NewOwner, msg.NewNFTBinding, k.genesis.IdentityParams)
 	record.Owner = msg.NewOwner
@@ -234,6 +244,10 @@ func (k *Keeper) SetResolver(msg types.MsgSetResolver) (types.ResolverRecord, er
 	if err != nil {
 		return types.ResolverRecord{}, err
 	}
+	record, err = accrueDomainRent(record, k.genesis.IdentityParams, msg.Height)
+	if err != nil {
+		return types.ResolverRecord{}, err
+	}
 	record.ResolverRoot = msg.ResolverRoot
 	record.UpdatedHeight = msg.Height
 	resolver := types.ResolverRecord{Name: record.Name, ResolverRoot: msg.ResolverRoot, UpdatedHeight: msg.Height}.Normalize(k.genesis.IdentityParams)
@@ -254,6 +268,9 @@ func (k *Keeper) SetReverseRecord(msg types.MsgSetReverseRecord) (types.ReverseR
 	}
 	_, record, err := k.requireOwnedName(msg.Name, msg.Owner, msg.Height, true)
 	if err != nil {
+		return types.ReverseRecord{}, err
+	}
+	if err := types.ValidateUserFacingAEAddress("identity reverse address", msg.Address); err != nil {
 		return types.ReverseRecord{}, err
 	}
 	reverse := types.ReverseRecord{Address: msg.Address, Name: record.Name, Owner: record.Owner, UpdatedHeight: msg.Height}.Normalize(k.genesis.IdentityParams)
@@ -282,6 +299,9 @@ func (k *Keeper) CreateSubdomain(msg types.MsgCreateSubdomain) (types.NameRecord
 	if subOwner == "" {
 		subOwner = msg.Owner
 	}
+	if err := types.ValidateUserFacingAEAddress("identity subdomain owner", subOwner); err != nil {
+		return types.NameRecord{}, err
+	}
 	if parent.SubdomainPolicy == types.SubdomainPolicyOwnerOnly && subOwner != parent.Owner {
 		return types.NameRecord{}, errors.New("identity subdomain ownership must follow parent policy")
 	}
@@ -297,16 +317,18 @@ func (k *Keeper) CreateSubdomain(msg types.MsgCreateSubdomain) (types.NameRecord
 	}
 	binding := prepareBinding(name, subOwner, msg.NFTBinding, k.genesis.IdentityParams)
 	record := types.NameRecord{
-		Name:            name,
-		ParentName:      parent.Name,
-		Owner:           subOwner,
-		ResolverRoot:    msg.ResolverRoot,
-		ExpiryHeight:    parent.ExpiryHeight,
-		RenewalHeight:   msg.Height,
-		SubdomainPolicy: msg.SubdomainPolicy,
-		NFTBinding:      binding,
-		CreatedHeight:   msg.Height,
-		UpdatedHeight:   msg.Height,
+		Name:                    name,
+		ParentName:              parent.Name,
+		Owner:                   subOwner,
+		ResolverRoot:            msg.ResolverRoot,
+		ExpiryHeight:            parent.ExpiryHeight,
+		RenewalHeight:           msg.Height,
+		SubdomainPolicy:         msg.SubdomainPolicy,
+		NFTBinding:              binding,
+		LastStorageChargeHeight: msg.Height,
+		RentPayerPolicy:         nextDefaultRentPayerPolicy(k.genesis.IdentityParams),
+		CreatedHeight:           msg.Height,
+		UpdatedHeight:           msg.Height,
 	}.Normalize(k.genesis.IdentityParams)
 	next := cloneGenesis(k.genesis)
 	next.State.Records = append(next.State.Records, record)
@@ -484,6 +506,29 @@ func addHeight(base, delta uint64) (uint64, error) {
 		return 0, errors.New("identity height overflow")
 	}
 	return base + delta, nil
+}
+
+func nextDefaultRentPayerPolicy(params types.IdentityRootParams) string {
+	if types.IsDomainRentPayerPolicy(params.DefaultDomainRentPayerPolicy) {
+		return params.DefaultDomainRentPayerPolicy
+	}
+	return types.DomainRentPayerOwner
+}
+
+func accrueDomainRent(record types.NameRecord, params types.IdentityRootParams, height uint64) (types.NameRecord, error) {
+	record = record.Normalize(params)
+	delta, err := types.DomainStorageRentDelta(record, params, height)
+	if err != nil {
+		return types.NameRecord{}, err
+	}
+	if record.RentPayerPolicy == types.DomainRentPayerOwner {
+		if record.StorageRentDebt > math.MaxUint64-delta {
+			return types.NameRecord{}, errors.New("identity domain storage rent overflow")
+		}
+		record.StorageRentDebt += delta
+	}
+	record.LastStorageChargeHeight = height
+	return record, nil
 }
 
 func recordIndex(records []types.NameRecord, name string) (int, types.NameRecord, bool) {

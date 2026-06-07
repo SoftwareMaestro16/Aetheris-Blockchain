@@ -6,14 +6,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/x/identity-root/types"
 	"github.com/sovereign-l1/l1/x/internal/prototype"
 )
 
-const (
-	authority = prototype.DefaultAuthority
-	ownerA    = "owner-a"
-	ownerB    = "owner-b"
+const authority = prototype.DefaultAuthority
+
+var (
+	ownerA = mustAE("11")
+	ownerB = mustAE("22")
 )
 
 func setupKeeper(t *testing.T) Keeper {
@@ -31,6 +33,18 @@ func resolverRoot(seed string) string {
 	return strings.Repeat(seed, 64)
 }
 
+func mustAE(hexByte string) string {
+	bz, err := addressing.Parse("4:000000000000000000000000" + strings.Repeat(hexByte, 20))
+	if err != nil {
+		panic(err)
+	}
+	text, err := addressing.FormatUserFriendly(bz)
+	if err != nil {
+		panic(err)
+	}
+	return text
+}
+
 func TestDefaultGenesisDisabled(t *testing.T) {
 	gs := DefaultGenesis()
 	require.NoError(t, gs.Validate())
@@ -46,6 +60,8 @@ func TestRegisterName(t *testing.T) {
 	require.Equal(t, "alice.aet", record.Name)
 	require.Equal(t, ownerA, record.Owner)
 	require.Equal(t, uint64(110), record.ExpiryHeight)
+	require.Equal(t, types.DomainRentPayerOwner, record.RentPayerPolicy)
+	require.Equal(t, uint64(10), record.LastStorageChargeHeight)
 
 	_, found, err := k.NameRecord("ALICE.AET")
 	require.NoError(t, err)
@@ -86,10 +102,13 @@ func TestReverseRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	reverse, err := k.SetReverseRecord(types.MsgSetReverseRecord{Owner: ownerA, Address: "addr-1", Name: "alice", Height: 12})
+	require.ErrorContains(t, err, "AE user-facing")
+
+	reverse, err = k.SetReverseRecord(types.MsgSetReverseRecord{Owner: ownerA, Address: ownerA, Name: "alice", Height: 12})
 	require.NoError(t, err)
 	require.Equal(t, "alice.aet", reverse.Name)
 
-	queried, found, err := k.ReverseRecord("addr-1")
+	queried, found, err := k.ReverseRecord(ownerA)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, reverse, queried)
@@ -172,4 +191,57 @@ func TestNFTBindingRequiredWhenEnabled(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, record.NFTBinding.Enabled)
 	require.Equal(t, ownerA, record.NFTBinding.Owner)
+}
+
+func TestDomainOwnerMustBeAEAddress(t *testing.T) {
+	k := setupKeeper(t)
+	_, err := k.RegisterName(types.MsgRegisterName{Owner: "owner-a", Name: "alice", Height: 10})
+	require.ErrorContains(t, err, "AE user-facing")
+}
+
+func TestDomainStorageRentAccruesByPolicy(t *testing.T) {
+	k := setupKeeper(t)
+	record, err := k.RegisterName(types.MsgRegisterName{Owner: ownerA, Name: "alice", Height: 10})
+	require.NoError(t, err)
+	require.Zero(t, record.StorageRentDebt)
+
+	renewed, err := k.RenewName(types.MsgRenewName{Owner: ownerA, Name: "alice", Height: 20})
+	require.NoError(t, err)
+	require.NotZero(t, renewed.StorageRentDebt)
+	require.Equal(t, uint64(20), renewed.LastStorageChargeHeight)
+
+	protocol := setupKeeper(t)
+	gs := protocol.ExportGenesis()
+	gs.IdentityParams.DefaultDomainRentPayerPolicy = types.DomainRentPayerProtocol
+	require.NoError(t, protocol.InitGenesis(gs))
+	record, err = protocol.RegisterName(types.MsgRegisterName{Owner: ownerA, Name: "bob", Height: 10})
+	require.NoError(t, err)
+	require.Equal(t, types.DomainRentPayerProtocol, record.RentPayerPolicy)
+	renewed, err = protocol.RenewName(types.MsgRenewName{Owner: ownerA, Name: "bob", Height: 20})
+	require.NoError(t, err)
+	require.Zero(t, renewed.StorageRentDebt)
+	require.Equal(t, uint64(20), renewed.LastStorageChargeHeight)
+}
+
+func TestDomainRegistryExportImportPreservesOwnerResolverAndRent(t *testing.T) {
+	source := setupKeeper(t)
+	_, err := source.RegisterName(types.MsgRegisterName{Owner: ownerA, Name: "alice", Height: 10})
+	require.NoError(t, err)
+	_, err = source.SetResolver(types.MsgSetResolver{Owner: ownerA, Name: "alice", ResolverRoot: resolverRoot("b"), Height: 12})
+	require.NoError(t, err)
+	exported := source.ExportGenesis()
+	require.NoError(t, exported.Validate())
+
+	target := NewKeeper()
+	require.NoError(t, target.InitGenesis(exported))
+	require.Equal(t, exported, target.ExportGenesis())
+	record, found, err := target.NameRecord("alice.aet")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, ownerA, record.Owner)
+	require.NotZero(t, record.StorageRentDebt)
+	_, resolver, active, err := target.ResolveName("alice", 13)
+	require.NoError(t, err)
+	require.True(t, active)
+	require.Equal(t, resolverRoot("b"), resolver.ResolverRoot)
 }

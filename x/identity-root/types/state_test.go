@@ -1,9 +1,12 @@
 package types
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/sovereign-l1/l1/app/addressing"
 )
 
 func TestNormalizeNameDeterministic(t *testing.T) {
@@ -27,21 +30,56 @@ func TestOwnershipBindingInvariant(t *testing.T) {
 	params.NFTBindingEnabled = true
 	state := EmptyIdentityRootState()
 	state.Records = append(state.Records, NameRecord{
-		Name:          "alice.aet",
-		Owner:         "owner-a",
-		ResolverRoot:  DefaultResolverRoot,
-		ExpiryHeight:  100,
-		RenewalHeight: 1,
-		CreatedHeight: 1,
-		UpdatedHeight: 1,
+		Name:                    "alice.aet",
+		Owner:                   mustAEAddress("11"),
+		ResolverRoot:            DefaultResolverRoot,
+		ExpiryHeight:            100,
+		RenewalHeight:           1,
+		LastStorageChargeHeight: 1,
+		RentPayerPolicy:         DomainRentPayerOwner,
+		CreatedHeight:           1,
+		UpdatedHeight:           1,
 		NFTBinding: IdentityNFTBindingReference{
 			Name:    "alice.aet",
 			Enabled: true,
 			ClassID: "identity",
 			NFTID:   "alice",
-			Owner:   "owner-b",
+			Owner:   mustAEAddress("22"),
 		},
 	})
 
 	require.ErrorContains(t, state.Validate(params), "NFT binding owner")
+}
+
+func TestDomainRentDeltaIsDeterministic(t *testing.T) {
+	params := DefaultIdentityRootParams()
+	record := NameRecord{
+		Name:                    "alice.aet",
+		Owner:                   mustAEAddress("11"),
+		ResolverRoot:            DefaultResolverRoot,
+		ExpiryHeight:            100,
+		RenewalHeight:           1,
+		LastStorageChargeHeight: 1,
+		RentPayerPolicy:         DomainRentPayerOwner,
+		CreatedHeight:           1,
+		UpdatedHeight:           1,
+	}.Normalize(params)
+	first, err := DomainStorageRentDelta(record, params, 11)
+	require.NoError(t, err)
+	second, err := DomainStorageRentDelta(record, params, 11)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.NotZero(t, first)
+}
+
+func mustAEAddress(hexByte string) string {
+	bz, err := addressing.Parse("4:000000000000000000000000" + strings.Repeat(hexByte, 20))
+	if err != nil {
+		panic(err)
+	}
+	text, err := addressing.FormatUserFriendly(bz)
+	if err != nil {
+		panic(err)
+	}
+	return text
 }
