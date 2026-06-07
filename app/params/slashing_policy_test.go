@@ -45,6 +45,16 @@ func TestDefaultSlashingAccountabilityPolicyMatchesAetraModel(t *testing.T) {
 	require.Equal(t, int64(25), policy.TimestampRepeatedViolationsSlashBps)
 	require.Equal(t, int64(24*60), policy.TimestampRepeatedViolationsJailMinutes)
 	require.Equal(t, int64(120), policy.TimestampMaxForwardDriftSeconds)
+	require.True(t, policy.HeightConsensusControlled)
+	require.True(t, policy.SingleValidatorHeightControlForbidden)
+	require.True(t, policy.SameHeightDoubleSignCovered)
+	require.True(t, policy.EquivocationCovered)
+	require.True(t, policy.InvalidProposalHeightChecked)
+	require.True(t, policy.NonDeterministicAppValidationForbidden)
+	require.True(t, policy.EvidenceExpirationChecked)
+	require.True(t, policy.UnbondingEvidenceTimingChecked)
+	require.Equal(t, uint64(100_000), policy.HeightEvidenceMaxAgeBlocks)
+	require.Equal(t, uint64(30_000), policy.HeightUnbondingEvidenceWindowBlocks)
 }
 
 func TestSlashingAccountabilityPolicyRejectsSubjectiveOrWeakDoubleSignRules(t *testing.T) {
@@ -159,4 +169,46 @@ func TestSlashingAccountabilityPolicyRejectsUnsafeProposalAndTimestampRules(t *t
 	policy = DefaultSlashingAccountabilityPolicy()
 	policy.TimestampMaxForwardDriftSeconds = 0
 	require.ErrorContains(t, policy.Validate(), "forward drift")
+}
+
+func TestSlashingAccountabilityPolicyRejectsUnsafeHeightManipulationRules(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.HeightConsensusControlled = false
+	require.ErrorContains(t, policy.Validate(), "consensus-controlled")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.SingleValidatorHeightControlForbidden = false
+	require.ErrorContains(t, policy.Validate(), "single validator")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.SameHeightDoubleSignCovered = false
+	require.ErrorContains(t, policy.Validate(), "same-height double-sign")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.EquivocationCovered = false
+	require.ErrorContains(t, policy.Validate(), "equivocation")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.InvalidProposalHeightChecked = false
+	require.ErrorContains(t, policy.Validate(), "proposal height")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.NonDeterministicAppValidationForbidden = false
+	require.ErrorContains(t, policy.Validate(), "non-deterministic")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.EvidenceExpirationChecked = false
+	require.ErrorContains(t, policy.Validate(), "expiration")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.UnbondingEvidenceTimingChecked = false
+	require.ErrorContains(t, policy.Validate(), "unbonding")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.HeightEvidenceMaxAgeBlocks = 0
+	require.ErrorContains(t, policy.Validate(), "max age")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.HeightUnbondingEvidenceWindowBlocks = 0
+	require.ErrorContains(t, policy.Validate(), "unbonding evidence window")
 }

@@ -36,6 +36,9 @@ const (
 	RepeatedTimestampViolationSlashBps    = int64(25)
 	RepeatedTimestampViolationJailMinutes = int64(24 * 60)
 	TimestampMaxForwardDriftSeconds       = int64(120)
+
+	HeightEvidenceMaxAgeBlocks          = uint64(100_000)
+	HeightUnbondingEvidenceWindowBlocks = uint64(30_000)
 )
 
 type SlashingAccountabilityPolicy struct {
@@ -71,6 +74,16 @@ type SlashingAccountabilityPolicy struct {
 	TimestampRepeatedViolationsSlashBps    int64
 	TimestampRepeatedViolationsJailMinutes int64
 	TimestampMaxForwardDriftSeconds        int64
+	HeightConsensusControlled              bool
+	SingleValidatorHeightControlForbidden  bool
+	SameHeightDoubleSignCovered            bool
+	EquivocationCovered                    bool
+	InvalidProposalHeightChecked           bool
+	NonDeterministicAppValidationForbidden bool
+	EvidenceExpirationChecked              bool
+	UnbondingEvidenceTimingChecked         bool
+	HeightEvidenceMaxAgeBlocks             uint64
+	HeightUnbondingEvidenceWindowBlocks    uint64
 }
 
 func DefaultSlashingAccountabilityPolicy() SlashingAccountabilityPolicy {
@@ -107,6 +120,16 @@ func DefaultSlashingAccountabilityPolicy() SlashingAccountabilityPolicy {
 		TimestampRepeatedViolationsSlashBps:    RepeatedTimestampViolationSlashBps,
 		TimestampRepeatedViolationsJailMinutes: RepeatedTimestampViolationJailMinutes,
 		TimestampMaxForwardDriftSeconds:        TimestampMaxForwardDriftSeconds,
+		HeightConsensusControlled:              true,
+		SingleValidatorHeightControlForbidden:  true,
+		SameHeightDoubleSignCovered:            true,
+		EquivocationCovered:                    true,
+		InvalidProposalHeightChecked:           true,
+		NonDeterministicAppValidationForbidden: true,
+		EvidenceExpirationChecked:              true,
+		UnbondingEvidenceTimingChecked:         true,
+		HeightEvidenceMaxAgeBlocks:             HeightEvidenceMaxAgeBlocks,
+		HeightUnbondingEvidenceWindowBlocks:    HeightUnbondingEvidenceWindowBlocks,
 	}
 }
 
@@ -214,6 +237,36 @@ func (p SlashingAccountabilityPolicy) Validate() error {
 	}
 	if p.TimestampMaxForwardDriftSeconds <= 0 {
 		return fmt.Errorf("timestamp max forward drift must be positive")
+	}
+	if !p.HeightConsensusControlled {
+		return fmt.Errorf("height must remain consensus-controlled")
+	}
+	if !p.SingleValidatorHeightControlForbidden {
+		return fmt.Errorf("single validator height control must be forbidden")
+	}
+	if !p.SameHeightDoubleSignCovered {
+		return fmt.Errorf("same-height double-sign must be covered")
+	}
+	if !p.EquivocationCovered {
+		return fmt.Errorf("height manipulation policy must cover equivocation")
+	}
+	if !p.InvalidProposalHeightChecked {
+		return fmt.Errorf("invalid proposal height must be checked deterministically")
+	}
+	if !p.NonDeterministicAppValidationForbidden {
+		return fmt.Errorf("non-deterministic app validation must be forbidden")
+	}
+	if !p.EvidenceExpirationChecked {
+		return fmt.Errorf("evidence expiration edge cases must be checked")
+	}
+	if !p.UnbondingEvidenceTimingChecked {
+		return fmt.Errorf("unbonding and evidence timing must be checked")
+	}
+	if p.HeightEvidenceMaxAgeBlocks == 0 {
+		return fmt.Errorf("height evidence max age must be positive")
+	}
+	if p.HeightUnbondingEvidenceWindowBlocks == 0 {
+		return fmt.Errorf("height unbonding evidence window must be positive")
 	}
 	return nil
 }

@@ -150,6 +150,16 @@ type SlashingExecutionResult struct {
 	DelegatorExact   bool
 }
 
+type SlashingEvidenceTimingInput struct {
+	FaultHeight                   uint64
+	EvidenceHeight                uint64
+	CurrentHeight                 uint64
+	MaxEvidenceAgeBlocks          uint64
+	ValidatorBondedHeight         uint64
+	ValidatorUnbondingHeight      uint64
+	UnbondingEvidenceWindowBlocks uint64
+}
+
 func SlashSeverityClasses() []string {
 	return []string{
 		SlashSeverityMinorLivenessFault,
@@ -163,6 +173,43 @@ func SlashSeverityClasses() []string {
 		SlashSeverityDoubleSign,
 		SlashSeverityEvidenceFraud,
 	}
+}
+
+func ValidateSlashingEvidenceTiming(input SlashingEvidenceTimingInput) error {
+	if input.FaultHeight == 0 || input.EvidenceHeight == 0 || input.CurrentHeight == 0 {
+		return errors.New("slashing evidence timing heights must be positive")
+	}
+	if input.MaxEvidenceAgeBlocks == 0 {
+		return errors.New("slashing evidence max age must be positive")
+	}
+	if input.ValidatorBondedHeight == 0 {
+		return errors.New("slashing evidence validator bonded height is required")
+	}
+	if input.FaultHeight < input.ValidatorBondedHeight {
+		return errors.New("slashing fault height precedes validator bonded height")
+	}
+	if input.EvidenceHeight < input.FaultHeight {
+		return errors.New("slashing evidence height cannot precede fault height")
+	}
+	if input.CurrentHeight < input.EvidenceHeight {
+		return errors.New("slashing current height cannot precede evidence height")
+	}
+	if input.EvidenceHeight-input.FaultHeight > input.MaxEvidenceAgeBlocks {
+		return errors.New("slashing evidence expired by max age")
+	}
+	if input.ValidatorUnbondingHeight == 0 {
+		return nil
+	}
+	if input.UnbondingEvidenceWindowBlocks == 0 {
+		return errors.New("slashing unbonding evidence window is required")
+	}
+	if input.FaultHeight >= input.ValidatorUnbondingHeight {
+		return errors.New("slashing fault height is after validator unbonding height")
+	}
+	if input.EvidenceHeight > input.ValidatorUnbondingHeight+input.UnbondingEvidenceWindowBlocks {
+		return errors.New("slashing evidence arrived after unbonding risk window")
+	}
+	return nil
 }
 
 func DefaultSeverityBps(severityLevel string) (uint32, error) {

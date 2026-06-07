@@ -109,6 +109,42 @@ func TestRepeatedObjectiveProposalAndTimestampViolationsCanJailSlashWithoutTombs
 	}
 }
 
+func TestSlashingEvidenceTimingCoversHeightManipulationEdges(t *testing.T) {
+	valid := SlashingEvidenceTimingInput{
+		FaultHeight:                   100,
+		EvidenceHeight:                110,
+		CurrentHeight:                 120,
+		MaxEvidenceAgeBlocks:          100,
+		ValidatorBondedHeight:         90,
+		ValidatorUnbondingHeight:      115,
+		UnbondingEvidenceWindowBlocks: 30,
+	}
+	require.NoError(t, ValidateSlashingEvidenceTiming(valid))
+
+	expired := valid
+	expired.EvidenceHeight = 201
+	expired.CurrentHeight = 201
+	require.ErrorContains(t, ValidateSlashingEvidenceTiming(expired), "expired")
+
+	beforeBonded := valid
+	beforeBonded.FaultHeight = 80
+	require.ErrorContains(t, ValidateSlashingEvidenceTiming(beforeBonded), "bonded height")
+
+	evidenceBeforeFault := valid
+	evidenceBeforeFault.EvidenceHeight = 99
+	require.ErrorContains(t, ValidateSlashingEvidenceTiming(evidenceBeforeFault), "precede fault")
+
+	afterUnbondingFault := valid
+	afterUnbondingFault.FaultHeight = 115
+	afterUnbondingFault.EvidenceHeight = 116
+	require.ErrorContains(t, ValidateSlashingEvidenceTiming(afterUnbondingFault), "after validator unbonding")
+
+	lateUnbondingEvidence := valid
+	lateUnbondingEvidence.EvidenceHeight = 146
+	lateUnbondingEvidence.CurrentHeight = 146
+	require.ErrorContains(t, ValidateSlashingEvidenceTiming(lateUnbondingEvidence), "unbonding risk window")
+}
+
 func TestProgressiveDowntimeSlashingDefaultsStayWithinAetraRanges(t *testing.T) {
 	first, err := ComputeSlashingPenalty(SlashingPenaltyInput{
 		PenaltyID:           "downtime-first",

@@ -101,6 +101,14 @@ func TestKernelABCIProcessProposalDeterministicAcceptRejectAndTimestampBounds(t 
 	require.Error(t, errA)
 	require.Equal(t, errA.Error(), errB.Error())
 	require.Contains(t, errA.Error(), "outside allowed consensus bounds")
+
+	wrongHeight := proposal
+	wrongHeight.Plan.Height = ctx.Height + 1
+	errA = ProcessKernelABCIProposalWithTimestampBounds(ctx, state, wrongHeight, []KernelMessageEnvelope{local}, limits, bounds)
+	errB = ProcessKernelABCIProposalWithTimestampBounds(ctx, state, wrongHeight, []KernelMessageEnvelope{local}, limits, bounds)
+	require.Error(t, errA)
+	require.Equal(t, errA.Error(), errB.Error())
+	require.Contains(t, errA.Error(), "consensus context mismatch")
 }
 
 func TestKernelTimestampBoundsRejectNonCometBFTCompatibleTimes(t *testing.T) {
