@@ -58,7 +58,7 @@ func TestSlashSeverityClassesUseProtocolNames(t *testing.T) {
 		SlashSeverityInvalidTaskExecution:   750,
 		SlashSeverityInvalidStateTransition: 1_500,
 		SlashSeverityEquivocation:           2_000,
-		SlashSeverityDoubleSign:             5_000,
+		SlashSeverityDoubleSign:             500,
 		SlashSeverityEvidenceFraud:          7_500,
 	}
 	for severity, bps := range expected {
@@ -123,14 +123,45 @@ func TestRouteSlashingPenaltySplitsBurnReporterTreasuryAndCompensation(t *testin
 		ReporterRewardCapBps:   1_000,
 	})
 	require.NoError(t, err)
-	require.Equal(t, sdkmath.NewInt(6_000), routing.TotalPenaltyNaet)
-	require.Equal(t, sdkmath.NewInt(1_800), routing.BurnNaet)
-	require.Equal(t, sdkmath.NewInt(600), routing.ReporterRewardNaet)
-	require.Equal(t, sdkmath.NewInt(2_400), routing.ProtocolTreasuryNaet)
-	require.Equal(t, sdkmath.NewInt(600), routing.CompensationNaet)
-	require.Equal(t, sdkmath.NewInt(600), routing.ResidualNaet)
+	require.Equal(t, sdkmath.NewInt(1_500), routing.TotalPenaltyNaet)
+	require.Equal(t, sdkmath.NewInt(450), routing.BurnNaet)
+	require.Equal(t, sdkmath.NewInt(150), routing.ReporterRewardNaet)
+	require.Equal(t, sdkmath.NewInt(600), routing.ProtocolTreasuryNaet)
+	require.Equal(t, sdkmath.NewInt(150), routing.CompensationNaet)
+	require.Equal(t, sdkmath.NewInt(150), routing.ResidualNaet)
 	require.Equal(t, routing.TotalPenaltyNaet, routing.BurnNaet.Add(routing.ReporterRewardNaet).Add(routing.ProtocolTreasuryNaet).Add(routing.CompensationNaet).Add(routing.ResidualNaet))
 	require.Len(t, routing.RoutingHash, PosHashHexLength)
+}
+
+func TestDoubleSignSlashingDefaultsToFivePercentJailAndTombstone(t *testing.T) {
+	candidate := candidate("val-a", 10_000, 0)
+	result, err := ExecuteSlashing(SlashingExecutionInput{
+		EvidenceID:     "double-sign-evidence-1",
+		ExecutedHeight: 100,
+		CurrentEpoch:   10,
+		Candidate:      candidate,
+		PenaltyInput: SlashingPenaltyInput{
+			PenaltyID:           "double-sign-penalty-1",
+			SeverityLevel:       SlashSeverityDoubleSign,
+			StakeExposureNaet:   sdkmath.NewInt(10_000),
+			SelfStakeNaet:       candidate.SelfStakeNaet,
+			TemporaryJailEpochs: 1,
+			PermanentTombstone:  true,
+			EvidenceHeight:      90,
+		},
+		RoutingInput: SlashingPenaltyRoutingInput{
+			BurnBps: BasisPoints,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(500), result.SeverityMatrix[SlashSeverityDoubleSign])
+	require.Equal(t, SlashSeverityDoubleSign, result.Record.Severity)
+	require.Equal(t, sdkmath.NewInt(500), result.Record.SlashAmount)
+	require.Equal(t, uint64(11), result.Record.JailUntilEpochOptional)
+	require.True(t, result.Record.Tombstone)
+	require.True(t, result.UpdatedCandidate.Jailed)
+	require.True(t, result.UpdatedCandidate.Tombstoned)
+	require.Equal(t, sdkmath.NewInt(9_500), result.UpdatedCandidate.SelfStakeNaet)
 }
 
 func TestSlashingRecordMatchesDesignFieldsAndExecutesInvariants(t *testing.T) {
@@ -150,7 +181,7 @@ func TestSlashingRecordMatchesDesignFieldsAndExecutesInvariants(t *testing.T) {
 		"executed_height",
 	}, SlashingRecordFieldNames())
 	matrix := SeverityMatrix()
-	require.Equal(t, uint32(5_000), matrix[SlashSeverityDoubleSign])
+	require.Equal(t, uint32(500), matrix[SlashSeverityDoubleSign])
 	require.Equal(t, uint32(7_500), matrix[SlashSeverityEvidenceFraud])
 
 	candidate := candidate("val-a", 10_000, 5_000)

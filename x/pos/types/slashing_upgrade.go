@@ -176,7 +176,7 @@ func DefaultSeverityBps(severityLevel string) (uint32, error) {
 	case SlashSeverityEquivocation:
 		return 2_000, nil
 	case SlashSeverityDoubleSign:
-		return 5_000, nil
+		return 500, nil
 	case SlashSeverityEvidenceFraud:
 		return 7_500, nil
 	case "low":
