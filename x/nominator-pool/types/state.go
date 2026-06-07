@@ -3,6 +3,8 @@ package types
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"sort"
 	"strings"
 
@@ -22,33 +24,37 @@ const (
 	WithdrawalStatusCancelled = "cancelled"
 	WithdrawalStatusCompleted = "completed"
 
-	MaxPoolsV1                  = uint32(10_000)
-	MaxDelegatorsV1             = uint32(1_000_000)
-	MaxPendingDepositsV1        = uint32(1_000_000)
-	MaxPendingWithdrawalsV1     = uint32(1_000_000)
-	MaxUnbondingEntriesV1       = uint32(1_000_000)
-	MaxPoolIDBytesV1            = uint32(96)
-	MaxBasisPoints              = uint32(10_000)
-	IndexScale                  = uint64(1_000_000_000)
-	DefaultMaxCommissionBps     = uint32(2_000)
-	DefaultUnbondingBlocks      = appparams.StakingUnbondingDefaultBlocks
-	DefaultValidatorChangeDelay = uint64(100)
-	DefaultMinPoolDeposit       = uint64(10)
+	MaxPoolsV1                            = uint32(10_000)
+	MaxDelegatorsV1                       = uint32(1_000_000)
+	MaxPendingDepositsV1                  = uint32(1_000_000)
+	MaxPendingWithdrawalsV1               = uint32(1_000_000)
+	MaxUnbondingEntriesV1                 = uint32(1_000_000)
+	MaxPoolIDBytesV1                      = uint32(96)
+	MaxBasisPoints                        = uint32(10_000)
+	IndexScale                            = uint64(1_000_000_000)
+	DefaultMaxCommissionBps               = uint32(2_000)
+	DefaultMaxValidatorCommissionBps      = uint32(2_000)
+	DefaultMaxOperatorPerformanceBonusBps = uint32(1_000)
+	DefaultUnbondingBlocks                = appparams.StakingUnbondingDefaultBlocks
+	DefaultValidatorChangeDelay           = uint64(100)
+	DefaultMinPoolDeposit                 = uint64(10)
 )
 
 type Params struct {
-	Authority                   string
-	MaxPools                    uint32
-	MaxDelegators               uint32
-	MaxPendingDeposits          uint32
-	MaxPendingWithdrawals       uint32
-	MaxUnbondingEntries         uint32
-	MaxPoolIDBytes              uint32
-	MaxCommissionBps            uint32
-	UnbondingBlocks             uint64
-	ValidatorChangeDelay        uint64
-	MinPoolDeposit              uint64
-	DirectUserDelegationEnabled bool
+	Authority                      string
+	MaxPools                       uint32
+	MaxDelegators                  uint32
+	MaxPendingDeposits             uint32
+	MaxPendingWithdrawals          uint32
+	MaxUnbondingEntries            uint32
+	MaxPoolIDBytes                 uint32
+	MaxCommissionBps               uint32
+	MaxValidatorCommissionBps      uint32
+	MaxOperatorPerformanceBonusBps uint32
+	UnbondingBlocks                uint64
+	ValidatorChangeDelay           uint64
+	MinPoolDeposit                 uint64
+	DirectUserDelegationEnabled    bool
 }
 
 type State struct {
@@ -56,25 +62,31 @@ type State struct {
 }
 
 type NominatorPool struct {
-	PoolID                 string
-	ContractAddressUser    string
-	ContractAddressRaw     string
-	OfficialLiquidStaking  bool
-	PoolOperator           string
-	ValidatorTarget        string
-	PendingValidatorTarget string
-	ValidatorChangeHeight  uint64
-	TotalShares            uint64
-	TotalBondedStake       uint64
-	Allocations            []PoolAllocation
-	PendingDeposits        []PendingDeposit
-	PendingWithdrawals     []PendingWithdrawal
-	DelegatorShares        []DelegatorShare
-	RewardIndex            uint64
-	SlashIndex             uint64
-	PoolCommissionBps      uint32
-	Status                 string
-	UnbondingQueue         []UnbondingEntry
+	PoolID                     string
+	ContractAddressUser        string
+	ContractAddressRaw         string
+	OfficialLiquidStaking      bool
+	PoolOperator               string
+	ValidatorTarget            string
+	PendingValidatorTarget     string
+	ValidatorChangeHeight      uint64
+	TotalShares                uint64
+	TotalBondedStake           uint64
+	Allocations                []PoolAllocation
+	PendingDeposits            []PendingDeposit
+	PendingWithdrawals         []PendingWithdrawal
+	DelegatorShares            []DelegatorShare
+	RewardIndex                uint64
+	RewardRemainder            uint64
+	SlashIndex                 uint64
+	PoolCommissionBps          uint32
+	RewardEpoch                uint64
+	ProtocolFeeAccrued         uint64
+	ValidatorCommissionAccrued uint64
+	ValidatorOperatorIncome    []ValidatorIncome
+	ValidatorAllocations       []ValidatorRewardAllocation
+	Status                     string
+	UnbondingQueue             []UnbondingEntry
 }
 
 type PendingDeposit struct {
@@ -113,6 +125,60 @@ type PoolAllocation struct {
 	ValidatorAddress string
 	Amount           uint64
 	Height           uint64
+}
+
+type ValidatorRewardAllocation struct {
+	Validator                   string
+	PoolAllocatedStake          uint64
+	ValidatorSelfStake          uint64
+	PerformanceBps              uint32
+	CommissionBps               uint32
+	SlashingLoss                uint64
+	Jailed                      bool
+	InfrastructureCost          uint64
+	OperatorPerformanceBonusBps uint32
+	GrossPoolRewards            uint64
+	ValidatorCommission         uint64
+	PoolProtocolFee             uint64
+	NetPoolRewards              uint64
+	ValidatorSelfStakeRewards   uint64
+	OperatorPerformanceBonus    uint64
+	ValidatorGrossIncome        uint64
+	ValidatorNetIncome          int64
+	RewardIndexDelta            uint64
+	RewardIndexAfter            uint64
+}
+
+type ValidatorIncome struct {
+	Validator                string
+	SelfStakeRewards         uint64
+	CommissionIncome         uint64
+	OperatorPerformanceBonus uint64
+	InfrastructureCost       uint64
+	GrossIncome              uint64
+	NetIncome                int64
+}
+
+type PoolRewardSummary struct {
+	PoolID                    string
+	Epoch                     uint64
+	RewardRateBps             uint32
+	EmissionsAllocated        uint64
+	FeesAllocated             uint64
+	RewardCap                 uint64
+	GrossPoolRewards          uint64
+	ValidatorCommission       uint64
+	PoolProtocolFee           uint64
+	PoolUserRewards           uint64
+	SlashingLosses            uint64
+	ValidatorSelfStakeRewards uint64
+	OperatorPerformanceBonus  uint64
+	ValidatorGrossIncome      uint64
+	ValidatorNetIncome        int64
+	RewardIndexBefore         uint64
+	RewardIndexAfter          uint64
+	RewardRemainder           uint64
+	AllocationsTouched        uint64
 }
 
 type MsgCreateNominatorPool struct {
@@ -192,6 +258,25 @@ type MsgClaimPoolRewards struct {
 	Height    uint64
 }
 
+type MsgSyncPoolRewards struct {
+	Authority          string
+	PoolID             string
+	Epoch              uint64
+	RewardRateBps      uint32
+	EmissionsAllocated uint64
+	FeesAllocated      uint64
+	Height             uint64
+	Allocations        []ValidatorRewardAllocation
+}
+
+type MsgClaimStakingRewards struct {
+	Authority         string
+	Delegator         string
+	Validator         string
+	Height            uint64
+	InternalMigration bool
+}
+
 type MsgUpdatePoolCommission struct {
 	Authority         string
 	PoolID            string
@@ -209,19 +294,49 @@ type MsgChangePoolValidator struct {
 	Height          uint64
 }
 
+type QueryPoolShareRequest struct {
+	PoolID    string
+	Delegator string
+}
+
+type QueryPoolShareResponse struct {
+	Share          DelegatorShare
+	PendingRewards uint64
+}
+
+type QueryPoolAllocationsRequest struct {
+	PoolID string
+}
+
+type QueryPoolAllocationsResponse struct {
+	Allocations []ValidatorRewardAllocation
+}
+
+type QueryStakingRewardsRequest struct {
+	Delegator         string
+	Validator         string
+	InternalMigration bool
+}
+
+type QueryStakingRewardsResponse struct {
+	RewardAmount uint64
+}
+
 func DefaultParams() Params {
 	return Params{
-		Authority:             prototype.DefaultAuthority,
-		MaxPools:              MaxPoolsV1,
-		MaxDelegators:         MaxDelegatorsV1,
-		MaxPendingDeposits:    MaxPendingDepositsV1,
-		MaxPendingWithdrawals: MaxPendingWithdrawalsV1,
-		MaxUnbondingEntries:   MaxUnbondingEntriesV1,
-		MaxPoolIDBytes:        MaxPoolIDBytesV1,
-		MaxCommissionBps:      DefaultMaxCommissionBps,
-		UnbondingBlocks:       DefaultUnbondingBlocks,
-		ValidatorChangeDelay:  DefaultValidatorChangeDelay,
-		MinPoolDeposit:        DefaultMinPoolDeposit,
+		Authority:                      prototype.DefaultAuthority,
+		MaxPools:                       MaxPoolsV1,
+		MaxDelegators:                  MaxDelegatorsV1,
+		MaxPendingDeposits:             MaxPendingDepositsV1,
+		MaxPendingWithdrawals:          MaxPendingWithdrawalsV1,
+		MaxUnbondingEntries:            MaxUnbondingEntriesV1,
+		MaxPoolIDBytes:                 MaxPoolIDBytesV1,
+		MaxCommissionBps:               DefaultMaxCommissionBps,
+		MaxValidatorCommissionBps:      DefaultMaxValidatorCommissionBps,
+		MaxOperatorPerformanceBonusBps: DefaultMaxOperatorPerformanceBonusBps,
+		UnbondingBlocks:                DefaultUnbondingBlocks,
+		ValidatorChangeDelay:           DefaultValidatorChangeDelay,
+		MinPoolDeposit:                 DefaultMinPoolDeposit,
 	}
 }
 
@@ -249,6 +364,12 @@ func (p Params) Validate() error {
 	}
 	if p.MaxCommissionBps > MaxBasisPoints {
 		return fmt.Errorf("nominator pool max commission must be <= %d", MaxBasisPoints)
+	}
+	if p.MaxValidatorCommissionBps > MaxBasisPoints {
+		return fmt.Errorf("nominator pool max validator commission must be <= %d", MaxBasisPoints)
+	}
+	if p.MaxOperatorPerformanceBonusBps > MaxBasisPoints {
+		return fmt.Errorf("nominator pool max operator performance bonus must be <= %d", MaxBasisPoints)
 	}
 	if err := appparams.ValidateStakingUnbondingBlocks(p.UnbondingBlocks); err != nil {
 		return fmt.Errorf("nominator pool %w", err)
@@ -385,6 +506,21 @@ func (p NominatorPool) Validate(params Params) error {
 			return err
 		}
 	}
+	incomeByValidator := map[string]struct{}{}
+	for _, income := range p.ValidatorOperatorIncome {
+		if err := income.Validate(); err != nil {
+			return err
+		}
+		if _, found := incomeByValidator[income.Validator]; found {
+			return fmt.Errorf("duplicate validator income %s", income.Validator)
+		}
+		incomeByValidator[income.Validator] = struct{}{}
+	}
+	for _, allocation := range p.ValidatorAllocations {
+		if err := allocation.Validate(params); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -413,6 +549,46 @@ func ValidateAllocations(allocations []PoolAllocation, totalBondedStake uint64) 
 			return errors.New("pool allocations exceed bonded stake")
 		}
 		total += allocation.Amount
+	}
+	return nil
+}
+
+func (a ValidatorRewardAllocation) Validate(params Params) error {
+	if err := addressing.ValidateAuthorityAddress("nominator pool reward validator", a.Validator); err != nil {
+		return err
+	}
+	if a.PerformanceBps > MaxBasisPoints {
+		return errors.New("nominator pool validator performance exceeds basis points")
+	}
+	if a.CommissionBps > params.MaxValidatorCommissionBps {
+		return errors.New("nominator pool validator commission exceeds configured bound")
+	}
+	if a.OperatorPerformanceBonusBps > params.MaxOperatorPerformanceBonusBps {
+		return errors.New("nominator pool operator performance bonus exceeds configured bound")
+	}
+	if a.Jailed && a.OperatorPerformanceBonus > 0 {
+		return errors.New("jailed validator cannot receive positive operator bonus")
+	}
+	return nil
+}
+
+func (i ValidatorIncome) Validate() error {
+	if err := addressing.ValidateAuthorityAddress("nominator pool validator income", i.Validator); err != nil {
+		return err
+	}
+	expectedGross, err := CheckedAddUint64(i.SelfStakeRewards, i.CommissionIncome)
+	if err != nil {
+		return err
+	}
+	expectedGross, err = CheckedAddUint64(expectedGross, i.OperatorPerformanceBonus)
+	if err != nil {
+		return err
+	}
+	if i.GrossIncome != expectedGross {
+		return errors.New("nominator pool validator gross income does not reconcile")
+	}
+	if i.NetIncome != SaturatingNetIncome(i.GrossIncome, i.InfrastructureCost) {
+		return errors.New("nominator pool validator net income does not reconcile")
 	}
 	return nil
 }
@@ -477,6 +653,8 @@ func (s State) Normalize(params Params) State {
 		s.Pools[idx].PendingWithdrawals = SortWithdrawals(s.Pools[idx].PendingWithdrawals)
 		s.Pools[idx].DelegatorShares = SortDelegators(s.Pools[idx].DelegatorShares)
 		s.Pools[idx].UnbondingQueue = SortUnbonding(s.Pools[idx].UnbondingQueue)
+		s.Pools[idx].ValidatorOperatorIncome = SortValidatorIncome(s.Pools[idx].ValidatorOperatorIncome)
+		s.Pools[idx].ValidatorAllocations = SortValidatorRewardAllocations(s.Pools[idx].ValidatorAllocations)
 	}
 	return s
 }
@@ -484,6 +662,18 @@ func (s State) Normalize(params Params) State {
 func SortAllocations(values []PoolAllocation) []PoolAllocation {
 	out := append([]PoolAllocation(nil), values...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ValidatorAddress < out[j].ValidatorAddress })
+	return out
+}
+
+func SortValidatorIncome(values []ValidatorIncome) []ValidatorIncome {
+	out := append([]ValidatorIncome(nil), values...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Validator < out[j].Validator })
+	return out
+}
+
+func SortValidatorRewardAllocations(values []ValidatorRewardAllocation) []ValidatorRewardAllocation {
+	out := append([]ValidatorRewardAllocation(nil), values...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Validator < out[j].Validator })
 	return out
 }
 
@@ -644,11 +834,290 @@ func RewardDelta(amount uint64, totalShares uint64) uint64 {
 	return amount * IndexScale / totalShares
 }
 
+func IndexedRewardAmount(delta uint64, totalShares uint64) uint64 {
+	if delta == 0 || totalShares == 0 {
+		return 0
+	}
+	return delta * totalShares / IndexScale
+}
+
 func AccruedReward(delegator DelegatorShare, rewardIndex uint64) uint64 {
 	if rewardIndex <= delegator.RewardIndexCheckpoint {
 		return delegator.PendingRewards
 	}
 	return delegator.PendingRewards + delegator.Shares*(rewardIndex-delegator.RewardIndexCheckpoint)/IndexScale
+}
+
+func SyncPoolRewards(params Params, pool NominatorPool, msg MsgSyncPoolRewards) (NominatorPool, PoolRewardSummary, error) {
+	if err := params.Authorize(msg.Authority); err != nil {
+		return NominatorPool{}, PoolRewardSummary{}, err
+	}
+	if msg.PoolID != pool.PoolID {
+		return NominatorPool{}, PoolRewardSummary{}, errors.New("nominator pool reward sync pool mismatch")
+	}
+	if msg.Epoch == 0 || msg.Height == 0 {
+		return NominatorPool{}, PoolRewardSummary{}, errors.New("nominator pool reward sync epoch and height must be positive")
+	}
+	if msg.Epoch <= pool.RewardEpoch {
+		return NominatorPool{}, PoolRewardSummary{}, errors.New("nominator pool reward sync epoch must increase")
+	}
+	if msg.RewardRateBps > MaxBasisPoints {
+		return NominatorPool{}, PoolRewardSummary{}, errors.New("nominator pool reward rate exceeds basis points")
+	}
+	if len(msg.Allocations) == 0 {
+		return NominatorPool{}, PoolRewardSummary{}, errors.New("nominator pool reward sync requires validator allocations")
+	}
+	rewardCap, err := CheckedAddUint64(msg.EmissionsAllocated, msg.FeesAllocated)
+	if err != nil {
+		return NominatorPool{}, PoolRewardSummary{}, err
+	}
+
+	next := pool
+	next.RewardEpoch = msg.Epoch
+	next.ValidatorAllocations = nil
+	summary := PoolRewardSummary{
+		PoolID:             pool.PoolID,
+		Epoch:              msg.Epoch,
+		RewardRateBps:      msg.RewardRateBps,
+		EmissionsAllocated: msg.EmissionsAllocated,
+		FeesAllocated:      msg.FeesAllocated,
+		RewardCap:          rewardCap,
+		RewardIndexBefore:  pool.RewardIndex,
+	}
+	income := map[string]ValidatorIncome{}
+	totalRewardOut := uint64(0)
+	index := pool.RewardIndex
+	remainder := pool.RewardRemainder
+	for _, allocation := range SortValidatorRewardAllocations(msg.Allocations) {
+		if err := allocation.Validate(params); err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		effectivePerformanceBps := allocation.PerformanceBps
+		if allocation.Jailed {
+			effectivePerformanceBps = 0
+			allocation.OperatorPerformanceBonusBps = 0
+		}
+		grossPoolRewards, err := RewardForStake(allocation.PoolAllocatedStake, msg.RewardRateBps, effectivePerformanceBps)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		commission, err := MulDivUint64(grossPoolRewards, uint64(allocation.CommissionBps), uint64(MaxBasisPoints))
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		afterCommission := grossPoolRewards - commission
+		poolFee, err := MulDivUint64(afterCommission, uint64(pool.PoolCommissionBps), uint64(MaxBasisPoints))
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		netPoolRewards := afterCommission - poolFee
+		selfStakeRewards, err := RewardForStake(allocation.ValidatorSelfStake, msg.RewardRateBps, effectivePerformanceBps)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		operatorBonus, err := MulDivUint64(grossPoolRewards, uint64(allocation.OperatorPerformanceBonusBps), uint64(MaxBasisPoints))
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		validatorGross, err := CheckedAddUint64(selfStakeRewards, commission)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		validatorGross, err = CheckedAddUint64(validatorGross, operatorBonus)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		totalRewardOut, err = CheckedAddUint64(totalRewardOut, grossPoolRewards)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		totalRewardOut, err = CheckedAddUint64(totalRewardOut, selfStakeRewards)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		totalRewardOut, err = CheckedAddUint64(totalRewardOut, operatorBonus)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		if totalRewardOut > rewardCap {
+			return NominatorPool{}, PoolRewardSummary{}, errors.New("nominator pool rewards exceed emissions and fee allocation cap")
+		}
+
+		delta := RewardDelta(netPoolRewards, pool.TotalShares)
+		index, err = CheckedAddUint64(index, delta)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		distributed := IndexedRewardAmount(delta, pool.TotalShares)
+		if netPoolRewards >= distributed {
+			remainder, err = CheckedAddUint64(remainder, netPoolRewards-distributed)
+			if err != nil {
+				return NominatorPool{}, PoolRewardSummary{}, err
+			}
+		}
+		allocation.PerformanceBps = effectivePerformanceBps
+		allocation.GrossPoolRewards = grossPoolRewards
+		allocation.ValidatorCommission = commission
+		allocation.PoolProtocolFee = poolFee
+		allocation.NetPoolRewards = netPoolRewards
+		allocation.ValidatorSelfStakeRewards = selfStakeRewards
+		allocation.OperatorPerformanceBonus = operatorBonus
+		allocation.ValidatorGrossIncome = validatorGross
+		allocation.ValidatorNetIncome = SaturatingNetIncome(validatorGross, allocation.InfrastructureCost)
+		allocation.RewardIndexDelta = delta
+		allocation.RewardIndexAfter = index
+		next.ValidatorAllocations = append(next.ValidatorAllocations, allocation)
+
+		entry := income[allocation.Validator]
+		entry.Validator = allocation.Validator
+		entry.SelfStakeRewards, err = CheckedAddUint64(entry.SelfStakeRewards, selfStakeRewards)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		entry.CommissionIncome, err = CheckedAddUint64(entry.CommissionIncome, commission)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		entry.OperatorPerformanceBonus, err = CheckedAddUint64(entry.OperatorPerformanceBonus, operatorBonus)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		entry.InfrastructureCost, err = CheckedAddUint64(entry.InfrastructureCost, allocation.InfrastructureCost)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		entry.GrossIncome, err = CheckedAddUint64(entry.GrossIncome, validatorGross)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		entry.NetIncome = SaturatingNetIncome(entry.GrossIncome, entry.InfrastructureCost)
+		income[allocation.Validator] = entry
+
+		summary.GrossPoolRewards, err = CheckedAddUint64(summary.GrossPoolRewards, grossPoolRewards)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.ValidatorCommission, err = CheckedAddUint64(summary.ValidatorCommission, commission)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.PoolProtocolFee, err = CheckedAddUint64(summary.PoolProtocolFee, poolFee)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.PoolUserRewards, err = CheckedAddUint64(summary.PoolUserRewards, netPoolRewards)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.SlashingLosses, err = CheckedAddUint64(summary.SlashingLosses, allocation.SlashingLoss)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.ValidatorSelfStakeRewards, err = CheckedAddUint64(summary.ValidatorSelfStakeRewards, selfStakeRewards)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.OperatorPerformanceBonus, err = CheckedAddUint64(summary.OperatorPerformanceBonus, operatorBonus)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.ValidatorGrossIncome, err = CheckedAddUint64(summary.ValidatorGrossIncome, validatorGross)
+		if err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		summary.AllocationsTouched++
+	}
+	next.ValidatorOperatorIncome = next.ValidatorOperatorIncome[:0]
+	for _, value := range income {
+		if err := value.Validate(); err != nil {
+			return NominatorPool{}, PoolRewardSummary{}, err
+		}
+		next.ValidatorOperatorIncome = append(next.ValidatorOperatorIncome, value)
+	}
+	next.ValidatorOperatorIncome = SortValidatorIncome(next.ValidatorOperatorIncome)
+	next.RewardIndex = index
+	next.RewardRemainder = remainder
+	next.ProtocolFeeAccrued, err = CheckedAddUint64(next.ProtocolFeeAccrued, summary.PoolProtocolFee)
+	if err != nil {
+		return NominatorPool{}, PoolRewardSummary{}, err
+	}
+	next.ValidatorCommissionAccrued, err = CheckedAddUint64(next.ValidatorCommissionAccrued, summary.ValidatorCommission)
+	if err != nil {
+		return NominatorPool{}, PoolRewardSummary{}, err
+	}
+	next.TotalBondedStake, err = CheckedAddUint64(next.TotalBondedStake, summary.PoolUserRewards)
+	if err != nil {
+		return NominatorPool{}, PoolRewardSummary{}, err
+	}
+	if summary.SlashingLosses > next.TotalBondedStake {
+		summary.SlashingLosses = next.TotalBondedStake
+	}
+	next.TotalBondedStake -= summary.SlashingLosses
+	next.SlashIndex, err = CheckedAddUint64(next.SlashIndex, RewardDelta(summary.SlashingLosses, pool.TotalShares))
+	if err != nil {
+		return NominatorPool{}, PoolRewardSummary{}, err
+	}
+	summary.RewardIndexAfter = next.RewardIndex
+	summary.RewardRemainder = next.RewardRemainder
+	summary.ValidatorNetIncome = SaturatingNetIncome(summary.ValidatorGrossIncome, totalInfrastructureCost(next.ValidatorOperatorIncome))
+	return next, summary, nil
+}
+
+func RewardForStake(stake uint64, rewardRateBps uint32, performanceBps uint32) (uint64, error) {
+	if rewardRateBps > MaxBasisPoints || performanceBps > MaxBasisPoints {
+		return 0, errors.New("nominator pool reward inputs exceed basis points")
+	}
+	first, err := MulDivUint64(stake, uint64(rewardRateBps), uint64(MaxBasisPoints))
+	if err != nil {
+		return 0, err
+	}
+	return MulDivUint64(first, uint64(performanceBps), uint64(MaxBasisPoints))
+}
+
+func MulDivUint64(value, multiplier, denominator uint64) (uint64, error) {
+	if denominator == 0 {
+		return 0, errors.New("nominator pool division by zero")
+	}
+	product := new(big.Int).Mul(new(big.Int).SetUint64(value), new(big.Int).SetUint64(multiplier))
+	product.Quo(product, new(big.Int).SetUint64(denominator))
+	if !product.IsUint64() {
+		return 0, errors.New("nominator pool uint64 accounting overflow")
+	}
+	return product.Uint64(), nil
+}
+
+func CheckedAddUint64(left, right uint64) (uint64, error) {
+	if math.MaxUint64-left < right {
+		return 0, errors.New("nominator pool uint64 accounting overflow")
+	}
+	return left + right, nil
+}
+
+func SaturatingNetIncome(gross uint64, cost uint64) int64 {
+	if cost >= gross {
+		delta := cost - gross
+		if delta > uint64(math.MaxInt64) {
+			return math.MinInt64
+		}
+		return -int64(delta)
+	}
+	delta := gross - cost
+	if delta > uint64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(delta)
+}
+
+func totalInfrastructureCost(values []ValidatorIncome) uint64 {
+	total := uint64(0)
+	for _, value := range values {
+		next, err := CheckedAddUint64(total, value.InfrastructureCost)
+		if err != nil {
+			return math.MaxUint64
+		}
+		total = next
+	}
+	return total
 }
 
 func IsJailedValidatorStatus(status string) bool {

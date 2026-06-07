@@ -20,17 +20,35 @@ type GenesisState struct {
 	State   types.State
 }
 
+type OperationCounters struct {
+	PoolLookups              uint64
+	DelegatorLookups         uint64
+	DelegatorRewardUpdates   uint64
+	ValidatorAllocationReads uint64
+}
+
+type poolIndexEntry struct {
+	index     int
+	delegator map[string]int
+}
+
 type Keeper struct {
 	genesis      GenesisState
 	storeService corestore.KVStoreService
+	indexes      map[string]poolIndexEntry
+	counters     OperationCounters
 }
 
 func NewKeeper() Keeper {
-	return Keeper{genesis: DefaultGenesis()}
+	k := Keeper{genesis: DefaultGenesis()}
+	k.rebuildIndexes()
+	return k
 }
 
 func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
-	return Keeper{genesis: DefaultGenesis(), storeService: storeService}
+	k := Keeper{genesis: DefaultGenesis(), storeService: storeService}
+	k.rebuildIndexes()
+	return k
 }
 
 func DefaultGenesis() GenesisState {
@@ -50,6 +68,7 @@ func (k *Keeper) InitGenesis(gs GenesisState) error {
 		return err
 	}
 	k.genesis = cloneGenesis(gs)
+	k.rebuildIndexes()
 	return nil
 }
 
@@ -58,6 +77,7 @@ func (k *Keeper) InitGenesisState(ctx context.Context, gs GenesisState) error {
 		return err
 	}
 	k.genesis = cloneGenesis(gs)
+	k.rebuildIndexes()
 	if k.storeService == nil {
 		return nil
 	}
@@ -96,6 +116,59 @@ func (k Keeper) ExportGenesisState(ctx context.Context) (GenesisState, error) {
 	return cloneGenesis(gs), nil
 }
 
+func (k Keeper) OperationCounters() OperationCounters {
+	return k.counters
+}
+
+func (k *Keeper) ResetOperationCounters() {
+	k.counters = OperationCounters{}
+}
+
+func (k *Keeper) rebuildIndexes() {
+	k.indexes = make(map[string]poolIndexEntry, len(k.genesis.State.Pools))
+	for poolIdx, pool := range k.genesis.State.Pools {
+		entry := poolIndexEntry{
+			index:     poolIdx,
+			delegator: make(map[string]int, len(pool.DelegatorShares)),
+		}
+		for delegatorIdx, share := range pool.DelegatorShares {
+			entry.delegator[share.Delegator] = delegatorIdx
+		}
+		k.indexes[pool.PoolID] = entry
+	}
+}
+
+func (k *Keeper) ensureIndexes() {
+	if k.indexes == nil || len(k.indexes) != len(k.genesis.State.Pools) {
+		k.rebuildIndexes()
+	}
+}
+
+func (k *Keeper) lookupPool(poolID string) (int, types.NominatorPool, bool) {
+	k.ensureIndexes()
+	k.counters.PoolLookups++
+	entry, found := k.indexes[poolID]
+	if !found || entry.index < 0 || entry.index >= len(k.genesis.State.Pools) {
+		return -1, types.NominatorPool{}, false
+	}
+	return entry.index, k.genesis.State.Pools[entry.index], true
+}
+
+func (k *Keeper) lookupDelegator(poolID string, delegator string) (int, types.DelegatorShare, bool) {
+	k.ensureIndexes()
+	k.counters.DelegatorLookups++
+	entry, found := k.indexes[poolID]
+	if !found {
+		return -1, types.DelegatorShare{}, false
+	}
+	pool := k.genesis.State.Pools[entry.index]
+	delegatorIdx, found := entry.delegator[delegator]
+	if !found || delegatorIdx < 0 || delegatorIdx >= len(pool.DelegatorShares) {
+		return -1, types.DelegatorShare{}, false
+	}
+	return delegatorIdx, pool.DelegatorShares[delegatorIdx], true
+}
+
 func (k *Keeper) CreateNominatorPool(msg types.MsgCreateNominatorPool) (types.NominatorPool, error) {
 	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
 		return types.NominatorPool{}, err
@@ -126,6 +199,7 @@ func (k *Keeper) CreateNominatorPool(msg types.MsgCreateNominatorPool) (types.No
 		return types.NominatorPool{}, err
 	}
 	k.genesis = next
+	k.rebuildIndexes()
 	return pool, nil
 }
 
@@ -158,6 +232,7 @@ func (k *Keeper) CreateOfficialLiquidStakingPool(msg types.MsgCreateOfficialLiqu
 		return types.NominatorPool{}, err
 	}
 	k.genesis = next
+	k.rebuildIndexes()
 	return pool, nil
 }
 
@@ -343,6 +418,7 @@ func (k *Keeper) RequestPoolWithdrawal(msg types.MsgRequestPoolWithdrawal) (type
 		return types.PendingWithdrawal{}, err
 	}
 	k.genesis = next
+	k.rebuildIndexes()
 	return withdrawal, nil
 }
 
@@ -399,6 +475,7 @@ func (k *Keeper) CancelPoolWithdrawal(msg types.MsgCancelPoolWithdrawal) (types.
 		return types.PendingWithdrawal{}, err
 	}
 	k.genesis = next
+	k.rebuildIndexes()
 	return withdrawal, nil
 }
 
@@ -406,26 +483,56 @@ func (k *Keeper) ClaimPoolRewards(msg types.MsgClaimPoolRewards) (uint64, error)
 	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
 		return 0, err
 	}
-	idx, pool, found := findPool(k.genesis.State.Pools, msg.PoolID)
+	idx, pool, found := k.lookupPool(msg.PoolID)
 	if !found {
 		return 0, errors.New("nominator pool not found")
 	}
-	delegatorIdx, delegator, found := findDelegator(pool.DelegatorShares, msg.Delegator)
+	delegatorIdx, delegator, found := k.lookupDelegator(msg.PoolID, msg.Delegator)
 	if !found {
 		return 0, errors.New("nominator pool delegator not found")
 	}
 	reward := types.AccruedReward(delegator, pool.RewardIndex)
 	delegator.PendingRewards = 0
 	delegator.RewardIndexCheckpoint = pool.RewardIndex
-	pool.DelegatorShares[delegatorIdx] = delegator
-	next := cloneGenesis(k.genesis)
-	next.State.Pools[idx] = pool
-	next.State = next.State.Normalize(next.Params)
-	if err := next.Validate(); err != nil {
+	if err := delegator.Validate(); err != nil {
 		return 0, err
 	}
-	k.genesis = next
+	k.genesis.State.Pools[idx].DelegatorShares[delegatorIdx] = delegator
+	k.counters.DelegatorRewardUpdates++
 	return reward, nil
+}
+
+func (k *Keeper) SyncPoolRewards(msg types.MsgSyncPoolRewards) (types.PoolRewardSummary, error) {
+	idx, pool, found := k.lookupPool(msg.PoolID)
+	if !found {
+		return types.PoolRewardSummary{}, errors.New("nominator pool not found")
+	}
+	nextPool, summary, err := types.SyncPoolRewards(k.genesis.Params, pool, msg)
+	if err != nil {
+		return types.PoolRewardSummary{}, err
+	}
+	k.counters.ValidatorAllocationReads += summary.AllocationsTouched
+	k.genesis.State.Pools[idx] = nextPool
+	return summary, nil
+}
+
+func (k *Keeper) ClaimStakingRewards(msg types.MsgClaimStakingRewards) (uint64, error) {
+	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
+		return 0, err
+	}
+	if !msg.InternalMigration {
+		return 0, errors.New("direct staking reward claims are internal migration only; use pool reward claims")
+	}
+	if msg.Height == 0 {
+		return 0, errors.New("staking reward claim height must be positive")
+	}
+	if err := types.ValidateRawAddress("staking reward delegator", msg.Delegator); err != nil {
+		return 0, err
+	}
+	if err := types.ValidateRawAddress("staking reward validator", msg.Validator); err != nil {
+		return 0, err
+	}
+	return 0, nil
 }
 
 func (k *Keeper) UpdatePoolCommission(msg types.MsgUpdatePoolCommission) (types.NominatorPool, error) {
@@ -505,8 +612,8 @@ func (k *Keeper) ApplyPoolSlash(poolID string, slashAmount uint64) (types.Nomina
 	return k.savePoolOnly(idx, pool)
 }
 
-func (k Keeper) NominatorPool(poolID string) (types.NominatorPool, bool) {
-	_, pool, found := findPool(k.genesis.State.Pools, poolID)
+func (k *Keeper) NominatorPool(poolID string) (types.NominatorPool, bool) {
+	_, pool, found := k.lookupPool(poolID)
 	return pool, found
 }
 
@@ -514,25 +621,55 @@ func (k Keeper) NominatorPools() []types.NominatorPool {
 	return types.SortPools(k.genesis.State.Pools)
 }
 
-func (k Keeper) PoolDelegator(poolID string, delegator string) (types.DelegatorShare, bool) {
-	_, pool, found := findPool(k.genesis.State.Pools, poolID)
+func (k *Keeper) PoolDelegator(poolID string, delegator string) (types.DelegatorShare, bool) {
+	_, _, found := k.lookupPool(poolID)
 	if !found {
 		return types.DelegatorShare{}, false
 	}
-	_, share, found := findDelegator(pool.DelegatorShares, delegator)
+	_, share, found := k.lookupDelegator(poolID, delegator)
 	return share, found
 }
 
-func (k Keeper) PoolRewards(poolID string, delegator string) (uint64, bool) {
-	_, pool, found := findPool(k.genesis.State.Pools, poolID)
+func (k *Keeper) PoolRewards(poolID string, delegator string) (uint64, bool) {
+	_, pool, found := k.lookupPool(poolID)
 	if !found {
 		return 0, false
 	}
-	_, share, found := findDelegator(pool.DelegatorShares, delegator)
+	_, share, found := k.lookupDelegator(poolID, delegator)
 	if !found {
 		return 0, false
 	}
 	return types.AccruedReward(share, pool.RewardIndex), true
+}
+
+func (k *Keeper) PoolShare(req types.QueryPoolShareRequest) (types.QueryPoolShareResponse, bool) {
+	_, pool, found := k.lookupPool(req.PoolID)
+	if !found {
+		return types.QueryPoolShareResponse{}, false
+	}
+	_, share, found := k.lookupDelegator(req.PoolID, req.Delegator)
+	if !found {
+		return types.QueryPoolShareResponse{}, false
+	}
+	return types.QueryPoolShareResponse{
+		Share:          share,
+		PendingRewards: types.AccruedReward(share, pool.RewardIndex),
+	}, true
+}
+
+func (k *Keeper) PoolAllocations(req types.QueryPoolAllocationsRequest) (types.QueryPoolAllocationsResponse, bool) {
+	_, pool, found := k.lookupPool(req.PoolID)
+	if !found {
+		return types.QueryPoolAllocationsResponse{}, false
+	}
+	return types.QueryPoolAllocationsResponse{Allocations: types.SortValidatorRewardAllocations(pool.ValidatorAllocations)}, true
+}
+
+func (k Keeper) StakingRewards(req types.QueryStakingRewardsRequest) (types.QueryStakingRewardsResponse, error) {
+	if !req.InternalMigration {
+		return types.QueryStakingRewardsResponse{}, errors.New("staking rewards query is internal migration only; use pool rewards")
+	}
+	return types.QueryStakingRewardsResponse{RewardAmount: 0}, nil
 }
 
 func (k Keeper) PoolUnbondingQueue(poolID string) []types.UnbondingEntry {
@@ -560,6 +697,7 @@ func (k *Keeper) savePool(idx int, pool types.NominatorPool, delegator types.Del
 		return types.DelegatorShare{}, err
 	}
 	k.genesis = next
+	k.rebuildIndexes()
 	return delegator, nil
 }
 
@@ -571,6 +709,7 @@ func (k *Keeper) savePoolOnly(idx int, pool types.NominatorPool) (types.Nominato
 		return types.NominatorPool{}, err
 	}
 	k.genesis = next
+	k.rebuildIndexes()
 	return pool, nil
 }
 

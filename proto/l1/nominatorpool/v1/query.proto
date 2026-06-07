@@ -11,6 +11,9 @@ service Query {
   rpc NominatorPools(QueryNominatorPoolsRequest) returns (QueryNominatorPoolsResponse);
   rpc PoolDelegator(QueryPoolDelegatorRequest) returns (QueryPoolDelegatorResponse);
   rpc PoolRewards(QueryPoolRewardsRequest) returns (QueryPoolRewardsResponse);
+  rpc PoolShare(QueryPoolShareRequest) returns (QueryPoolShareResponse);
+  rpc PoolAllocations(QueryPoolAllocationsRequest) returns (QueryPoolAllocationsResponse);
+  rpc StakingRewards(QueryStakingRewardsRequest) returns (QueryStakingRewardsResponse);
   rpc PoolUnbondingQueue(QueryPoolUnbondingQueueRequest) returns (QueryPoolUnbondingQueueResponse);
 }
 
@@ -43,6 +46,34 @@ message QueryPoolRewardsRequest {
 }
 
 message QueryPoolRewardsResponse {
+  uint64 reward_amount = 1;
+}
+
+message QueryPoolShareRequest {
+  string pool_id = 1;
+  string delegator = 2;
+}
+
+message QueryPoolShareResponse {
+  DelegatorShare share = 1;
+  uint64 pending_rewards = 2;
+}
+
+message QueryPoolAllocationsRequest {
+  string pool_id = 1;
+}
+
+message QueryPoolAllocationsResponse {
+  repeated ValidatorRewardAllocation allocations = 1;
+}
+
+message QueryStakingRewardsRequest {
+  string delegator = 1;
+  string validator = 2;
+  bool internal_migration = 3;
+}
+
+message QueryStakingRewardsResponse {
   uint64 reward_amount = 1;
 }
 

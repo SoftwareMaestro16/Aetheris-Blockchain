@@ -12,6 +12,8 @@ service Msg {
   rpc RequestPoolWithdrawal(MsgRequestPoolWithdrawal) returns (MsgRequestPoolWithdrawalResponse);
   rpc CancelPoolWithdrawal(MsgCancelPoolWithdrawal) returns (MsgCancelPoolWithdrawalResponse);
   rpc ClaimPoolRewards(MsgClaimPoolRewards) returns (MsgClaimPoolRewardsResponse);
+  rpc SyncPoolRewards(MsgSyncPoolRewards) returns (MsgSyncPoolRewardsResponse);
+  rpc ClaimStakingRewards(MsgClaimStakingRewards) returns (MsgClaimStakingRewardsResponse);
   rpc UpdatePoolCommission(MsgUpdatePoolCommission) returns (MsgUpdatePoolCommissionResponse);
   rpc ChangePoolValidator(MsgChangePoolValidator) returns (MsgChangePoolValidatorResponse);
 }
@@ -75,6 +77,36 @@ message MsgClaimPoolRewards {
 }
 
 message MsgClaimPoolRewardsResponse {
+  uint64 reward_amount = 1;
+}
+
+message MsgSyncPoolRewards {
+  string authority = 1;
+  string pool_id = 2;
+  uint64 epoch = 3;
+  uint32 reward_rate_bps = 4;
+  uint64 emissions_allocated = 5;
+  uint64 fees_allocated = 6;
+  uint64 height = 7;
+  repeated ValidatorRewardAllocation allocations = 8;
+}
+
+message MsgSyncPoolRewardsResponse {
+  uint64 pool_user_rewards = 1;
+  uint64 validator_commission = 2;
+  uint64 pool_protocol_fee = 3;
+  uint64 reward_index_after = 4;
+}
+
+message MsgClaimStakingRewards {
+  string authority = 1;
+  string delegator = 2;
+  string validator = 3;
+  uint64 height = 4;
+  bool internal_migration = 5;
+}
+
+message MsgClaimStakingRewardsResponse {
   uint64 reward_amount = 1;
 }
 

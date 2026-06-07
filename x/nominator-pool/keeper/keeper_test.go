@@ -291,6 +291,243 @@ func TestRewardsDistributeProportionally(t *testing.T) {
 	require.Equal(t, uint64(99), claimed)
 }
 
+func TestSyncPoolRewardsAfterEpochProgressionAndIllustrativeEconomics(t *testing.T) {
+	k := NewKeeper()
+	pool := createPool(t, &k, "pool-rewards")
+	user := rawPoolAddress("22")
+	deposit(t, &k, pool.PoolID, user, 3_000_000, 2)
+
+	summary, err := k.SyncPoolRewards(types.MsgSyncPoolRewards{
+		Authority:          prototype.DefaultAuthority,
+		PoolID:             pool.PoolID,
+		Epoch:              1,
+		RewardRateBps:      1_440,
+		EmissionsAllocated: 864_000,
+		Height:             3,
+		Allocations: []types.ValidatorRewardAllocation{{
+			Validator:          rawPoolAddress("12"),
+			PoolAllocatedStake: 3_000_000,
+			ValidatorSelfStake: 3_000_000,
+			PerformanceBps:     types.MaxBasisPoints,
+			CommissionBps:      1_000,
+			InfrastructureCost: 20_000,
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(432_000), summary.GrossPoolRewards)
+	require.Equal(t, uint64(43_200), summary.ValidatorCommission)
+	require.Equal(t, uint64(3_888), summary.PoolProtocolFee)
+	require.Equal(t, uint64(384_912), summary.PoolUserRewards)
+	require.Equal(t, uint64(432_000), summary.ValidatorSelfStakeRewards)
+	require.Equal(t, uint64(475_200), summary.ValidatorGrossIncome)
+	require.Equal(t, int64(455_200), summary.ValidatorNetIncome)
+	require.Greater(t, summary.ValidatorGrossIncome, summary.PoolUserRewards)
+
+	claimed, err := k.ClaimPoolRewards(types.MsgClaimPoolRewards{Authority: prototype.DefaultAuthority, PoolID: pool.PoolID, Delegator: user, Height: 4})
+	require.NoError(t, err)
+	require.Equal(t, uint64(384_912), claimed)
+
+	claimedAgain, err := k.ClaimPoolRewards(types.MsgClaimPoolRewards{Authority: prototype.DefaultAuthority, PoolID: pool.PoolID, Delegator: user, Height: 5})
+	require.NoError(t, err)
+	require.Zero(t, claimedAgain)
+}
+
+func TestSyncPoolRewardsProportionalSharesAndDeterministicRounding(t *testing.T) {
+	k := NewKeeper()
+	pool := createPoolWithCommission(t, &k, "pool-proportional", 0)
+	a := rawPoolAddress("22")
+	b := rawPoolAddress("33")
+	deposit(t, &k, pool.PoolID, a, 1_000, 2)
+	deposit(t, &k, pool.PoolID, b, 3_000, 3)
+
+	require.Equal(t, uint64(333_333_333), types.RewardDelta(1, 3))
+	require.Equal(t, uint64(0), types.IndexedRewardAmount(types.RewardDelta(1, 3), 3))
+
+	summary, err := k.SyncPoolRewards(types.MsgSyncPoolRewards{
+		Authority:          prototype.DefaultAuthority,
+		PoolID:             pool.PoolID,
+		Epoch:              1,
+		RewardRateBps:      1_000,
+		EmissionsAllocated: 400,
+		Height:             4,
+		Allocations: []types.ValidatorRewardAllocation{{
+			Validator:          rawPoolAddress("12"),
+			PoolAllocatedStake: 4_000,
+			PerformanceBps:     types.MaxBasisPoints,
+		}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(400), summary.PoolUserRewards)
+
+	rewardA, found := k.PoolRewards(pool.PoolID, a)
+	require.True(t, found)
+	rewardB, found := k.PoolRewards(pool.PoolID, b)
+	require.True(t, found)
+	require.Equal(t, uint64(100), rewardA)
+	require.Equal(t, uint64(300), rewardB)
+}
+
+func TestValidatorPerformanceCommissionPoolFeeAndJailAreDeterministic(t *testing.T) {
+	k := NewKeeper()
+	pool := createPool(t, &k, "pool-performance")
+	deposit(t, &k, pool.PoolID, rawPoolAddress("22"), 2_000, 2)
+
+	summary, err := k.SyncPoolRewards(types.MsgSyncPoolRewards{
+		Authority:          prototype.DefaultAuthority,
+		PoolID:             pool.PoolID,
+		Epoch:              1,
+		RewardRateBps:      1_000,
+		EmissionsAllocated: 2_000,
+		Height:             3,
+		Allocations: []types.ValidatorRewardAllocation{
+			{
+				Validator:          rawPoolAddress("12"),
+				PoolAllocatedStake: 1_000,
+				PerformanceBps:     types.MaxBasisPoints,
+				CommissionBps:      1_000,
+			},
+			{
+				Validator:                   rawPoolAddress("13"),
+				PoolAllocatedStake:          1_000,
+				PerformanceBps:              5_000,
+				CommissionBps:               1_000,
+				Jailed:                      true,
+				OperatorPerformanceBonusBps: 100,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(100), summary.GrossPoolRewards)
+	require.Equal(t, uint64(10), summary.ValidatorCommission)
+	require.Equal(t, uint64(0), summary.OperatorPerformanceBonus)
+	require.Equal(t, uint64(90), summary.PoolUserRewards)
+
+	allocations, found := k.PoolAllocations(types.QueryPoolAllocationsRequest{PoolID: pool.PoolID})
+	require.True(t, found)
+	require.Len(t, allocations.Allocations, 2)
+	require.Equal(t, uint64(100), allocations.Allocations[0].GrossPoolRewards)
+	require.Zero(t, allocations.Allocations[1].GrossPoolRewards)
+	require.Zero(t, allocations.Allocations[1].OperatorPerformanceBonus)
+}
+
+func TestSyncPoolRewardsRejectsEmissionFeeCapExceeded(t *testing.T) {
+	k := NewKeeper()
+	pool := createPoolWithCommission(t, &k, "pool-cap", 0)
+	deposit(t, &k, pool.PoolID, rawPoolAddress("22"), 1_000, 2)
+
+	_, err := k.SyncPoolRewards(types.MsgSyncPoolRewards{
+		Authority:          prototype.DefaultAuthority,
+		PoolID:             pool.PoolID,
+		Epoch:              1,
+		RewardRateBps:      1_000,
+		EmissionsAllocated: 99,
+		Height:             3,
+		Allocations: []types.ValidatorRewardAllocation{{
+			Validator:          rawPoolAddress("12"),
+			PoolAllocatedStake: 1_000,
+			PerformanceBps:     types.MaxBasisPoints,
+		}},
+	})
+	require.ErrorContains(t, err, "exceed emissions")
+}
+
+func TestExportImportPreservesSyncedRewardStateAndPendingRewards(t *testing.T) {
+	source := NewKeeper()
+	pool := createPoolWithCommission(t, &source, "pool-export", 0)
+	user := rawPoolAddress("22")
+	deposit(t, &source, pool.PoolID, user, 3, 2)
+	_, err := source.SyncPoolRewards(types.MsgSyncPoolRewards{
+		Authority:          prototype.DefaultAuthority,
+		PoolID:             pool.PoolID,
+		Epoch:              1,
+		RewardRateBps:      3_334,
+		EmissionsAllocated: 1,
+		Height:             3,
+		Allocations: []types.ValidatorRewardAllocation{{
+			Validator:          rawPoolAddress("12"),
+			PoolAllocatedStake: 3,
+			PerformanceBps:     types.MaxBasisPoints,
+		}},
+	})
+	require.NoError(t, err)
+
+	exported := source.ExportGenesis()
+	require.NoError(t, exported.Validate())
+	target := NewKeeper()
+	require.NoError(t, target.InitGenesis(exported))
+	require.Equal(t, exported, target.ExportGenesis())
+	rewards, found := target.PoolRewards(pool.PoolID, user)
+	require.True(t, found)
+	require.Equal(t, uint64(0), rewards)
+	stored, found := target.NominatorPool(pool.PoolID)
+	require.True(t, found)
+	require.Equal(t, uint64(1), stored.RewardRemainder)
+	require.Len(t, stored.ValidatorAllocations, 1)
+}
+
+func TestClaimPoolRewardsTouchesBoundedKeysWithLargeUserSet(t *testing.T) {
+	k := NewKeeper()
+	const users = 1_000_000
+	shares := make([]types.DelegatorShare, users)
+	for i := range shares {
+		shares[i] = types.DelegatorShare{
+			Delegator:             rawPoolAddressFromInt(i + 1),
+			Shares:                1,
+			RewardIndexCheckpoint: 0,
+		}
+	}
+	k.genesis.State.Pools = []types.NominatorPool{{
+		PoolID:            "pool-large",
+		PoolOperator:      rawPoolAddress("11"),
+		ValidatorTarget:   rawPoolAddress("12"),
+		TotalShares:       users,
+		TotalBondedStake:  users,
+		DelegatorShares:   shares,
+		RewardIndex:       types.IndexScale,
+		PoolCommissionBps: 100,
+		Status:            types.PoolStatusActive,
+	}}
+	k.rebuildIndexes()
+	k.ResetOperationCounters()
+
+	claimed, err := k.ClaimPoolRewards(types.MsgClaimPoolRewards{
+		Authority: prototype.DefaultAuthority,
+		PoolID:    "pool-large",
+		Delegator: rawPoolAddressFromInt(users),
+		Height:    2,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), claimed)
+	counters := k.OperationCounters()
+	require.Equal(t, uint64(1), counters.PoolLookups)
+	require.Equal(t, uint64(1), counters.DelegatorLookups)
+	require.Equal(t, uint64(1), counters.DelegatorRewardUpdates)
+}
+
+func TestStakingRewardsCompatibilityIsInternalOnly(t *testing.T) {
+	k := NewKeeper()
+	_, err := k.ClaimStakingRewards(types.MsgClaimStakingRewards{
+		Authority: prototype.DefaultAuthority,
+		Delegator: rawPoolAddress("22"),
+		Validator: rawPoolAddress("12"),
+		Height:    1,
+	})
+	require.ErrorContains(t, err, "internal migration only")
+
+	amount, err := k.ClaimStakingRewards(types.MsgClaimStakingRewards{
+		Authority:         prototype.DefaultAuthority,
+		Delegator:         rawPoolAddress("22"),
+		Validator:         rawPoolAddress("12"),
+		Height:            1,
+		InternalMigration: true,
+	})
+	require.NoError(t, err)
+	require.Zero(t, amount)
+
+	_, err = k.StakingRewards(types.QueryStakingRewardsRequest{Delegator: rawPoolAddress("22"), Validator: rawPoolAddress("12")})
+	require.ErrorContains(t, err, "internal migration only")
+}
+
 func TestSlashAppliesProportionally(t *testing.T) {
 	k := NewKeeper()
 	pool := createPool(t, &k, "pool-a")
@@ -406,12 +643,17 @@ func TestPoolCannotDelegateToJailedValidator(t *testing.T) {
 
 func createPool(t *testing.T, k *Keeper, poolID string) types.NominatorPool {
 	t.Helper()
+	return createPoolWithCommission(t, k, poolID, 100)
+}
+
+func createPoolWithCommission(t *testing.T, k *Keeper, poolID string, commissionBps uint32) types.NominatorPool {
+	t.Helper()
 	pool, err := k.CreateNominatorPool(types.MsgCreateNominatorPool{
 		Authority:         prototype.DefaultAuthority,
 		PoolID:            poolID,
 		PoolOperator:      rawPoolAddress("11"),
 		ValidatorTarget:   rawPoolAddress("12"),
-		PoolCommissionBps: 100,
+		PoolCommissionBps: commissionBps,
 		Height:            1,
 		ValidatorStatus:   validatorregistrytypes.StatusActive,
 	})
@@ -449,6 +691,10 @@ func deposit(t *testing.T, k *Keeper, poolID string, delegator string, amount ui
 
 func rawPoolAddress(hexByte string) string {
 	return "4:000000000000000000000000" + fmt.Sprintf("%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte, hexByte)
+}
+
+func rawPoolAddressFromInt(value int) string {
+	return fmt.Sprintf("4:%064x", value)
 }
 
 func aePoolAddress(t *testing.T, hexByte string) string {
