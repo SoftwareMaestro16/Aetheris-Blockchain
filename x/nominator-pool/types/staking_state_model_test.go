@@ -18,6 +18,7 @@ func TestStakingStateKeyGoldenValues(t *testing.T) {
 	require.Equal(t, "staking/validator/"+validator, string(ValidatorKey(validator)))
 	require.Equal(t, "staking/validator_score/"+validator+"/00000000000000000007", string(ValidatorScoreKey(validator, 7)))
 	require.Equal(t, "staking/pool/pool-a", string(PoolKey("pool-a")))
+	require.Equal(t, "staking/pool_storage_debt/pool-a", string(PoolStorageDebtKey("pool-a")))
 	require.Equal(t, "staking/pool_by_contract_user/"+contractUser, string(PoolByContractUserKey(contractUser)))
 	require.Equal(t, "staking/pool_by_contract_raw/"+contractRaw, string(PoolByContractRawKey(contractRaw)))
 	require.Equal(t, "staking/pool_share/pool-a/"+owner, string(PoolShareKey("pool-a", owner)))

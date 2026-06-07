@@ -200,6 +200,15 @@ type PoolWithdrawalReceipt struct {
 	InternalMetadata PoolStateMetadata
 }
 
+type PoolTopUpReceipt struct {
+	PoolID           string
+	PayerAddress     string
+	Amount           uint64
+	StorageDebtPaid  uint64
+	Height           uint64
+	InternalMetadata PoolStateMetadata
+}
+
 type PoolRewardClaimReceipt struct {
 	PoolID           string
 	OwnerAddress     string
@@ -484,6 +493,13 @@ type MsgRequestPoolUnbond struct {
 	OwnerAddress string
 	RequestID    string
 	Shares       uint64
+	Height       uint64
+}
+
+type MsgTopUpPoolReserve struct {
+	PoolID       string
+	PayerAddress string
+	Amount       uint64
 	Height       uint64
 }
 

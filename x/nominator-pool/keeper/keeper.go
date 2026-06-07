@@ -919,6 +919,68 @@ func (k *Keeper) WithdrawPoolStake(msg types.MsgWithdrawPoolStake) (types.PoolWi
 	}, nil
 }
 
+func (k *Keeper) TopUpPoolReserve(msg types.MsgTopUpPoolReserve) (types.PoolTopUpReceipt, error) {
+	if err := types.ValidateUserFacingAEAddress("pool top-up payer", msg.PayerAddress); err != nil {
+		return types.PoolTopUpReceipt{}, err
+	}
+	if msg.Amount == 0 || msg.Height == 0 {
+		return types.PoolTopUpReceipt{}, errors.New("pool top-up amount and height must be positive")
+	}
+	if err := k.ensureActiveWallet(msg.PayerAddress, "pool top-up"); err != nil {
+		return types.PoolTopUpReceipt{}, err
+	}
+	rawPayer, err := types.RawAddressForUserAddress(msg.PayerAddress)
+	if err != nil {
+		return types.PoolTopUpReceipt{}, err
+	}
+	next := cloneGenesis(k.genesis)
+	_, pool, found := findPool(next.State.Pools, msg.PoolID)
+	if !found {
+		return types.PoolTopUpReceipt{}, errors.New("official liquid staking pool not found")
+	}
+	if !pool.OfficialLiquidStaking {
+		return types.PoolTopUpReceipt{}, errors.New("pool top-up requires official liquid staking pool")
+	}
+	if pool.Status == types.PoolStatusClosed {
+		return types.PoolTopUpReceipt{}, errors.New("closed pool reserve cannot be topped up")
+	}
+	liquidIdx, liquid, found := findLiquidPool(next.State.LiquidStakingPools, msg.PoolID)
+	if !found {
+		return types.PoolTopUpReceipt{}, errors.New("liquid staking pool state not found")
+	}
+	debtPaid := msg.Amount
+	if debtPaid > liquid.StorageRentDebt {
+		debtPaid = liquid.StorageRentDebt
+	}
+	liquid.StorageRentDebt -= debtPaid
+	liquid.ContractAddressUser = pool.ContractAddressUser
+	liquid.ContractAddressRaw = pool.ContractAddressRaw
+	liquid.LastStorageChargeHeight = msg.Height
+	liquid.Status = pool.Status
+	next.State.LiquidStakingPools[liquidIdx] = liquid
+	next.State = next.State.Normalize(next.Params)
+	if err := next.Validate(); err != nil {
+		return types.PoolTopUpReceipt{}, err
+	}
+	k.genesis = next
+	k.rebuildIndexes()
+	return types.PoolTopUpReceipt{
+		PoolID:          msg.PoolID,
+		PayerAddress:    msg.PayerAddress,
+		Amount:          msg.Amount,
+		StorageDebtPaid: debtPaid,
+		Height:          msg.Height,
+		InternalMetadata: types.PoolStateMetadata{
+			OwnerRaw:               rawPayer,
+			PoolContractAddressRaw: pool.ContractAddressRaw,
+			TouchedKeys: []string{
+				string(types.PoolKey(msg.PoolID)),
+				string(types.PoolStorageDebtKey(msg.PoolID)),
+			},
+		},
+	}, nil
+}
+
 func (k *Keeper) CancelPoolWithdrawal(msg types.MsgCancelPoolWithdrawal) (types.PendingWithdrawal, error) {
 	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
 		return types.PendingWithdrawal{}, err

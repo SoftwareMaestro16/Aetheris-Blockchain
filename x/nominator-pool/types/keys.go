@@ -19,6 +19,10 @@ func PoolKey(poolID string) []byte {
 	return []byte("staking/pool/" + poolID)
 }
 
+func PoolStorageDebtKey(poolID string) []byte {
+	return []byte("staking/pool_storage_debt/" + poolID)
+}
+
 func PoolByContractUserKey(contractAddressUser string) []byte {
 	return []byte("staking/pool_by_contract_user/" + contractAddressUser)
 }

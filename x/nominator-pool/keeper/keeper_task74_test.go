@@ -83,6 +83,15 @@ func TestTask74DepositRejectsInactiveFrozenLowAndFrozenLimitedPool(t *testing.T)
 	require.NoError(t, k.InitGenesis(gs))
 	_, err = k.DepositToStakingPool(types.MsgDepositToStakingPool{PoolID: pool.PoolID, WalletAddress: active, Amount: types.DefaultMinPoolDeposit, Height: 3})
 	require.ErrorContains(t, err, "must be active for deposits")
+
+	_, err = k.TopUpPoolReserve(types.MsgTopUpPoolReserve{PoolID: pool.PoolID, PayerAddress: active, Amount: 0, Height: 3})
+	require.ErrorContains(t, err, "amount and height must be positive")
+
+	_, err = k.TopUpPoolReserve(types.MsgTopUpPoolReserve{PoolID: pool.PoolID, PayerAddress: inactive, Amount: 1, Height: 3})
+	require.ErrorContains(t, err, "requires active wallet")
+
+	_, err = k.TopUpPoolReserve(types.MsgTopUpPoolReserve{PoolID: pool.PoolID, PayerAddress: frozen, Amount: 1, Height: 3})
+	require.ErrorContains(t, err, "frozen wallet")
 }
 
 func TestTask74FrozenLimitedPoolAllowsClaimsUnbondAndMaturedWithdrawals(t *testing.T) {
@@ -97,9 +106,26 @@ func TestTask74FrozenLimitedPoolAllowsClaimsUnbondAndMaturedWithdrawals(t *testi
 	gs := k.ExportGenesis()
 	gs.State.Pools[0].Status = types.PoolStatusFrozenLimited
 	gs.State.LiquidStakingPools[0].Status = types.PoolStatusFrozenLimited
+	gs.State.LiquidStakingPools[0].StorageRentDebt = 123
 	require.NoError(t, k.InitGenesis(gs))
 
-	claim, err := k.ClaimPoolRewardsWithReceipt(types.MsgClaimPoolRewards{PoolID: pool.PoolID, OwnerAddress: user, Height: 3})
+	topUp, err := k.TopUpPoolReserve(types.MsgTopUpPoolReserve{
+		PoolID:       pool.PoolID,
+		PayerAddress: user,
+		Amount:       50,
+		Height:       3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint64(50), topUp.StorageDebtPaid)
+	require.Equal(t, []string{
+		string(types.PoolKey(pool.PoolID)),
+		string(types.PoolStorageDebtKey(pool.PoolID)),
+	}, topUp.InternalMetadata.TouchedKeys)
+	exportedAfterTopUp := k.ExportGenesis()
+	require.Equal(t, uint64(73), exportedAfterTopUp.State.LiquidStakingPools[0].StorageRentDebt)
+	require.Equal(t, types.PoolStatusFrozenLimited, exportedAfterTopUp.State.LiquidStakingPools[0].Status)
+
+	claim, err := k.ClaimPoolRewardsWithReceipt(types.MsgClaimPoolRewards{PoolID: pool.PoolID, OwnerAddress: user, Height: 4})
 	require.NoError(t, err)
 	require.NotZero(t, claim.Amount)
 
@@ -108,10 +134,10 @@ func TestTask74FrozenLimitedPoolAllowsClaimsUnbondAndMaturedWithdrawals(t *testi
 		OwnerAddress: user,
 		RequestID:    "unbond-1",
 		Shares:       types.DefaultMinPoolDeposit,
-		Height:       4,
+		Height:       5,
 	})
 	require.NoError(t, err)
-	require.Equal(t, uint64(4)+k.ExportGenesis().Params.UnbondingBlocks, unbond.CompleteHeight)
+	require.Equal(t, uint64(5)+k.ExportGenesis().Params.UnbondingBlocks, unbond.CompleteHeight)
 
 	_, err = k.WithdrawPoolStake(types.MsgWithdrawPoolStake{
 		CallerContractUser: pool.ContractAddressUser,
