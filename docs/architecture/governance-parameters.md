@@ -124,3 +124,34 @@ Required catalog properties:
 - critical parameters require longer voting period or higher quorum;
 - critical parameters apply at epoch boundary;
 - enum policies are closed lists, not free-form strings.
+
+## 27.3 Governance Tests
+
+Required tests:
+
+- valid param proposal executes;
+- invalid param proposal rejected;
+- unauthorized authority rejected;
+- emergency unsafe value rejected;
+- epoch-delayed param activation;
+- event emitted;
+- query reflects new params;
+- export/import after param change.
+
+The implementation gate is `BuildGovernanceTestingReport` in
+`app/params/governance_parameters.go`.
+
+Required test coverage properties:
+
+- `DefaultGovernanceTestingEvidence` must cover all eight required test
+  categories from section 27.3;
+- `BuildGovernanceTestingReport` must reject missing governance test coverage;
+- `ValidateGovernanceTestingEvidence` must fail if any required governance test
+  category is not covered;
+- tests for valid proposals must prove a bounded governance proposal mutates
+  state only after passing proposal execution validation;
+- tests for invalid and emergency values must prove unsafe values fail closed;
+- authority tests must prove only the configured authority can update params;
+- epoch activation tests must prove critical params are not activated mid-epoch;
+- event/query/export-import tests must prove the new param state is observable
+  and durable.

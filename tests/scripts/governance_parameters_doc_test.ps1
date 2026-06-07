@@ -63,7 +63,21 @@ foreach ($term in @(
     'every governed parameter has authority metadata',
     'every governed parameter has default value metadata',
     'every governed parameter declares immediate or epoch-delayed application',
-    'critical parameters apply at epoch boundary'
+    'critical parameters apply at epoch boundary',
+    '27.3 Governance Tests',
+    'valid param proposal executes',
+    'invalid param proposal rejected',
+    'unauthorized authority rejected',
+    'emergency unsafe value rejected',
+    'epoch-delayed param activation',
+    'event emitted',
+    'query reflects new params',
+    'export/import after param change',
+    'BuildGovernanceTestingReport',
+    'DefaultGovernanceTestingEvidence',
+    'ValidateGovernanceTestingEvidence',
+    'unsafe values fail closed',
+    'critical params are not activated mid-epoch'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "governance parameters doc missing: $term"
 }
@@ -104,6 +118,19 @@ foreach ($term in @(
     'ApplyEpochDelay',
     'EventType',
     'InvalidUpdateTest',
+    'GovernanceTestingEvidence',
+    'GovernanceTestingReport',
+    'DefaultGovernanceTestingEvidence',
+    'ValidateGovernanceTestingEvidence',
+    'BuildGovernanceTestingReport',
+    'GovernanceTestValidParamProposalExecutes',
+    'GovernanceTestInvalidParamRejected',
+    'GovernanceTestUnauthorizedAuthority',
+    'GovernanceTestEmergencyUnsafeRejected',
+    'GovernanceTestEpochDelayedActivation',
+    'GovernanceTestEventEmitted',
+    'GovernanceTestQueryReflectsNewParams',
+    'GovernanceTestExportImportAfterChange',
     'GovernanceCriticalVotingPeriodBlocks',
     'GovernanceCriticalQuorumBps'
   )) {
@@ -120,7 +147,9 @@ foreach ($term in @(
     'TestGovernanceGenesisValidationRejectsInvalidParams',
     'TestGovernanceEnumParamsAreBounded',
     'TestGovernanceSafetyReportDetectsMissingBoundsGenesisAndEvents',
-    'TestGovernanceSafetyReportDetectsMissingSection272Metadata'
+    'TestGovernanceSafetyReportDetectsMissingSection272Metadata',
+    'TestDefaultGovernanceTestingEvidenceCoversSection273',
+    'TestGovernanceTestingEvidenceRejectsMissingRequiredTests'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "governance parameters tests missing: $term"
 }

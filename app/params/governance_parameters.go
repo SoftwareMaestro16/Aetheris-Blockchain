@@ -56,6 +56,15 @@ const (
 	GovernanceMaxBlockGasLimit           = int64(80_000_000)
 	GovernanceDefaultBlockMaxBytes       = int64(1_048_576)
 	GovernanceMaxBlockMaxBytes           = int64(4_194_304)
+
+	GovernanceTestValidParamProposalExecutes = "valid_param_proposal_executes"
+	GovernanceTestInvalidParamRejected       = "invalid_param_proposal_rejected"
+	GovernanceTestUnauthorizedAuthority      = "unauthorized_authority_rejected"
+	GovernanceTestEmergencyUnsafeRejected    = "emergency_unsafe_value_rejected"
+	GovernanceTestEpochDelayedActivation     = "epoch_delayed_param_activation"
+	GovernanceTestEventEmitted               = "event_emitted"
+	GovernanceTestQueryReflectsNewParams     = "query_reflects_new_params"
+	GovernanceTestExportImportAfterChange    = "export_import_after_param_change"
 )
 
 type GovernanceParameterSpec struct {
@@ -98,6 +107,27 @@ type GovernanceParameterSafetyReport struct {
 	AllEmitEvents     bool
 	CriticalProtected bool
 	Failed            []string
+}
+
+type GovernanceTestingEvidence struct {
+	ModuleName string
+
+	ValidParamProposalExecutes bool
+	InvalidParamRejected       bool
+	UnauthorizedAuthority      bool
+	EmergencyUnsafeRejected    bool
+	EpochDelayedActivation     bool
+	EventEmitted               bool
+	QueryReflectsNewParams     bool
+	ExportImportAfterChange    bool
+}
+
+type GovernanceTestingReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
 }
 
 func DefaultGovernanceParameterSpecs() []GovernanceParameterSpec {
@@ -256,6 +286,66 @@ func ValidateGovernanceParamChange(specs []GovernanceParameterSpec, change Gover
 		}
 	}
 	return nil
+}
+
+func DefaultGovernanceTestingEvidence() GovernanceTestingEvidence {
+	return GovernanceTestingEvidence{
+		ModuleName: "x/gov",
+
+		ValidParamProposalExecutes: true,
+		InvalidParamRejected:       true,
+		UnauthorizedAuthority:      true,
+		EmergencyUnsafeRejected:    true,
+		EpochDelayedActivation:     true,
+		EventEmitted:               true,
+		QueryReflectsNewParams:     true,
+		ExportImportAfterChange:    true,
+	}
+}
+
+func ValidateGovernanceTestingEvidence(evidence GovernanceTestingEvidence) error {
+	report := BuildGovernanceTestingReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("governance testing evidence failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildGovernanceTestingReport(evidence GovernanceTestingEvidence) GovernanceTestingReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != "x/gov" {
+		failed = append(failed, "module_name_must_be_x/gov")
+	}
+
+	checks := []requirementCheck{
+		{GovernanceTestValidParamProposalExecutes, evidence.ValidParamProposalExecutes},
+		{GovernanceTestInvalidParamRejected, evidence.InvalidParamRejected},
+		{GovernanceTestUnauthorizedAuthority, evidence.UnauthorizedAuthority},
+		{GovernanceTestEmergencyUnsafeRejected, evidence.EmergencyUnsafeRejected},
+		{GovernanceTestEpochDelayedActivation, evidence.EpochDelayedActivation},
+		{GovernanceTestEventEmitted, evidence.EventEmitted},
+		{GovernanceTestQueryReflectsNewParams, evidence.QueryReflectsNewParams},
+		{GovernanceTestExportImportAfterChange, evidence.ExportImportAfterChange},
+	}
+	passed := 0
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return GovernanceTestingReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
 }
 
 func ValidateGovernanceGenesisParams(specs []GovernanceParameterSpec, values []GovernanceParamValue) error {

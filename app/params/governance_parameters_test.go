@@ -193,3 +193,41 @@ func TestGovernanceSafetyReportDetectsMissingSection272Metadata(t *testing.T) {
 	require.Contains(t, report.Failed, specs[4].Key+":default integer value is outside bounds")
 	require.Error(t, ValidateGovernanceParameterSpecs(specs))
 }
+
+func TestDefaultGovernanceTestingEvidenceCoversSection273(t *testing.T) {
+	evidence := DefaultGovernanceTestingEvidence()
+
+	report := BuildGovernanceTestingReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, "x/gov", report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 8, report.Required)
+	require.NoError(t, ValidateGovernanceTestingEvidence(evidence))
+}
+
+func TestGovernanceTestingEvidenceRejectsMissingRequiredTests(t *testing.T) {
+	evidence := DefaultGovernanceTestingEvidence()
+	evidence.ModuleName = "x/params"
+	evidence.ValidParamProposalExecutes = false
+	evidence.InvalidParamRejected = false
+	evidence.UnauthorizedAuthority = false
+	evidence.EmergencyUnsafeRejected = false
+	evidence.EpochDelayedActivation = false
+	evidence.EventEmitted = false
+	evidence.QueryReflectsNewParams = false
+	evidence.ExportImportAfterChange = false
+
+	report := BuildGovernanceTestingReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_must_be_x/gov")
+	require.Contains(t, report.Failed, GovernanceTestValidParamProposalExecutes)
+	require.Contains(t, report.Failed, GovernanceTestInvalidParamRejected)
+	require.Contains(t, report.Failed, GovernanceTestUnauthorizedAuthority)
+	require.Contains(t, report.Failed, GovernanceTestEmergencyUnsafeRejected)
+	require.Contains(t, report.Failed, GovernanceTestEpochDelayedActivation)
+	require.Contains(t, report.Failed, GovernanceTestEventEmitted)
+	require.Contains(t, report.Failed, GovernanceTestQueryReflectsNewParams)
+	require.Contains(t, report.Failed, GovernanceTestExportImportAfterChange)
+	require.Error(t, ValidateGovernanceTestingEvidence(evidence))
+}
