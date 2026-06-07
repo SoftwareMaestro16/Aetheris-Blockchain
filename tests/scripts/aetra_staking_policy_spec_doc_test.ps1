@@ -79,7 +79,38 @@ foreach ($term in @(
     'NakamotoCoefficientEstimate',
     'All decimal values should use integer basis points or SDK decimal types consistently. Avoid floating point.',
     'The state gate is `BuildAetraStakingPolicyStateSpecReport` in `app/params/aetra_staking_policy_spec.go`',
-    'floating point accounting must fail validation'
+    'floating point accounting must fail validation',
+    '22.3 Parameter Rules',
+    'Parameter validation:',
+    'ValidatorPowerCapBps:',
+    'min: 100      # 1%',
+    'max: 500      # 5%',
+    'recommended: 200-300',
+    'OverflowRewardMultiplierBps:',
+    'max: 10000',
+    'recommended: 0-3000 for overflow zone',
+    'CommissionFloorBps:',
+    'max: 1000',
+    'recommended: 300-500',
+    'CommissionMaxBps:',
+    'min: CommissionFloorBps',
+    'max: 3000',
+    'recommended: 1500-2000',
+    'CommissionMaxDailyChangeBps:',
+    'min: 1',
+    'max: 500',
+    'recommended: 50-100',
+    'Governance must not be able to set:',
+    'cap below 1%',
+    'max commission below floor',
+    'overflow multiplier above normal reward multiplier',
+    'invalid top-N targets',
+    'zero active validator target',
+    'negative or overflowing math values',
+    '0 < Top10TargetBps <= Top20TargetBps <= Top33TargetBps <= 10000',
+    'The parameter gate is `BuildAetraStakingPolicyParameterReport` in `app/params/aetra_staking_policy_spec.go`',
+    '`DefaultAetraStakingPolicyParameterRuleSet` must encode min, max, and recommended ranges for all bounded bps parameters',
+    'negative math inputs must fail validation'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "aetra staking policy spec doc missing: $term"
 }
@@ -144,7 +175,25 @@ foreach ($term in @(
     'AetraStakingPolicyStateSnapshotTop33Bps',
     'AetraStakingPolicyStateSnapshotNakamotoCoefficientEstimate',
     'AetraStakingPolicyStateIntegerBpsOrSDKDecimal',
-    'AetraStakingPolicyStateNoFloatingPoint'
+    'AetraStakingPolicyStateNoFloatingPoint',
+    'AetraStakingPolicyBpsRule',
+    'AetraStakingPolicyParameterRuleSet',
+    'AetraStakingPolicyParameterValues',
+    'AetraStakingPolicyParameterReport',
+    'DefaultAetraStakingPolicyParameterRuleSet',
+    'DefaultAetraStakingPolicyParameterValues',
+    'ValidateAetraStakingPolicyParameterValues',
+    'BuildAetraStakingPolicyParameterReport',
+    'AetraStakingPolicyParamValidatorPowerCapBps',
+    'AetraStakingPolicyParamOverflowRewardMultiplierBps',
+    'AetraStakingPolicyParamCommissionFloorBps',
+    'AetraStakingPolicyParamCommissionMaxBps',
+    'AetraStakingPolicyParamCommissionMaxDailyChangeBps',
+    'AetraStakingPolicyParamTop10TargetBps',
+    'AetraStakingPolicyParamTop20TargetBps',
+    'AetraStakingPolicyParamTop33TargetBps',
+    'AetraStakingPolicyParamMaxValidatorsSoftTarget',
+    'AetraStakingPolicyParamRejectNegativeOrOverflowMath'
   )) {
   Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "aetra staking policy spec policy missing: $term"
 }
@@ -159,7 +208,12 @@ foreach ($term in @(
     'TestAetraStakingPolicyStateSpecRejectsMissingParamsFields',
     'TestAetraStakingPolicyStateSpecRejectsMissingValidatorPolicyAndSnapshotFields',
     'TestAetraStakingPolicyStateSpecRejectsUnsafeDecimalAccounting',
-    'TestAetraStakingPolicyStateSpecRejectsDuplicateUnexpectedAndWrongModule'
+    'TestAetraStakingPolicyStateSpecRejectsDuplicateUnexpectedAndWrongModule',
+    'TestDefaultAetraStakingPolicyParameterRulesMatchSection223',
+    'TestDefaultAetraStakingPolicyParameterValuesPassValidation',
+    'TestAetraStakingPolicyParameterRulesRejectUnsafeGovernanceValues',
+    'TestAetraStakingPolicyParameterRulesRejectInvalidTopNAndZeroValidatorTarget',
+    'TestAetraStakingPolicyParameterRulesRejectNegativeMathValues'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "aetra staking policy spec tests missing: $term"
 }

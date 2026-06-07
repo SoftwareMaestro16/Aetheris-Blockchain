@@ -60,6 +60,17 @@ const (
 	AetraStakingPolicyStateSnapshotNakamotoCoefficientEstimate = "NakamotoCoefficientEstimate"
 	AetraStakingPolicyStateIntegerBpsOrSDKDecimal              = "integer_basis_points_or_sdk_decimal_accounting"
 	AetraStakingPolicyStateNoFloatingPoint                     = "avoid_floating_point_accounting"
+
+	AetraStakingPolicyParamValidatorPowerCapBps         = "ValidatorPowerCapBps"
+	AetraStakingPolicyParamOverflowRewardMultiplierBps  = "OverflowRewardMultiplierBps"
+	AetraStakingPolicyParamCommissionFloorBps           = "CommissionFloorBps"
+	AetraStakingPolicyParamCommissionMaxBps             = "CommissionMaxBps"
+	AetraStakingPolicyParamCommissionMaxDailyChangeBps  = "CommissionMaxDailyChangeBps"
+	AetraStakingPolicyParamTop10TargetBps               = "Top10TargetBps"
+	AetraStakingPolicyParamTop20TargetBps               = "Top20TargetBps"
+	AetraStakingPolicyParamTop33TargetBps               = "Top33TargetBps"
+	AetraStakingPolicyParamMaxValidatorsSoftTarget      = "MaxValidatorsSoftTarget"
+	AetraStakingPolicyParamRejectNegativeOrOverflowMath = "reject_negative_or_overflowing_math_values"
 )
 
 type AetraStakingPolicySpecEvidence struct {
@@ -108,6 +119,41 @@ type AetraStakingPolicyStateSpecReport struct {
 	Passed     int
 	Failed     []string
 	Ready      bool
+}
+
+type AetraStakingPolicyBpsRule struct {
+	Name           string
+	MinBps         int64
+	MaxBps         int64
+	RecommendedMin int64
+	RecommendedMax int64
+}
+
+type AetraStakingPolicyParameterRuleSet struct {
+	ValidatorPowerCapBps        AetraStakingPolicyBpsRule
+	OverflowRewardMultiplierBps AetraStakingPolicyBpsRule
+	CommissionFloorBps          AetraStakingPolicyBpsRule
+	CommissionMaxBps            AetraStakingPolicyBpsRule
+	CommissionMaxDailyChangeBps AetraStakingPolicyBpsRule
+}
+
+type AetraStakingPolicyParameterValues struct {
+	ValidatorPowerCapBps        int64
+	OverflowRewardMultiplierBps int64
+	CommissionFloorBps          int64
+	CommissionMaxBps            int64
+	CommissionMaxDailyChangeBps int64
+	Top10TargetBps              int64
+	Top20TargetBps              int64
+	Top33TargetBps              int64
+	MaxValidatorsSoftTarget     int64
+}
+
+type AetraStakingPolicyParameterReport struct {
+	Required int
+	Passed   int
+	Failed   []string
+	Ready    bool
 }
 
 func DefaultAetraStakingPolicySpecEvidence() AetraStakingPolicySpecEvidence {
@@ -357,4 +403,122 @@ func validateAetraStakingPolicyStateFields(group string, actual []string, requir
 		}
 	}
 	return passed, failed
+}
+
+func DefaultAetraStakingPolicyParameterRuleSet() AetraStakingPolicyParameterRuleSet {
+	return AetraStakingPolicyParameterRuleSet{
+		ValidatorPowerCapBps: AetraStakingPolicyBpsRule{
+			Name:           AetraStakingPolicyParamValidatorPowerCapBps,
+			MinBps:         100,
+			MaxBps:         500,
+			RecommendedMin: 200,
+			RecommendedMax: 300,
+		},
+		OverflowRewardMultiplierBps: AetraStakingPolicyBpsRule{
+			Name:           AetraStakingPolicyParamOverflowRewardMultiplierBps,
+			MinBps:         0,
+			MaxBps:         10_000,
+			RecommendedMin: 0,
+			RecommendedMax: 3_000,
+		},
+		CommissionFloorBps: AetraStakingPolicyBpsRule{
+			Name:           AetraStakingPolicyParamCommissionFloorBps,
+			MinBps:         0,
+			MaxBps:         1_000,
+			RecommendedMin: 300,
+			RecommendedMax: 500,
+		},
+		CommissionMaxBps: AetraStakingPolicyBpsRule{
+			Name:           AetraStakingPolicyParamCommissionMaxBps,
+			MinBps:         0,
+			MaxBps:         3_000,
+			RecommendedMin: 1_500,
+			RecommendedMax: 2_000,
+		},
+		CommissionMaxDailyChangeBps: AetraStakingPolicyBpsRule{
+			Name:           AetraStakingPolicyParamCommissionMaxDailyChangeBps,
+			MinBps:         1,
+			MaxBps:         500,
+			RecommendedMin: 50,
+			RecommendedMax: 100,
+		},
+	}
+}
+
+func DefaultAetraStakingPolicyParameterValues() AetraStakingPolicyParameterValues {
+	return AetraStakingPolicyParameterValues{
+		ValidatorPowerCapBps:        250,
+		OverflowRewardMultiplierBps: 0,
+		CommissionFloorBps:          300,
+		CommissionMaxBps:            2_000,
+		CommissionMaxDailyChangeBps: 100,
+		Top10TargetBps:              2_500,
+		Top20TargetBps:              4_000,
+		Top33TargetBps:              5_000,
+		MaxValidatorsSoftTarget:     200,
+	}
+}
+
+func ValidateAetraStakingPolicyParameterValues(values AetraStakingPolicyParameterValues) error {
+	report := BuildAetraStakingPolicyParameterReport(values)
+	if !report.Ready {
+		return fmt.Errorf("aetra staking policy parameter rules failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraStakingPolicyParameterReport(values AetraStakingPolicyParameterValues) AetraStakingPolicyParameterReport {
+	rules := DefaultAetraStakingPolicyParameterRuleSet()
+	failed := make([]string, 0)
+	passed := 0
+
+	for _, check := range []requirementCheck{
+		{AetraStakingPolicyParamValidatorPowerCapBps, validateAetraStakingPolicyBps(values.ValidatorPowerCapBps, rules.ValidatorPowerCapBps.MinBps, rules.ValidatorPowerCapBps.MaxBps)},
+		{AetraStakingPolicyParamOverflowRewardMultiplierBps, validateAetraStakingPolicyBps(values.OverflowRewardMultiplierBps, rules.OverflowRewardMultiplierBps.MinBps, rules.OverflowRewardMultiplierBps.MaxBps)},
+		{AetraStakingPolicyParamCommissionFloorBps, validateAetraStakingPolicyBps(values.CommissionFloorBps, rules.CommissionFloorBps.MinBps, rules.CommissionFloorBps.MaxBps)},
+		{AetraStakingPolicyParamCommissionMaxBps, validateAetraStakingPolicyBps(values.CommissionMaxBps, values.CommissionFloorBps, rules.CommissionMaxBps.MaxBps)},
+		{AetraStakingPolicyParamCommissionMaxDailyChangeBps, validateAetraStakingPolicyBps(values.CommissionMaxDailyChangeBps, rules.CommissionMaxDailyChangeBps.MinBps, rules.CommissionMaxDailyChangeBps.MaxBps)},
+		{AetraStakingPolicyParamTop10TargetBps, validateAetraStakingPolicyTopNTargets(values.Top10TargetBps, values.Top20TargetBps, values.Top33TargetBps)},
+		{AetraStakingPolicyParamTop20TargetBps, validateAetraStakingPolicyTopNTargets(values.Top10TargetBps, values.Top20TargetBps, values.Top33TargetBps)},
+		{AetraStakingPolicyParamTop33TargetBps, validateAetraStakingPolicyTopNTargets(values.Top10TargetBps, values.Top20TargetBps, values.Top33TargetBps)},
+		{AetraStakingPolicyParamMaxValidatorsSoftTarget, values.MaxValidatorsSoftTarget > 0},
+		{AetraStakingPolicyParamRejectNegativeOrOverflowMath, !hasNegativeAetraStakingPolicyParameter(values)},
+	} {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraStakingPolicyParameterReport{
+		Required: 10,
+		Passed:   passed,
+		Failed:   failed,
+		Ready:    len(failed) == 0,
+	}
+}
+
+func validateAetraStakingPolicyBps(value, minValue, maxValue int64) bool {
+	return value >= minValue && value <= maxValue
+}
+
+func validateAetraStakingPolicyTopNTargets(top10, top20, top33 int64) bool {
+	return top10 > 0 &&
+		top10 <= top20 &&
+		top20 <= top33 &&
+		top33 <= 10_000
+}
+
+func hasNegativeAetraStakingPolicyParameter(values AetraStakingPolicyParameterValues) bool {
+	return values.ValidatorPowerCapBps < 0 ||
+		values.OverflowRewardMultiplierBps < 0 ||
+		values.CommissionFloorBps < 0 ||
+		values.CommissionMaxBps < 0 ||
+		values.CommissionMaxDailyChangeBps < 0 ||
+		values.Top10TargetBps < 0 ||
+		values.Top20TargetBps < 0 ||
+		values.Top33TargetBps < 0 ||
+		values.MaxValidatorsSoftTarget < 0
 }

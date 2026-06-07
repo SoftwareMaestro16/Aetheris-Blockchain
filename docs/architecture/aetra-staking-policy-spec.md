@@ -119,3 +119,77 @@ Required catalog properties:
 - module identity must be `x/aetra-staking-policy`;
 - decimal accounting must explicitly use integer basis points or SDK decimal types;
 - floating point accounting must fail validation.
+
+## 22.3 Parameter Rules
+
+Parameter validation:
+
+```text
+ValidatorPowerCapBps:
+  min: 100      # 1%
+  max: 500      # 5%
+  recommended: 200-300
+
+OverflowRewardMultiplierBps:
+  min: 0
+  max: 10000
+  recommended: 0-3000 for overflow zone
+
+CommissionFloorBps:
+  min: 0
+  max: 1000
+  recommended: 300-500
+
+CommissionMaxBps:
+  min: CommissionFloorBps
+  max: 3000
+  recommended: 1500-2000
+
+CommissionMaxDailyChangeBps:
+  min: 1
+  max: 500
+  recommended: 50-100
+```
+
+Governance must not be able to set:
+
+- cap below 1%;
+- max commission below floor;
+- overflow multiplier above normal reward multiplier;
+- invalid top-N targets;
+- zero active validator target;
+- negative or overflowing math values.
+
+### Parameter Validation Requirements
+
+`ValidatorPowerCapBps` must stay within `100-500` bps. The recommended production operating range is `200-300` bps. Governance proposals below `100` bps must be rejected because they would make the validator set unusable and create liveness/economic distortions.
+
+`OverflowRewardMultiplierBps` must stay within `0-10000` bps. A value above `10000` would pay overflow stake more than normal stake and must be impossible. For Aetra's anti-centralization design, the recommended overflow-zone range is `0-3000` bps.
+
+`CommissionFloorBps` must stay within `0-1000` bps, with `300-500` bps recommended. `CommissionMaxBps` must be greater than or equal to `CommissionFloorBps` and must not exceed `3000` bps, with `1500-2000` bps recommended.
+
+`CommissionMaxDailyChangeBps` must stay within `1-500` bps, with `50-100` bps recommended. A zero daily change would make commission governance unnecessarily rigid, while a high daily change enables commission bait-and-switch behavior.
+
+Top-N concentration targets must be positive basis-point values, must not exceed `10000`, and must preserve ordering:
+
+```text
+0 < Top10TargetBps <= Top20TargetBps <= Top33TargetBps <= 10000
+```
+
+`MaxValidatorsSoftTarget` must be greater than zero. Negative values, overflowing arithmetic inputs, and floating point accounting must be rejected before proposal execution or genesis acceptance.
+
+### Parameter Implementation Contract
+
+The parameter gate is `BuildAetraStakingPolicyParameterReport` in `app/params/aetra_staking_policy_spec.go`.
+
+Required catalog properties:
+
+- `DefaultAetraStakingPolicyParameterRuleSet` must encode min, max, and recommended ranges for all bounded bps parameters;
+- `DefaultAetraStakingPolicyParameterValues` must pass validation;
+- `ValidateAetraStakingPolicyParameterValues` must reject unsafe governance values;
+- cap below `100` bps must fail validation;
+- `CommissionMaxBps < CommissionFloorBps` must fail validation;
+- `OverflowRewardMultiplierBps > 10000` must fail validation;
+- invalid top-N target ordering or values above `10000` must fail validation;
+- `MaxValidatorsSoftTarget <= 0` must fail validation;
+- negative math inputs must fail validation.

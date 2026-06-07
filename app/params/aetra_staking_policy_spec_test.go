@@ -167,6 +167,86 @@ func TestAetraStakingPolicyStateSpecRejectsDuplicateUnexpectedAndWrongModule(t *
 	require.Contains(t, report.Failed, "module_name_required")
 }
 
+func TestDefaultAetraStakingPolicyParameterRulesMatchSection223(t *testing.T) {
+	rules := DefaultAetraStakingPolicyParameterRuleSet()
+
+	require.Equal(t, int64(100), rules.ValidatorPowerCapBps.MinBps)
+	require.Equal(t, int64(500), rules.ValidatorPowerCapBps.MaxBps)
+	require.Equal(t, int64(200), rules.ValidatorPowerCapBps.RecommendedMin)
+	require.Equal(t, int64(300), rules.ValidatorPowerCapBps.RecommendedMax)
+
+	require.Equal(t, int64(0), rules.OverflowRewardMultiplierBps.MinBps)
+	require.Equal(t, int64(10_000), rules.OverflowRewardMultiplierBps.MaxBps)
+	require.Equal(t, int64(0), rules.OverflowRewardMultiplierBps.RecommendedMin)
+	require.Equal(t, int64(3_000), rules.OverflowRewardMultiplierBps.RecommendedMax)
+
+	require.Equal(t, int64(0), rules.CommissionFloorBps.MinBps)
+	require.Equal(t, int64(1_000), rules.CommissionFloorBps.MaxBps)
+	require.Equal(t, int64(300), rules.CommissionFloorBps.RecommendedMin)
+	require.Equal(t, int64(500), rules.CommissionFloorBps.RecommendedMax)
+
+	require.Equal(t, int64(0), rules.CommissionMaxBps.MinBps)
+	require.Equal(t, int64(3_000), rules.CommissionMaxBps.MaxBps)
+	require.Equal(t, int64(1_500), rules.CommissionMaxBps.RecommendedMin)
+	require.Equal(t, int64(2_000), rules.CommissionMaxBps.RecommendedMax)
+
+	require.Equal(t, int64(1), rules.CommissionMaxDailyChangeBps.MinBps)
+	require.Equal(t, int64(500), rules.CommissionMaxDailyChangeBps.MaxBps)
+	require.Equal(t, int64(50), rules.CommissionMaxDailyChangeBps.RecommendedMin)
+	require.Equal(t, int64(100), rules.CommissionMaxDailyChangeBps.RecommendedMax)
+}
+
+func TestDefaultAetraStakingPolicyParameterValuesPassValidation(t *testing.T) {
+	values := DefaultAetraStakingPolicyParameterValues()
+
+	report := BuildAetraStakingPolicyParameterReport(values)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 10, report.Required)
+	require.NoError(t, ValidateAetraStakingPolicyParameterValues(values))
+}
+
+func TestAetraStakingPolicyParameterRulesRejectUnsafeGovernanceValues(t *testing.T) {
+	values := DefaultAetraStakingPolicyParameterValues()
+	values.ValidatorPowerCapBps = 99
+	values.CommissionFloorBps = 400
+	values.CommissionMaxBps = 399
+	values.OverflowRewardMultiplierBps = 10_001
+
+	report := BuildAetraStakingPolicyParameterReport(values)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamValidatorPowerCapBps)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamCommissionMaxBps)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamOverflowRewardMultiplierBps)
+	require.Error(t, ValidateAetraStakingPolicyParameterValues(values))
+}
+
+func TestAetraStakingPolicyParameterRulesRejectInvalidTopNAndZeroValidatorTarget(t *testing.T) {
+	values := DefaultAetraStakingPolicyParameterValues()
+	values.Top10TargetBps = 4_500
+	values.Top20TargetBps = 4_000
+	values.Top33TargetBps = 10_001
+	values.MaxValidatorsSoftTarget = 0
+
+	report := BuildAetraStakingPolicyParameterReport(values)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamTop10TargetBps)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamTop20TargetBps)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamTop33TargetBps)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamMaxValidatorsSoftTarget)
+}
+
+func TestAetraStakingPolicyParameterRulesRejectNegativeMathValues(t *testing.T) {
+	values := DefaultAetraStakingPolicyParameterValues()
+	values.CommissionMaxDailyChangeBps = -1
+
+	report := BuildAetraStakingPolicyParameterReport(values)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamCommissionMaxDailyChangeBps)
+	require.Contains(t, report.Failed, AetraStakingPolicyParamRejectNegativeOrOverflowMath)
+}
+
 func removeString(values []string, targets ...string) []string {
 	targetSet := map[string]bool{}
 	for _, target := range targets {
