@@ -123,3 +123,69 @@ func TestAPISurfaceRejectsMissingRequiredModule(t *testing.T) {
 	require.False(t, report.Ready)
 	require.Contains(t, report.Failed, RequiredAPIModuleValidatorScore+":missing_module")
 }
+
+func TestDefaultAPIEventsCoverSection303RequiredEvents(t *testing.T) {
+	report := BuildAPIEventReadinessReport(nil)
+
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, len(requiredAPIEvents()), report.RequiredCount)
+	require.Equal(t, report.RequiredCount, report.ReadyCount)
+	require.NoError(t, ValidateAPIEventReadiness(nil))
+
+	requiredAttrs := requiredAPIEventAttributes()
+	for _, event := range report.Events {
+		require.True(t, event.StableName)
+		require.True(t, event.Bounded)
+		require.True(t, event.Indexed)
+		require.True(t, event.Tested)
+		for _, attr := range requiredAttrs {
+			require.Contains(t, event.Attributes, attr)
+		}
+	}
+}
+
+func TestAPIEventsRejectMissingRequiredEvent(t *testing.T) {
+	events := DefaultAPIEventSpecs()
+	events = events[:len(events)-1]
+
+	report := BuildAPIEventReadinessReport(events)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, RequiredAPIEventGovernanceParamActivation+":missing_event")
+	require.Error(t, ValidateAPIEventReadiness(events))
+}
+
+func TestAPIEventsRejectMissingStableAttributesAndTests(t *testing.T) {
+	events := DefaultAPIEventSpecs()
+	events[0].StableName = false
+	events[0].Bounded = false
+	events[0].Indexed = false
+	events[0].Tested = false
+	events[0].Attributes = removeAPIEventAttr(events[0].Attributes, RequiredAPIEventAttrValidator, RequiredAPIEventAttrOldValue)
+	events[0].Attributes = append(events[0].Attributes, RequiredAPIEventAttrModule, "free_form_error")
+
+	report := BuildAPIEventReadinessReport(events)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, events[0].ID+":stable_name:missing")
+	require.Contains(t, report.Failed, events[0].ID+":bounded_attributes:missing")
+	require.Contains(t, report.Failed, events[0].ID+":indexer_compatible:missing")
+	require.Contains(t, report.Failed, events[0].ID+":tests:missing")
+	require.Contains(t, report.Failed, events[0].ID+":attr_"+RequiredAPIEventAttrValidator+":missing")
+	require.Contains(t, report.Failed, events[0].ID+":attr_"+RequiredAPIEventAttrOldValue+":missing")
+	require.Contains(t, report.Failed, events[0].ID+":attr_"+RequiredAPIEventAttrModule+":duplicate")
+	require.Contains(t, report.Failed, events[0].ID+":attr_free_form_error:unexpected")
+}
+
+func removeAPIEventAttr(attrs []string, targets ...string) []string {
+	targetSet := map[string]bool{}
+	for _, target := range targets {
+		targetSet[target] = true
+	}
+	out := make([]string, 0, len(attrs))
+	for _, attr := range attrs {
+		if !targetSet[attr] {
+			out = append(out, attr)
+		}
+	}
+	return out
+}

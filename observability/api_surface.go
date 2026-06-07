@@ -36,6 +36,34 @@ const (
 	RequiredAPISurfaceStableResponses = "stable_query_responses"
 )
 
+const (
+	RequiredAPIEventValidatorCapCrossing      = "validator_cap_crossing"
+	RequiredAPIEventDelegationOverflow        = "delegation_overflow"
+	RequiredAPIEventRewardMultiplierChange    = "reward_multiplier_change"
+	RequiredAPIEventFeeBurn                   = "fee_burn"
+	RequiredAPIEventTreasuryAllocation        = "treasury_allocation"
+	RequiredAPIEventInflationUpdate           = "inflation_update"
+	RequiredAPIEventAPREstimateEpochUpdate    = "apr_estimate_update_by_epoch"
+	RequiredAPIEventValidatorScoreUpdate      = "validator_score_update"
+	RequiredAPIEventDowntimeOffense           = "downtime_offense"
+	RequiredAPIEventSlash                     = "slash_event"
+	RequiredAPIEventJailUnjail                = "jail_unjail"
+	RequiredAPIEventGovernanceParamActivation = "governance_param_activation"
+)
+
+const (
+	RequiredAPIEventAttrValidator = "validator"
+	RequiredAPIEventAttrDelegator = "delegator"
+	RequiredAPIEventAttrAmount    = "amount"
+	RequiredAPIEventAttrDenom     = "denom"
+	RequiredAPIEventAttrHeight    = "height"
+	RequiredAPIEventAttrEpoch     = "epoch"
+	RequiredAPIEventAttrOldValue  = "old_value"
+	RequiredAPIEventAttrNewValue  = "new_value"
+	RequiredAPIEventAttrReason    = "reason"
+	RequiredAPIEventAttrModule    = "module"
+)
+
 type CLICommandSpec struct {
 	Module              string
 	Category            string
@@ -74,6 +102,24 @@ type APISurfaceReadinessReport struct {
 	Ready         bool
 }
 
+type APIEventSpec struct {
+	ID         string
+	Module     string
+	Attributes []string
+	StableName bool
+	Bounded    bool
+	Indexed    bool
+	Tested     bool
+}
+
+type APIEventReadinessReport struct {
+	Events        []APIEventSpec
+	RequiredCount int
+	ReadyCount    int
+	Failed        []string
+	Ready         bool
+}
+
 func DefaultAPISurfaceModuleSpecs() []APISurfaceModuleSpec {
 	return []APISurfaceModuleSpec{
 		apiSurfaceModule(RequiredAPIModuleStakingPolicy, true),
@@ -88,6 +134,89 @@ func ValidateAPISurfaceReadiness(modules []APISurfaceModuleSpec) error {
 		return fmt.Errorf("api surface readiness failed: %v", report.Failed)
 	}
 	return nil
+}
+
+func DefaultAPIEventSpecs() []APIEventSpec {
+	return []APIEventSpec{
+		apiEvent(RequiredAPIEventValidatorCapCrossing, RequiredAPIModuleStakingPolicy),
+		apiEvent(RequiredAPIEventDelegationOverflow, RequiredAPIModuleStakingPolicy),
+		apiEvent(RequiredAPIEventRewardMultiplierChange, RequiredAPIModuleStakingPolicy),
+		apiEvent(RequiredAPIEventFeeBurn, RequiredAPIModuleEconomics),
+		apiEvent(RequiredAPIEventTreasuryAllocation, RequiredAPIModuleEconomics),
+		apiEvent(RequiredAPIEventInflationUpdate, RequiredAPIModuleEconomics),
+		apiEvent(RequiredAPIEventAPREstimateEpochUpdate, RequiredAPIModuleEconomics),
+		apiEvent(RequiredAPIEventValidatorScoreUpdate, RequiredAPIModuleValidatorScore),
+		apiEvent(RequiredAPIEventDowntimeOffense, RequiredAPIModuleValidatorScore),
+		apiEvent(RequiredAPIEventSlash, "slashing"),
+		apiEvent(RequiredAPIEventJailUnjail, "slashing"),
+		apiEvent(RequiredAPIEventGovernanceParamActivation, "governance"),
+	}
+}
+
+func ValidateAPIEventReadiness(events []APIEventSpec) error {
+	report := BuildAPIEventReadinessReport(events)
+	if !report.Ready {
+		return fmt.Errorf("api event readiness failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAPIEventReadinessReport(events []APIEventSpec) APIEventReadinessReport {
+	if events == nil {
+		events = DefaultAPIEventSpecs()
+	}
+	events = normalizeAPIEvents(events)
+	requiredEvents := requiredAPIEvents()
+	seen := map[string]APIEventSpec{}
+	failed := make([]string, 0)
+	requiredCount := 0
+	readyCount := 0
+
+	for _, event := range events {
+		if event.ID == "" {
+			failed = append(failed, "event_id_required")
+			continue
+		}
+		if _, duplicate := seen[event.ID]; duplicate {
+			failed = append(failed, event.ID+":duplicate_event")
+		}
+		seen[event.ID] = event
+		if !requiredEvents[event.ID] {
+			failed = append(failed, event.ID+":unknown_event")
+		}
+		requiredCount++
+		eventFailures := validateAPIEvent(event)
+		failed = append(failed, eventFailures...)
+		if len(eventFailures) == 0 {
+			readyCount++
+		}
+	}
+	for id := range requiredEvents {
+		if _, ok := seen[id]; !ok {
+			failed = append(failed, id+":missing_event")
+		}
+	}
+
+	sort.Strings(failed)
+	return APIEventReadinessReport{
+		Events:        events,
+		RequiredCount: requiredCount,
+		ReadyCount:    readyCount,
+		Failed:        failed,
+		Ready:         len(failed) == 0,
+	}
+}
+
+func apiEvent(id, module string) APIEventSpec {
+	return APIEventSpec{
+		ID:         id,
+		Module:     module,
+		Attributes: requiredAPIEventAttributes(),
+		StableName: true,
+		Bounded:    true,
+		Indexed:    true,
+		Tested:     true,
+	}
 }
 
 func BuildAPISurfaceReadinessReport(modules []APISurfaceModuleSpec) APISurfaceReadinessReport {
@@ -277,10 +406,93 @@ func normalizeAPISurfaceModules(modules []APISurfaceModuleSpec) []APISurfaceModu
 	return out
 }
 
+func normalizeAPIEvents(events []APIEventSpec) []APIEventSpec {
+	out := append([]APIEventSpec{}, events...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func validateAPIEvent(event APIEventSpec) []string {
+	failed := make([]string, 0)
+	if event.Module == "" {
+		failed = append(failed, event.ID+":module:missing")
+	}
+	if !event.StableName {
+		failed = append(failed, event.ID+":stable_name:missing")
+	}
+	if !event.Bounded {
+		failed = append(failed, event.ID+":bounded_attributes:missing")
+	}
+	if !event.Indexed {
+		failed = append(failed, event.ID+":indexer_compatible:missing")
+	}
+	if !event.Tested {
+		failed = append(failed, event.ID+":tests:missing")
+	}
+	attrs := map[string]int{}
+	for _, attr := range event.Attributes {
+		attrs[attr]++
+	}
+	for _, attr := range requiredAPIEventAttributes() {
+		if attrs[attr] == 0 {
+			failed = append(failed, event.ID+":attr_"+attr+":missing")
+		}
+		if attrs[attr] > 1 {
+			failed = append(failed, event.ID+":attr_"+attr+":duplicate")
+		}
+	}
+	for attr := range attrs {
+		if !requiredAPIEventAttributeSet()[attr] {
+			failed = append(failed, event.ID+":attr_"+attr+":unexpected")
+		}
+	}
+	return failed
+}
+
 func requiredAPIModules() map[string]bool {
 	return map[string]bool{
 		RequiredAPIModuleStakingPolicy:  true,
 		RequiredAPIModuleEconomics:      true,
 		RequiredAPIModuleValidatorScore: true,
 	}
+}
+
+func requiredAPIEvents() map[string]bool {
+	return map[string]bool{
+		RequiredAPIEventValidatorCapCrossing:      true,
+		RequiredAPIEventDelegationOverflow:        true,
+		RequiredAPIEventRewardMultiplierChange:    true,
+		RequiredAPIEventFeeBurn:                   true,
+		RequiredAPIEventTreasuryAllocation:        true,
+		RequiredAPIEventInflationUpdate:           true,
+		RequiredAPIEventAPREstimateEpochUpdate:    true,
+		RequiredAPIEventValidatorScoreUpdate:      true,
+		RequiredAPIEventDowntimeOffense:           true,
+		RequiredAPIEventSlash:                     true,
+		RequiredAPIEventJailUnjail:                true,
+		RequiredAPIEventGovernanceParamActivation: true,
+	}
+}
+
+func requiredAPIEventAttributes() []string {
+	return []string{
+		RequiredAPIEventAttrValidator,
+		RequiredAPIEventAttrDelegator,
+		RequiredAPIEventAttrAmount,
+		RequiredAPIEventAttrDenom,
+		RequiredAPIEventAttrHeight,
+		RequiredAPIEventAttrEpoch,
+		RequiredAPIEventAttrOldValue,
+		RequiredAPIEventAttrNewValue,
+		RequiredAPIEventAttrReason,
+		RequiredAPIEventAttrModule,
+	}
+}
+
+func requiredAPIEventAttributeSet() map[string]bool {
+	out := map[string]bool{}
+	for _, attr := range requiredAPIEventAttributes() {
+		out[attr] = true
+	}
+	return out
 }

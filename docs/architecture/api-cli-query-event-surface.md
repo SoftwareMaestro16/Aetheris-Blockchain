@@ -39,6 +39,40 @@ The gRPC service is the primary typed query API. CLI query commands should call 
 
 Response examples must include realistic JSON for successful responses and at least one clear error shape for invalid request or not found cases. Tests should cover query handler behavior, pagination, invalid requests, stable response fields, REST route registration where feasible, and CLI examples where the command layer exists.
 
+## 30.3 Events
+
+Events must be emitted for:
+
+- validator cap crossing;
+- delegation overflow;
+- reward multiplier change;
+- fee burn;
+- treasury allocation;
+- inflation update;
+- APR estimate update by epoch;
+- validator score update;
+- downtime offense;
+- slash event;
+- jail/unjail;
+- governance param activation.
+
+Events should include stable attributes:
+
+```text
+validator
+delegator
+amount
+denom
+height
+epoch
+old_value
+new_value
+reason
+module
+```
+
+Event names must be module-prefixed, stable across compatible releases, and indexer-compatible. Attribute values must be bounded and deterministic; do not emit free-form panic messages, unbounded user metadata, or unstable local-node strings as public event attributes. Every required event must have tests where feasible, including tx handler emission tests, epoch hook tests, slashing/jail tests, and governance param activation tests.
+
 ## Module Surface Contract
 
 Required modules:
@@ -85,6 +119,7 @@ Required query behavior:
 
 Required event behavior:
 
+- the required section 30.3 event catalog must be complete;
 - event names must be stable and module-prefixed;
 - attributes must be bounded and deterministic;
 - attributes must avoid unbounded user-controlled label values;
@@ -110,4 +145,7 @@ Required catalog properties:
 - clear error behavior is explicit;
 - examples in docs are mandatory;
 - gRPC, REST where applicable, and event surfaces are tracked;
+- every section 30.3 event is cataloged through `DefaultAPIEventSpecs`;
+- every required event carries stable attributes for validator, delegator, amount, denom, height, epoch, old_value, new_value, reason, and module;
+- missing event tests or indexer compatibility fail readiness tests;
 - missing required modules or surfaces fail readiness tests.
