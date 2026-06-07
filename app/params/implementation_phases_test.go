@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDefaultImplementationPhasePlansCoverPhase0AndPhase1(t *testing.T) {
+func TestDefaultImplementationPhasePlansCoverPhase0ThroughPhase2(t *testing.T) {
 	plans := DefaultImplementationPhasePlans()
-	require.Len(t, plans, 2)
+	require.Len(t, plans, 3)
 
 	for _, plan := range plans {
 		report := BuildImplementationPhaseReport(plan)
@@ -30,12 +30,47 @@ func TestImplementationPhaseRejectsMissingEvidence(t *testing.T) {
 }
 
 func TestImplementationPhaseRejectsMissingRequiredItem(t *testing.T) {
-	plan := DefaultImplementationPhasePlans()[1]
+	plan := DefaultImplementationPhasePlans()[2]
 	plan.Items = plan.Items[:len(plan.Items)-1]
 
 	report := BuildImplementationPhaseReport(plan)
 	require.False(t, report.Ready)
-	require.Contains(t, report.Failed, PhaseAcceptanceDeterministicExportImport+":missing")
+	require.Contains(t, report.Failed, PhaseAcceptanceRewardsDeterministic+":missing")
+}
+
+func TestImplementationPhaseEconomicsFeeSplitRequiresAllAcceptanceGates(t *testing.T) {
+	plan := DefaultImplementationPhasePlans()[2]
+	report := BuildImplementationPhaseReport(plan)
+	require.True(t, report.Ready, report.Failed)
+
+	ids := map[string]bool{}
+	for _, item := range plan.Items {
+		ids[item.ID] = true
+	}
+	for _, requiredID := range []string{
+		PhaseTaskImplementInflationBounds,
+		PhaseTaskImplementTargetBondedRatio,
+		PhaseTaskImplementFeeSplit,
+		PhaseTaskImplementRewardSmoothing,
+		PhaseTaskExposeAPREstimateQuery,
+		PhaseTaskExposeSupplyTreasuryQueries,
+		PhaseTaskAddEconomicsGovernanceParams,
+		PhaseTestInflationCurve,
+		PhaseTestBondedRatio,
+		PhaseTestFeeSplit,
+		PhaseTestBurnAccounting,
+		PhaseTestTreasuryAccounting,
+		PhaseTestAPRQuery,
+		PhaseTestSupplyInvariant,
+		PhaseTestEconomicsExportImport,
+		PhaseAcceptanceInflationWithinBounds,
+		PhaseAcceptanceFeeSplitSumsToFullAmount,
+		PhaseAcceptanceBurnReducesSupply,
+		PhaseAcceptanceTreasuryReceivesAmount,
+		PhaseAcceptanceRewardsDeterministic,
+	} {
+		require.True(t, ids[requiredID], requiredID)
+	}
 }
 
 func TestImplementationPhaseRejectsUnknownPhaseAndUnexpectedItem(t *testing.T) {

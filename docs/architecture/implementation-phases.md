@@ -65,14 +65,46 @@ Acceptance:
 - params cannot be set outside safe bounds;
 - state remains deterministic after export/import.
 
+## Phase 2 - Economics and Fee Split
+
+Tasks:
+
+- implement dynamic inflation bounds;
+- implement target bonded ratio logic;
+- implement fee split to burn/rewards/treasury;
+- implement reward smoothing;
+- expose APR estimate query;
+- expose burned supply and treasury accounting queries;
+- add governance param controls.
+
+Tests:
+
+- inflation curve tests;
+- bonded ratio tests;
+- fee split tests;
+- burn accounting tests;
+- treasury accounting tests;
+- APR query tests;
+- supply invariant tests;
+- export/import tests.
+
+Acceptance:
+
+- inflation remains within configured bounds;
+- fee split sums to 100 percent;
+- burned fees reduce spendable/module-held supply according to chain accounting rules;
+- treasury receives correct amount;
+- rewards are deterministic.
+
 ## Implementation Contract
 
 The implementation phase gate is `app/params/implementation_phases.go`.
 
 Required catalog properties:
 
-- `DefaultImplementationPhasePlans` must include Phase 0 and Phase 1;
+- `DefaultImplementationPhasePlans` must include Phase 0, Phase 1, and Phase 2;
 - Phase 0 must include baseline audit tasks, deliverables, and current test evidence;
 - Phase 1 must include staking cap tasks, tests, and acceptance checks;
+- Phase 2 must include economics, fee split, burn, treasury, APR, reward smoothing, and supply invariant checks;
 - phase items require evidence;
 - missing tasks, deliverables, tests, or acceptance checks fail validation.

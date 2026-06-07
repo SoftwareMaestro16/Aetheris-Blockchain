@@ -59,7 +59,27 @@ foreach ($term in @(
     'no validator can exceed configured effective power cap',
     'excess stake does not increase voting power',
     'params cannot be set outside safe bounds',
-    'state remains deterministic after export/import'
+    'state remains deterministic after export/import',
+    'Phase 2 - Economics and Fee Split',
+    'implement dynamic inflation bounds',
+    'implement target bonded ratio logic',
+    'implement fee split to burn/rewards/treasury',
+    'implement reward smoothing',
+    'expose APR estimate query',
+    'expose burned supply and treasury accounting queries',
+    'add governance param controls',
+    'inflation curve tests',
+    'bonded ratio tests',
+    'fee split tests',
+    'burn accounting tests',
+    'treasury accounting tests',
+    'APR query tests',
+    'supply invariant tests',
+    'inflation remains within configured bounds',
+    'fee split sums to 100 percent',
+    'burned fees reduce spendable/module-held supply according to chain accounting rules',
+    'treasury receives correct amount',
+    'rewards are deterministic'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "implementation phases doc missing: $term"
 }
@@ -67,6 +87,7 @@ foreach ($term in @(
 foreach ($term in @(
     'ImplementationPhaseBaselineAudit',
     'ImplementationPhaseStakingPolicyCap',
+    'ImplementationPhaseEconomicsFeeSplit',
     'ImplementationPhaseItem',
     'ImplementationPhasePlan',
     'ImplementationPhaseReport',
@@ -91,18 +112,39 @@ foreach ($term in @(
     'PhaseTaskAddStakeQueries',
     'PhaseTaskAddGovernanceParams',
     'PhaseTaskWireModuleLifecycle',
+    'PhaseTaskImplementInflationBounds',
+    'PhaseTaskImplementTargetBondedRatio',
+    'PhaseTaskImplementFeeSplit',
+    'PhaseTaskImplementRewardSmoothing',
+    'PhaseTaskExposeAPREstimateQuery',
+    'PhaseTaskExposeSupplyTreasuryQueries',
+    'PhaseTaskAddEconomicsGovernanceParams',
+    'PhaseTestInflationCurve',
+    'PhaseTestBondedRatio',
+    'PhaseTestFeeSplit',
+    'PhaseTestBurnAccounting',
+    'PhaseTestTreasuryAccounting',
+    'PhaseTestAPRQuery',
+    'PhaseTestSupplyInvariant',
+    'PhaseTestEconomicsExportImport',
     'PhaseAcceptanceNoValidatorExceedsCap',
     'PhaseAcceptanceExcessNoVotingPower',
     'PhaseAcceptanceParamsSafeBounds',
-    'PhaseAcceptanceDeterministicExportImport'
+    'PhaseAcceptanceDeterministicExportImport',
+    'PhaseAcceptanceInflationWithinBounds',
+    'PhaseAcceptanceFeeSplitSumsToFullAmount',
+    'PhaseAcceptanceBurnReducesSupply',
+    'PhaseAcceptanceTreasuryReceivesAmount',
+    'PhaseAcceptanceRewardsDeterministic'
   )) {
   Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "implementation phases policy missing: $term"
 }
 
 foreach ($term in @(
-    'TestDefaultImplementationPhasePlansCoverPhase0AndPhase1',
+    'TestDefaultImplementationPhasePlansCoverPhase0ThroughPhase2',
     'TestImplementationPhaseRejectsMissingEvidence',
     'TestImplementationPhaseRejectsMissingRequiredItem',
+    'TestImplementationPhaseEconomicsFeeSplitRequiresAllAcceptanceGates',
     'TestImplementationPhaseRejectsUnknownPhaseAndUnexpectedItem'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "implementation phases tests missing: $term"

@@ -6,23 +6,31 @@ import (
 )
 
 const (
-	ImplementationPhaseBaselineAudit    = "phase_0_baseline_audit"
-	ImplementationPhaseStakingPolicyCap = "phase_1_staking_policy_validator_cap"
+	ImplementationPhaseBaselineAudit     = "phase_0_baseline_audit"
+	ImplementationPhaseStakingPolicyCap  = "phase_1_staking_policy_validator_cap"
+	ImplementationPhaseEconomicsFeeSplit = "phase_2_economics_fee_split"
 
-	PhaseTaskInspectVersions             = "inspect_current_cosmos_sdk_and_cometbft_versions"
-	PhaseTaskDocumentModuleGraph         = "document_current_app_module_graph"
-	PhaseTaskIdentifyOverlappingModules  = "identify_modules_overlapping_custom_aetra_modules"
-	PhaseTaskDecideRenameReuseWrap       = "decide_modules_renamed_reused_or_wrapped"
-	PhaseTaskVerifyNaetStakingDenom      = "verify_naet_staking_denom"
-	PhaseTaskVerifyEconomyWiring         = "verify_fee_collector_burn_treasury_emissions_mint_authority_wiring"
-	PhaseTaskVerifyLocalnetAndCoverage   = "verify_localnet_scripts_and_test_coverage"
-	PhaseTaskImplementEffectivePowerCap  = "implement_effective_voting_power_cap"
-	PhaseTaskImplementOverflowAccounting = "implement_overflow_stake_accounting"
-	PhaseTaskImplementCommissionPolicy   = "implement_commission_floor_max_change_policy"
-	PhaseTaskAddConcentrationMetrics     = "add_concentration_metrics"
-	PhaseTaskAddStakeQueries             = "add_validator_raw_effective_overflow_queries"
-	PhaseTaskAddGovernanceParams         = "add_governance_params_with_validation"
-	PhaseTaskWireModuleLifecycle         = "wire_module_into_app_lifecycle"
+	PhaseTaskInspectVersions              = "inspect_current_cosmos_sdk_and_cometbft_versions"
+	PhaseTaskDocumentModuleGraph          = "document_current_app_module_graph"
+	PhaseTaskIdentifyOverlappingModules   = "identify_modules_overlapping_custom_aetra_modules"
+	PhaseTaskDecideRenameReuseWrap        = "decide_modules_renamed_reused_or_wrapped"
+	PhaseTaskVerifyNaetStakingDenom       = "verify_naet_staking_denom"
+	PhaseTaskVerifyEconomyWiring          = "verify_fee_collector_burn_treasury_emissions_mint_authority_wiring"
+	PhaseTaskVerifyLocalnetAndCoverage    = "verify_localnet_scripts_and_test_coverage"
+	PhaseTaskImplementEffectivePowerCap   = "implement_effective_voting_power_cap"
+	PhaseTaskImplementOverflowAccounting  = "implement_overflow_stake_accounting"
+	PhaseTaskImplementCommissionPolicy    = "implement_commission_floor_max_change_policy"
+	PhaseTaskAddConcentrationMetrics      = "add_concentration_metrics"
+	PhaseTaskAddStakeQueries              = "add_validator_raw_effective_overflow_queries"
+	PhaseTaskAddGovernanceParams          = "add_governance_params_with_validation"
+	PhaseTaskWireModuleLifecycle          = "wire_module_into_app_lifecycle"
+	PhaseTaskImplementInflationBounds     = "implement_dynamic_inflation_bounds"
+	PhaseTaskImplementTargetBondedRatio   = "implement_target_bonded_ratio_logic"
+	PhaseTaskImplementFeeSplit            = "implement_fee_split_to_burn_rewards_treasury"
+	PhaseTaskImplementRewardSmoothing     = "implement_reward_smoothing"
+	PhaseTaskExposeAPREstimateQuery       = "expose_apr_estimate_query"
+	PhaseTaskExposeSupplyTreasuryQueries  = "expose_burned_supply_and_treasury_accounting_queries"
+	PhaseTaskAddEconomicsGovernanceParams = "add_economics_governance_param_controls"
 
 	PhaseDeliverableModuleInventory         = "module_inventory"
 	PhaseDeliverableGapAnalysis             = "gap_analysis"
@@ -40,11 +48,24 @@ const (
 	PhaseTestStakingIntegration     = "integration_tests_with_staking"
 	PhaseTestStakingExportImport    = "staking_policy_export_import_tests"
 	PhaseTestInvariant              = "invariant_tests"
+	PhaseTestInflationCurve         = "inflation_curve_tests"
+	PhaseTestBondedRatio            = "bonded_ratio_tests"
+	PhaseTestFeeSplit               = "fee_split_tests"
+	PhaseTestBurnAccounting         = "burn_accounting_tests"
+	PhaseTestTreasuryAccounting     = "treasury_accounting_tests"
+	PhaseTestAPRQuery               = "apr_query_tests"
+	PhaseTestSupplyInvariant        = "supply_invariant_tests"
+	PhaseTestEconomicsExportImport  = "economics_export_import_tests"
 
 	PhaseAcceptanceNoValidatorExceedsCap     = "no_validator_can_exceed_effective_power_cap"
 	PhaseAcceptanceExcessNoVotingPower       = "excess_stake_does_not_increase_voting_power"
 	PhaseAcceptanceParamsSafeBounds          = "params_cannot_be_set_outside_safe_bounds"
 	PhaseAcceptanceDeterministicExportImport = "state_remains_deterministic_after_export_import"
+	PhaseAcceptanceInflationWithinBounds     = "inflation_remains_within_configured_bounds"
+	PhaseAcceptanceFeeSplitSumsToFullAmount  = "fee_split_sums_to_100_percent"
+	PhaseAcceptanceBurnReducesSupply         = "burned_fees_reduce_supply_according_to_chain_accounting"
+	PhaseAcceptanceTreasuryReceivesAmount    = "treasury_receives_correct_amount"
+	PhaseAcceptanceRewardsDeterministic      = "rewards_are_deterministic"
 )
 
 type ImplementationPhaseItem struct {
@@ -111,6 +132,31 @@ func DefaultImplementationPhasePlans() []ImplementationPhasePlan {
 				phaseItem("acceptance", PhaseAcceptanceExcessNoVotingPower),
 				phaseItem("acceptance", PhaseAcceptanceParamsSafeBounds),
 				phaseItem("acceptance", PhaseAcceptanceDeterministicExportImport),
+			},
+		},
+		{
+			PhaseID: ImplementationPhaseEconomicsFeeSplit,
+			Items: []ImplementationPhaseItem{
+				phaseItem("task", PhaseTaskImplementInflationBounds),
+				phaseItem("task", PhaseTaskImplementTargetBondedRatio),
+				phaseItem("task", PhaseTaskImplementFeeSplit),
+				phaseItem("task", PhaseTaskImplementRewardSmoothing),
+				phaseItem("task", PhaseTaskExposeAPREstimateQuery),
+				phaseItem("task", PhaseTaskExposeSupplyTreasuryQueries),
+				phaseItem("task", PhaseTaskAddEconomicsGovernanceParams),
+				phaseItem("test", PhaseTestInflationCurve),
+				phaseItem("test", PhaseTestBondedRatio),
+				phaseItem("test", PhaseTestFeeSplit),
+				phaseItem("test", PhaseTestBurnAccounting),
+				phaseItem("test", PhaseTestTreasuryAccounting),
+				phaseItem("test", PhaseTestAPRQuery),
+				phaseItem("test", PhaseTestSupplyInvariant),
+				phaseItem("test", PhaseTestEconomicsExportImport),
+				phaseItem("acceptance", PhaseAcceptanceInflationWithinBounds),
+				phaseItem("acceptance", PhaseAcceptanceFeeSplitSumsToFullAmount),
+				phaseItem("acceptance", PhaseAcceptanceBurnReducesSupply),
+				phaseItem("acceptance", PhaseAcceptanceTreasuryReceivesAmount),
+				phaseItem("acceptance", PhaseAcceptanceRewardsDeterministic),
 			},
 		},
 	}
@@ -244,6 +290,31 @@ func defaultImplementationPhaseItemIDs() []phaseItemIDs {
 				PhaseAcceptanceExcessNoVotingPower,
 				PhaseAcceptanceParamsSafeBounds,
 				PhaseAcceptanceDeterministicExportImport,
+			},
+		},
+		{
+			phaseID: ImplementationPhaseEconomicsFeeSplit,
+			ids: []string{
+				PhaseTaskImplementInflationBounds,
+				PhaseTaskImplementTargetBondedRatio,
+				PhaseTaskImplementFeeSplit,
+				PhaseTaskImplementRewardSmoothing,
+				PhaseTaskExposeAPREstimateQuery,
+				PhaseTaskExposeSupplyTreasuryQueries,
+				PhaseTaskAddEconomicsGovernanceParams,
+				PhaseTestInflationCurve,
+				PhaseTestBondedRatio,
+				PhaseTestFeeSplit,
+				PhaseTestBurnAccounting,
+				PhaseTestTreasuryAccounting,
+				PhaseTestAPRQuery,
+				PhaseTestSupplyInvariant,
+				PhaseTestEconomicsExportImport,
+				PhaseAcceptanceInflationWithinBounds,
+				PhaseAcceptanceFeeSplitSumsToFullAmount,
+				PhaseAcceptanceBurnReducesSupply,
+				PhaseAcceptanceTreasuryReceivesAmount,
+				PhaseAcceptanceRewardsDeterministic,
 			},
 		},
 	}
