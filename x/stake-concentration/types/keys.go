@@ -10,9 +10,9 @@ const (
 	AetraValidatorSetPhaseOneMax = 150
 	AetraValidatorSetPhaseTwoMax = 250
 
-	AetraPhaseOnePowerCapBps  uint32 = 3_000
-	AetraPhaseTwoPowerCapBps  uint32 = 2_500
-	AetraMatureSetPowerCapBps uint32 = 2_000
+	AetraPhaseOnePowerCapBps  uint32 = 300
+	AetraPhaseTwoPowerCapBps  uint32 = 250
+	AetraMatureSetPowerCapBps uint32 = 200
 )
 
 var (

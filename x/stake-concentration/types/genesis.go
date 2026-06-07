@@ -10,10 +10,10 @@ import (
 
 func DefaultParams() Params {
 	return Params{
-		MaxVotingPowerBps:          3_334,
-		SoftVotingPowerBps:         2_500,
+		MaxVotingPowerBps:          AetraPhaseOnePowerCapBps,
+		SoftVotingPowerBps:         AetraPhaseTwoPowerCapBps,
 		MaxRewardReductionBps:      3_000,
-		WarningThresholdBps:        2_500,
+		WarningThresholdBps:        AetraPhaseTwoPowerCapBps,
 		DelegationRejectionEnabled: true,
 	}
 }

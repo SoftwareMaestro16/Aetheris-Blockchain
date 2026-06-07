@@ -30,7 +30,7 @@ func TestValidatorAboveCapRejectsNewDelegation(t *testing.T) {
 
 	require.Equal(t, operator(0x11), res.Network.Validators[0].OperatorAddress)
 	require.Equal(t, uint32(5_000), res.Network.Validators[0].RawVotingPowerBps)
-	require.Equal(t, uint32(3_000), res.Network.Validators[0].EffectiveVotingPowerBps)
+	require.Equal(t, uint32(300), res.Network.Validators[0].EffectiveVotingPowerBps)
 	require.True(t, res.Network.Validators[0].AboveHardCap)
 	require.False(t, res.Network.Validators[0].DelegationAllowed)
 
@@ -57,7 +57,7 @@ func TestRewardModifierApplies(t *testing.T) {
 
 	metric := res.Network.Validators[0]
 	require.Equal(t, uint32(4_000), metric.RawVotingPowerBps)
-	require.Equal(t, uint32(9_400), metric.RewardModifierBps)
+	require.Equal(t, uint32(8_847), metric.RewardModifierBps)
 	require.Less(t, metric.RewardModifierBps, types.BasisPoints)
 	require.GreaterOrEqual(t, metric.RewardModifierBps, uint32(0))
 }
@@ -77,7 +77,7 @@ func TestPowerCapEnforcedAcrossEpochTransition(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, uint32(3_000), first.Network.MaxValidatorPowerBps)
+	require.Equal(t, uint32(300), first.Network.MaxValidatorPowerBps)
 
 	second, err := msgServer.RecomputeConcentration(ctx, &types.MsgRecomputeConcentration{
 		Authority: app.StakeConcentrationKeeper.Authority(),
@@ -90,23 +90,23 @@ func TestPowerCapEnforcedAcrossEpochTransition(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), second.Network.Epoch)
-	require.Equal(t, uint32(3_000), second.Network.MaxValidatorPowerBps)
-	require.Equal(t, uint32(3_000), second.Network.Validators[0].EffectiveVotingPowerBps)
+	require.Equal(t, uint32(300), second.Network.MaxValidatorPowerBps)
+	require.Equal(t, uint32(300), second.Network.Validators[0].EffectiveVotingPowerBps)
 }
 
 func TestAetraPowerCapSchedule(t *testing.T) {
 	params := types.DefaultParams()
 
-	require.Equal(t, uint32(3_000), types.EffectiveMaxVotingPowerBps(params, 100))
-	require.Equal(t, uint32(3_000), types.EffectiveMaxVotingPowerBps(params, 150))
-	require.Equal(t, uint32(2_500), types.EffectiveMaxVotingPowerBps(params, 151))
-	require.Equal(t, uint32(2_500), types.EffectiveMaxVotingPowerBps(params, 250))
-	require.Equal(t, uint32(2_000), types.EffectiveMaxVotingPowerBps(params, 251))
-	require.Equal(t, uint32(2_000), types.EffectiveMaxVotingPowerBps(params, 300))
+	require.Equal(t, uint32(300), types.EffectiveMaxVotingPowerBps(params, 100))
+	require.Equal(t, uint32(300), types.EffectiveMaxVotingPowerBps(params, 150))
+	require.Equal(t, uint32(250), types.EffectiveMaxVotingPowerBps(params, 151))
+	require.Equal(t, uint32(250), types.EffectiveMaxVotingPowerBps(params, 250))
+	require.Equal(t, uint32(200), types.EffectiveMaxVotingPowerBps(params, 251))
+	require.Equal(t, uint32(200), types.EffectiveMaxVotingPowerBps(params, 300))
 
-	params.MaxVotingPowerBps = 1_750
-	require.Equal(t, uint32(1_750), types.EffectiveMaxVotingPowerBps(params, 100))
-	require.Equal(t, uint32(1_750), types.EffectiveMaxVotingPowerBps(params, 300))
+	params.MaxVotingPowerBps = 175
+	require.Equal(t, uint32(175), types.EffectiveMaxVotingPowerBps(params, 100))
+	require.Equal(t, uint32(175), types.EffectiveMaxVotingPowerBps(params, 300))
 }
 
 func TestNetworkConcentrationUsesScheduledPowerCap(t *testing.T) {
@@ -119,9 +119,9 @@ func TestNetworkConcentrationUsesScheduledPowerCap(t *testing.T) {
 
 	heavy, found := findConcentration(network.Validators, validatorSet[0].OperatorAddress)
 	require.True(t, found)
-	require.Greater(t, heavy.RawVotingPowerBps, uint32(2_000))
-	require.Equal(t, uint32(2_000), heavy.EffectiveVotingPowerBps)
-	require.Equal(t, uint32(2_000), network.MaxValidatorPowerBps)
+	require.Greater(t, heavy.RawVotingPowerBps, uint32(200))
+	require.Equal(t, uint32(200), heavy.EffectiveVotingPowerBps)
+	require.Equal(t, uint32(200), network.MaxValidatorPowerBps)
 	require.True(t, heavy.AboveHardCap)
 	require.False(t, heavy.DelegationAllowed)
 }
