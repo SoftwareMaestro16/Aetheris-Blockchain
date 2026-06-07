@@ -232,7 +232,10 @@ func TestSlashingParamsAndSigningInfoRoundTrip(t *testing.T) {
 	require.Equal(t, appparams.BpsToLegacyDec(appparams.DoubleSignSlashDefaultBps), params.SlashFractionDoubleSign)
 	require.True(t, params.SlashFractionDoubleSign.GTE(appparams.BpsToLegacyDec(appparams.DoubleSignSlashMinBps)))
 	require.True(t, params.SlashFractionDoubleSign.LTE(appparams.BpsToLegacyDec(appparams.DoubleSignSlashMaxBps)))
-	require.True(t, params.SlashFractionDowntime.IsPositive())
+	require.Equal(t, appparams.BpsToLegacyDec(appparams.DowntimeFirstSlashDefaultBps), params.SlashFractionDowntime)
+	require.True(t, params.SlashFractionDowntime.GTE(appparams.BpsToLegacyDec(appparams.DowntimeFirstSlashMinBps)))
+	require.True(t, params.SlashFractionDowntime.LTE(appparams.BpsToLegacyDec(appparams.DowntimeFirstSlashMaxBps)))
+	require.Equal(t, time.Duration(appparams.DowntimeFirstJailDefaultMinutes)*time.Minute, params.DowntimeJailDuration)
 
 	validator := GetBondedTestValidator(t, app, ctx)
 	consAddrBytes, err := validator.GetConsAddr()

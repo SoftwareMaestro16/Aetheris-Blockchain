@@ -52,9 +52,9 @@ func TestSlashSeverityClassesUseProtocolNames(t *testing.T) {
 	}, SlashSeverityClasses())
 
 	expected := map[string]uint32{
-		SlashSeverityMinorLivenessFault:     100,
-		SlashSeverityMajorLivenessFault:     500,
-		SlashSeverityRepeatedLivenessFault:  1_000,
+		SlashSeverityMinorLivenessFault:     5,
+		SlashSeverityMajorLivenessFault:     25,
+		SlashSeverityRepeatedLivenessFault:  100,
 		SlashSeverityInvalidTaskExecution:   750,
 		SlashSeverityInvalidStateTransition: 1_500,
 		SlashSeverityEquivocation:           2_000,
@@ -66,6 +66,52 @@ func TestSlashSeverityClassesUseProtocolNames(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, bps, actual)
 	}
+}
+
+func TestProgressiveDowntimeSlashingDefaultsStayWithinAetraRanges(t *testing.T) {
+	first, err := ComputeSlashingPenalty(SlashingPenaltyInput{
+		PenaltyID:           "downtime-first",
+		ValidatorID:         "val-a",
+		SeverityLevel:       SlashSeverityMinorLivenessFault,
+		StakeExposureNaet:   sdkmath.NewInt(100_000),
+		SelfStakeNaet:       sdkmath.NewInt(100_000),
+		TemporaryJailEpochs: 1,
+		EvidenceHeight:      10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(5), first.SeverityBps)
+	require.Equal(t, sdkmath.NewInt(50), first.StakeSlashNaet)
+	require.Equal(t, uint64(1), first.TemporaryJailEpochs)
+
+	repeat, err := ComputeSlashingPenalty(SlashingPenaltyInput{
+		PenaltyID:           "downtime-repeat",
+		ValidatorID:         "val-a",
+		SeverityLevel:       SlashSeverityMajorLivenessFault,
+		StakeExposureNaet:   sdkmath.NewInt(100_000),
+		SelfStakeNaet:       sdkmath.NewInt(100_000),
+		TemporaryJailEpochs: 24,
+		EvidenceHeight:      20,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(25), repeat.SeverityBps)
+	require.Equal(t, sdkmath.NewInt(250), repeat.StakeSlashNaet)
+	require.Equal(t, uint64(24), repeat.TemporaryJailEpochs)
+
+	chronic, err := ComputeSlashingPenalty(SlashingPenaltyInput{
+		PenaltyID:                     "downtime-chronic",
+		ValidatorID:                   "val-a",
+		SeverityLevel:                 SlashSeverityRepeatedLivenessFault,
+		StakeExposureNaet:             sdkmath.NewInt(100_000),
+		SelfStakeNaet:                 sdkmath.NewInt(100_000),
+		TemporaryJailEpochs:           72,
+		FutureElectionScorePenaltyBps: 500,
+		EvidenceHeight:                30,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint32(100), chronic.SeverityBps)
+	require.Equal(t, sdkmath.NewInt(1_000), chronic.StakeSlashNaet)
+	require.Equal(t, uint64(72), chronic.TemporaryJailEpochs)
+	require.Equal(t, uint32(500), chronic.FutureElectionScorePenaltyBps)
 }
 
 func TestComputeSlashingPenaltyCapsAtStakeExposureAndAppliesTombstoneIdentityInvalidation(t *testing.T) {

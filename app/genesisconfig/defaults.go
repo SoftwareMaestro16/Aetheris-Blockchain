@@ -12,6 +12,7 @@ import (
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	protocolpooltypes "github.com/cosmos/cosmos-sdk/x/protocolpool/types"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
@@ -21,6 +22,7 @@ func ApplyCoreModuleDefaults(cdc codec.JSONCodec, genesis map[string]json.RawMes
 	setDefaultGenesis(cdc, genesis, govtypes.ModuleName, govv1.DefaultGenesisState())
 	setDefaultGenesis(cdc, genesis, minttypes.ModuleName, appparams.AetraMintGenesisState())
 	setDefaultGenesis(cdc, genesis, protocolpooltypes.ModuleName, protocolpooltypes.DefaultGenesisState())
+	setDefaultGenesis(cdc, genesis, slashingtypes.ModuleName, slashingtypes.NewGenesisState(appparams.AetraSlashingParams(), nil, nil))
 	return genesis
 }
 

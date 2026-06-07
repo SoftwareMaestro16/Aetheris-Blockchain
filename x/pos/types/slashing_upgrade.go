@@ -164,11 +164,11 @@ func SlashSeverityClasses() []string {
 func DefaultSeverityBps(severityLevel string) (uint32, error) {
 	switch severityLevel {
 	case SlashSeverityMinorLivenessFault:
-		return 100, nil
+		return 5, nil
 	case SlashSeverityMajorLivenessFault:
-		return 500, nil
+		return 25, nil
 	case SlashSeverityRepeatedLivenessFault:
-		return 1_000, nil
+		return 100, nil
 	case SlashSeverityInvalidTaskExecution:
 		return 750, nil
 	case SlashSeverityInvalidStateTransition:

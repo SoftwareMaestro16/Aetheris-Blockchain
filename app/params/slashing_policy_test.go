@@ -2,6 +2,7 @@ package params
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -20,10 +21,24 @@ func TestDefaultSlashingAccountabilityPolicyMatchesAetraModel(t *testing.T) {
 	require.True(t, policy.DoubleSignPermanentTombstone)
 	require.True(t, policy.ConsensusKeyReuseForbidden)
 	require.True(t, policy.UsesCosmosSlashingAndEvidence)
+	require.True(t, policy.ProgressiveDowntimeEnabled)
+	require.True(t, policy.StandardDowntimeStatePreserved)
+	require.True(t, policy.CustomDowntimeOverlayRequired)
+	require.Equal(t, int64(5), policy.DowntimeFirstSlashBps)
+	require.Equal(t, int64(60), policy.DowntimeFirstJailMinutes)
+	require.Equal(t, int64(25), policy.DowntimeRepeatSlashBps)
+	require.Equal(t, int64(24*60), policy.DowntimeRepeatJailMinutes)
+	require.Equal(t, int64(100), policy.DowntimeChronicSlashBps)
+	require.Greater(t, policy.DowntimeChronicJailMinutes, policy.DowntimeRepeatJailMinutes)
+	require.True(t, policy.DowntimeGovernanceReputationFlag)
 }
 
 func TestSlashingAccountabilityPolicyRejectsSubjectiveOrWeakDoubleSignRules(t *testing.T) {
 	policy := DefaultSlashingAccountabilityPolicy()
+	policy.DoubleSignSlashBps = 750
+	require.NoError(t, policy.Validate())
+
+	policy = DefaultSlashingAccountabilityPolicy()
 	policy.ObjectiveCryptographicEvidenceOnly = false
 	require.ErrorContains(t, policy.Validate(), "objective cryptographic evidence")
 
@@ -46,4 +61,50 @@ func TestSlashingAccountabilityPolicyRejectsSubjectiveOrWeakDoubleSignRules(t *t
 	policy = DefaultSlashingAccountabilityPolicy()
 	policy.ConsensusKeyReuseForbidden = false
 	require.ErrorContains(t, policy.Validate(), "consensus key reuse")
+}
+
+func TestAetraSlashingParamsSetObjectiveDoubleSignAndBaseDowntime(t *testing.T) {
+	params := AetraSlashingParams()
+
+	require.NoError(t, params.Validate())
+	require.Equal(t, BpsToLegacyDec(DoubleSignSlashDefaultBps), params.SlashFractionDoubleSign)
+	require.Equal(t, BpsToLegacyDec(DowntimeFirstSlashDefaultBps), params.SlashFractionDowntime)
+	require.True(t, params.SlashFractionDowntime.GTE(BpsToLegacyDec(DowntimeFirstSlashMinBps)))
+	require.True(t, params.SlashFractionDowntime.LTE(BpsToLegacyDec(DowntimeFirstSlashMaxBps)))
+	require.Equal(t, time.Duration(DowntimeFirstJailDefaultMinutes)*time.Minute, params.DowntimeJailDuration)
+}
+
+func TestSlashingAccountabilityPolicyRejectsUnsafeDowntimeProgression(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeFirstSlashBps = 10
+	policy.DowntimeRepeatSlashBps = 50
+	require.NoError(t, policy.Validate())
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.ProgressiveDowntimeEnabled = false
+	require.ErrorContains(t, policy.Validate(), "progressive downtime")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.StandardDowntimeStatePreserved = false
+	require.ErrorContains(t, policy.Validate(), "x/slashing signing state")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.CustomDowntimeOverlayRequired = false
+	require.ErrorContains(t, policy.Validate(), "custom overlay")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeFirstSlashBps = 4
+	require.ErrorContains(t, policy.Validate(), "downtime_first_slash")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeRepeatSlashBps = 51
+	require.ErrorContains(t, policy.Validate(), "downtime_repeat_slash")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeChronicSlashBps = policy.DowntimeRepeatSlashBps
+	require.ErrorContains(t, policy.Validate(), "chronic slash")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeChronicJailMinutes = policy.DowntimeRepeatJailMinutes
+	require.ErrorContains(t, policy.Validate(), "chronic jail")
 }

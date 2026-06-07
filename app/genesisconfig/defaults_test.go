@@ -13,6 +13,7 @@ import (
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	protocolpooltypes "github.com/cosmos/cosmos-sdk/x/protocolpool/types"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 
 	appparams "github.com/sovereign-l1/l1/app/params"
 )
@@ -26,9 +27,14 @@ func TestApplyCoreModuleDefaultsSetsExpectedModules(t *testing.T) {
 		govtypes.ModuleName,
 		minttypes.ModuleName,
 		protocolpooltypes.ModuleName,
+		slashingtypes.ModuleName,
 	} {
 		require.NotEmpty(t, genesis[moduleName])
 	}
+
+	var slashingGenesis slashingtypes.GenesisState
+	cdc.MustUnmarshalJSON(genesis[slashingtypes.ModuleName], &slashingGenesis)
+	require.Equal(t, appparams.AetraSlashingParams(), slashingGenesis.Params)
 }
 
 func TestApplyNativeTokenMetadataIsIdempotent(t *testing.T) {
