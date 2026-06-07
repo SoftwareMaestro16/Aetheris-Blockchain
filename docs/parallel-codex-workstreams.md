@@ -187,7 +187,31 @@ CHAT 3 owns allocation, rewards, reputation, proofs, and events:
 - W10 Proofs And Events owns proof metadata structs, deterministic staking
   events, event receipts, and no-secret event checks.
 
-CHAT 4 owns genesis, hardening, docs, and final integration:
+CHAT 4 owns genesis, hardening, docs, and final integration.
+
+CHAT 4 goal: make the independently built pieces production-usable through
+export/import, migrations, invariants, docs, query/CLI surface, and final app
+wiring.
+
+CHAT 4 outputs:
+
+- deterministic genesis/export/import;
+- versioned migrations;
+- scalability checks;
+- invariant registry;
+- docs and examples;
+- final keeper/app/module wiring;
+- full test pass.
+
+CHAT 4 workstreams must not rewrite:
+
+- address derivation;
+- account auth semantics;
+- allocation math;
+- reward math;
+- storage rent semantics.
+
+CHAT 4 owned workstreams:
 
 - W11 Genesis, Migration, Export/Import owns deterministic full-state
   export/import, versioned migrations, lazy migration, and malformed genesis

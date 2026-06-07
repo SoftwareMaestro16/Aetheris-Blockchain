@@ -108,6 +108,27 @@ foreach ($term in @(
 }
 
 foreach ($term in @(
+    'CHAT 4 goal: make the independently built pieces production-usable',
+    'export/import, migrations, invariants, docs, query/CLI surface, and final app',
+    'deterministic genesis/export/import',
+    'versioned migrations',
+    'scalability checks',
+    'invariant registry',
+    'docs and examples',
+    'final keeper/app/module wiring',
+    'full test pass',
+    'CHAT 4 workstreams must not rewrite',
+    'address derivation',
+    'account auth semantics',
+    'allocation math',
+    'reward math',
+    'storage rent semantics',
+    'CHAT 4 owned workstreams'
+  )) {
+  Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "parallel workstreams doc missing CHAT4 item: $term"
+}
+
+foreach ($term in @(
     'W0 owns:',
     '`app/addressing`',
     'address validation tests',
