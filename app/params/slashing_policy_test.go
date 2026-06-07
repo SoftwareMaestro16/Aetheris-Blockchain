@@ -21,9 +21,28 @@ func TestDefaultSlashingAccountabilityPolicyMatchesAetraModel(t *testing.T) {
 	require.True(t, policy.DoubleSignPermanentTombstone)
 	require.True(t, policy.ConsensusKeyReuseForbidden)
 	require.True(t, policy.UsesCosmosSlashingAndEvidence)
+	require.True(t, policy.BaseFaultsUseCometBFTEvidence)
+	require.True(t, policy.StandardDoubleSignIntegrated)
+	require.True(t, policy.StandardLivenessDowntimeIntegrated)
+	require.True(t, policy.StandardTombstoneIntegrated)
+	require.True(t, policy.StandardJailUnjailIntegrated)
+	require.True(t, policy.CustomLogicWrapsStandardOnly)
+	require.True(t, policy.CoreSlashingForkForbidden)
 	require.True(t, policy.ProgressiveDowntimeEnabled)
 	require.True(t, policy.StandardDowntimeStatePreserved)
 	require.True(t, policy.CustomDowntimeOverlayRequired)
+	require.True(t, policy.DowntimeOffenseTracksValidatorConsAddr)
+	require.True(t, policy.DowntimeOffenseTracksOffenseCount)
+	require.True(t, policy.DowntimeOffenseTracksFirstOffenseTime)
+	require.True(t, policy.DowntimeOffenseTracksLastOffenseTime)
+	require.True(t, policy.DowntimeOffenseTracksLastSlashFraction)
+	require.True(t, policy.DowntimeOffenseTracksCurrentJail)
+	require.Equal(t, int64(30), policy.DowntimeOffenseCleanDecayDays)
+	require.Equal(t, int64(100), policy.DowntimeOffenseMaxPenaltyBps)
+	require.Equal(t, int64(72*60), policy.DowntimeOffenseMaxJailMinutes)
+	require.True(t, policy.DowntimeOffenseDelegatorRiskInherited)
+	require.True(t, policy.DowntimeOffenseQueryStatusEnabled)
+	require.True(t, policy.DowntimeOffenseUnjailKeepsHistory)
 	require.Equal(t, int64(5), policy.DowntimeFirstSlashBps)
 	require.Equal(t, int64(60), policy.DowntimeFirstJailMinutes)
 	require.Equal(t, int64(25), policy.DowntimeRepeatSlashBps)
@@ -87,6 +106,40 @@ func TestSlashingAccountabilityPolicyRejectsSubjectiveOrWeakDoubleSignRules(t *t
 	require.ErrorContains(t, policy.Validate(), "consensus key reuse")
 }
 
+func TestSlashingAccountabilityPolicyRequiresStandardCosmosIntegration(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.UsesCosmosSlashingAndEvidence = false
+	require.ErrorContains(t, policy.Validate(), "Cosmos SDK slashing and evidence")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.BaseFaultsUseCometBFTEvidence = false
+	require.ErrorContains(t, policy.Validate(), "CometBFT evidence")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.StandardDoubleSignIntegrated = false
+	require.ErrorContains(t, policy.Validate(), "double-sign")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.StandardLivenessDowntimeIntegrated = false
+	require.ErrorContains(t, policy.Validate(), "liveness/downtime")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.StandardTombstoneIntegrated = false
+	require.ErrorContains(t, policy.Validate(), "tombstone")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.StandardJailUnjailIntegrated = false
+	require.ErrorContains(t, policy.Validate(), "jail/unjail")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.CustomLogicWrapsStandardOnly = false
+	require.ErrorContains(t, policy.Validate(), "wrap or extend")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.CoreSlashingForkForbidden = false
+	require.ErrorContains(t, policy.Validate(), "must not be forked")
+}
+
 func TestAetraSlashingParamsSetObjectiveDoubleSignAndBaseDowntime(t *testing.T) {
 	params := AetraSlashingParams()
 
@@ -131,6 +184,56 @@ func TestSlashingAccountabilityPolicyRejectsUnsafeDowntimeProgression(t *testing
 	policy = DefaultSlashingAccountabilityPolicy()
 	policy.DowntimeChronicJailMinutes = policy.DowntimeRepeatJailMinutes
 	require.ErrorContains(t, policy.Validate(), "chronic jail")
+}
+
+func TestSlashingAccountabilityPolicyRequiresDowntimeOffenseStateAndRules(t *testing.T) {
+	policy := DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseTracksValidatorConsAddr = false
+	require.ErrorContains(t, policy.Validate(), "ValidatorConsAddr")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseTracksOffenseCount = false
+	require.ErrorContains(t, policy.Validate(), "OffenseCount")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseTracksFirstOffenseTime = false
+	require.ErrorContains(t, policy.Validate(), "FirstOffenseTime")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseTracksLastOffenseTime = false
+	require.ErrorContains(t, policy.Validate(), "LastOffenseTime")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseTracksLastSlashFraction = false
+	require.ErrorContains(t, policy.Validate(), "LastSlashFraction")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseTracksCurrentJail = false
+	require.ErrorContains(t, policy.Validate(), "CurrentJailDuration")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseCleanDecayDays = 0
+	require.ErrorContains(t, policy.Validate(), "clean period")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseMaxPenaltyBps = DowntimeChronicSlashMaxBps + 1
+	require.ErrorContains(t, policy.Validate(), "maximum penalty")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseMaxJailMinutes = policy.DowntimeRepeatJailMinutes - 1
+	require.ErrorContains(t, policy.Validate(), "maximum jail")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseDelegatorRiskInherited = false
+	require.ErrorContains(t, policy.Validate(), "delegators")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseQueryStatusEnabled = false
+	require.ErrorContains(t, policy.Validate(), "status query")
+
+	policy = DefaultSlashingAccountabilityPolicy()
+	policy.DowntimeOffenseUnjailKeepsHistory = false
+	require.ErrorContains(t, policy.Validate(), "unjail")
 }
 
 func TestSlashingAccountabilityPolicyRejectsUnsafeProposalAndTimestampRules(t *testing.T) {

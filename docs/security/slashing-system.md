@@ -388,6 +388,81 @@ The slashing design assumes:
 | Protocol signing rule violation | Optional advanced | `0.5%` | jail | capped, only if enabled |
 | Censorship proof | Optional advanced | `0.5%` | jail | capped, only if objective inclusion proofs exist |
 
+## 25. Slashing Implementation Details
+
+### 25.1 Standard Slashing Integration
+
+Aetra must use Cosmos SDK `x/slashing` and CometBFT evidence for base
+consensus faults:
+
+- double-sign;
+- liveness/downtime;
+- tombstone;
+- jail/unjail.
+
+Implementation rules:
+
+- `x/slashing` remains the source of truth for standard signing info,
+  tombstone status, liveness windows, jail status, and unjail eligibility;
+- CometBFT evidence remains the source of truth for consensus evidence routing
+  and double-sign/equivocation proof delivery;
+- Aetra custom logic may wrap or extend standard behavior only where necessary;
+- custom logic must not fork core slashing behavior unless there is no safer
+  option and the fork is separately specified, tested, and audited;
+- progressive downtime must preserve standard `x/slashing` signing state and
+  add an Aetra overlay only for repeated-offense escalation.
+
+The implementation gate is `app/params/slashing_policy.go`.
+`SlashingAccountabilityPolicy` must require:
+
+- `UsesCosmosSlashingAndEvidence`;
+- `BaseFaultsUseCometBFTEvidence`;
+- `StandardDoubleSignIntegrated`;
+- `StandardLivenessDowntimeIntegrated`;
+- `StandardTombstoneIntegrated`;
+- `StandardJailUnjailIntegrated`;
+- `CustomLogicWrapsStandardOnly`;
+- `CoreSlashingForkForbidden`.
+
+### 25.2 Progressive Downtime Design
+
+If progressive downtime is implemented, it should track repeated liveness
+faults in deterministic state:
+
+```text
+DowntimeOffense:
+  ValidatorConsAddr
+  OffenseCount
+  FirstOffenseTime
+  LastOffenseTime
+  LastSlashFraction
+  CurrentJailDuration
+```
+
+Rules:
+
+- offense count decays after long clean period;
+- repeated downtime increases penalty;
+- maximum penalty is capped;
+- delegators inherit validator downtime risk;
+- validator can query own downtime status;
+- unjail does not erase slash history immediately.
+
+Recommended Aetra defaults:
+
+```text
+downtime_offense_clean_decay_period = 30 days
+downtime_offense_max_penalty        = 1%
+downtime_offense_max_jail_duration  = 72 hours
+downtime_offense_status_query       = QueryDowntimeOffenseStatus
+```
+
+The custom downtime overlay must be export/import safe. It must not mutate
+standard signing-info history in a way that makes CometBFT evidence handling
+non-standard. Slashing inheritance remains pro rata for delegators because the
+delegated stake contributed to the validator's voting power during the
+downtime window.
+
 ## Exact Penalty Structure
 
 Default public-testnet penalty parameters:

@@ -39,6 +39,11 @@ const (
 
 	HeightEvidenceMaxAgeBlocks          = uint64(100_000)
 	HeightUnbondingEvidenceWindowBlocks = uint64(30_000)
+
+	DowntimeOffenseCleanDecayDays    = int64(30)
+	DowntimeOffenseMaxPenaltyBps     = DowntimeChronicSlashMaxBps
+	DowntimeOffenseMaxJailMinutes    = DowntimeChronicJailMinutes
+	DowntimeOffenseQueryStatusMethod = "QueryDowntimeOffenseStatus"
 )
 
 type SlashingAccountabilityPolicy struct {
@@ -50,9 +55,28 @@ type SlashingAccountabilityPolicy struct {
 	DoubleSignPermanentTombstone           bool
 	ConsensusKeyReuseForbidden             bool
 	UsesCosmosSlashingAndEvidence          bool
+	BaseFaultsUseCometBFTEvidence          bool
+	StandardDoubleSignIntegrated           bool
+	StandardLivenessDowntimeIntegrated     bool
+	StandardTombstoneIntegrated            bool
+	StandardJailUnjailIntegrated           bool
+	CustomLogicWrapsStandardOnly           bool
+	CoreSlashingForkForbidden              bool
 	ProgressiveDowntimeEnabled             bool
 	StandardDowntimeStatePreserved         bool
 	CustomDowntimeOverlayRequired          bool
+	DowntimeOffenseTracksValidatorConsAddr bool
+	DowntimeOffenseTracksOffenseCount      bool
+	DowntimeOffenseTracksFirstOffenseTime  bool
+	DowntimeOffenseTracksLastOffenseTime   bool
+	DowntimeOffenseTracksLastSlashFraction bool
+	DowntimeOffenseTracksCurrentJail       bool
+	DowntimeOffenseCleanDecayDays          int64
+	DowntimeOffenseMaxPenaltyBps           int64
+	DowntimeOffenseMaxJailMinutes          int64
+	DowntimeOffenseDelegatorRiskInherited  bool
+	DowntimeOffenseQueryStatusEnabled      bool
+	DowntimeOffenseUnjailKeepsHistory      bool
 	DowntimeFirstSlashBps                  int64
 	DowntimeFirstJailMinutes               int64
 	DowntimeRepeatSlashBps                 int64
@@ -96,9 +120,28 @@ func DefaultSlashingAccountabilityPolicy() SlashingAccountabilityPolicy {
 		DoubleSignPermanentTombstone:           true,
 		ConsensusKeyReuseForbidden:             true,
 		UsesCosmosSlashingAndEvidence:          true,
+		BaseFaultsUseCometBFTEvidence:          true,
+		StandardDoubleSignIntegrated:           true,
+		StandardLivenessDowntimeIntegrated:     true,
+		StandardTombstoneIntegrated:            true,
+		StandardJailUnjailIntegrated:           true,
+		CustomLogicWrapsStandardOnly:           true,
+		CoreSlashingForkForbidden:              true,
 		ProgressiveDowntimeEnabled:             true,
 		StandardDowntimeStatePreserved:         true,
 		CustomDowntimeOverlayRequired:          true,
+		DowntimeOffenseTracksValidatorConsAddr: true,
+		DowntimeOffenseTracksOffenseCount:      true,
+		DowntimeOffenseTracksFirstOffenseTime:  true,
+		DowntimeOffenseTracksLastOffenseTime:   true,
+		DowntimeOffenseTracksLastSlashFraction: true,
+		DowntimeOffenseTracksCurrentJail:       true,
+		DowntimeOffenseCleanDecayDays:          DowntimeOffenseCleanDecayDays,
+		DowntimeOffenseMaxPenaltyBps:           DowntimeOffenseMaxPenaltyBps,
+		DowntimeOffenseMaxJailMinutes:          DowntimeOffenseMaxJailMinutes,
+		DowntimeOffenseDelegatorRiskInherited:  true,
+		DowntimeOffenseQueryStatusEnabled:      true,
+		DowntimeOffenseUnjailKeepsHistory:      true,
 		DowntimeFirstSlashBps:                  DowntimeFirstSlashDefaultBps,
 		DowntimeFirstJailMinutes:               DowntimeFirstJailDefaultMinutes,
 		DowntimeRepeatSlashBps:                 DowntimeRepeatSlashDefaultBps,
@@ -166,6 +209,27 @@ func (p SlashingAccountabilityPolicy) Validate() error {
 	if !p.UsesCosmosSlashingAndEvidence {
 		return fmt.Errorf("slashing policy must use Cosmos SDK slashing and evidence modules")
 	}
+	if !p.BaseFaultsUseCometBFTEvidence {
+		return fmt.Errorf("base slashing faults must use CometBFT evidence")
+	}
+	if !p.StandardDoubleSignIntegrated {
+		return fmt.Errorf("standard double-sign handling must integrate x/slashing")
+	}
+	if !p.StandardLivenessDowntimeIntegrated {
+		return fmt.Errorf("standard liveness/downtime handling must integrate x/slashing")
+	}
+	if !p.StandardTombstoneIntegrated {
+		return fmt.Errorf("standard tombstone handling must integrate x/slashing")
+	}
+	if !p.StandardJailUnjailIntegrated {
+		return fmt.Errorf("standard jail/unjail handling must integrate x/slashing")
+	}
+	if !p.CustomLogicWrapsStandardOnly {
+		return fmt.Errorf("custom slashing logic must wrap or extend standard behavior only where necessary")
+	}
+	if !p.CoreSlashingForkForbidden {
+		return fmt.Errorf("core x/slashing logic must not be forked unless no safer option exists")
+	}
 	if !p.ProgressiveDowntimeEnabled {
 		return fmt.Errorf("progressive downtime penalties must be enabled")
 	}
@@ -174,6 +238,42 @@ func (p SlashingAccountabilityPolicy) Validate() error {
 	}
 	if !p.CustomDowntimeOverlayRequired {
 		return fmt.Errorf("progressive downtime requires custom overlay when x/slashing is insufficient")
+	}
+	if !p.DowntimeOffenseTracksValidatorConsAddr {
+		return fmt.Errorf("DowntimeOffense must track ValidatorConsAddr")
+	}
+	if !p.DowntimeOffenseTracksOffenseCount {
+		return fmt.Errorf("DowntimeOffense must track OffenseCount")
+	}
+	if !p.DowntimeOffenseTracksFirstOffenseTime {
+		return fmt.Errorf("DowntimeOffense must track FirstOffenseTime")
+	}
+	if !p.DowntimeOffenseTracksLastOffenseTime {
+		return fmt.Errorf("DowntimeOffense must track LastOffenseTime")
+	}
+	if !p.DowntimeOffenseTracksLastSlashFraction {
+		return fmt.Errorf("DowntimeOffense must track LastSlashFraction")
+	}
+	if !p.DowntimeOffenseTracksCurrentJail {
+		return fmt.Errorf("DowntimeOffense must track CurrentJailDuration")
+	}
+	if p.DowntimeOffenseCleanDecayDays <= 0 {
+		return fmt.Errorf("downtime offense count must decay after a positive clean period")
+	}
+	if p.DowntimeOffenseMaxPenaltyBps <= 0 || p.DowntimeOffenseMaxPenaltyBps > DowntimeChronicSlashMaxBps {
+		return fmt.Errorf("downtime offense maximum penalty must be capped at <= 1 percent")
+	}
+	if p.DowntimeOffenseMaxJailMinutes < p.DowntimeRepeatJailMinutes {
+		return fmt.Errorf("downtime offense maximum jail must be at least repeat jail duration")
+	}
+	if !p.DowntimeOffenseDelegatorRiskInherited {
+		return fmt.Errorf("delegators must inherit validator downtime risk")
+	}
+	if !p.DowntimeOffenseQueryStatusEnabled {
+		return fmt.Errorf("validator downtime offense status query must be enabled")
+	}
+	if !p.DowntimeOffenseUnjailKeepsHistory {
+		return fmt.Errorf("unjail must not erase downtime slash history immediately")
 	}
 	if err := validateSlashingBpsValue("downtime_first_slash", p.DowntimeFirstSlashBps, DowntimeFirstSlashMinBps, DowntimeFirstSlashMaxBps); err != nil {
 		return err
