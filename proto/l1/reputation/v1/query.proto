@@ -18,6 +18,12 @@ service Query {
   rpc ReputationParams(QueryReputationParamsRequest) returns (QueryReputationParamsResponse) {
     option (google.api.http).get = "/l1/reputation/v1/params";
   }
+  rpc StakeReputation(QueryStakeReputationRequest) returns (QueryStakeReputationResponse) {
+    option (google.api.http).get = "/l1/reputation/v1/stake/{account}";
+  }
+  rpc AccountReputation(QueryAccountReputationRequest) returns (QueryAccountReputationResponse) {
+    option (google.api.http).get = "/l1/reputation/v1/accounts/{account}";
+  }
 }
 
 message QueryValidatorReputationRequest { string address = 1; }
@@ -38,3 +44,12 @@ message QueryReputationHistoryResponse {
 
 message QueryReputationParamsRequest {}
 message QueryReputationParamsResponse { string params_json = 1; }
+
+message QueryStakeReputationRequest { string account = 1; }
+message QueryStakeReputationResponse { string stake_reputation_json = 1; }
+
+message QueryAccountReputationRequest { string account = 1; }
+message QueryAccountReputationResponse {
+  string record_json = 1;
+  string stake_reputation_json = 2;
+}

@@ -14,6 +14,7 @@ service Query {
   rpc PoolShare(QueryPoolShareRequest) returns (QueryPoolShareResponse);
   rpc PoolAllocations(QueryPoolAllocationsRequest) returns (QueryPoolAllocationsResponse);
   rpc StakingRewards(QueryStakingRewardsRequest) returns (QueryStakingRewardsResponse);
+  rpc StakingProof(QueryStakingProofRequest) returns (QueryStakingProofResponse);
   rpc PoolUnbondingQueue(QueryPoolUnbondingQueueRequest) returns (QueryPoolUnbondingQueueResponse);
 }
 
@@ -75,6 +76,20 @@ message QueryStakingRewardsRequest {
 
 message QueryStakingRewardsResponse {
   uint64 reward_amount = 1;
+}
+
+message QueryStakingProofRequest {
+  string kind = 1;
+  uint64 height = 2;
+  string pool_id = 3;
+  string account = 4;
+  uint64 epoch = 5;
+  string app_hash = 6;
+  string root_hash = 7;
+}
+
+message QueryStakingProofResponse {
+  string metadata_json = 1;
 }
 
 message QueryPoolUnbondingQueueRequest {

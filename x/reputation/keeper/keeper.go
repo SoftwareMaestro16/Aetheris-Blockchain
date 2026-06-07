@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	corestore "cosmossdk.io/core/store"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -77,6 +78,50 @@ func (k Keeper) ExportGenesis(ctx context.Context) (*types.ReputationState, erro
 		return nil, err
 	}
 	return &exported, nil
+}
+
+func (k Keeper) ClaimStakeReputation(ctx context.Context, msg types.MsgClaimStakeReputation) (types.StakeReputationClaim, error) {
+	state, err := k.GetState(ctx)
+	if err != nil {
+		return types.StakeReputationClaim{}, err
+	}
+	next, claim, err := types.ApplyClaimStakeReputation(state, msg)
+	if err != nil {
+		return types.StakeReputationClaim{}, err
+	}
+	return claim, k.SetState(ctx, next)
+}
+
+func (k Keeper) StakeReputation(ctx context.Context, req types.QueryStakeReputationRequest) (types.QueryStakeReputationResponse, error) {
+	state, err := k.GetState(ctx)
+	if err != nil {
+		return types.QueryStakeReputationResponse{}, err
+	}
+	account, err := parseAddress(req.Account)
+	if err != nil {
+		return types.QueryStakeReputationResponse{}, err
+	}
+	record, found := types.QueryStakeReputation(state, account)
+	if !found {
+		return types.QueryStakeReputationResponse{}, errors.New("stake reputation record not found")
+	}
+	return types.QueryStakeReputationResponse{Record: record}, nil
+}
+
+func (k Keeper) AccountReputation(ctx context.Context, req types.QueryAccountReputationRequest) (types.QueryAccountReputationResponse, error) {
+	state, err := k.GetState(ctx)
+	if err != nil {
+		return types.QueryAccountReputationResponse{}, err
+	}
+	account, err := parseAddress(req.Account)
+	if err != nil {
+		return types.QueryAccountReputationResponse{}, err
+	}
+	record, stake, found := types.QueryAccountReputation(state, account)
+	if !found {
+		return types.QueryAccountReputationResponse{}, errors.New("account reputation record not found")
+	}
+	return types.QueryAccountReputationResponse{Record: record, StakeReputation: stake}, nil
 }
 
 func parseAddress(text string) (sdk.AccAddress, error) {

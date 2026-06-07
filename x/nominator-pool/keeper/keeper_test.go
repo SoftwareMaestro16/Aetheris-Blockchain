@@ -528,6 +528,30 @@ func TestStakingRewardsCompatibilityIsInternalOnly(t *testing.T) {
 	require.ErrorContains(t, err, "internal migration only")
 }
 
+func TestStakingProofQueryIsBoundedAndReturnsMetadata(t *testing.T) {
+	k := NewKeeper()
+	k.ResetOperationCounters()
+
+	metadata, err := k.StakingProof(types.StakingProofRequest{
+		Kind:     types.StakingProofReward,
+		Height:   42,
+		PoolID:   "pool-a",
+		Account:  proofUserAddress("55"),
+		AppHash:  "app-root-ref",
+		RootHash: "nominator-pool-root-ref",
+	})
+	require.NoError(t, err)
+	require.Equal(t, types.StoreKey, metadata.StoreKey)
+	require.Equal(t, uint64(42), metadata.Height)
+	require.Len(t, metadata.ProofPath, 2)
+	require.True(t, metadata.BoundedLookup)
+
+	counters := k.OperationCounters()
+	require.Equal(t, uint64(1), counters.ProofQueries)
+	require.Zero(t, counters.PoolLookups)
+	require.Zero(t, counters.DelegatorLookups)
+	require.Zero(t, counters.DelegatorRewardUpdates)
+}
 func TestSlashAppliesProportionally(t *testing.T) {
 	k := NewKeeper()
 	pool := createPool(t, &k, "pool-a")
@@ -697,6 +721,17 @@ func rawPoolAddressFromInt(value int) string {
 	return fmt.Sprintf("4:%064x", value)
 }
 
+func proofUserAddress(hexByte string) string {
+	bz, err := addressing.Parse(rawPoolAddress(hexByte))
+	if err != nil {
+		panic(err)
+	}
+	text, err := addressing.FormatUserFriendly(bz)
+	if err != nil {
+		panic(err)
+	}
+	return text
+}
 func aePoolAddress(t *testing.T, hexByte string) string {
 	t.Helper()
 	return aeFromRaw(t, rawPoolAddress(hexByte))

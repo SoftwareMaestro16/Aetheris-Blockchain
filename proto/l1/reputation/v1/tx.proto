@@ -12,6 +12,7 @@ service Msg {
   rpc ApplyReputationPenalty(MsgApplyReputationPenalty) returns (MsgApplyReputationPenaltyResponse);
   rpc ApplyReputationReward(MsgApplyReputationReward) returns (MsgApplyReputationRewardResponse);
   rpc RecomputeReputation(MsgRecomputeReputation) returns (MsgRecomputeReputationResponse);
+  rpc ClaimStakeReputation(MsgClaimStakeReputation) returns (MsgClaimStakeReputationResponse);
 }
 
 message MsgUpdateReputationParams {
@@ -57,3 +58,19 @@ message MsgRecomputeReputation {
 }
 
 message MsgRecomputeReputationResponse { string record_json = 1; }
+
+message MsgClaimStakeReputation {
+  option (cosmos.msg.v1.signer) = "authority";
+  string authority = 1;
+  string account = 2;
+  string pool_id = 3;
+  uint64 pool_shares = 4;
+  uint64 pool_total_shares = 5;
+  uint64 pool_active_stake = 6;
+  uint64 timestamp_unix = 7;
+  bool validator_operator = 8;
+  bool validator_jailed = 9;
+  bool validator_slashed = 10;
+}
+
+message MsgClaimStakeReputationResponse { string claim_json = 1; }

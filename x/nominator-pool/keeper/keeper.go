@@ -25,6 +25,7 @@ type OperationCounters struct {
 	DelegatorLookups         uint64
 	DelegatorRewardUpdates   uint64
 	ValidatorAllocationReads uint64
+	ProofQueries             uint64
 }
 
 type poolIndexEntry struct {
@@ -535,6 +536,10 @@ func (k *Keeper) ClaimStakingRewards(msg types.MsgClaimStakingRewards) (uint64, 
 	return 0, nil
 }
 
+func (k *Keeper) StakingProof(req types.StakingProofRequest) (types.StakingProofMetadata, error) {
+	k.counters.ProofQueries++
+	return types.BuildStakingProofMetadata(req)
+}
 func (k *Keeper) UpdatePoolCommission(msg types.MsgUpdatePoolCommission) (types.NominatorPool, error) {
 	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
 		return types.NominatorPool{}, err

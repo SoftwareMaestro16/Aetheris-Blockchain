@@ -47,6 +47,51 @@ func TestNativeReputationRewardPenaltyAndExport(t *testing.T) {
 	require.Equal(t, exported, roundTrip)
 }
 
+func TestStakeReputationClaimQueryAndExport(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	account := addr(0x33)
+
+	_, err := app.ReputationKeeper.ClaimStakeReputation(ctx, types.MsgClaimStakeReputation{
+		Authority:       app.ReputationKeeper.Authority(),
+		Account:         account,
+		PoolID:          "pool-a",
+		PoolShares:      100,
+		PoolTotalShares: 100,
+		PoolActiveStake: 10_000,
+		TimestampUnix:   1,
+	})
+	require.NoError(t, err)
+	claim, err := app.ReputationKeeper.ClaimStakeReputation(ctx, types.MsgClaimStakeReputation{
+		Authority:       app.ReputationKeeper.Authority(),
+		Account:         account,
+		PoolID:          "pool-a",
+		PoolShares:      100,
+		PoolTotalShares: 100,
+		PoolActiveStake: 10_000,
+		TimestampUnix:   3_601,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uint16(100), claim.ReputationDelta)
+
+	stake, err := app.ReputationKeeper.StakeReputation(ctx, types.QueryStakeReputationRequest{Account: account})
+	require.NoError(t, err)
+	require.Equal(t, account, stake.Record.AccountUser)
+	accountReputation, err := app.ReputationKeeper.AccountReputation(ctx, types.QueryAccountReputationRequest{Account: account})
+	require.NoError(t, err)
+	require.Equal(t, uint16(100), accountReputation.Record.StakingScore)
+	require.Equal(t, stake.Record, accountReputation.StakeReputation)
+
+	exported, err := app.ReputationKeeper.ExportGenesis(ctx)
+	require.NoError(t, err)
+	imported := l1app.Setup(t, false)
+	importedCtx := imported.NewContext(false)
+	require.NoError(t, imported.ReputationKeeper.InitGenesis(importedCtx, *exported))
+	roundTrip, err := imported.ReputationKeeper.ExportGenesis(importedCtx)
+	require.NoError(t, err)
+	require.Equal(t, exported, roundTrip)
+}
+
 func addr(fill byte) string {
 	bz := make([]byte, 20)
 	for i := range bz {

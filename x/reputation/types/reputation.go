@@ -30,6 +30,7 @@ const (
 
 	SubjectValidator = "validator"
 	SubjectReporter  = "reporter"
+	SubjectAccount   = "account"
 
 	ComponentMissedBlock = "missed_block"
 	ComponentSlashing    = "slashing"
@@ -37,6 +38,14 @@ const (
 	ComponentUptime      = "uptime"
 	ComponentRecovery    = "recovery"
 	ComponentVolume      = "volume"
+	ComponentStakeTime   = "stake_time"
+
+	StakeReputationMaxScore          = uint16(100)
+	DefaultStakeSecondsPerPoint      = uint64(3_600)
+	DefaultJailedPoolExposureBps     = uint32(0)
+	DefaultSlashedPoolExposureBps    = uint32(5_000)
+	DefaultValidatorStakeBonusBps    = uint32(2_000)
+	DefaultMaxStakeReputationRecords = uint32(1_000_000)
 )
 
 type ReputationRecord struct {
@@ -60,17 +69,22 @@ type DecayParams struct {
 }
 
 type ReputationParams struct {
-	Authority            string
-	MinScore             uint8
-	MaxScore             uint8
-	MissedBlockPenalty   uint16
-	SlashingPenalty      uint16
-	UptimeReward         uint16
-	RecoveryReward       uint16
-	SlashingReducesScore bool
-	Decay                DecayParams
-	MaxHistorySnapshots  uint32
-	MaxEvents            uint32
+	Authority                 string
+	MinScore                  uint8
+	MaxScore                  uint8
+	MissedBlockPenalty        uint16
+	SlashingPenalty           uint16
+	UptimeReward              uint16
+	RecoveryReward            uint16
+	SlashingReducesScore      bool
+	Decay                     DecayParams
+	MaxHistorySnapshots       uint32
+	MaxEvents                 uint32
+	StakeSecondsPerPoint      uint64
+	JailedPoolExposureBps     uint32
+	SlashedPoolExposureBps    uint32
+	ValidatorStakeBonusBps    uint32
+	MaxStakeReputationRecords uint32
 }
 
 type ReputationEvent struct {
@@ -100,11 +114,49 @@ type ReputationScore struct {
 
 type ReputationState struct {
 	Params         ReputationParams
+	Accounts       []ReputationRecord
 	Validators     []ReputationRecord
 	Reporters      []ReputationRecord
+	StakeRecords   []StakeReputationRecord
 	Snapshots      []ReputationSnapshot
 	PenaltyEvents  []ReputationEvent
 	RecoveryEvents []ReputationEvent
+}
+
+type StakePoolExposure struct {
+	PoolID                string
+	Shares                uint64
+	TotalPoolShares       uint64
+	PoolActiveStake       uint64
+	EffectiveStake        uint64
+	LastUpdatedUnix       uint64
+	ValidatorJailed       bool
+	ValidatorSlashed      bool
+	ValidatorOperator     bool
+	ValidatorBonusBps     uint32
+	ValidatorBonusBlocked bool
+}
+
+type StakeReputationRecord struct {
+	Account                     sdk.AccAddress
+	AccountUser                 string
+	StakeWeightedSeconds        uint64
+	ClaimedStakeWeightedSeconds uint64
+	ClaimedStakeReputation      uint16
+	LastUpdatedUnix             uint64
+	PoolExposures               []StakePoolExposure
+	NonTransferable             bool
+}
+
+type StakeReputationClaim struct {
+	Account                       sdk.AccAddress
+	AccountUser                   string
+	StakeWeightedSeconds          uint64
+	ClaimableStakeWeightedSeconds uint64
+	ReputationDelta               uint16
+	ClaimedStakeReputation        uint16
+	AccountScoreAfter             uint8
+	ClaimHash                     string
 }
 
 type MsgUpdateReputationParams struct {
@@ -139,6 +191,36 @@ type MsgRecomputeReputation struct {
 	Epoch       uint64
 }
 
+type MsgClaimStakeReputation struct {
+	Authority         string
+	Account           string
+	PoolID            string
+	PoolShares        uint64
+	PoolTotalShares   uint64
+	PoolActiveStake   uint64
+	TimestampUnix     uint64
+	ValidatorOperator bool
+	ValidatorJailed   bool
+	ValidatorSlashed  bool
+}
+
+type QueryStakeReputationRequest struct {
+	Account string
+}
+
+type QueryStakeReputationResponse struct {
+	Record StakeReputationRecord
+}
+
+type QueryAccountReputationRequest struct {
+	Account string
+}
+
+type QueryAccountReputationResponse struct {
+	Record          ReputationRecord
+	StakeReputation StakeReputationRecord
+}
+
 type ReputationHistoryQuery struct {
 	SubjectType string
 	Subject     sdk.AccAddress
@@ -165,8 +247,13 @@ func DefaultReputationParams() ReputationParams {
 			InactiveAfterEpochs: 10,
 			DecayRatePerEpoch:   1,
 		},
-		MaxHistorySnapshots: 1024,
-		MaxEvents:           4096,
+		MaxHistorySnapshots:       1024,
+		MaxEvents:                 4096,
+		StakeSecondsPerPoint:      DefaultStakeSecondsPerPoint,
+		JailedPoolExposureBps:     DefaultJailedPoolExposureBps,
+		SlashedPoolExposureBps:    DefaultSlashedPoolExposureBps,
+		ValidatorStakeBonusBps:    DefaultValidatorStakeBonusBps,
+		MaxStakeReputationRecords: DefaultMaxStakeReputationRecords,
 	}
 }
 
@@ -226,6 +313,21 @@ func (params ReputationParams) Validate() error {
 	if params.MaxEvents == 0 {
 		return errors.New("reputation max events must be positive")
 	}
+	if params.StakeSecondsPerPoint == 0 {
+		return errors.New("reputation stake seconds per point must be positive")
+	}
+	if params.JailedPoolExposureBps > 10_000 {
+		return errors.New("reputation jailed pool exposure bps exceeds basis points")
+	}
+	if params.SlashedPoolExposureBps > 10_000 {
+		return errors.New("reputation slashed pool exposure bps exceeds basis points")
+	}
+	if params.ValidatorStakeBonusBps > 10_000 {
+		return errors.New("reputation validator stake bonus bps exceeds basis points")
+	}
+	if params.MaxStakeReputationRecords == 0 {
+		return errors.New("reputation max stake records must be positive")
+	}
 	return nil
 }
 
@@ -234,10 +336,19 @@ func (state ReputationState) Validate() error {
 	if err := state.Params.Validate(); err != nil {
 		return err
 	}
+	if err := validateReputationRecords("account", state.Accounts); err != nil {
+		return err
+	}
 	if err := validateReputationRecords("validator", state.Validators); err != nil {
 		return err
 	}
 	if err := validateReputationRecords("reporter", state.Reporters); err != nil {
+		return err
+	}
+	if uint32(len(state.StakeRecords)) > state.Params.MaxStakeReputationRecords {
+		return errors.New("reputation stake record limit exceeded")
+	}
+	if err := validateStakeReputationRecords(state.StakeRecords); err != nil {
 		return err
 	}
 	if uint32(len(state.Snapshots)) > state.Params.MaxHistorySnapshots {
@@ -402,6 +513,110 @@ func QueryReporterReputation(state ReputationState, reporter sdk.AccAddress) (Re
 	return state.recordBySubject(SubjectReporter, reporter)
 }
 
+func ApplyClaimStakeReputation(state ReputationState, msg MsgClaimStakeReputation) (ReputationState, StakeReputationClaim, error) {
+	state = NormalizeReputationState(state)
+	if err := authorizeReputation(state.Params, msg.Authority); err != nil {
+		return ReputationState{}, StakeReputationClaim{}, err
+	}
+	account, err := addressing.ParseUserAddress("stake reputation account", msg.Account)
+	if err != nil {
+		return ReputationState{}, StakeReputationClaim{}, err
+	}
+	if strings.TrimSpace(msg.PoolID) == "" {
+		return ReputationState{}, StakeReputationClaim{}, errors.New("stake reputation pool id is required")
+	}
+	if msg.TimestampUnix == 0 {
+		return ReputationState{}, StakeReputationClaim{}, errors.New("stake reputation timestamp must be positive")
+	}
+	if msg.PoolShares > 0 && msg.PoolTotalShares == 0 {
+		return ReputationState{}, StakeReputationClaim{}, errors.New("stake reputation total pool shares must be positive when shares are positive")
+	}
+	record, found := state.stakeRecord(account)
+	if !found {
+		record = NewStakeReputationRecord(account)
+	}
+	nextRecord, err := AccumulateStakeExposure(state.Params, record, StakePoolExposure{
+		PoolID:            strings.TrimSpace(msg.PoolID),
+		Shares:            msg.PoolShares,
+		TotalPoolShares:   msg.PoolTotalShares,
+		PoolActiveStake:   msg.PoolActiveStake,
+		LastUpdatedUnix:   msg.TimestampUnix,
+		ValidatorJailed:   msg.ValidatorJailed,
+		ValidatorSlashed:  msg.ValidatorSlashed,
+		ValidatorOperator: msg.ValidatorOperator,
+		ValidatorBonusBps: state.Params.ValidatorStakeBonusBps,
+	})
+	if err != nil {
+		return ReputationState{}, StakeReputationClaim{}, err
+	}
+
+	claimable := nextRecord.StakeWeightedSeconds - nextRecord.ClaimedStakeWeightedSeconds
+	points := claimable / state.Params.StakeSecondsPerPoint
+	if points > uint64(^uint16(0)) {
+		points = uint64(^uint16(0))
+	}
+	remainingScore := uint64(0)
+	if nextRecord.ClaimedStakeReputation < StakeReputationMaxScore {
+		remainingScore = uint64(StakeReputationMaxScore - nextRecord.ClaimedStakeReputation)
+	}
+	if points > remainingScore {
+		points = remainingScore
+	}
+	reputationDelta := uint16(points)
+	if reputationDelta == 0 {
+		state = state.upsertStakeRecord(nextRecord)
+		return state, StakeReputationClaim{
+			Account:                       cloneAddress(account),
+			AccountUser:                   nextRecord.AccountUser,
+			StakeWeightedSeconds:          nextRecord.StakeWeightedSeconds,
+			ClaimableStakeWeightedSeconds: claimable,
+			ClaimedStakeReputation:        nextRecord.ClaimedStakeReputation,
+			AccountScoreAfter:             accountScore(state, account),
+			ClaimHash:                     ComputeStakeReputationClaimHash(nextRecord, 0, 0),
+		}, state.Validate()
+	}
+	nextRecord.ClaimedStakeWeightedSeconds += uint64(reputationDelta) * state.Params.StakeSecondsPerPoint
+	nextRecord.ClaimedStakeReputation += reputationDelta
+
+	accountRecord, found := state.recordBySubject(SubjectAccount, account)
+	if !found {
+		accountRecord = ApplyComputedScore(ReputationRecord{Account: cloneAddress(account)})
+	}
+	before := accountRecord.Score
+	accountRecord.StakingScore = nextRecord.ClaimedStakeReputation
+	accountRecord.LastUpdatedEpoch = msg.TimestampUnix
+	accountRecord = ApplyComputedScore(accountRecord)
+	if accountRecord.Score <= before && reputationDelta > 0 {
+		return ReputationState{}, StakeReputationClaim{}, errors.New("stake-time reputation claim must increase account reputation")
+	}
+	state = state.upsertRecord(SubjectAccount, accountRecord)
+	state = state.upsertStakeRecord(nextRecord)
+	state = NormalizeReputationState(state)
+	claim := StakeReputationClaim{
+		Account:                       cloneAddress(account),
+		AccountUser:                   nextRecord.AccountUser,
+		StakeWeightedSeconds:          nextRecord.StakeWeightedSeconds,
+		ClaimableStakeWeightedSeconds: claimable,
+		ReputationDelta:               reputationDelta,
+		ClaimedStakeReputation:        nextRecord.ClaimedStakeReputation,
+		AccountScoreAfter:             accountRecord.Score,
+	}
+	claim.ClaimHash = ComputeStakeReputationClaimHash(nextRecord, reputationDelta, accountRecord.Score)
+	return state, claim, state.Validate()
+}
+
+func QueryStakeReputation(state ReputationState, account sdk.AccAddress) (StakeReputationRecord, bool) {
+	state = NormalizeReputationState(state)
+	return state.stakeRecord(account)
+}
+
+func QueryAccountReputation(state ReputationState, account sdk.AccAddress) (ReputationRecord, StakeReputationRecord, bool) {
+	state = NormalizeReputationState(state)
+	record, found := state.recordBySubject(SubjectAccount, account)
+	stake, stakeFound := state.stakeRecord(account)
+	return record, stake, found || stakeFound
+}
+
 func QueryReputationHistory(state ReputationState, query ReputationHistoryQuery) ([]ReputationSnapshot, []ReputationEvent, error) {
 	state = NormalizeReputationState(state)
 	if err := validateSubject(query.SubjectType, query.Subject); err != nil {
@@ -539,8 +754,10 @@ func NormalizeReputationState(state ReputationState) ReputationState {
 		state.Params = DefaultReputationParams()
 	}
 	state.Params.Authority = strings.TrimSpace(state.Params.Authority)
+	state.Accounts = normalizeRecords(state.Accounts)
 	state.Validators = normalizeRecords(state.Validators)
 	state.Reporters = normalizeRecords(state.Reporters)
+	state.StakeRecords = normalizeStakeReputationRecords(state.StakeRecords)
 	state.Snapshots = normalizeSnapshots(state.Snapshots)
 	state.PenaltyEvents = normalizeEvents(state.PenaltyEvents)
 	state.RecoveryEvents = normalizeEvents(state.RecoveryEvents)
@@ -618,9 +835,110 @@ func IsDirectReputationPurchaseAllowed() bool {
 	return false
 }
 
+func IsStakeReputationTransferableAsTokenNFTOrDomain() bool {
+	return false
+}
+
+func NewStakeReputationRecord(account sdk.AccAddress) StakeReputationRecord {
+	return StakeReputationRecord{
+		Account:         cloneAddress(account),
+		AccountUser:     addressing.FormatAccAddress(account),
+		NonTransferable: true,
+	}
+}
+
+func AccumulateStakeExposure(params ReputationParams, record StakeReputationRecord, nextExposure StakePoolExposure) (StakeReputationRecord, error) {
+	if err := params.Validate(); err != nil {
+		return StakeReputationRecord{}, err
+	}
+	record = normalizeStakeReputationRecord(record)
+	if err := record.Validate(); err != nil {
+		return StakeReputationRecord{}, err
+	}
+	nextExposure.PoolID = strings.TrimSpace(nextExposure.PoolID)
+	if nextExposure.PoolID == "" {
+		return StakeReputationRecord{}, errors.New("stake reputation pool id is required")
+	}
+	if nextExposure.LastUpdatedUnix == 0 {
+		return StakeReputationRecord{}, errors.New("stake reputation exposure timestamp must be positive")
+	}
+	idx, previous, found := findStakePoolExposure(record.PoolExposures, nextExposure.PoolID)
+	if found {
+		if nextExposure.LastUpdatedUnix < previous.LastUpdatedUnix {
+			return StakeReputationRecord{}, errors.New("stake reputation exposure timestamp cannot move backwards")
+		}
+		duration := nextExposure.LastUpdatedUnix - previous.LastUpdatedUnix
+		increment, err := stakeWeightedSeconds(previous.EffectiveStake, duration)
+		if err != nil {
+			return StakeReputationRecord{}, err
+		}
+		record.StakeWeightedSeconds, err = checkedAddUint64(record.StakeWeightedSeconds, increment)
+		if err != nil {
+			return StakeReputationRecord{}, err
+		}
+	} else if record.LastUpdatedUnix != 0 && nextExposure.LastUpdatedUnix < record.LastUpdatedUnix {
+		return StakeReputationRecord{}, errors.New("stake reputation exposure timestamp cannot move backwards")
+	}
+	nextExposure.EffectiveStake = EffectivePoolStakeExposure(params, nextExposure)
+	if nextExposure.ValidatorJailed || nextExposure.ValidatorSlashed {
+		nextExposure.ValidatorBonusBlocked = true
+		nextExposure.ValidatorBonusBps = 0
+	}
+	if !nextExposure.ValidatorOperator {
+		nextExposure.ValidatorBonusBps = 0
+	}
+	if found {
+		record.PoolExposures[idx] = nextExposure
+	} else {
+		record.PoolExposures = append(record.PoolExposures, nextExposure)
+	}
+	record.LastUpdatedUnix = maxUint64(record.LastUpdatedUnix, nextExposure.LastUpdatedUnix)
+	record.PoolExposures = normalizeStakePoolExposures(record.PoolExposures)
+	return record, record.Validate()
+}
+
+func EffectivePoolStakeExposure(params ReputationParams, exposure StakePoolExposure) uint64 {
+	if exposure.Shares == 0 || exposure.TotalPoolShares == 0 || exposure.PoolActiveStake == 0 {
+		return 0
+	}
+	effective := mulDivFloor(exposure.PoolActiveStake, exposure.Shares, exposure.TotalPoolShares)
+	if exposure.ValidatorJailed {
+		effective = mulDivFloor(effective, uint64(params.JailedPoolExposureBps), 10_000)
+	} else if exposure.ValidatorSlashed {
+		effective = mulDivFloor(effective, uint64(params.SlashedPoolExposureBps), 10_000)
+	}
+	if exposure.ValidatorOperator && !exposure.ValidatorJailed && !exposure.ValidatorSlashed {
+		bonus := mulDivFloor(effective, uint64(params.ValidatorStakeBonusBps), 10_000)
+		next, err := checkedAddUint64(effective, bonus)
+		if err != nil {
+			return ^uint64(0)
+		}
+		return next
+	}
+	return effective
+}
+
+func ValidateStakeReputationTransfer(record StakeReputationRecord, assetKind string) error {
+	switch strings.TrimSpace(assetKind) {
+	case "token", "nft", "domain":
+		return errors.New("stake reputation is account-owned and cannot be transferred as token, NFT, or domain ownership")
+	default:
+		if !record.NonTransferable {
+			return errors.New("stake reputation record must be marked non-transferable")
+		}
+		return nil
+	}
+}
+
 func (state ReputationState) recordBySubject(subjectType string, subject sdk.AccAddress) (ReputationRecord, bool) {
 	key := addressKey(subject)
 	switch subjectType {
+	case SubjectAccount:
+		for _, record := range state.Accounts {
+			if addressKey(record.Account) == key {
+				return cloneRecord(record), true
+			}
+		}
 	case SubjectValidator:
 		for _, record := range state.Validators {
 			if addressKey(record.Account) == key {
@@ -640,11 +958,42 @@ func (state ReputationState) recordBySubject(subjectType string, subject sdk.Acc
 func (state ReputationState) upsertRecord(subjectType string, record ReputationRecord) ReputationState {
 	record = cloneRecord(record)
 	switch subjectType {
+	case SubjectAccount:
+		state.Accounts = upsertRecord(state.Accounts, record)
 	case SubjectValidator:
 		state.Validators = upsertRecord(state.Validators, record)
 	case SubjectReporter:
 		state.Reporters = upsertRecord(state.Reporters, record)
 	}
+	return NormalizeReputationState(state)
+}
+
+func (state ReputationState) stakeRecord(account sdk.AccAddress) (StakeReputationRecord, bool) {
+	key := addressKey(account)
+	for _, record := range state.StakeRecords {
+		if addressKey(record.Account) == key {
+			return cloneStakeReputationRecord(record), true
+		}
+	}
+	return StakeReputationRecord{}, false
+}
+
+func (state ReputationState) upsertStakeRecord(record StakeReputationRecord) ReputationState {
+	key := addressKey(record.Account)
+	next := make([]StakeReputationRecord, 0, len(state.StakeRecords)+1)
+	replaced := false
+	for _, existing := range state.StakeRecords {
+		if addressKey(existing.Account) == key {
+			next = append(next, cloneStakeReputationRecord(record))
+			replaced = true
+			continue
+		}
+		next = append(next, cloneStakeReputationRecord(existing))
+	}
+	if !replaced {
+		next = append(next, cloneStakeReputationRecord(record))
+	}
+	state.StakeRecords = normalizeStakeReputationRecords(next)
 	return NormalizeReputationState(state)
 }
 
@@ -664,7 +1013,7 @@ func authorizeReputation(params ReputationParams, authority string) error {
 
 func validateSubject(subjectType string, subject sdk.AccAddress) error {
 	switch subjectType {
-	case SubjectValidator, SubjectReporter:
+	case SubjectAccount, SubjectValidator, SubjectReporter:
 	default:
 		return fmt.Errorf("unknown reputation subject type %q", subjectType)
 	}
@@ -728,7 +1077,7 @@ func applyRewardComponent(record ReputationRecord, component string, amount uint
 
 func isReputationComponent(component string) bool {
 	switch component {
-	case ComponentMissedBlock, ComponentSlashing, ComponentSpam, ComponentUptime, ComponentRecovery, ComponentVolume:
+	case ComponentMissedBlock, ComponentSlashing, ComponentSpam, ComponentUptime, ComponentRecovery, ComponentVolume, ComponentStakeTime:
 		return true
 	default:
 		return false
@@ -751,6 +1100,92 @@ func validateReputationRecords(label string, records []ReputationRecord) error {
 			return fmt.Errorf("%s reputation records must be sorted deterministically", label)
 		}
 		previous = key
+	}
+	return nil
+}
+
+func validateStakeReputationRecords(records []StakeReputationRecord) error {
+	seen := make(map[string]struct{}, len(records))
+	var previous string
+	for i, record := range records {
+		if err := record.Validate(); err != nil {
+			return fmt.Errorf("stake reputation record invalid: %w", err)
+		}
+		key := addressKey(record.Account)
+		if _, found := seen[key]; found {
+			return errors.New("duplicate stake reputation record")
+		}
+		seen[key] = struct{}{}
+		if i > 0 && previous >= key {
+			return errors.New("stake reputation records must be sorted deterministically")
+		}
+		previous = key
+	}
+	return nil
+}
+
+func (record StakeReputationRecord) Validate() error {
+	if len(record.Account) == 0 {
+		return errors.New("stake reputation account is required")
+	}
+	if err := addressing.RejectZeroAddress("stake reputation account", record.Account); err != nil {
+		return err
+	}
+	if strings.TrimSpace(record.AccountUser) == "" {
+		return errors.New("stake reputation account user address is required")
+	}
+	parsed, err := addressing.ParseUserAddress("stake reputation account user", record.AccountUser)
+	if err != nil {
+		return err
+	}
+	if addressKey(parsed) != addressKey(record.Account) {
+		return errors.New("stake reputation AE account does not match account bytes")
+	}
+	if !record.NonTransferable {
+		return errors.New("stake reputation must be non-transferable")
+	}
+	if record.ClaimedStakeWeightedSeconds > record.StakeWeightedSeconds {
+		return errors.New("claimed stake reputation seconds exceed accumulator")
+	}
+	if record.ClaimedStakeReputation > StakeReputationMaxScore {
+		return errors.New("claimed stake reputation exceeds max score")
+	}
+	if err := validateStakePoolExposures(record.PoolExposures); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateStakePoolExposures(exposures []StakePoolExposure) error {
+	seen := map[string]struct{}{}
+	previous := ""
+	for i, exposure := range exposures {
+		if strings.TrimSpace(exposure.PoolID) == "" {
+			return errors.New("stake reputation pool id is required")
+		}
+		if _, found := seen[exposure.PoolID]; found {
+			return errors.New("duplicate stake reputation pool exposure")
+		}
+		seen[exposure.PoolID] = struct{}{}
+		if i > 0 && previous >= exposure.PoolID {
+			return errors.New("stake reputation pool exposures must be sorted deterministically")
+		}
+		previous = exposure.PoolID
+		if exposure.Shares > 0 && exposure.TotalPoolShares == 0 {
+			return errors.New("stake reputation total pool shares must be positive when shares are positive")
+		}
+		if exposure.Shares > exposure.TotalPoolShares && exposure.TotalPoolShares > 0 {
+			return errors.New("stake reputation shares cannot exceed total pool shares")
+		}
+		if exposure.ValidatorBonusBps > 10_000 {
+			return errors.New("stake reputation validator bonus bps exceeds basis points")
+		}
+		if (exposure.ValidatorJailed || exposure.ValidatorSlashed) && exposure.ValidatorBonusBps > 0 {
+			return errors.New("slashed or jailed validator cannot receive positive stake reputation bonus")
+		}
+		if (exposure.ValidatorJailed || exposure.ValidatorSlashed) && !exposure.ValidatorBonusBlocked {
+			return errors.New("slashed or jailed validator bonus must be marked blocked")
+		}
 	}
 	return nil
 }
@@ -832,6 +1267,40 @@ func normalizeRecords(records []ReputationRecord) []ReputationRecord {
 	return out
 }
 
+func normalizeStakeReputationRecords(records []StakeReputationRecord) []StakeReputationRecord {
+	out := make([]StakeReputationRecord, len(records))
+	for i, record := range records {
+		out[i] = normalizeStakeReputationRecord(record)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return addressKey(out[i].Account) < addressKey(out[j].Account)
+	})
+	return out
+}
+
+func normalizeStakeReputationRecord(record StakeReputationRecord) StakeReputationRecord {
+	record.Account = cloneAddress(record.Account)
+	if len(record.Account) > 0 {
+		record.AccountUser = addressing.FormatAccAddress(record.Account)
+	}
+	record.NonTransferable = true
+	record.PoolExposures = normalizeStakePoolExposures(record.PoolExposures)
+	return record
+}
+
+func normalizeStakePoolExposures(exposures []StakePoolExposure) []StakePoolExposure {
+	out := append([]StakePoolExposure(nil), exposures...)
+	for i := range out {
+		out[i].PoolID = strings.TrimSpace(out[i].PoolID)
+		if out[i].ValidatorJailed || out[i].ValidatorSlashed {
+			out[i].ValidatorBonusBps = 0
+			out[i].ValidatorBonusBlocked = true
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].PoolID < out[j].PoolID })
+	return out
+}
+
 func normalizeSnapshots(snapshots []ReputationSnapshot) []ReputationSnapshot {
 	out := make([]ReputationSnapshot, len(snapshots))
 	for i, snapshot := range snapshots {
@@ -907,8 +1376,10 @@ func cloneReputationState(state ReputationState) ReputationState {
 	state = NormalizeReputationState(state)
 	return ReputationState{
 		Params:         state.Params,
+		Accounts:       append([]ReputationRecord(nil), state.Accounts...),
 		Validators:     append([]ReputationRecord(nil), state.Validators...),
 		Reporters:      append([]ReputationRecord(nil), state.Reporters...),
+		StakeRecords:   cloneStakeReputationRecords(state.StakeRecords),
 		Snapshots:      append([]ReputationSnapshot(nil), state.Snapshots...),
 		PenaltyEvents:  append([]ReputationEvent(nil), state.PenaltyEvents...),
 		RecoveryEvents: append([]ReputationEvent(nil), state.RecoveryEvents...),
@@ -917,6 +1388,20 @@ func cloneReputationState(state ReputationState) ReputationState {
 
 func cloneRecord(record ReputationRecord) ReputationRecord {
 	record.Account = cloneAddress(record.Account)
+	return record
+}
+
+func cloneStakeReputationRecords(records []StakeReputationRecord) []StakeReputationRecord {
+	out := make([]StakeReputationRecord, len(records))
+	for i, record := range records {
+		out[i] = cloneStakeReputationRecord(record)
+	}
+	return out
+}
+
+func cloneStakeReputationRecord(record StakeReputationRecord) StakeReputationRecord {
+	record.Account = cloneAddress(record.Account)
+	record.PoolExposures = append([]StakePoolExposure(nil), record.PoolExposures...)
 	return record
 }
 
@@ -972,6 +1457,36 @@ func ComputeReputationSnapshotHash(snapshot ReputationSnapshot) string {
 	return hashParts(parts...)
 }
 
+func ComputeStakeReputationClaimHash(record StakeReputationRecord, delta uint16, accountScoreAfter uint8) string {
+	record = normalizeStakeReputationRecord(record)
+	parts := []string{
+		"stake-reputation-claim-v1",
+		addressKey(record.Account),
+		record.AccountUser,
+		fmt.Sprint(record.StakeWeightedSeconds),
+		fmt.Sprint(record.ClaimedStakeWeightedSeconds),
+		fmt.Sprint(record.ClaimedStakeReputation),
+		fmt.Sprint(delta),
+		fmt.Sprint(accountScoreAfter),
+	}
+	for _, exposure := range record.PoolExposures {
+		parts = append(parts,
+			exposure.PoolID,
+			fmt.Sprint(exposure.Shares),
+			fmt.Sprint(exposure.TotalPoolShares),
+			fmt.Sprint(exposure.PoolActiveStake),
+			fmt.Sprint(exposure.EffectiveStake),
+			fmt.Sprint(exposure.LastUpdatedUnix),
+			fmt.Sprint(exposure.ValidatorJailed),
+			fmt.Sprint(exposure.ValidatorSlashed),
+			fmt.Sprint(exposure.ValidatorOperator),
+			fmt.Sprint(exposure.ValidatorBonusBps),
+			fmt.Sprint(exposure.ValidatorBonusBlocked),
+		)
+	}
+	return hashParts(parts...)
+}
+
 func hashParts(parts ...string) string {
 	h := sha256.New()
 	for _, part := range parts {
@@ -1000,6 +1515,58 @@ func saturatingAddU16(a, b uint16) uint16 {
 		return ^uint16(0)
 	}
 	return uint16(sum)
+}
+
+func checkedAddUint64(a, b uint64) (uint64, error) {
+	if ^uint64(0)-a < b {
+		return 0, errors.New("reputation stake-time accumulator overflow")
+	}
+	return a + b, nil
+}
+
+func stakeWeightedSeconds(stake, duration uint64) (uint64, error) {
+	if stake == 0 || duration == 0 {
+		return 0, nil
+	}
+	if stake > ^uint64(0)/duration {
+		return 0, errors.New("reputation stake-time accumulator overflow")
+	}
+	return stake * duration, nil
+}
+
+func mulDivFloor(value, multiplier, denominator uint64) uint64 {
+	if value == 0 || multiplier == 0 || denominator == 0 {
+		return 0
+	}
+	if value > ^uint64(0)/multiplier {
+		return ^uint64(0)
+	}
+	return value * multiplier / denominator
+}
+
+func maxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func findStakePoolExposure(exposures []StakePoolExposure, poolID string) (int, StakePoolExposure, bool) {
+	poolID = strings.TrimSpace(poolID)
+	for idx, exposure := range exposures {
+		if exposure.PoolID == poolID {
+			return idx, exposure, true
+		}
+	}
+	return -1, StakePoolExposure{}, false
+}
+
+func accountScore(state ReputationState, account sdk.AccAddress) uint8 {
+	record, found := state.recordBySubject(SubjectAccount, account)
+	if !found {
+		return ScoreMin
+	}
+	return record.Score
 }
 
 func minU16(a, b uint16) uint16 {
