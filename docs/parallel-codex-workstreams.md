@@ -223,6 +223,34 @@ CHAT 4 owned workstreams:
 - W14 Final App Wiring owns app module wiring, keeper injection, module order,
   integration tests, app boot, export/import restart, and final `go test ./...`.
 
+## W11 Genesis, Migration, Export/Import Requirements
+
+W11 ownership:
+
+- genesis state for new modules;
+- export/import validation;
+- versioned migrations;
+- lazy migration.
+
+W11 tasks:
+
+- Add deterministic export/import for accounts, pools, allocations, rewards,
+  reputation, rent, and validator policy.
+- Add versioned account/pool migration.
+- Reject malformed duplicate state before writes.
+- Preserve mixed account versions.
+
+W11 depends on W2/W3/W4/W5/W7/W8/W9 types.
+
+W11 must not touch business logic except migration handlers.
+
+Required W11 tests:
+
+- full export/import preserves all new state;
+- duplicate account/pool/share/allocation rejected;
+- unsupported version rejected safely;
+- lazy migration preserves address and sequence.
+
 ## W0 Address Compatibility Requirements
 
 W0 owns:

@@ -129,6 +129,30 @@ foreach ($term in @(
 }
 
 foreach ($term in @(
+    'W11 Genesis, Migration, Export/Import Requirements',
+    'W11 ownership:',
+    'genesis state for new modules',
+    'export/import validation',
+    'versioned migrations',
+    'lazy migration',
+    'W11 tasks:',
+    'deterministic export/import for accounts, pools, allocations, rewards',
+    'reputation, rent, and validator policy',
+    'versioned account/pool migration',
+    'Reject malformed duplicate state before writes',
+    'Preserve mixed account versions',
+    'W11 depends on W2/W3/W4/W5/W7/W8/W9 types',
+    'W11 must not touch business logic except migration handlers',
+    'Required W11 tests:',
+    'full export/import preserves all new state',
+    'duplicate account/pool/share/allocation rejected',
+    'unsupported version rejected safely',
+    'lazy migration preserves address and sequence'
+  )) {
+  Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "parallel workstreams doc missing W11 item: $term"
+}
+
+foreach ($term in @(
     'W0 owns:',
     '`app/addressing`',
     'address validation tests',
