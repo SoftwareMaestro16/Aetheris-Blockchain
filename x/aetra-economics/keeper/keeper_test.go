@@ -34,6 +34,10 @@ func TestKeeperQueriesExposeEconomicsState(t *testing.T) {
 	feeSplit, err := k.QueryFeeSplitParams(types.QueryFeeSplitParamsRequest{})
 	require.NoError(t, err)
 	require.Equal(t, params.BurnCurrentBps, feeSplit.BurnCurrentBps)
+	require.Equal(t, params.ValidatorRewardMinBps, feeSplit.ValidatorRewardMinBps)
+	require.Equal(t, params.ValidatorRewardMaxBps, feeSplit.ValidatorRewardMaxBps)
+	require.Equal(t, params.TreasuryMinBps, feeSplit.TreasuryMinBps)
+	require.Equal(t, params.TreasuryMaxBps, feeSplit.TreasuryMaxBps)
 
 	burned, err := k.QueryBurnedSupply(types.QueryBurnedSupplyRequest{})
 	require.NoError(t, err)
@@ -88,7 +92,8 @@ func TestGovernanceAuthorityRequiredForMessages(t *testing.T) {
 	msgServer := economicskeeper.NewMsgServerImpl(&k)
 	params := fastEpochParams()
 	params.BurnCurrentBps = 5_000
-	params.ValidatorRewardBps = 3_000
+	params.ValidatorRewardBps = 3_500
+	params.TreasuryBps = 1_500
 
 	err := msgServer.UpdateEconomicsParams(types.MsgUpdateEconomicsParams{
 		Authority: "ae1notgov",

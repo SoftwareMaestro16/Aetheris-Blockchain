@@ -59,11 +59,16 @@ func (k Keeper) QueryEstimatedAPR(req types.QueryEstimatedAPRRequest) (types.Que
 func (k Keeper) QueryFeeSplitParams(req types.QueryFeeSplitParamsRequest) (types.QueryFeeSplitParamsResponse, error) {
 	params := k.state.Params
 	return types.QueryFeeSplitParamsResponse{
-		BurnMinBps:         params.BurnMinBps,
-		BurnMaxBps:         params.BurnMaxBps,
-		BurnCurrentBps:     params.BurnCurrentBps,
-		ValidatorRewardBps: params.ValidatorRewardBps,
-		TreasuryBps:        params.TreasuryBps,
+		BurnMinBps:                    params.BurnMinBps,
+		BurnMaxBps:                    params.BurnMaxBps,
+		BurnCurrentBps:                params.BurnCurrentBps,
+		ValidatorRewardMinBps:         params.ValidatorRewardMinBps,
+		ValidatorRewardMaxBps:         params.ValidatorRewardMaxBps,
+		ValidatorRewardBps:            params.ValidatorRewardBps,
+		TreasuryMinBps:                params.TreasuryMinBps,
+		TreasuryMaxBps:                params.TreasuryMaxBps,
+		TreasuryBps:                   params.TreasuryBps,
+		EmergencyAllowZeroRewardShare: params.EmergencyAllowZeroRewardShare,
 	}, nil
 }
 

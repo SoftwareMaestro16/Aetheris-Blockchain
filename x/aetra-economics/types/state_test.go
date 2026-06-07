@@ -56,10 +56,39 @@ func TestApplyEpochUsesBoundedInflationStep(t *testing.T) {
 func TestFeeSplitAccounting(t *testing.T) {
 	split, err := types.ComputeFeeSplit(types.DefaultParams(authority), 1_000_000)
 	require.NoError(t, err)
-	require.Equal(t, uint64(400_000), split.BurnAmount)
-	require.Equal(t, uint64(200_000), split.TreasuryAmount)
-	require.Equal(t, uint64(400_000), split.ValidatorDelegatorRewards)
+	require.Equal(t, uint32(5_000), split.BurnBps)
+	require.Equal(t, uint32(3_500), split.ValidatorRewardBps)
+	require.Equal(t, uint32(1_500), split.TreasuryBps)
+	require.Equal(t, uint64(500_000), split.BurnAmount)
+	require.Equal(t, uint64(150_000), split.TreasuryAmount)
+	require.Equal(t, uint64(350_000), split.ValidatorDelegatorRewards)
 	require.Equal(t, split.FeesCollected, split.BurnAmount+split.TreasuryAmount+split.ValidatorDelegatorRewards)
+}
+
+func TestFeeSplitParamsRejectUnsafeRules(t *testing.T) {
+	params := types.DefaultParams(authority)
+	params.TreasuryBps = 1_400
+	require.ErrorContains(t, params.Validate(), "sum")
+
+	params = types.DefaultParams(authority)
+	params.BurnCurrentBps = params.BurnMaxBps + 1
+	params.ValidatorRewardBps = 3_499
+	require.ErrorContains(t, params.Validate(), "burn")
+
+	params = types.DefaultParams(authority)
+	params.TreasuryBps = params.TreasuryMaxBps + 1
+	params.ValidatorRewardBps = 2_999
+	require.ErrorContains(t, params.Validate(), "treasury")
+
+	params = types.DefaultParams(authority)
+	params.BurnCurrentBps = 8_500
+	params.BurnMaxBps = 8_500
+	params.ValidatorRewardBps = 0
+	params.TreasuryBps = 1_500
+	require.ErrorContains(t, params.Validate(), "zero without emergency")
+
+	params.EmergencyAllowZeroRewardShare = true
+	require.NoError(t, params.Validate())
 }
 
 func TestBurnTreasuryAndSupplyAccounting(t *testing.T) {
@@ -68,8 +97,8 @@ func TestBurnTreasuryAndSupplyAccounting(t *testing.T) {
 	next, summary, err := types.ApplyEpoch(params, state, epochInput(1, 1_000_000_000, 600_000_000, 100_000))
 	require.NoError(t, err)
 
-	require.Equal(t, uint64(40_000), summary.BurnedAmount)
-	require.Equal(t, uint64(20_000), summary.TreasuryAmount)
+	require.Equal(t, uint64(50_000), summary.BurnedAmount)
+	require.Equal(t, uint64(15_000), summary.TreasuryAmount)
 	require.Equal(t, summary.BurnedAmount, next.BurnedSupply)
 	require.Equal(t, summary.TreasuryAmount, next.TreasuryBalance)
 	require.Equal(t, summary.StartingSupply+summary.MintedRewards-summary.BurnedAmount, summary.EndingSupply)

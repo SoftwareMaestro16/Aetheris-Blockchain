@@ -64,6 +64,16 @@ const (
 	AetraEconomicsInflationCurveNoFloatingPoint       = "no_floating_point"
 	AetraEconomicsInflationCurveNoPerBlockInstability = "no_per_block_instability"
 	AetraEconomicsInflationCurveDeterministic         = "all_calculations_deterministic"
+
+	AetraEconomicsFeeSplitSumToBasisPoints              = "fee_split_sums_to_10000_bps"
+	AetraEconomicsFeeSplitRecommendedBurnRange          = "burn_fee_share_bps_3000_6000"
+	AetraEconomicsFeeSplitRecommendedRewardRange        = "reward_fee_share_bps_2000_4000"
+	AetraEconomicsFeeSplitRecommendedTreasuryRange      = "treasury_fee_share_bps_1000_2000"
+	AetraEconomicsFeeSplitRejectsInvalidSum             = "reject_sum_not_10000_bps"
+	AetraEconomicsFeeSplitRejectsNegativeShares         = "reject_negative_shares"
+	AetraEconomicsFeeSplitRejectsBurnAboveGovernanceMax = "reject_burn_share_above_governance_max"
+	AetraEconomicsFeeSplitRejectsTreasuryAboveMax       = "reject_treasury_share_above_governance_max"
+	AetraEconomicsFeeSplitRejectsZeroRewards            = "reject_zero_rewards_without_emergency_governance"
 )
 
 type AetraEconomicsSpecEvidence struct {
@@ -137,6 +147,28 @@ type AetraEconomicsInflationCurveEvidence struct {
 }
 
 type AetraEconomicsInflationCurveReport struct {
+	ModuleName string
+	Required   int
+	Passed     int
+	Failed     []string
+	Ready      bool
+}
+
+type AetraEconomicsFeeSplitRulesEvidence struct {
+	ModuleName string
+
+	FeeSplitSumsToBasisPoints          bool
+	RecommendedBurnRange               bool
+	RecommendedRewardRange             bool
+	RecommendedTreasuryRange           bool
+	RejectsInvalidSum                  bool
+	RejectsNegativeShares              bool
+	RejectsBurnAboveGovernanceMax      bool
+	RejectsTreasuryAboveGovernanceMax  bool
+	RejectsZeroRewardsWithoutEmergency bool
+}
+
+type AetraEconomicsFeeSplitRulesReport struct {
 	ModuleName string
 	Required   int
 	Passed     int
@@ -387,6 +419,68 @@ func BuildAetraEconomicsInflationCurveReport(evidence AetraEconomicsInflationCur
 
 	sort.Strings(failed)
 	return AetraEconomicsInflationCurveReport{
+		ModuleName: evidence.ModuleName,
+		Required:   len(checks),
+		Passed:     passed,
+		Failed:     failed,
+		Ready:      len(failed) == 0,
+	}
+}
+
+func DefaultAetraEconomicsFeeSplitRulesEvidence() AetraEconomicsFeeSplitRulesEvidence {
+	return AetraEconomicsFeeSplitRulesEvidence{
+		ModuleName: AetraEconomicsModuleName,
+
+		FeeSplitSumsToBasisPoints:          true,
+		RecommendedBurnRange:               true,
+		RecommendedRewardRange:             true,
+		RecommendedTreasuryRange:           true,
+		RejectsInvalidSum:                  true,
+		RejectsNegativeShares:              true,
+		RejectsBurnAboveGovernanceMax:      true,
+		RejectsTreasuryAboveGovernanceMax:  true,
+		RejectsZeroRewardsWithoutEmergency: true,
+	}
+}
+
+func ValidateAetraEconomicsFeeSplitRules(evidence AetraEconomicsFeeSplitRulesEvidence) error {
+	report := BuildAetraEconomicsFeeSplitRulesReport(evidence)
+	if !report.Ready {
+		return fmt.Errorf("aetra economics fee split rules failed: %v", report.Failed)
+	}
+	return nil
+}
+
+func BuildAetraEconomicsFeeSplitRulesReport(evidence AetraEconomicsFeeSplitRulesEvidence) AetraEconomicsFeeSplitRulesReport {
+	failed := make([]string, 0)
+	if evidence.ModuleName == "" {
+		failed = append(failed, "module_name_required")
+	} else if evidence.ModuleName != AetraEconomicsModuleName {
+		failed = append(failed, "module_name_must_be_"+AetraEconomicsModuleName)
+	}
+
+	checks := []requirementCheck{
+		{AetraEconomicsFeeSplitSumToBasisPoints, evidence.FeeSplitSumsToBasisPoints},
+		{AetraEconomicsFeeSplitRecommendedBurnRange, evidence.RecommendedBurnRange},
+		{AetraEconomicsFeeSplitRecommendedRewardRange, evidence.RecommendedRewardRange},
+		{AetraEconomicsFeeSplitRecommendedTreasuryRange, evidence.RecommendedTreasuryRange},
+		{AetraEconomicsFeeSplitRejectsInvalidSum, evidence.RejectsInvalidSum},
+		{AetraEconomicsFeeSplitRejectsNegativeShares, evidence.RejectsNegativeShares},
+		{AetraEconomicsFeeSplitRejectsBurnAboveGovernanceMax, evidence.RejectsBurnAboveGovernanceMax},
+		{AetraEconomicsFeeSplitRejectsTreasuryAboveMax, evidence.RejectsTreasuryAboveGovernanceMax},
+		{AetraEconomicsFeeSplitRejectsZeroRewards, evidence.RejectsZeroRewardsWithoutEmergency},
+	}
+	passed := 0
+	for _, check := range checks {
+		if check.Passed {
+			passed++
+		} else {
+			failed = append(failed, check.ID)
+		}
+	}
+
+	sort.Strings(failed)
+	return AetraEconomicsFeeSplitRulesReport{
 		ModuleName: evidence.ModuleName,
 		Required:   len(checks),
 		Passed:     passed,

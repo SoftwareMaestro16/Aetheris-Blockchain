@@ -139,3 +139,43 @@ Required catalog properties:
 - `x/aetra-economics/types.ComputeInflationBps` must calculate the deterministic bonded-ratio target without floating point;
 - `x/aetra-economics/types.ComputeNextInflationBps` must move toward the target by no more than `InflationChangeRateBps` per epoch;
 - `x/aetra-economics/types.ApplyEpoch` must use the bounded next-inflation calculation, not an unbounded direct jump to target.
+
+## 23.4 Fee split rules
+
+Fee split must always sum to 100%.
+
+Recommended initial range:
+
+```text
+BurnFeeShareBps: 3000-6000
+RewardFeeShareBps: 2000-4000
+TreasuryFeeShareBps: 1000-2000
+```
+
+Example:
+
+```text
+50% burn
+35% validators/delegators
+15% treasury
+```
+
+The module must reject fee split params if:
+
+- sum != 10000 bps;
+- any share is negative;
+- burn share exceeds max governance bound;
+- treasury share exceeds max governance bound;
+- rewards share is zero unless explicitly permitted by emergency governance.
+
+### Fee Split Implementation Contract
+
+Required catalog properties:
+
+- `AetraEconomicsFeeSplitRulesEvidence` must represent every fee split rule listed in section 23.4;
+- `DefaultAetraEconomicsFeeSplitRulesEvidence` must enable all fee split requirements;
+- `BuildAetraEconomicsFeeSplitRulesReport` must require the 10000 bps sum rule, initial governance ranges, invalid sum rejection, negative share rejection, burn/treasury max-bound rejection, and emergency-only zero rewards;
+- `ValidateAetraEconomicsFeeSplitRules` must reject missing fee split requirements;
+- `x/aetra-economics/types.Params.Validate` must reject invalid fee split params before keeper state is updated;
+- `x/aetra-economics/types.ComputeFeeSplit` must allocate burn, validators/delegators, and treasury from validated bps only;
+- `x/aetra-economics/keeper.QueryFeeSplitParams` must expose current shares and governance bounds.

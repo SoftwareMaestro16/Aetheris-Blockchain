@@ -95,7 +95,23 @@ foreach ($term in @(
     'ComputeInflationBps',
     'ComputeNextInflationBps',
     'InflationChangeRateBps',
-    'ApplyEpoch'
+    'ApplyEpoch',
+    '23.4 Fee split rules',
+    'Fee split must always sum to 100%.',
+    'BurnFeeShareBps: 3000-6000',
+    'RewardFeeShareBps: 2000-4000',
+    'TreasuryFeeShareBps: 1000-2000',
+    '50% burn',
+    '35% validators/delegators',
+    '15% treasury',
+    'sum != 10000 bps',
+    'any share is negative',
+    'burn share exceeds max governance bound',
+    'treasury share exceeds max governance bound',
+    'rewards share is zero unless explicitly permitted by emergency governance',
+    'BuildAetraEconomicsFeeSplitRulesReport',
+    'ComputeFeeSplit',
+    'QueryFeeSplitParams'
   )) {
   Assert-Contains -Text $docText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec doc missing: $term"
 }
@@ -171,7 +187,21 @@ foreach ($term in @(
     'AetraEconomicsInflationCurveEpochChangeBounded',
     'AetraEconomicsInflationCurveNoFloatingPoint',
     'AetraEconomicsInflationCurveNoPerBlockInstability',
-    'AetraEconomicsInflationCurveDeterministic'
+    'AetraEconomicsInflationCurveDeterministic',
+    'AetraEconomicsFeeSplitRulesEvidence',
+    'AetraEconomicsFeeSplitRulesReport',
+    'DefaultAetraEconomicsFeeSplitRulesEvidence',
+    'ValidateAetraEconomicsFeeSplitRules',
+    'BuildAetraEconomicsFeeSplitRulesReport',
+    'AetraEconomicsFeeSplitSumToBasisPoints',
+    'AetraEconomicsFeeSplitRecommendedBurnRange',
+    'AetraEconomicsFeeSplitRecommendedRewardRange',
+    'AetraEconomicsFeeSplitRecommendedTreasuryRange',
+    'AetraEconomicsFeeSplitRejectsInvalidSum',
+    'AetraEconomicsFeeSplitRejectsNegativeShares',
+    'AetraEconomicsFeeSplitRejectsBurnAboveGovernanceMax',
+    'AetraEconomicsFeeSplitRejectsTreasuryAboveMax',
+    'AetraEconomicsFeeSplitRejectsZeroRewards'
   )) {
   Assert-Contains -Text $policyText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec policy missing: $term"
 }
@@ -186,7 +216,9 @@ foreach ($term in @(
     'TestAetraEconomicsStateSpecRejectsMissingFields',
     'TestAetraEconomicsStateSpecRejectsDuplicateUnexpectedAndWrongModule',
     'TestDefaultAetraEconomicsInflationCurveCoversSection233',
-    'TestAetraEconomicsInflationCurveRejectsMissingRequiredItems'
+    'TestAetraEconomicsInflationCurveRejectsMissingRequiredItems',
+    'TestDefaultAetraEconomicsFeeSplitRulesCoverSection234',
+    'TestAetraEconomicsFeeSplitRulesRejectMissingRequiredItems'
   )) {
   Assert-Contains -Text $testText -Pattern ([regex]::Escape($term)) -Message "aetra economics spec tests missing: $term"
 }
@@ -196,7 +228,18 @@ foreach ($term in @(
     'ComputeInflationBps',
     'ComputeNextInflationBps',
     'ApplyEpoch',
-    'state.CurrentInflationBps'
+    'state.CurrentInflationBps',
+    'BurnMinBps',
+    'BurnMaxBps',
+    'BurnCurrentBps',
+    'ValidatorRewardMinBps',
+    'ValidatorRewardMaxBps',
+    'ValidatorRewardBps',
+    'TreasuryMinBps',
+    'TreasuryMaxBps',
+    'TreasuryBps',
+    'EmergencyAllowZeroRewardShare',
+    'ComputeFeeSplit'
   )) {
   Assert-Contains -Text $moduleTypesText -Pattern ([regex]::Escape($term)) -Message "aetra economics module types missing: $term"
 }
@@ -205,7 +248,9 @@ foreach ($term in @(
     'TestInflationCurveRespondsToBondedRatio',
     'TestBoundedInflation',
     'TestInflationChangePerEpochIsBounded',
-    'TestApplyEpochUsesBoundedInflationStep'
+    'TestApplyEpochUsesBoundedInflationStep',
+    'TestFeeSplitAccounting',
+    'TestFeeSplitParamsRejectUnsafeRules'
   )) {
   Assert-Contains -Text $moduleTypesTestText -Pattern ([regex]::Escape($term)) -Message "aetra economics module tests missing: $term"
 }

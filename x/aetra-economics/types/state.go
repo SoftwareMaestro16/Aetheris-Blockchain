@@ -10,20 +10,25 @@ import (
 )
 
 type Params struct {
-	Authority              string `json:"authority"`
-	InflationMinBps        uint32 `json:"inflation_min_bps"`
-	InflationMaxBps        uint32 `json:"inflation_max_bps"`
-	InflationChangeRateBps uint32 `json:"inflation_change_rate_bps"`
-	TargetBondedRatioBps   uint32 `json:"target_bonded_ratio_bps"`
-	BurnMinBps             uint32 `json:"burn_min_bps"`
-	BurnMaxBps             uint32 `json:"burn_max_bps"`
-	BurnCurrentBps         uint32 `json:"burn_current_bps"`
-	ValidatorRewardBps     uint32 `json:"validator_reward_bps"`
-	TreasuryBps            uint32 `json:"treasury_bps"`
-	RewardSmoothingWindow  uint64 `json:"reward_smoothing_window"`
-	APRTargetMinBps        uint32 `json:"apr_target_min_bps"`
-	APRTargetMaxBps        uint32 `json:"apr_target_max_bps"`
-	EpochsPerYear          uint64 `json:"epochs_per_year"`
+	Authority                     string `json:"authority"`
+	InflationMinBps               uint32 `json:"inflation_min_bps"`
+	InflationMaxBps               uint32 `json:"inflation_max_bps"`
+	InflationChangeRateBps        uint32 `json:"inflation_change_rate_bps"`
+	TargetBondedRatioBps          uint32 `json:"target_bonded_ratio_bps"`
+	BurnMinBps                    uint32 `json:"burn_min_bps"`
+	BurnMaxBps                    uint32 `json:"burn_max_bps"`
+	BurnCurrentBps                uint32 `json:"burn_current_bps"`
+	ValidatorRewardMinBps         uint32 `json:"validator_reward_min_bps"`
+	ValidatorRewardMaxBps         uint32 `json:"validator_reward_max_bps"`
+	ValidatorRewardBps            uint32 `json:"validator_reward_bps"`
+	TreasuryMinBps                uint32 `json:"treasury_min_bps"`
+	TreasuryMaxBps                uint32 `json:"treasury_max_bps"`
+	TreasuryBps                   uint32 `json:"treasury_bps"`
+	EmergencyAllowZeroRewardShare bool   `json:"emergency_allow_zero_reward_share"`
+	RewardSmoothingWindow         uint64 `json:"reward_smoothing_window"`
+	APRTargetMinBps               uint32 `json:"apr_target_min_bps"`
+	APRTargetMaxBps               uint32 `json:"apr_target_max_bps"`
+	EpochsPerYear                 uint64 `json:"epochs_per_year"`
 }
 
 type EconomicsState struct {
@@ -99,11 +104,16 @@ type QueryEstimatedAPRResponse struct{ APRBps uint32 }
 
 type QueryFeeSplitParamsRequest struct{}
 type QueryFeeSplitParamsResponse struct {
-	BurnMinBps         uint32 `json:"burn_min_bps"`
-	BurnMaxBps         uint32 `json:"burn_max_bps"`
-	BurnCurrentBps     uint32 `json:"burn_current_bps"`
-	ValidatorRewardBps uint32 `json:"validator_reward_bps"`
-	TreasuryBps        uint32 `json:"treasury_bps"`
+	BurnMinBps                    uint32 `json:"burn_min_bps"`
+	BurnMaxBps                    uint32 `json:"burn_max_bps"`
+	BurnCurrentBps                uint32 `json:"burn_current_bps"`
+	ValidatorRewardMinBps         uint32 `json:"validator_reward_min_bps"`
+	ValidatorRewardMaxBps         uint32 `json:"validator_reward_max_bps"`
+	ValidatorRewardBps            uint32 `json:"validator_reward_bps"`
+	TreasuryMinBps                uint32 `json:"treasury_min_bps"`
+	TreasuryMaxBps                uint32 `json:"treasury_max_bps"`
+	TreasuryBps                   uint32 `json:"treasury_bps"`
+	EmergencyAllowZeroRewardShare bool   `json:"emergency_allow_zero_reward_share"`
 }
 
 type QueryBurnedSupplyRequest struct{}
@@ -124,9 +134,13 @@ func DefaultParams(authority string) Params {
 		TargetBondedRatioBps:   6_000,
 		BurnMinBps:             3_000,
 		BurnMaxBps:             6_000,
-		BurnCurrentBps:         4_000,
-		ValidatorRewardBps:     4_000,
-		TreasuryBps:            2_000,
+		BurnCurrentBps:         5_000,
+		ValidatorRewardMinBps:  2_000,
+		ValidatorRewardMaxBps:  4_000,
+		ValidatorRewardBps:     3_500,
+		TreasuryMinBps:         1_000,
+		TreasuryMaxBps:         2_000,
+		TreasuryBps:            1_500,
 		RewardSmoothingWindow:  7,
 		APRTargetMinBps:        500,
 		APRTargetMaxBps:        800,
@@ -345,8 +359,21 @@ func (p Params) Validate() error {
 	if p.BurnCurrentBps < p.BurnMinBps || p.BurnCurrentBps > p.BurnMaxBps {
 		return fmt.Errorf("current burn percentage must stay inside burn bounds")
 	}
-	if p.ValidatorRewardBps > BasisPoints || p.TreasuryBps > BasisPoints {
-		return fmt.Errorf("fee split percentages cannot exceed %d bps", BasisPoints)
+	if p.ValidatorRewardMinBps > p.ValidatorRewardMaxBps || p.ValidatorRewardMaxBps > BasisPoints {
+		return fmt.Errorf("validator reward bounds are invalid")
+	}
+	if p.ValidatorRewardBps == 0 {
+		if !p.EmergencyAllowZeroRewardShare {
+			return fmt.Errorf("validator reward share cannot be zero without emergency governance")
+		}
+	} else if p.ValidatorRewardBps < p.ValidatorRewardMinBps || p.ValidatorRewardBps > p.ValidatorRewardMaxBps {
+		return fmt.Errorf("validator reward percentage must stay inside reward bounds")
+	}
+	if p.TreasuryMinBps > p.TreasuryMaxBps || p.TreasuryMaxBps > BasisPoints {
+		return fmt.Errorf("treasury bounds are invalid")
+	}
+	if p.TreasuryBps < p.TreasuryMinBps || p.TreasuryBps > p.TreasuryMaxBps {
+		return fmt.Errorf("treasury percentage must stay inside treasury bounds")
 	}
 	if uint64(p.BurnCurrentBps)+uint64(p.ValidatorRewardBps)+uint64(p.TreasuryBps) != uint64(BasisPoints) {
 		return fmt.Errorf("fee split percentages must sum to %d bps", BasisPoints)

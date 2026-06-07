@@ -175,6 +175,46 @@ func TestAetraEconomicsInflationCurveRejectsMissingRequiredItems(t *testing.T) {
 	require.Error(t, ValidateAetraEconomicsInflationCurve(evidence))
 }
 
+func TestDefaultAetraEconomicsFeeSplitRulesCoverSection234(t *testing.T) {
+	evidence := DefaultAetraEconomicsFeeSplitRulesEvidence()
+
+	report := BuildAetraEconomicsFeeSplitRulesReport(evidence)
+	require.True(t, report.Ready, report.Failed)
+	require.Empty(t, report.Failed)
+	require.Equal(t, AetraEconomicsModuleName, report.ModuleName)
+	require.Equal(t, report.Required, report.Passed)
+	require.Equal(t, 9, report.Required)
+	require.NoError(t, ValidateAetraEconomicsFeeSplitRules(evidence))
+}
+
+func TestAetraEconomicsFeeSplitRulesRejectMissingRequiredItems(t *testing.T) {
+	evidence := DefaultAetraEconomicsFeeSplitRulesEvidence()
+	evidence.ModuleName = "x/economics"
+	evidence.FeeSplitSumsToBasisPoints = false
+	evidence.RecommendedBurnRange = false
+	evidence.RecommendedRewardRange = false
+	evidence.RecommendedTreasuryRange = false
+	evidence.RejectsInvalidSum = false
+	evidence.RejectsNegativeShares = false
+	evidence.RejectsBurnAboveGovernanceMax = false
+	evidence.RejectsTreasuryAboveGovernanceMax = false
+	evidence.RejectsZeroRewardsWithoutEmergency = false
+
+	report := BuildAetraEconomicsFeeSplitRulesReport(evidence)
+	require.False(t, report.Ready)
+	require.Contains(t, report.Failed, "module_name_must_be_"+AetraEconomicsModuleName)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitSumToBasisPoints)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRecommendedBurnRange)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRecommendedRewardRange)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRecommendedTreasuryRange)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRejectsInvalidSum)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRejectsNegativeShares)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRejectsBurnAboveGovernanceMax)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRejectsTreasuryAboveMax)
+	require.Contains(t, report.Failed, AetraEconomicsFeeSplitRejectsZeroRewards)
+	require.Error(t, ValidateAetraEconomicsFeeSplitRules(evidence))
+}
+
 func removeEconomicsString(values []string, targets ...string) []string {
 	targetSet := map[string]bool{}
 	for _, target := range targets {
