@@ -153,6 +153,38 @@ function Assert-NativeCommandFails {
   }
 }
 
+function Assert-DirectDelegationRejected {
+  param(
+    [string]$ValidatorAddress,
+    [string]$FromHome
+  )
+
+  $arguments = New-SignedTxArgs -ActionArgs @("tx", "staking", "delegate", $ValidatorAddress, "5000000naet") -FromHome $FromHome
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & $Binary @arguments 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  $text = $output -join "`n"
+  if ($exitCode -ne 0) {
+    Assert-True ($text -match "direct user delegation to validators is disabled|unknown command|unknown flag") "direct staking delegation command failed with unexpected output: $text"
+    return
+  }
+
+  $jsonStart = $text.IndexOf("{")
+  if ($jsonStart -lt 0) {
+    $jsonStart = $text.IndexOf("[")
+  }
+  Assert-True ($jsonStart -ge 0) "direct staking delegation did not return JSON rejection: $text"
+  $delegateTx = $text.Substring($jsonStart) | ConvertFrom-Json
+  Assert-True ((Get-LocalnetTxCode -Tx $delegateTx) -ne 0) "direct staking delegation must be rejected"
+  Assert-True ((Get-LocalnetTxLog -Tx $delegateTx) -match "direct user delegation to validators is disabled") "direct staking delegation rejection log mismatch"
+}
+
 Push-Location $RepoRoot
 try {
   $goCache = Join-Path $RepoRoot ".work\gocache"
@@ -183,9 +215,7 @@ try {
   Write-Host "bank send flow committed"
 
   $validator = Get-LocalnetBondedValidator -Binary $Binary -RPCPort $node0Ports.RPC
-  $delegateTx = Invoke-LocalnetCliJson -Binary $Binary -Arguments (New-SignedTxArgs -ActionArgs @("tx", "staking", "delegate", $validator.operator_address, "5000000naet") -FromHome $node0Home)
-  Assert-True ((Get-LocalnetTxCode -Tx $delegateTx) -ne 0) "direct staking delegation must be rejected"
-  Assert-True ((Get-LocalnetTxLog -Tx $delegateTx) -match "direct user delegation to validators is disabled") "direct staking delegation rejection log mismatch"
+  Assert-DirectDelegationRejected -ValidatorAddress $validator.operator_address -FromHome $node0Home
   Write-Host "direct staking delegate rejection verified"
 
   Send-SignedTx -ActionArgs @("tx", "contract-assets", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
