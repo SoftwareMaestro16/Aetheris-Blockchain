@@ -192,8 +192,14 @@ try {
   $node1 = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node1Home -KeyName "node1"
   $node1Raw = [string](Invoke-LocalnetCliJson -Binary $Binary -Arguments @("address", "convert", $node1)).raw
   $node1SDK = Get-LocalnetKeySDKAddress -NodeHome $node1Home -KeyName "node1"
-  $exportUserRaw = "4:0000000000000000000000001234567890abcdef1234567890abcdef12345678"
-  $exportUser = [string](Invoke-LocalnetCliJson -Binary $Binary -Arguments @("address", "convert", $exportUserRaw)).user_friendly
+  $exportUserKey = "export-user"
+  $keyOutput = & $Binary keys add $exportUserKey --home $node0Home --keyring-backend test --no-backup 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "failed to create non-validator export user key"
+  }
+  $exportUser = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $node0Home -KeyName $exportUserKey
+  $exportUserRaw = [string](Invoke-LocalnetCliJson -Binary $Binary -Arguments @("address", "convert", $exportUser)).raw
+  $exportUserSDK = Get-LocalnetKeySDKAddress -NodeHome $node0Home -KeyName $exportUserKey
 
   Send-LocalnetBankTx -Binary $Binary -FromHome $node0Home -FromKey "node0" -ToAddress $node1 -Amount "12345naet" -Fees $Fees -ChainId $ChainId -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
   Send-LocalnetBankTx -Binary $Binary -FromHome $node0Home -FromKey "node0" -ToAddress $exportUser -Amount "1000naet" -Fees $Fees -ChainId $ChainId -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
@@ -221,10 +227,10 @@ try {
   Assert-True (@($genesis.app_state.fees.params.allowed_fee_denoms) -contains "naet") "exported fees params missing naet"
 
   Assert-CoinInBalance -Genesis $genesis -Addresses @($node1, $node1Raw, $node1SDK) -Denom "naet" -MinAmount 12345
-  Assert-CoinInBalance -Genesis $genesis -Addresses @($exportUser, $exportUserRaw) -Denom "naet" -MinAmount 1000
+  Assert-CoinInBalance -Genesis $genesis -Addresses @($exportUser, $exportUserRaw, $exportUserSDK) -Denom "naet" -MinAmount 1000
 
   Assert-True ($genesis.app_state.staking.params.bond_denom -eq "naet") "exported staking bond denom mismatch"
-  $exportUserAddresses = @($exportUser, $exportUserRaw)
+  $exportUserAddresses = @($exportUser, $exportUserRaw, $exportUserSDK)
   $exportedDelegation = @($genesis.app_state.staking.delegations | Where-Object { $exportUserAddresses -contains $_.delegator_address -and $_.validator_address -eq $validator.operator_address } | Select-Object -First 1)
   Assert-True ($exportedDelegation.Count -eq 0) "exported genesis must not include rejected direct staking delegation"
   Write-Host "exported genesis preserves bank, staking params, and fees state"
