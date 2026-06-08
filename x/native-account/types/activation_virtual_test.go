@@ -42,6 +42,16 @@ func TestMsgActivateAccountRejectsLegacyAndForeignAddressFormats(t *testing.T) {
 	}
 }
 
+func TestMsgActivateAccountRejectsReservedSystemAddress(t *testing.T) {
+	pubKey := activationTestPubKey()
+	mint, found := addressing.SystemAddressByName(addressing.SystemAddressAETMintName)
+	require.True(t, found)
+
+	err := MsgActivateAccount{AddressUser: mint.UserFriendly, PublicKey: pubKey}.ValidateBasic()
+
+	require.ErrorContains(t, err, "reserved system address")
+}
+
 func TestQueryUnactivatedAddressReturnsVirtualInactiveWithoutState(t *testing.T) {
 	book, err := NewVirtualAccountBook()
 	require.NoError(t, err)

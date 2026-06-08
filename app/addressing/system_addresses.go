@@ -6,7 +6,25 @@ import (
 	"strings"
 )
 
-const SystemAddressStatusActive = "active"
+const (
+	SystemAddressStatusActive = "active"
+
+	ReservedUserWorkchain   = 4
+	ReservedSystemWorkchain = -7
+
+	SystemAddressAETElectorName         = "AETElector"
+	SystemAddressAETConfigName          = "AETConfig"
+	SystemAddressAETMintName            = "AETMint"
+	SystemAddressAETBurnName            = "AETBurn"
+	SystemAddressAETElectorUserFriendly = "AEAAAQEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEELECTOR"
+	SystemAddressAETConfigUserFriendly  = "AEAAAQCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCONFIG"
+	SystemAddressAETMintUserFriendly    = "AEAAAQMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMINT"
+	SystemAddressAETBurnUserFriendly    = "AEAAAQBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBURN"
+	SystemAddressAETElectorRaw          = "-7:01041041041041041041041041041041041041041041041041041042c4093391"
+	SystemAddressAETConfigRaw           = "-7:008208208208208208208208208208208208208208208208208208208e345206"
+	SystemAddressAETMintRaw             = "4:030c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c308353"
+	SystemAddressAETBurnRaw             = "4:004104104104104104104104104104104104104104104104104104104105444d"
+)
 
 type SystemAddress struct {
 	Name                string
@@ -21,15 +39,15 @@ type SystemAddress struct {
 }
 
 var reservedSystemAddresses = []SystemAddress{
-	systemAddress("AETElector", "validator-election", "-7:01041041041041041041041041041041041041041041041041041042c4093391", "AEAAAQEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEELECTOR", true, false, false, false),
-	systemAddress("AETConfig", "config", "-7:008208208208208208208208208208208208208208208208208208208e345206", "AEAAAQCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCONFIG", true, false, false, false),
+	systemAddress(SystemAddressAETElectorName, "validator-election", SystemAddressAETElectorRaw, SystemAddressAETElectorUserFriendly, true, false, false, false),
+	systemAddress(SystemAddressAETConfigName, "config", SystemAddressAETConfigRaw, SystemAddressAETConfigUserFriendly, true, false, false, false),
 	systemAddress("AETConstitution", "constitution", "-7:034d34d34d34d34d34d34d34d34d34d34d34d34d34d34d34d34d34d34d34d34d", "AEAAAQNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN", true, false, false, false),
 	systemAddress("AETSystemRegistry", "system-registry", "-7:0451451451451451451451451451451451451451451451451451451451451451", "AEAAAQRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR", true, false, false, false),
 	systemAddress("AETValidatorRegistry", "validator-registry", "-7:0555555555555555555555555555555555555555555555555555555555555555", "AEAAAQVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV", true, false, false, false),
 	systemAddress("AETConfigVoting", "config-voting", "-7:0186186186186186186186186186186186186186186186186186186186186186", "AEAAAQGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", true, false, false, false),
 
-	systemAddress("AETMint", "mint-authority", "4:030c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c308353", "AEAAAQMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMINT", false, false, false, false),
-	systemAddress("AETBurn", "burn", "4:004104104104104104104104104104104104104104104104104104104105444d", "AEAAAQBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBURN", false, false, true, false),
+	systemAddress(SystemAddressAETMintName, "mint-authority", SystemAddressAETMintRaw, SystemAddressAETMintUserFriendly, false, false, false, false),
+	systemAddress(SystemAddressAETBurnName, "burn", SystemAddressAETBurnRaw, SystemAddressAETBurnUserFriendly, false, false, true, false),
 	systemAddress("AETEvidence", "evidence", "4:00c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c30c3", "AEAAAQDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD", false, false, false, false),
 	systemAddress("AETReporterRewards", "reporter", "4:03cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf3cf", "AEAAAQPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP", false, true, false, false),
 	systemAddress("AETNominatorPool", "nominator-pool", "4:038e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e", "AEAAAQOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO", false, false, false, false),
@@ -71,6 +89,65 @@ func AllSystemAddresses() []SystemAddress {
 	out := make([]SystemAddress, len(reservedSystemAddresses))
 	copy(out, reservedSystemAddresses)
 	return out
+}
+
+func ValidateReservedSystemAddressCatalog() error {
+	return ValidateSystemAddressCatalog(reservedSystemAddresses)
+}
+
+func ValidateSystemAddressCatalog(addresses []SystemAddress) error {
+	seenNames := map[string]struct{}{}
+	seenModules := map[string]struct{}{}
+	seenBytes := map[string]string{}
+	for _, address := range addresses {
+		if strings.TrimSpace(address.Name) == "" {
+			return fmt.Errorf("reserved system address name is required")
+		}
+		if strings.TrimSpace(address.ModuleName) == "" {
+			return fmt.Errorf("reserved system address module is required for %s", address.Name)
+		}
+		if _, found := seenNames[address.Name]; found {
+			return fmt.Errorf("duplicate reserved system address name %s", address.Name)
+		}
+		seenNames[address.Name] = struct{}{}
+		if _, found := seenModules[address.ModuleName]; found {
+			return fmt.Errorf("duplicate reserved system address module %s", address.ModuleName)
+		}
+		seenModules[address.ModuleName] = struct{}{}
+		rawBytes, err := Parse(address.Raw)
+		if err != nil {
+			return fmt.Errorf("reserved system address %s raw address invalid: %w", address.Name, err)
+		}
+		if IsZero(rawBytes) {
+			return fmt.Errorf("reserved system address %s must not use zero address", address.Name)
+		}
+		userBytes, err := Parse(address.UserFriendly)
+		if err != nil {
+			return fmt.Errorf("reserved system address %s user-friendly address invalid: %w", address.Name, err)
+		}
+		if IsZero(userBytes) {
+			return fmt.Errorf("reserved system address %s user-friendly address must not be zero address", address.Name)
+		}
+		rawKey, err := addressTextKey(address.Raw)
+		if err != nil {
+			return err
+		}
+		userKey, err := addressTextKey(address.UserFriendly)
+		if err != nil {
+			return err
+		}
+		if rawKey != userKey {
+			return fmt.Errorf("reserved system address %s raw and AE addresses mismatch", address.Name)
+		}
+		if other, found := seenBytes[rawKey]; found {
+			return fmt.Errorf("duplicate reserved system address bytes used by %s and %s", other, address.Name)
+		}
+		seenBytes[rawKey] = address.Name
+		if address.Status != SystemAddressStatusActive {
+			return fmt.Errorf("reserved system address %s has invalid status %q", address.Name, address.Status)
+		}
+	}
+	return nil
 }
 
 func SystemAddressByName(name string) (SystemAddress, bool) {
@@ -140,17 +217,79 @@ func IsReservedSystemAddressText(text string) bool {
 
 func ValidateNoUserControlledSystemAddresses(userAccounts []string) error {
 	for _, account := range userAccounts {
-		text := strings.TrimSpace(account)
-		if text == "" {
-			continue
+		if err := ValidateUserSignerAddress(account); err != nil {
+			return err
 		}
-		bz, err := Parse(text)
-		if err != nil {
-			return fmt.Errorf("invalid user-controlled account address %q: %w", text, err)
-		}
-		if IsReservedSystemAddressBytes(bz) {
-			return fmt.Errorf("user-controlled account %q uses reserved system address", text)
-		}
+	}
+	return nil
+}
+
+func ValidateUserSignerAddress(account string) error {
+	text := strings.TrimSpace(account)
+	if text == "" {
+		return nil
+	}
+	bz, err := Parse(text)
+	if err != nil {
+		return fmt.Errorf("invalid user-controlled account address %q: %w", text, err)
+	}
+	if IsZero(bz) {
+		return fmt.Errorf("user-controlled account %q must not be zero address", text)
+	}
+	if IsReservedSystemAddressBytes(bz) {
+		return fmt.Errorf("user-controlled account %q uses reserved system address", text)
+	}
+	return nil
+}
+
+func ValidateUserRecipientAddress(account string) error {
+	text := strings.TrimSpace(account)
+	if text == "" {
+		return nil
+	}
+	bz, err := Parse(text)
+	if err != nil {
+		return fmt.Errorf("invalid user recipient address %q: %w", text, err)
+	}
+	if IsZero(bz) {
+		return fmt.Errorf("user recipient %q must not be zero address", text)
+	}
+	address, found := SystemAddressByBytes(bz)
+	if found && !address.CanReceiveUserFunds {
+		return fmt.Errorf("user recipient %q is reserved system address and cannot receive user funds", text)
+	}
+	return nil
+}
+
+func ValidateNewUserAccountAddress(field, text string) error {
+	if err := ValidateUserAddress(field, text); err != nil {
+		return err
+	}
+	if IsReservedSystemAddressText(text) {
+		return fmt.Errorf("%s must not use reserved system address", field)
+	}
+	return nil
+}
+
+func ValidateUserAdminAddress(field, text string) error {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	if err := ValidateUserAddress(field, text); err != nil {
+		return err
+	}
+	if IsReservedSystemAddressText(text) {
+		return fmt.Errorf("%s must not use reserved system address", field)
+	}
+	return nil
+}
+
+func ValidateTxAuthorityAddress(field, text string) error {
+	if err := ValidateAuthorityAddress(field, text); err != nil {
+		return err
+	}
+	if IsReservedSystemAddressText(text) {
+		return fmt.Errorf("%s must not use reserved system address", field)
 	}
 	return nil
 }

@@ -193,6 +193,9 @@ func (p Params) Authorize(authority string) error {
 }
 
 func (s State) Validate(params Params) error {
+	if err := addressing.ValidateReservedSystemAddressCatalog(); err != nil {
+		return err
+	}
 	if err := params.Validate(); err != nil {
 		return err
 	}

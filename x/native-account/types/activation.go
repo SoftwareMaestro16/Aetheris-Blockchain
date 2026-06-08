@@ -22,7 +22,7 @@ type MsgActivateAccount struct {
 }
 
 func (m MsgActivateAccount) ValidateBasic() error {
-	if err := addressing.ValidateUserAddress("activation address", m.AddressUser); err != nil {
+	if err := addressing.ValidateNewUserAccountAddress("activation address", m.AddressUser); err != nil {
 		return err
 	}
 	pubKey, err := m.EffectivePublicKey()

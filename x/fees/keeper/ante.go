@@ -17,6 +17,9 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 		if err := validateNoZeroTxAddresses(tx); err != nil {
 			return ctx, err
 		}
+		if err := aetraaddress.ValidateAnteAddressPolicy(tx); err != nil {
+			return ctx, types.ErrInvalidFee.Wrap(err.Error())
+		}
 		if isGenesisCreateValidatorTx(ctx, tx) {
 			return next(ctx, tx, simulate)
 		}
@@ -24,6 +27,10 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 		if !ok {
 			observability.RecordFeeRejected("missing_fee_tx")
 			return ctx, types.ErrInvalidFee.Wrap("transaction must expose fees")
+		}
+		if err := validateTxEnvelope(ctx, tx); err != nil {
+			observability.RecordFeeRejected("tx_envelope_limit")
+			return ctx, err
 		}
 		fees := feeTx.GetFee()
 		if _, err := k.AdmitTx(ctx, feeTx, selectTxSender(tx, feeTx), simulate); err != nil {
@@ -45,6 +52,19 @@ func (k Keeper) AnteHandlerDecorator(next sdk.AnteHandler) sdk.AnteHandler {
 	}
 }
 
+func validateTxEnvelope(ctx sdk.Context, tx sdk.Tx) error {
+	input := types.TxEnvelopeInput{MsgCount: uint64(len(tx.GetMsgs()))}
+	if txBytes := ctx.TxBytes(); len(txBytes) > 0 {
+		input.TxBytes = uint64(len(txBytes))
+	} else if sizedTx, ok := tx.(interface{ Size() int }); ok && sizedTx.Size() > 0 {
+		input.TxBytes = uint64(sizedTx.Size())
+	}
+	if memoTx, ok := tx.(sdk.TxWithMemo); ok {
+		input.Memo = memoTx.GetMemo()
+	}
+	return types.ValidateTxEnvelope(types.DefaultTxEnvelopeLimits(), input)
+}
+
 func validateNoZeroTxAddresses(tx sdk.Tx) error {
 	for _, msg := range tx.GetMsgs() {
 		if err := validateNoZeroMsgAddresses(msg); err != nil {
@@ -52,10 +72,13 @@ func validateNoZeroTxAddresses(tx sdk.Tx) error {
 		}
 	}
 	if feeTx, ok := tx.(sdk.FeeTx); ok {
-		if payer := sdk.AccAddress(feeTx.FeePayer()); aetraaddress.IsZeroAccAddress(payer) {
-			return types.ErrInvalidFee.Wrap("fee payer must not be zero address")
-		} else if reserved, found := aetraaddress.SystemAddressByBytes(payer); found {
-			return types.ErrInvalidFee.Wrapf("fee payer is reserved system address %s", reserved.Name)
+		if payer := sdk.AccAddress(feeTx.FeePayer()); len(payer) > 0 {
+			if aetraaddress.IsZeroAccAddress(payer) {
+				return types.ErrInvalidFee.Wrap("fee payer must not be zero address")
+			}
+			if reserved, found := aetraaddress.SystemAddressByBytes(payer); found {
+				return types.ErrInvalidFee.Wrapf("fee payer is reserved system address %s", reserved.Name)
+			}
 		}
 	}
 	if sigTx, ok := tx.(authsigning.SigVerifiableTx); ok {

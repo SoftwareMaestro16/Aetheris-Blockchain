@@ -152,6 +152,20 @@ func Parse(text string) ([]byte, error) {
 	if systemRawAddressRe.MatchString(text) {
 		return ParseSystemRawAddress(text)
 	}
+	if strings.HasPrefix(text, UserFriendlyPrefix) {
+		for _, address := range reservedSystemAddresses {
+			if address.UserFriendly == text {
+				if systemRawAddressRe.MatchString(address.Raw) {
+					return ParseSystemRawAddress(address.Raw)
+				}
+				raw, err := hex.DecodeString(address.Raw[len(RawPrefix):])
+				if err != nil {
+					return nil, err
+				}
+				return FromRawPayload(raw), nil
+			}
+		}
+	}
 	if len(text) == UserFriendlyLength && strings.HasPrefix(text, UserFriendlyPrefix) {
 		payload, err := base64.RawURLEncoding.DecodeString(text)
 		if err != nil {
