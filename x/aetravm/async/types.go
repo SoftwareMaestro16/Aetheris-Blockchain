@@ -26,6 +26,27 @@ const (
 	QueueStatusFailed   = "failed"
 	QueueStatusExpired  = "expired"
 	QueueStatusBounced  = "bounced"
+
+	ExecutionKindExternal = "external"
+	ExecutionKindInternal = "internal"
+	ExecutionKindBounced  = "bounced"
+	ExecutionKindSystem   = "system"
+
+	FailedPhaseValidation = "validation"
+	FailedPhaseDispatch   = "dispatch"
+	FailedPhaseExecution  = "execution"
+	FailedPhaseStorage    = "storage"
+	FailedPhaseQueue      = "queue"
+
+	EventCodeStored       = "avm.code_stored"
+	EventContractDeployed = "avm.contract_deployed"
+	EventExternalExecuted = "avm.external_executed"
+	EventInternalExecuted = "avm.internal_executed"
+	EventMessageQueued    = "avm.message_queued"
+	EventMessageBounced   = "avm.message_bounced"
+	EventContractFrozen   = "avm.contract_frozen"
+	EventContractUnfrozen = "avm.contract_unfrozen"
+	EventRentPaid         = "avm.rent_paid"
 )
 
 type Params struct {
@@ -119,27 +140,57 @@ type ExecutionResult struct {
 }
 
 type ExecutionReceipt struct {
-	Sequence         uint64
-	Source           sdk.AccAddress
-	Destination      sdk.AccAddress
-	Opcode           uint32
-	QueryID          uint64
-	ResultCode       uint32
-	GasUsed          uint64
-	StorageFeeNaet   sdkmath.Int
-	ForwardFeeNaet   sdkmath.Int
-	Bounced          bool
-	BounceCreated    bool
-	RefundCreated    bool
-	Refunded         bool
-	RefundAmountNaet sdkmath.Int
-	RefundFeeNaet    sdkmath.Int
-	RefundOfSequence uint64
-	RefundReason     string
-	QueueStatus      string
-	RetryCount       uint32
-	RetryScheduled   bool
-	Error            string
+	Sequence          uint64
+	ReceiptID         string
+	TxHash            string
+	MessageID         []byte
+	ExecutionKind     string
+	ContractAddress   sdk.AccAddress
+	Caller            sdk.AccAddress
+	Source            sdk.AccAddress
+	Destination       sdk.AccAddress
+	Opcode            uint32
+	QueryID           uint64
+	GasLimit          uint64
+	ResultCode        uint32
+	ExitCode          uint32
+	ExitReason        string
+	FailedPhase       string
+	GasUsed           uint64
+	StorageFeeNaet    sdkmath.Int
+	ForwardFeeNaet    sdkmath.Int
+	FeeChargedNaet    sdkmath.Int
+	ValueInNaet       sdkmath.Int
+	ValueOutNaet      sdkmath.Int
+	StateRootBefore   string
+	StateRootAfter    string
+	EmittedMessageIDs [][]byte
+	Events            []AVMEvent
+	Bounced           bool
+	BounceCreated     bool
+	RefundCreated     bool
+	Refunded          bool
+	RefundAmountNaet  sdkmath.Int
+	RefundFeeNaet     sdkmath.Int
+	RefundOfSequence  uint64
+	RefundReason      string
+	QueueStatus       string
+	RetryCount        uint32
+	RetryScheduled    bool
+	Height            uint64
+	LogicalTime       uint64
+	StateCommitted    bool
+	Error             string
+}
+
+type AVMEvent struct {
+	Type       string
+	Attributes []AVMEventAttribute
+}
+
+type AVMEventAttribute struct {
+	Key   string
+	Value string
 }
 
 type Observability struct {

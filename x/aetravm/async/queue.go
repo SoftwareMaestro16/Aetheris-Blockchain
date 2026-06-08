@@ -16,7 +16,7 @@ func (e *Executor) EnqueueTxMessages(messages []MessageEnvelope) error {
 	txIndex := e.nextTxIndex
 	e.nextTxIndex++
 	for i, msg := range messages {
-		if err := e.enqueueMessageWithOrder(msg, e.blockHeight, txIndex, uint32(i)); err != nil {
+		if _, err := e.enqueueMessageWithOrder(msg, e.blockHeight, txIndex, uint32(i)); err != nil {
 			return err
 		}
 	}
@@ -24,21 +24,26 @@ func (e *Executor) EnqueueTxMessages(messages []MessageEnvelope) error {
 }
 
 func (e *Executor) EnqueueMessage(msg MessageEnvelope) error {
+	_, err := e.enqueueSingleMessage(msg)
+	return err
+}
+
+func (e *Executor) enqueueSingleMessage(msg MessageEnvelope) (QueuedMessage, error) {
 	if err := validateMessageBatch(e.params, []MessageEnvelope{msg}); err != nil {
-		return err
+		return QueuedMessage{}, err
 	}
 	if err := e.validateQueueCapacity([]MessageEnvelope{msg}); err != nil {
-		return err
+		return QueuedMessage{}, err
 	}
 	txIndex := e.nextTxIndex
 	e.nextTxIndex++
 	return e.enqueueMessageWithOrder(msg, e.blockHeight, txIndex, 0)
 }
 
-func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txHeight, txIndex uint64, messageIndex uint32) error {
+func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txHeight, txIndex uint64, messageIndex uint32) (QueuedMessage, error) {
 	queued := buildQueuedMessage(msg, txHeight, txIndex, messageIndex, e.nextSequence)
 	if err := validateQueuedMessage(queued, e.params); err != nil {
-		return err
+		return QueuedMessage{}, err
 	}
 	e.nextSequence++
 	e.queue = append(e.queue, queued)
@@ -56,7 +61,7 @@ func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txHeight, txInde
 		return queuedMessageLess(e.outbox[sourceKey][i], e.outbox[sourceKey][j])
 	})
 	e.metrics.QueuedMessages++
-	return nil
+	return queued, nil
 }
 
 func (e *Executor) validateQueueCapacity(messages []MessageEnvelope) error {

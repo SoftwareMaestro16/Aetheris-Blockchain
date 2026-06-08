@@ -10,26 +10,15 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 	e.queue = e.queue[1:]
 	msg := queued.Envelope
 	msg.ExecutionBlockHeight = e.blockHeight
-	receipt := ExecutionReceipt{
-		Sequence:         queued.Sequence,
-		Source:           append(sdk.AccAddress(nil), msg.Source...),
-		Destination:      append(sdk.AccAddress(nil), msg.Destination...),
-		Opcode:           msg.Opcode,
-		QueryID:          msg.QueryID,
-		GasUsed:          e.params.ExecutionGasPerMessage,
-		StorageFeeNaet:   sdkmath.ZeroInt(),
-		ForwardFeeNaet:   msg.ForwardFee.Amount,
-		RetryCount:       msg.RetryCount,
-		Bounced:          msg.Bounced,
-		RefundAmountNaet: sdkmath.ZeroInt(),
-		RefundFeeNaet:    sdkmath.ZeroInt(),
-	}
+	receipt := newExecutionReceipt(queued, e.blockHeight, EmptyAVMStateRoot())
+	receipt.GasUsed = e.params.ExecutionGasPerMessage
 	e.metrics.ProcessedMessages++
 	e.metrics.GasUsed += e.params.ExecutionGasPerMessage
 
 	if msg.DeadlineBlock != 0 && e.blockHeight > msg.DeadlineBlock {
 		receipt.ResultCode = ResultExpired
 		receipt.Error = "message expired"
+		receipt.FailedPhase = FailedPhaseValidation
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
 		e.appendReceipt(&receipt)
@@ -40,14 +29,18 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 	if !ok {
 		receipt.ResultCode = ResultNoDestination
 		receipt.Error = "destination contract not found"
+		receipt.FailedPhase = FailedPhaseDispatch
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
 		e.appendReceipt(&receipt)
 		return receipt, nil
 	}
+	receipt.StateRootBefore = ContractStateRoot(contract)
+	receipt.StateRootAfter = receipt.StateRootBefore
 	if contract.NormalizedStatus() == ContractStatusFrozen {
 		receipt.ResultCode = ResultExecutionFailed
 		receipt.Error = "destination contract frozen by storage rent"
+		receipt.FailedPhase = FailedPhaseValidation
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
 		e.appendReceipt(&receipt)
@@ -58,6 +51,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 	if handler == nil {
 		receipt.ResultCode = ResultExecutionFailed
 		receipt.Error = "destination contract has no handler"
+		receipt.FailedPhase = FailedPhaseDispatch
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
 		e.appendReceipt(&receipt)
@@ -90,6 +84,10 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		e.contracts[string(frozen.Address)] = frozen
 		receipt.ResultCode = ResultExecutionFailed
 		receipt.Error = "insufficient naet for storage fee; contract frozen by storage rent"
+		receipt.FailedPhase = FailedPhaseStorage
+		receipt.StateRootAfter = ContractStateRoot(frozen)
+		receipt.StateCommitted = true
+		receipt.Events = append(receipt.Events, contractFrozenEvent(frozen, e.blockHeight))
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
 		e.appendReceipt(&receipt)
@@ -108,6 +106,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		if err := out.Validate(e.params); err != nil {
 			receipt.ResultCode = ResultLimitExceeded
 			receipt.Error = err.Error()
+			receipt.FailedPhase = FailedPhaseQueue
 			e.metrics.FailedExecutions++
 			e.handleFailure(msg, &receipt)
 			e.appendReceipt(&receipt)
@@ -118,24 +117,33 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 	if err := e.validateQueueCapacity(outgoing); err != nil {
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = err.Error()
+		receipt.FailedPhase = FailedPhaseQueue
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
 		e.appendReceipt(&receipt)
 		return receipt, nil
 	}
 	e.contracts[string(working.Address)] = working
+	receipt.StateRootAfter = ContractStateRoot(working)
+	receipt.LogicalTime = working.LogicalTime
+	receipt.StateCommitted = true
 	if len(outgoing) > 0 {
 		e.nextTxIndex++
 	}
 	for i, out := range outgoing {
-		if err := e.enqueueMessageWithOrder(out, e.blockHeight, outgoingTxIndex, uint32(i)); err != nil {
+		queuedOut, err := e.enqueueMessageWithOrder(out, e.blockHeight, outgoingTxIndex, uint32(i))
+		if err != nil {
 			receipt.ResultCode = ResultLimitExceeded
 			receipt.Error = err.Error()
+			receipt.FailedPhase = FailedPhaseQueue
 			e.metrics.FailedExecutions++
 			e.handleFailure(msg, &receipt)
 			e.appendReceipt(&receipt)
 			return receipt, nil
 		}
+		receipt.EmittedMessageIDs = append(receipt.EmittedMessageIDs, append([]byte(nil), queuedOut.MessageID...))
+		receipt.ValueOutNaet = receipt.ValueOutNaet.Add(out.Value.Amount)
+		receipt.Events = append(receipt.Events, messageQueuedEvent(queuedOut))
 	}
 	e.appendReceipt(&receipt)
 	return receipt, nil
@@ -145,6 +153,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 	if receipt.GasUsed > msg.GasLimit {
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "message gas limit exceeded"
+		receipt.FailedPhase = FailedPhaseExecution
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
 		e.appendReceipt(receipt)
@@ -157,6 +166,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		} else {
 			receipt.Error = "contract execution failed"
 		}
+		receipt.FailedPhase = FailedPhaseExecution
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
 		e.appendReceipt(receipt)
@@ -165,6 +175,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 	if len(result.NewState) > int(e.params.MaxStateSize) {
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "contract state limit exceeded"
+		receipt.FailedPhase = FailedPhaseStorage
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
 		e.appendReceipt(receipt)
@@ -173,6 +184,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 	if len(result.Outgoing) > int(e.params.MaxEmittedMessagesPerExec) {
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "emitted message limit exceeded"
+		receipt.FailedPhase = FailedPhaseQueue
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
 		e.appendReceipt(receipt)
@@ -181,6 +193,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 	if result.StorageWrites > e.params.MaxStorageWritesPerExec {
 		receipt.ResultCode = ResultLimitExceeded
 		receipt.Error = "storage write limit exceeded"
+		receipt.FailedPhase = FailedPhaseStorage
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
 		e.appendReceipt(receipt)
@@ -190,9 +203,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 }
 
 func (e *Executor) appendReceipt(receipt *ExecutionReceipt) {
-	if receipt.QueueStatus == "" {
-		receipt.QueueStatus = receiptQueueStatus(*receipt)
-	}
+	finalizeReceipt(receipt)
 	e.receipts = append(e.receipts, cloneReceipt(*receipt))
 }
 
@@ -234,9 +245,12 @@ func (e *Executor) scheduleRetry(msg MessageEnvelope, receipt *ExecutionReceipt)
 	retry.ExecutionBlockHeight = 0
 	retry.DeliverAtBlock = deliverAt
 	retry.RetryCount++
-	if err := e.EnqueueMessage(retry); err != nil {
+	queuedRetry, err := e.enqueueSingleMessage(retry)
+	if err != nil {
 		return false
 	}
+	receipt.EmittedMessageIDs = append(receipt.EmittedMessageIDs, append([]byte(nil), queuedRetry.MessageID...))
+	receipt.Events = append(receipt.Events, messageQueuedEvent(queuedRetry))
 	receipt.RetryScheduled = true
 	e.metrics.RetriedMessages++
 	return true
@@ -295,16 +309,20 @@ func (e *Executor) finalizeFailure(msg MessageEnvelope, receipt *ExecutionReceip
 		}
 		sequence := e.nextSequence
 		bounce.RefundOfSequence = receipt.Sequence
-		if err := e.EnqueueMessage(bounce); err != nil {
+		queuedBounce, err := e.enqueueSingleMessage(bounce)
+		if err != nil {
 			receipt.RefundReason = err.Error()
 			return
 		}
+		receipt.EmittedMessageIDs = append(receipt.EmittedMessageIDs, append([]byte(nil), queuedBounce.MessageID...))
+		receipt.ValueOutNaet = receipt.ValueOutNaet.Add(bounce.Value.Amount)
 		receipt.BounceCreated = true
 		e.metrics.BouncedMessages++
 		if err := MarkRefunded(receipt, refund, "bounce", sequence); err != nil {
 			receipt.RefundReason = err.Error()
 			return
 		}
+		receipt.Events = append(receipt.Events, messageQueuedEvent(queuedBounce), messageBouncedEvent(*receipt, queuedBounce))
 		return
 	}
 	if !msg.Value.Amount.IsPositive() {
@@ -319,10 +337,14 @@ func (e *Executor) finalizeFailure(msg MessageEnvelope, receipt *ExecutionReceip
 	refundMsg.RefundOfSequence = receipt.Sequence
 	if refund.Amount.IsPositive() {
 		sequence = e.nextSequence
-		if err := e.EnqueueMessage(refundMsg); err != nil {
+		queuedRefund, err := e.enqueueSingleMessage(refundMsg)
+		if err != nil {
 			receipt.RefundReason = err.Error()
 			return
 		}
+		receipt.EmittedMessageIDs = append(receipt.EmittedMessageIDs, append([]byte(nil), queuedRefund.MessageID...))
+		receipt.ValueOutNaet = receipt.ValueOutNaet.Add(refundMsg.Value.Amount)
+		receipt.Events = append(receipt.Events, messageQueuedEvent(queuedRefund))
 		receipt.RefundCreated = true
 		e.metrics.RefundMessages++
 	}

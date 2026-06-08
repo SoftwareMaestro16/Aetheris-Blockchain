@@ -73,8 +73,13 @@ func cloneDeadLetters(deadLetters []DeadLetter) []DeadLetter {
 }
 
 func cloneReceipt(receipt ExecutionReceipt) ExecutionReceipt {
+	receipt.MessageID = append([]byte(nil), receipt.MessageID...)
+	receipt.ContractAddress = append(sdk.AccAddress(nil), receipt.ContractAddress...)
+	receipt.Caller = append(sdk.AccAddress(nil), receipt.Caller...)
 	receipt.Source = append(sdk.AccAddress(nil), receipt.Source...)
 	receipt.Destination = append(sdk.AccAddress(nil), receipt.Destination...)
+	receipt.EmittedMessageIDs = cloneByteSlices(receipt.EmittedMessageIDs)
+	receipt.Events = cloneEvents(receipt.Events)
 	return receipt
 }
 
@@ -85,6 +90,31 @@ func cloneReceipts(receipts []ExecutionReceipt) []ExecutionReceipt {
 	out := make([]ExecutionReceipt, len(receipts))
 	for i, receipt := range receipts {
 		out[i] = cloneReceipt(receipt)
+	}
+	return out
+}
+
+func cloneByteSlices(values [][]byte) [][]byte {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([][]byte, len(values))
+	for i, value := range values {
+		out[i] = append([]byte(nil), value...)
+	}
+	return out
+}
+
+func cloneEvents(values []AVMEvent) []AVMEvent {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]AVMEvent, len(values))
+	for i, event := range values {
+		out[i] = AVMEvent{
+			Type:       event.Type,
+			Attributes: append([]AVMEventAttribute(nil), event.Attributes...),
+		}
 	}
 	return out
 }

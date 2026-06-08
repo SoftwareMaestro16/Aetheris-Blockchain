@@ -104,6 +104,9 @@ func ValidateExportedState(exported ExportedState) error {
 	if err := validateDeadLetters(exported.DeadLetters, exported.NextDeadLetterSequence, exported.Params); err != nil {
 		return err
 	}
+	if err := validateReceipts(exported.Receipts); err != nil {
+		return err
+	}
 	return nil
 }
 
