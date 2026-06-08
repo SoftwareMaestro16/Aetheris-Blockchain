@@ -220,7 +220,8 @@ try {
   Assert-CoinInBalance -Genesis $genesis -Addresses @($node1, $node1Raw, $node1SDK) -Denom "naet" -MinAmount 12345
 
   Assert-True ($genesis.app_state.staking.params.bond_denom -eq "naet") "exported staking bond denom mismatch"
-  $exportedDelegation = @($genesis.app_state.staking.delegations | Where-Object { $_.delegator_address -eq $node0 -and $_.validator_address -eq $validator.operator_address } | Select-Object -First 1)
+  $node1Addresses = @($node1, $node1Raw, $node1SDK)
+  $exportedDelegation = @($genesis.app_state.staking.delegations | Where-Object { $node1Addresses -contains $_.delegator_address -and $_.validator_address -eq $validator.operator_address } | Select-Object -First 1)
   Assert-True ($exportedDelegation.Count -eq 0) "exported genesis must not include rejected direct staking delegation"
   Write-Host "exported genesis preserves bank, staking params, and fees state"
 
