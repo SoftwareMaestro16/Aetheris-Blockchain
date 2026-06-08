@@ -156,8 +156,15 @@ func TestFailedSendProducesDeterministicBounceWithoutDestinationMutation(t *test
 	require.NoError(t, err)
 	require.Len(t, receipts, 2)
 	require.Equal(t, ResultNoDestination, receipts[0].ResultCode)
+	require.True(t, receipts[0].BounceCreated)
+	require.True(t, receipts[0].Refunded)
+	require.Equal(t, sdkmath.NewInt(4), receipts[0].RefundAmountNaet)
+	require.Equal(t, sdkmath.NewInt(1), receipts[0].RefundFeeNaet)
+	require.Equal(t, receipts[1].Sequence, receipts[0].RefundOfSequence)
+	require.Equal(t, sdkmath.NewInt(5), receipts[0].RefundAmountNaet.Add(receipts[0].RefundFeeNaet))
 	require.True(t, executor.Metrics().BouncedMessages > 0)
 	require.Equal(t, BounceOpcode, receipts[1].Opcode)
+	require.True(t, receipts[1].Bounced)
 	require.True(t, receipts[1].Source.Equals(missingDest))
 	require.True(t, receipts[1].Destination.Equals(source))
 
@@ -166,6 +173,44 @@ func TestFailedSendProducesDeterministicBounceWithoutDestinationMutation(t *test
 	require.Equal(t, []byte("source:bounced"), contract.State)
 	_, exists := executor.Contract(missingDest)
 	require.False(t, exists)
+}
+
+func TestUnderfundedStorageRentFreezesAsyncContractAndPreservesState(t *testing.T) {
+	params := DefaultParams()
+	params.StorageFeePerByte = sdkmath.NewInt(10)
+	params.ContractDeploymentCost = sdkmath.NewInt(1)
+	executor, err := NewExecutor(params)
+	require.NoError(t, err)
+	contract, err := executor.DeployContract(testAddr(1), testCodeHash(3), []byte("rent"), []byte("init"), sdkmath.NewInt(2))
+	require.NoError(t, err)
+	require.NoError(t, executor.RegisterHandler(contract, func(contract ContractAccount, msg MessageEnvelope) ExecutionResult {
+		return ExecutionResult{NewState: []byte("expensive-state"), ResultCode: ResultOK}
+	}))
+
+	msg := testMessage(testAddr(9), contract, 1)
+	msg.Value = naetCoin(0)
+	msg.Bounce = false
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, ResultExecutionFailed, receipts[0].ResultCode)
+	require.Contains(t, receipts[0].Error, "contract frozen by storage rent")
+
+	frozen, found := executor.Contract(contract)
+	require.True(t, found)
+	require.Equal(t, ContractStatusFrozen, frozen.Status)
+	require.Equal(t, []byte("init"), frozen.State)
+	require.True(t, frozen.BalanceNaet.IsZero())
+	require.True(t, frozen.StorageRentDebtNaet.IsPositive())
+
+	msg.QueryID = 2
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+	receipts, err = executor.ProcessBlock(2)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, ResultExecutionFailed, receipts[0].ResultCode)
+	require.Contains(t, receipts[0].Error, "frozen by storage rent")
 }
 
 func TestQueueLimitsPreventDoS(t *testing.T) {
@@ -356,7 +401,7 @@ func TestMailboxViewsAreCanonicalAndValidatedOnImport(t *testing.T) {
 
 	corrupted := exported
 	corrupted.Inbox = cloneQueuedMap(exported.Inbox)
-	corrupted.Inbox[string(destA)][0].Envelope.Destination = destB
+	corrupted.Inbox[inboxKey(destA)][0].Envelope.Destination = destB
 	_, err = ImportState(corrupted)
 	require.ErrorContains(t, err, "owner key drift")
 }
@@ -432,6 +477,11 @@ func TestFailureRollsBackRecipientStateAndRefundsWhenBounceDisabled(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, receipts, 2)
 	require.Equal(t, ResultExecutionFailed, receipts[0].ResultCode)
+	require.False(t, receipts[0].BounceCreated)
+	require.True(t, receipts[0].RefundCreated)
+	require.True(t, receipts[0].Refunded)
+	require.Equal(t, sdkmath.NewInt(2), receipts[0].RefundAmountNaet)
+	require.Equal(t, sdkmath.NewInt(1), receipts[0].RefundFeeNaet)
 	require.Equal(t, RefundOpcode, receipts[1].Opcode)
 
 	destContract, ok := executor.Contract(dest)
@@ -462,7 +512,7 @@ func TestExportImportPreservesQueueStateExactly(t *testing.T) {
 	require.Equal(t, uint32(0), exported.Queue[0].MessageIndex)
 	require.Equal(t, uint32(1), exported.Queue[1].MessageIndex)
 	require.Equal(t, exported.Queue[0].Envelope.CreatedLogicalTime, exported.Queue[0].SourceLogicalTime)
-	require.Equal(t, string(exported.Queue[0].Envelope.Destination), exported.Queue[0].DestinationKey)
+	require.Equal(t, queueAddressKey(exported.Queue[0].Envelope.Destination), exported.Queue[0].DestinationKey)
 }
 
 func TestImportStateRejectsDuplicateAndMalformedContractQueueState(t *testing.T) {
@@ -514,7 +564,7 @@ func TestImportStateRejectsDuplicateAndMalformedContractQueueState(t *testing.T)
 	t.Run("queue ordering drift", func(t *testing.T) {
 		corrupted := exported
 		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
-		corrupted.Queue[0].MessageIndex = 99
+		corrupted.Queue[0], corrupted.Queue[1] = corrupted.Queue[1], corrupted.Queue[0]
 		_, err := ImportState(corrupted)
 		require.ErrorContains(t, err, "sorted")
 	})
@@ -523,6 +573,7 @@ func TestImportStateRejectsDuplicateAndMalformedContractQueueState(t *testing.T)
 		corrupted := exported
 		corrupted.Queue = cloneQueuedMessagesForTest(exported.Queue)
 		corrupted.Queue[0].SourceLogicalTime++
+		corrupted.Queue[0].MessageID = QueueMessageID(corrupted.Queue[0])
 		_, err := ImportState(corrupted)
 		require.ErrorContains(t, err, "source logical time drift")
 	})
@@ -583,9 +634,72 @@ func TestRefundMessageFailureDoesNotCreateDoubleRefundCycle(t *testing.T) {
 	receipts, err := executor.ProcessBlock(1)
 	require.NoError(t, err)
 	require.Len(t, receipts, 1)
-	require.Equal(t, ResultNoDestination, receipts[0].ResultCode)
+	require.Equal(t, ResultRefundSuppressed, receipts[0].ResultCode)
+	require.False(t, receipts[0].Refunded)
 	require.Empty(t, executor.Queue())
 	require.Zero(t, executor.Metrics().RefundMessages)
+}
+
+func TestBouncedMessageFailureDoesNotCreateBounceLoop(t *testing.T) {
+	executor := newTestExecutor(t)
+	missingSource := testAddr(8)
+	missingDestination := testAddr(9)
+	msg := testMessage(missingSource, missingDestination, 1)
+	msg.Opcode = BounceOpcode
+	msg.Bounce = false
+	msg.Bounced = true
+	msg.Value = naetCoin(5)
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.Equal(t, ResultBounceSuppressed, receipts[0].ResultCode)
+	require.False(t, receipts[0].Refunded)
+	require.Empty(t, executor.Queue())
+	require.Zero(t, executor.Metrics().BouncedMessages)
+	require.Zero(t, executor.Metrics().RefundMessages)
+}
+
+func TestMarkRefundedRejectsDoubleRefund(t *testing.T) {
+	receipt := ExecutionReceipt{Sequence: 7}
+	refund := RefundCalculation{Amount: sdkmath.NewInt(4), Fee: sdkmath.NewInt(1)}
+	require.NoError(t, MarkRefunded(&receipt, refund, "bounce", 8))
+	require.True(t, receipt.Refunded)
+	require.ErrorContains(t, MarkRefunded(&receipt, refund, "refund", 9), "already refunded")
+}
+
+func TestExportImportPreservesBounceRefundStatus(t *testing.T) {
+	params := DefaultParams()
+	params.MaxMessagesPerBlock = 1
+	executor, err := NewExecutor(params)
+	require.NoError(t, err)
+	deployer := testAddr(1)
+	source := deployTestContract(t, executor, deployer, []byte("source"))
+	missingDest, err := DeriveContractAddress(deployer, testCodeHash(10), []byte("missing-export-bounce"))
+	require.NoError(t, err)
+	msg := testMessage(source, missingDest, 42)
+	msg.Value = naetCoin(5)
+	msg.Bounce = true
+	require.NoError(t, executor.EnqueueTxMessages([]MessageEnvelope{msg}))
+
+	receipts, err := executor.ProcessBlock(1)
+	require.NoError(t, err)
+	require.Len(t, receipts, 1)
+	require.True(t, receipts[0].BounceCreated)
+	require.True(t, receipts[0].Refunded)
+	require.Equal(t, sdkmath.NewInt(4), receipts[0].RefundAmountNaet)
+	require.Len(t, executor.Queue(), 1)
+	require.True(t, executor.Queue()[0].Envelope.Bounced)
+	require.False(t, executor.Queue()[0].Envelope.Bounce)
+	require.Equal(t, receipts[0].Sequence, executor.Queue()[0].Envelope.RefundOfSequence)
+
+	exported := executor.ExportState()
+	imported, err := ImportState(exported)
+	require.NoError(t, err)
+	require.True(t, reflect.DeepEqual(exported.Receipts, imported.ExportState().Receipts))
+	require.True(t, imported.Queue()[0].Envelope.Bounced)
+	require.Equal(t, receipts[0].Sequence, imported.Queue()[0].Envelope.RefundOfSequence)
 }
 
 func TestExecutionLimitsRejectGasEmittedMessagesAndStorageWrites(t *testing.T) {

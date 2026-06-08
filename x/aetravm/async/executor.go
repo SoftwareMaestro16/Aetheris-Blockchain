@@ -61,10 +61,13 @@ func (e *Executor) DeployContracts(deployer sdk.AccAddress, specs []DeploySpec) 
 			return nil, errors.New("contract already deployed")
 		}
 		contract := ContractAccount{
-			Address:     address,
-			CodeHash:    append([]byte(nil), spec.CodeHash...),
-			State:       append([]byte(nil), spec.State...),
-			BalanceNaet: spec.BalanceNaet.Sub(e.params.ContractDeploymentCost),
+			Address:                 address,
+			CodeHash:                append([]byte(nil), spec.CodeHash...),
+			State:                   append([]byte(nil), spec.State...),
+			BalanceNaet:             spec.BalanceNaet.Sub(e.params.ContractDeploymentCost),
+			Status:                  ContractStatusActive,
+			StorageRentDebtNaet:     sdkmath.ZeroInt(),
+			LastStorageChargeHeight: e.blockHeight,
 		}
 		if err := contract.Validate(e.params); err != nil {
 			return nil, err
@@ -89,11 +92,11 @@ func (e *Executor) Queue() []QueuedMessage {
 }
 
 func (e *Executor) Inbox(address sdk.AccAddress) []QueuedMessage {
-	return cloneQueuedMessages(e.inbox[string(address)])
+	return cloneQueuedMessages(e.inbox[inboxKey(address)])
 }
 
 func (e *Executor) Outbox(address sdk.AccAddress) []QueuedMessage {
-	return cloneQueuedMessages(e.outbox[string(address)])
+	return cloneQueuedMessages(e.outbox[outboxKey(address)])
 }
 
 func (e *Executor) DeadLetters() []DeadLetter {

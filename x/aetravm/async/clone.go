@@ -4,11 +4,14 @@ import sdk "github.com/cosmos/cosmos-sdk/types"
 
 func cloneContract(contract ContractAccount) ContractAccount {
 	return ContractAccount{
-		Address:     append(sdk.AccAddress(nil), contract.Address...),
-		CodeHash:    append([]byte(nil), contract.CodeHash...),
-		State:       append([]byte(nil), contract.State...),
-		BalanceNaet: contract.BalanceNaet,
-		LogicalTime: contract.LogicalTime,
+		Address:                 append(sdk.AccAddress(nil), contract.Address...),
+		CodeHash:                append([]byte(nil), contract.CodeHash...),
+		State:                   append([]byte(nil), contract.State...),
+		BalanceNaet:             contract.BalanceNaet,
+		LogicalTime:             contract.LogicalTime,
+		Status:                  contract.Status,
+		StorageRentDebtNaet:     contract.StorageRentDebtNaet,
+		LastStorageChargeHeight: contract.LastStorageChargeHeight,
 	}
 }
 
@@ -26,12 +29,18 @@ func cloneQueuedMessages(messages []QueuedMessage) []QueuedMessage {
 	out := make([]QueuedMessage, len(messages))
 	for i, msg := range messages {
 		out[i] = QueuedMessage{
+			MessageID:         append([]byte(nil), msg.MessageID...),
+			TxHeight:          msg.TxHeight,
 			TxIndex:           msg.TxIndex,
 			MessageIndex:      msg.MessageIndex,
 			SourceLogicalTime: msg.SourceLogicalTime,
 			DestinationKey:    msg.DestinationKey,
 			Sequence:          msg.Sequence,
 			EnqueuedBlock:     msg.EnqueuedBlock,
+			CreatedHeight:     msg.CreatedHeight,
+			ScheduledHeight:   msg.ScheduledHeight,
+			Attempts:          msg.Attempts,
+			Status:            msg.Status,
 			Envelope:          cloneMessage(msg.Envelope),
 		}
 	}

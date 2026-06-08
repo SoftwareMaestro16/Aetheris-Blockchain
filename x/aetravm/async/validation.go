@@ -22,7 +22,22 @@ func (c ContractAccount) Validate(params Params) error {
 	if c.BalanceNaet.IsNil() || c.BalanceNaet.IsNegative() {
 		return errors.New("contract naet balance must be non-negative")
 	}
+	if c.StorageRentDebtNaet.IsNil() || c.StorageRentDebtNaet.IsNegative() {
+		return errors.New("contract storage rent debt must be non-negative")
+	}
+	switch c.NormalizedStatus() {
+	case ContractStatusActive, ContractStatusFrozen:
+	default:
+		return fmt.Errorf("unsupported contract status %q", c.Status)
+	}
 	return nil
+}
+
+func (c ContractAccount) NormalizedStatus() string {
+	if c.Status == "" {
+		return ContractStatusActive
+	}
+	return c.Status
 }
 
 func (m MessageEnvelope) Validate(params Params) error {
@@ -46,6 +61,9 @@ func (m MessageEnvelope) Validate(params Params) error {
 	}
 	if m.RetryCount > m.MaxRetries {
 		return errors.New("message retry count must not exceed max retries")
+	}
+	if processingAttempts(m) > params.MaxProcessingAttempts {
+		return fmt.Errorf("message processing attempts must be <= %d", params.MaxProcessingAttempts)
 	}
 	if m.MaxRetries > params.MaxRetriesPerMessage {
 		return fmt.Errorf("message max retries must be <= %d", params.MaxRetriesPerMessage)

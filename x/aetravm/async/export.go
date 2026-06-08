@@ -84,29 +84,20 @@ func ValidateExportedState(exported ExportedState) error {
 		if queued.TxIndex >= exported.NextTxIndex {
 			return fmt.Errorf("queued message tx_index %d must be less than next_tx_index %d", queued.TxIndex, exported.NextTxIndex)
 		}
-		if queued.SourceLogicalTime != queued.Envelope.CreatedLogicalTime {
-			return fmt.Errorf("queued message %d source logical time drift", queued.Sequence)
-		}
-		if queued.DestinationKey != string(queued.Envelope.Destination) {
-			return fmt.Errorf("queued message %d destination key drift", queued.Sequence)
-		}
-		if queued.Envelope.ExecutionBlockHeight != 0 {
-			return fmt.Errorf("queued message %d execution block height must be zero", queued.Sequence)
-		}
 		if i > 0 && queuedMessageLess(queued, exported.Queue[i-1]) {
-			return fmt.Errorf("queued messages must be sorted by tx/message/logical/destination/sequence order")
+			return fmt.Errorf("queued messages must be sorted by scheduled/tx/message/logical/sequence/destination order")
 		}
-		if err := queued.Envelope.Validate(exported.Params); err != nil {
+		if err := validateQueuedMessage(queued, exported.Params); err != nil {
 			return fmt.Errorf("invalid queued message %d: %w", queued.Sequence, err)
 		}
 	}
 	if err := validateQueuedMap("inbox", exported.Inbox, exported.Params, func(msg MessageEnvelope) string {
-		return string(msg.Destination)
+		return inboxKey(msg.Destination)
 	}); err != nil {
 		return err
 	}
 	if err := validateQueuedMap("outbox", exported.Outbox, exported.Params, func(msg MessageEnvelope) string {
-		return string(msg.Source)
+		return outboxKey(msg.Source)
 	}); err != nil {
 		return err
 	}
@@ -136,15 +127,12 @@ func validateQueuedView(name, owner string, messages []QueuedMessage, params Par
 	}
 	for i, queued := range messages {
 		if ownerOf(queued.Envelope) != owner {
-			return fmt.Errorf("%s message %d owner key drift", name, queued.Sequence)
+			return fmt.Errorf("%s message %d owner key drift: owner=%q actual=%q", name, queued.Sequence, owner, ownerOf(queued.Envelope))
 		}
 		if i > 0 && queuedMessageLess(queued, messages[i-1]) {
 			return fmt.Errorf("%s messages must be sorted canonically", name)
 		}
-		if queued.Envelope.ExecutionBlockHeight != 0 {
-			return fmt.Errorf("%s message %d execution block height must be zero", name, queued.Sequence)
-		}
-		if err := queued.Envelope.Validate(params); err != nil {
+		if err := validateQueuedMessage(queued, params); err != nil {
 			return fmt.Errorf("invalid %s message %d: %w", name, queued.Sequence, err)
 		}
 	}

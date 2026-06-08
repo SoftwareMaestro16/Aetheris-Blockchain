@@ -7,16 +7,16 @@ import (
 )
 
 func (e *Executor) EnqueueTxMessages(messages []MessageEnvelope) error {
-	if len(messages) == 0 {
-		return errors.New("tx message count must be positive")
+	if err := validateMessageBatch(e.params, messages); err != nil {
+		return err
 	}
-	if len(messages) > int(e.params.MaxMessagesPerTx) {
-		return fmt.Errorf("messages per tx must be <= %d", e.params.MaxMessagesPerTx)
+	if err := e.validateQueueCapacity(messages); err != nil {
+		return err
 	}
 	txIndex := e.nextTxIndex
 	e.nextTxIndex++
 	for i, msg := range messages {
-		if err := e.enqueueMessageWithOrder(msg, txIndex, uint32(i)); err != nil {
+		if err := e.enqueueMessageWithOrder(msg, e.blockHeight, txIndex, uint32(i)); err != nil {
 			return err
 		}
 	}
@@ -24,32 +24,29 @@ func (e *Executor) EnqueueTxMessages(messages []MessageEnvelope) error {
 }
 
 func (e *Executor) EnqueueMessage(msg MessageEnvelope) error {
-	txIndex := e.nextTxIndex
-	e.nextTxIndex++
-	return e.enqueueMessageWithOrder(msg, txIndex, 0)
-}
-
-func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txIndex uint64, messageIndex uint32) error {
-	msg.ExecutionBlockHeight = 0
-	if err := msg.Validate(e.params); err != nil {
+	if err := validateMessageBatch(e.params, []MessageEnvelope{msg}); err != nil {
 		return err
 	}
-	queued := QueuedMessage{
-		TxIndex:           txIndex,
-		MessageIndex:      messageIndex,
-		SourceLogicalTime: msg.CreatedLogicalTime,
-		DestinationKey:    string(msg.Destination),
-		Sequence:          e.nextSequence,
-		EnqueuedBlock:     e.blockHeight,
-		Envelope:          cloneMessage(msg),
+	if err := e.validateQueueCapacity([]MessageEnvelope{msg}); err != nil {
+		return err
+	}
+	txIndex := e.nextTxIndex
+	e.nextTxIndex++
+	return e.enqueueMessageWithOrder(msg, e.blockHeight, txIndex, 0)
+}
+
+func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txHeight, txIndex uint64, messageIndex uint32) error {
+	queued := buildQueuedMessage(msg, txHeight, txIndex, messageIndex, e.nextSequence)
+	if err := validateQueuedMessage(queued, e.params); err != nil {
+		return err
 	}
 	e.nextSequence++
 	e.queue = append(e.queue, queued)
 	sort.SliceStable(e.queue, func(i, j int) bool {
 		return queuedMessageLess(e.queue[i], e.queue[j])
 	})
-	destinationKey := string(msg.Destination)
-	sourceKey := string(msg.Source)
+	destinationKey := inboxKey(queued.Envelope.Destination)
+	sourceKey := outboxKey(queued.Envelope.Source)
 	e.inbox[destinationKey] = append(e.inbox[destinationKey], queued)
 	e.outbox[sourceKey] = append(e.outbox[sourceKey], queued)
 	sort.SliceStable(e.inbox[destinationKey], func(i, j int) bool {
@@ -59,6 +56,21 @@ func (e *Executor) enqueueMessageWithOrder(msg MessageEnvelope, txIndex uint64, 
 		return queuedMessageLess(e.outbox[sourceKey][i], e.outbox[sourceKey][j])
 	})
 	e.metrics.QueuedMessages++
+	return nil
+}
+
+func (e *Executor) validateQueueCapacity(messages []MessageEnvelope) error {
+	counts := make(map[string]uint32)
+	for _, queued := range e.queue {
+		counts[queueAddressKey(queued.Envelope.Destination)]++
+	}
+	for _, msg := range messages {
+		key := queueAddressKey(msg.Destination)
+		counts[key]++
+		if counts[key] > e.params.MaxQueuedMessagesPerContract {
+			return fmt.Errorf("queued messages per contract must be <= %d", e.params.MaxQueuedMessagesPerContract)
+		}
+	}
 	return nil
 }
 
@@ -100,27 +112,4 @@ func (e *Executor) updateQueueLag() {
 		return
 	}
 	e.metrics.QueueLag = 0
-}
-
-func queuedMessageLess(a, b QueuedMessage) bool {
-	if readyBlock(a) != readyBlock(b) {
-		return readyBlock(a) < readyBlock(b)
-	}
-	if a.TxIndex != b.TxIndex {
-		return a.TxIndex < b.TxIndex
-	}
-	if a.MessageIndex != b.MessageIndex {
-		return a.MessageIndex < b.MessageIndex
-	}
-	if a.SourceLogicalTime != b.SourceLogicalTime {
-		return a.SourceLogicalTime < b.SourceLogicalTime
-	}
-	if a.DestinationKey != b.DestinationKey {
-		return a.DestinationKey < b.DestinationKey
-	}
-	return a.Sequence < b.Sequence
-}
-
-func readyBlock(msg QueuedMessage) uint64 {
-	return msg.Envelope.DeliverAtBlock
 }

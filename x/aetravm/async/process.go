@@ -3,8 +3,6 @@ package async
 import (
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	appparams "github.com/sovereign-l1/l1/app/params"
 )
 
 func (e *Executor) processNext() (ExecutionReceipt, error) {
@@ -13,15 +11,18 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 	msg := queued.Envelope
 	msg.ExecutionBlockHeight = e.blockHeight
 	receipt := ExecutionReceipt{
-		Sequence:       queued.Sequence,
-		Source:         append(sdk.AccAddress(nil), msg.Source...),
-		Destination:    append(sdk.AccAddress(nil), msg.Destination...),
-		Opcode:         msg.Opcode,
-		QueryID:        msg.QueryID,
-		GasUsed:        e.params.ExecutionGasPerMessage,
-		StorageFeeNaet: sdkmath.ZeroInt(),
-		ForwardFeeNaet: msg.ForwardFee.Amount,
-		RetryCount:     msg.RetryCount,
+		Sequence:         queued.Sequence,
+		Source:           append(sdk.AccAddress(nil), msg.Source...),
+		Destination:      append(sdk.AccAddress(nil), msg.Destination...),
+		Opcode:           msg.Opcode,
+		QueryID:          msg.QueryID,
+		GasUsed:          e.params.ExecutionGasPerMessage,
+		StorageFeeNaet:   sdkmath.ZeroInt(),
+		ForwardFeeNaet:   msg.ForwardFee.Amount,
+		RetryCount:       msg.RetryCount,
+		Bounced:          msg.Bounced,
+		RefundAmountNaet: sdkmath.ZeroInt(),
+		RefundFeeNaet:    sdkmath.ZeroInt(),
 	}
 	e.metrics.ProcessedMessages++
 	e.metrics.GasUsed += e.params.ExecutionGasPerMessage
@@ -31,7 +32,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.Error = "message expired"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
-		e.receipts = append(e.receipts, receipt)
+		e.appendReceipt(&receipt)
 		return receipt, nil
 	}
 
@@ -41,7 +42,15 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.Error = "destination contract not found"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
-		e.receipts = append(e.receipts, receipt)
+		e.appendReceipt(&receipt)
+		return receipt, nil
+	}
+	if contract.NormalizedStatus() == ContractStatusFrozen {
+		receipt.ResultCode = ResultExecutionFailed
+		receipt.Error = "destination contract frozen by storage rent"
+		e.metrics.FailedExecutions++
+		e.handleFailure(msg, &receipt)
+		e.appendReceipt(&receipt)
 		return receipt, nil
 	}
 
@@ -51,7 +60,7 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 		receipt.Error = "destination contract has no handler"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
-		e.receipts = append(e.receipts, receipt)
+		e.appendReceipt(&receipt)
 		return receipt, nil
 	}
 
@@ -68,15 +77,27 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 
 	working.State = append([]byte(nil), result.NewState...)
 	receipt.StorageFeeNaet = e.params.StorageFeePerByte.MulRaw(int64(len(working.State)))
-	working.BalanceNaet = working.BalanceNaet.Sub(receipt.StorageFeeNaet)
-	if working.BalanceNaet.IsNegative() {
+	if working.BalanceNaet.LT(receipt.StorageFeeNaet) {
+		unpaid := receipt.StorageFeeNaet.Sub(working.BalanceNaet)
+		frozen := cloneContract(contract)
+		frozen.BalanceNaet = sdkmath.ZeroInt()
+		if frozen.StorageRentDebtNaet.IsNil() {
+			frozen.StorageRentDebtNaet = sdkmath.ZeroInt()
+		}
+		frozen.StorageRentDebtNaet = frozen.StorageRentDebtNaet.Add(unpaid)
+		frozen.Status = ContractStatusFrozen
+		frozen.LastStorageChargeHeight = e.blockHeight
+		e.contracts[string(frozen.Address)] = frozen
 		receipt.ResultCode = ResultExecutionFailed
-		receipt.Error = "insufficient naet for storage fee"
+		receipt.Error = "insufficient naet for storage fee; contract frozen by storage rent"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, &receipt)
-		e.receipts = append(e.receipts, receipt)
+		e.appendReceipt(&receipt)
 		return receipt, nil
 	}
+	working.BalanceNaet = working.BalanceNaet.Sub(receipt.StorageFeeNaet)
+	working.Status = ContractStatusActive
+	working.LastStorageChargeHeight = e.blockHeight
 	outgoing := make([]MessageEnvelope, len(result.Outgoing))
 	outgoingTxIndex := e.nextTxIndex
 	for i, out := range result.Outgoing {
@@ -89,26 +110,34 @@ func (e *Executor) processNext() (ExecutionReceipt, error) {
 			receipt.Error = err.Error()
 			e.metrics.FailedExecutions++
 			e.handleFailure(msg, &receipt)
-			e.receipts = append(e.receipts, receipt)
+			e.appendReceipt(&receipt)
 			return receipt, nil
 		}
 		outgoing[i] = out
+	}
+	if err := e.validateQueueCapacity(outgoing); err != nil {
+		receipt.ResultCode = ResultLimitExceeded
+		receipt.Error = err.Error()
+		e.metrics.FailedExecutions++
+		e.handleFailure(msg, &receipt)
+		e.appendReceipt(&receipt)
+		return receipt, nil
 	}
 	e.contracts[string(working.Address)] = working
 	if len(outgoing) > 0 {
 		e.nextTxIndex++
 	}
 	for i, out := range outgoing {
-		if err := e.enqueueMessageWithOrder(out, outgoingTxIndex, uint32(i)); err != nil {
+		if err := e.enqueueMessageWithOrder(out, e.blockHeight, outgoingTxIndex, uint32(i)); err != nil {
 			receipt.ResultCode = ResultLimitExceeded
 			receipt.Error = err.Error()
 			e.metrics.FailedExecutions++
 			e.handleFailure(msg, &receipt)
-			e.receipts = append(e.receipts, receipt)
+			e.appendReceipt(&receipt)
 			return receipt, nil
 		}
 	}
-	e.receipts = append(e.receipts, receipt)
+	e.appendReceipt(&receipt)
 	return receipt, nil
 }
 
@@ -118,7 +147,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.Error = "message gas limit exceeded"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
-		e.receipts = append(e.receipts, *receipt)
+		e.appendReceipt(receipt)
 		return false
 	}
 	receipt.ResultCode = result.ResultCode
@@ -130,7 +159,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		}
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
-		e.receipts = append(e.receipts, *receipt)
+		e.appendReceipt(receipt)
 		return false
 	}
 	if len(result.NewState) > int(e.params.MaxStateSize) {
@@ -138,7 +167,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.Error = "contract state limit exceeded"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
-		e.receipts = append(e.receipts, *receipt)
+		e.appendReceipt(receipt)
 		return false
 	}
 	if len(result.Outgoing) > int(e.params.MaxEmittedMessagesPerExec) {
@@ -146,7 +175,7 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.Error = "emitted message limit exceeded"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
-		e.receipts = append(e.receipts, *receipt)
+		e.appendReceipt(receipt)
 		return false
 	}
 	if result.StorageWrites > e.params.MaxStorageWritesPerExec {
@@ -154,10 +183,17 @@ func (e *Executor) acceptExecutionResult(receipt *ExecutionReceipt, msg MessageE
 		receipt.Error = "storage write limit exceeded"
 		e.metrics.FailedExecutions++
 		e.handleFailure(msg, receipt)
-		e.receipts = append(e.receipts, *receipt)
+		e.appendReceipt(receipt)
 		return false
 	}
 	return true
+}
+
+func (e *Executor) appendReceipt(receipt *ExecutionReceipt) {
+	if receipt.QueueStatus == "" {
+		receipt.QueueStatus = receiptQueueStatus(*receipt)
+	}
+	e.receipts = append(e.receipts, cloneReceipt(*receipt))
 }
 
 func (e *Executor) handleFailure(msg MessageEnvelope, receipt *ExecutionReceipt) {
@@ -167,7 +203,7 @@ func (e *Executor) handleFailure(msg MessageEnvelope, receipt *ExecutionReceipt)
 	if msg.MaxRetries > 0 || msg.RetryCount > 0 {
 		e.recordDeadLetter(msg, *receipt)
 	}
-	e.finalizeFailure(msg, *receipt)
+	e.finalizeFailure(msg, receipt)
 }
 
 func (e *Executor) scheduleRetry(msg MessageEnvelope, receipt *ExecutionReceipt) bool {
@@ -240,49 +276,68 @@ func safeAddBlock(height, delay uint64) (uint64, bool) {
 	return height + delay, false
 }
 
-func (e *Executor) finalizeFailure(msg MessageEnvelope, receipt ExecutionReceipt) {
-	if msg.Bounce && !msg.Bounced {
-		bounce := MessageEnvelope{
-			Source:             append(sdk.AccAddress(nil), msg.Destination...),
-			Destination:        append(sdk.AccAddress(nil), msg.Source...),
-			Value:              sdk.NewCoin(appparams.BaseDenom, msg.Value.Amount),
-			Opcode:             BounceOpcode,
-			QueryID:            msg.QueryID,
-			Body:               append([]byte(nil), msg.Body...),
-			Bounce:             false,
-			Bounced:            true,
-			CreatedLogicalTime: msg.CreatedLogicalTime,
-			DeadlineBlock:      msg.DeadlineBlock,
-			GasLimit:           msg.GasLimit,
-			ForwardFee:         sdk.NewCoin(appparams.BaseDenom, e.params.ForwardingFee),
-			Depth:              msg.Depth + 1,
+func (e *Executor) finalizeFailure(msg MessageEnvelope, receipt *ExecutionReceipt) {
+	if msg.Bounced || msg.Opcode == RefundOpcode || msg.RefundOfSequence != 0 {
+		receipt.ResultCode = resultCodeWithSuppressedRefund(receipt.ResultCode, msg)
+		receipt.RefundReason = "refund suppressed for bounced/refund message"
+		return
+	}
+	refund, err := CalculateRefund(msg, *receipt)
+	if err != nil {
+		receipt.RefundReason = err.Error()
+		return
+	}
+	if msg.Bounce {
+		bounce, err := BuildBounceMessage(msg, refund, e.params.ForwardingFee)
+		if err != nil {
+			receipt.RefundReason = err.Error()
+			return
 		}
-		if err := e.EnqueueMessage(bounce); err == nil {
-			e.metrics.BouncedMessages++
+		sequence := e.nextSequence
+		bounce.RefundOfSequence = receipt.Sequence
+		if err := e.EnqueueMessage(bounce); err != nil {
+			receipt.RefundReason = err.Error()
+			return
+		}
+		receipt.BounceCreated = true
+		e.metrics.BouncedMessages++
+		if err := MarkRefunded(receipt, refund, "bounce", sequence); err != nil {
+			receipt.RefundReason = err.Error()
+			return
 		}
 		return
 	}
-	if msg.Bounced || msg.Opcode == RefundOpcode {
+	if !msg.Value.Amount.IsPositive() {
 		return
 	}
-	if msg.Value.Amount.IsPositive() {
-		refund := MessageEnvelope{
-			Source:             append(sdk.AccAddress(nil), msg.Destination...),
-			Destination:        append(sdk.AccAddress(nil), msg.Source...),
-			Value:              sdk.NewCoin(appparams.BaseDenom, msg.Value.Amount),
-			Opcode:             RefundOpcode,
-			QueryID:            msg.QueryID,
-			Body:               []byte("refund"),
-			Bounce:             false,
-			Bounced:            false,
-			CreatedLogicalTime: msg.CreatedLogicalTime,
-			DeadlineBlock:      0,
-			GasLimit:           msg.GasLimit,
-			ForwardFee:         sdk.NewCoin(appparams.BaseDenom, e.params.ForwardingFee),
-			Depth:              msg.Depth + 1,
-		}
-		if err := e.EnqueueMessage(refund); err == nil {
-			e.metrics.RefundMessages++
-		}
+	refundMsg, err := BuildRefundMessage(msg, refund, e.params.ForwardingFee)
+	if err != nil {
+		receipt.RefundReason = err.Error()
+		return
 	}
+	var sequence uint64
+	refundMsg.RefundOfSequence = receipt.Sequence
+	if refund.Amount.IsPositive() {
+		sequence = e.nextSequence
+		if err := e.EnqueueMessage(refundMsg); err != nil {
+			receipt.RefundReason = err.Error()
+			return
+		}
+		receipt.RefundCreated = true
+		e.metrics.RefundMessages++
+	}
+	if err := MarkRefunded(receipt, refund, "refund", sequence); err != nil {
+		receipt.RefundReason = err.Error()
+		return
+	}
+}
+
+func resultCodeWithSuppressedRefund(resultCode uint32, msg MessageEnvelope) uint32 {
+	if msg.Bounced {
+		return ResultBounceSuppressed
+	}
+	if msg.Opcode == RefundOpcode || msg.RefundOfSequence != 0 {
+		return ResultRefundSuppressed
+	}
+	return resultCode
 }

@@ -61,9 +61,12 @@ func TestBounceOnFailureExpiredMessageAndRefundNoDoubleSpend(t *testing.T) {
 		require.NoError(t, EnqueueMessage(executor, async.DefaultParams(), msg))
 		receipts, err := DeliverMessages(executor, 2)
 		require.NoError(t, err)
-		require.Len(t, receipts, 2)
+		require.Len(t, receipts, 1)
 		require.Equal(t, async.ResultExpired, receipts[0].ResultCode)
-		require.Equal(t, async.RefundOpcode, receipts[1].Opcode)
+		require.True(t, receipts[0].Refunded)
+		require.False(t, receipts[0].RefundCreated)
+		require.True(t, receipts[0].RefundAmountNaet.IsZero())
+		require.True(t, receipts[0].RefundFeeNaet.Equal(sdkmath.NewInt(1)))
 	})
 
 	t.Run("refund no double spend", func(t *testing.T) {
@@ -74,7 +77,7 @@ func TestBounceOnFailureExpiredMessageAndRefundNoDoubleSpend(t *testing.T) {
 		receipts, err := DeliverMessages(executor, 1)
 		require.NoError(t, err)
 		require.Len(t, receipts, 1)
-		require.Equal(t, async.ResultNoDestination, receipts[0].ResultCode)
+		require.Equal(t, async.ResultRefundSuppressed, receipts[0].ResultCode)
 		require.Empty(t, executor.Queue())
 		require.Zero(t, executor.Metrics().RefundMessages)
 	})

@@ -9,23 +9,25 @@ import (
 
 func DefaultParams() Params {
 	return Params{
-		MaxMessagesPerTx:           32,
-		MaxMessagesPerBlock:        128,
-		MaxRecursionDepth:          8,
-		MaxBodySize:                4096,
-		MaxStateSize:               64 * 1024,
-		MaxContractDeploysPerTx:    4,
-		MaxContractDeploysPerBlock: 16,
-		MaxEmittedMessagesPerExec:  16,
-		MaxStorageWritesPerExec:    64,
-		MaxRetriesPerMessage:       3,
-		DefaultRetryDelayBlocks:    1,
-		MaxRetryDelayBlocks:        64,
-		MaxDeadLetters:             1024,
-		ExecutionGasPerMessage:     10_000,
-		StorageFeePerByte:          sdkmath.NewInt(1),
-		ForwardingFee:              sdkmath.NewInt(1),
-		ContractDeploymentCost:     sdkmath.NewInt(1_000),
+		MaxMessagesPerTx:             32,
+		MaxMessagesPerBlock:          128,
+		MaxQueuedMessagesPerContract: 1024,
+		MaxProcessingAttempts:        4,
+		MaxRecursionDepth:            8,
+		MaxBodySize:                  4096,
+		MaxStateSize:                 64 * 1024,
+		MaxContractDeploysPerTx:      4,
+		MaxContractDeploysPerBlock:   16,
+		MaxEmittedMessagesPerExec:    16,
+		MaxStorageWritesPerExec:      64,
+		MaxRetriesPerMessage:         3,
+		DefaultRetryDelayBlocks:      1,
+		MaxRetryDelayBlocks:          64,
+		MaxDeadLetters:               1024,
+		ExecutionGasPerMessage:       10_000,
+		StorageFeePerByte:            sdkmath.NewInt(1),
+		ForwardingFee:                sdkmath.NewInt(1),
+		ContractDeploymentCost:       sdkmath.NewInt(1_000),
 	}
 }
 
@@ -35,6 +37,12 @@ func (p Params) Validate() error {
 	}
 	if p.MaxMessagesPerBlock == 0 {
 		return errors.New("max messages per block must be positive")
+	}
+	if p.MaxQueuedMessagesPerContract == 0 {
+		return errors.New("max queued messages per contract must be positive")
+	}
+	if p.MaxProcessingAttempts == 0 {
+		return errors.New("max processing attempts must be positive")
 	}
 	if p.MaxRecursionDepth == 0 {
 		return errors.New("max recursion depth must be positive")
