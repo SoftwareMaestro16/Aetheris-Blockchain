@@ -92,6 +92,7 @@ function Set-LocalnetGeneratedPorts {
     $rpcLaddr = if ($EnableRPC) { "`"tcp://0.0.0.0:$($p.RPC)`"" } else { "`"`"" }
     $config = Set-TomlSectionValue -Content $config -Section "rpc" -Key "laddr" -Value $rpcLaddr
     $config = Set-TomlSectionValue -Content $config -Section "rpc" -Key "pprof_laddr" -Value "`"localhost:$($p.Pprof)`""
+    $config = Set-TomlSectionValue -Content $config -Section "tx_index" -Key "indexer" -Value "`"kv`""
     $config = $config -replace '(?m)^log_level = ".*"', "log_level = `"$LogLevel`""
     Set-Content -LiteralPath $configToml -Value $config
 

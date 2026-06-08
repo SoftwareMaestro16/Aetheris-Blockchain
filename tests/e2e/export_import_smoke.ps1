@@ -216,7 +216,8 @@ try {
   Assert-True (@($genesis.app_state.fees.params.allowed_fee_denoms).Count -eq 1) "exported fees allowed denoms count mismatch"
   Assert-True (@($genesis.app_state.fees.params.allowed_fee_denoms) -contains "naet") "exported fees params missing naet"
 
-  $exportedDenom = @($genesis.app_state.contract-assets.denoms | Where-Object { $_.denom -eq $factoryDenom } | Select-Object -First 1)
+  $contractAssetsState = $genesis.app_state.PSObject.Properties["contract-assets"].Value
+  $exportedDenom = @($contractAssetsState.denoms | Where-Object { $_.denom -eq $factoryDenom } | Select-Object -First 1)
   Assert-True ($exportedDenom.Count -eq 1) "exported contract-assets denom missing"
   Assert-True ($exportedDenom[0].admin -eq $node0) "exported contract-assets admin mismatch"
 
