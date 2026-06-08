@@ -109,7 +109,12 @@ function Get-LocalnetKeyAddress {
   if ($LASTEXITCODE -ne 0) {
     throw "failed to read key $KeyName from $NodeHome`n$($output -join "`n")"
   }
-  return (($output | Select-Object -Last 1).ToString().Trim())
+  $address = (($output | Select-Object -Last 1).ToString().Trim())
+  $converted = Invoke-LocalnetCliJson -Binary $Binary -Arguments @("address", "convert", $address)
+  if (-not $converted.user_friendly) {
+    throw "failed to convert key $KeyName address $address to AE user-facing format"
+  }
+  return [string]$converted.user_friendly
 }
 
 function Convert-LocalnetCoinParts {
@@ -157,6 +162,28 @@ function Wait-LocalnetBankBalanceIncrease {
     }
     return $null
   }
+}
+
+function Set-LocalnetBankSendMessageAddresses {
+  param(
+    [object]$UnsignedTx,
+    [string]$FromAddress,
+    [string]$ToAddress
+  )
+
+  $body = Get-LocalnetObjectProperty -InputObject $UnsignedTx -Name "body"
+  $messages = Get-LocalnetObjectProperty -InputObject $body -Name "messages"
+  $messageList = @($messages)
+  if ($messageList.Count -ne 1) {
+    throw "bank send unsigned tx must contain exactly one message"
+  }
+  $message = $messageList[0]
+  if (-not $message.PSObject.Properties["from_address"] -or -not $message.PSObject.Properties["to_address"]) {
+    throw "bank send unsigned tx missing from_address/to_address fields"
+  }
+  $message.from_address = $FromAddress
+  $message.to_address = $ToAddress
+  return $UnsignedTx
 }
 
 function Send-LocalnetDelegateTx {
@@ -229,17 +256,50 @@ function Send-LocalnetBankTx {
   $node = "tcp://127.0.0.1:$RPCPort"
   $coin = Convert-LocalnetCoinParts -Coin $Amount
   $balanceBefore = Get-LocalnetBankBalance -Binary $Binary -Address $ToAddress -Denom $coin.Denom -RPCPort $RPCPort
-  $tx = Invoke-LocalnetCliJson -Binary $Binary -Arguments @(
+  $fromAddress = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $FromHome -KeyName $FromKey
+  $unsigned = Invoke-LocalnetCliJson -Binary $Binary -Arguments @(
     "tx", "bank", "send", $FromKey, $ToAddress, $Amount,
     "--home", $FromHome,
     "--chain-id", $ChainId,
     "--keyring-backend", "test",
     "--fees", $Fees,
-    "--yes",
+    "--generate-only",
+    "--output", "json"
+  )
+  $unsigned = Set-LocalnetBankSendMessageAddresses -UnsignedTx $unsigned -FromAddress $fromAddress -ToAddress $ToAddress
+
+  $workDir = Join-Path $FromHome "tmp-localnet-tx"
+  New-Item -ItemType Directory -Force -Path $workDir | Out-Null
+  $unsignedPath = Join-Path $workDir "bank-send-unsigned.json"
+  $signedPath = Join-Path $workDir "bank-send-signed.json"
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($unsignedPath, ($unsigned | ConvertTo-Json -Depth 100), $utf8NoBom)
+
+  $signArgs = @(
+    "tx", "sign", $unsignedPath,
+    "--from", $FromKey,
+    "--home", $FromHome,
+    "--chain-id", $ChainId,
+    "--keyring-backend", "test",
+    "--node", $node,
+    "--output", "json",
+    "--output-document", $signedPath
+  )
+  Invoke-ExternalChecked -FilePath $Binary -Arguments $signArgs -FailureMessage "aetrad tx sign failed" | Out-Null
+  if (-not (Test-Path -LiteralPath $signedPath)) {
+    throw "aetrad tx sign did not create signed tx file: $signedPath"
+  }
+
+  $tx = Invoke-LocalnetCliJson -Binary $Binary -Arguments @(
+    "tx", "broadcast", $signedPath,
     "--broadcast-mode", "sync",
     "--node", $node,
     "--output", "json"
   )
+  $broadcastCode = Get-LocalnetTxCode -Tx $tx
+  if ($broadcastCode -ne 0) {
+    throw "bank send broadcast failed with code $broadcastCode`: $(Get-LocalnetTxLog -Tx $tx)"
+  }
 
   $txHash = $tx.txhash
   if (-not $txHash -and $tx.tx_response) {
