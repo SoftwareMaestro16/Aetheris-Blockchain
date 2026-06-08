@@ -124,6 +124,8 @@ func TestPrototypeCommandsAreRegistered(t *testing.T) {
 		{"balances"},
 		{"validators"},
 		{"system-addresses"},
+		{"invariants", "list"},
+		{"invariants", "check"},
 		{"query", "block"},
 		{"query", "bank", "balance"},
 		{"query", "staking", "validators"},

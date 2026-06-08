@@ -153,6 +153,9 @@ type L1App struct {
 	// simulation manager
 	sm *module.SimulationManager
 
+	// invariant registry
+	invariantRegistry *AppInvariantRouteRegistry
+
 	// module configurator
 	configurator module.Configurator
 }

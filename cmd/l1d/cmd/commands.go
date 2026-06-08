@@ -120,6 +120,7 @@ func initRootCmd(
 		NewBalancesCmd(),
 		NewValidatorsCmd(),
 		NewSystemAddressesCmd(),
+		NewInvariantsCmd(),
 		debugCmd,
 		confixcmd.ConfigCommand(),
 		pruning.Cmd(newApp, l1app.DefaultNodeHome),

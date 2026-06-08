@@ -97,6 +97,7 @@ func NewL1App(
 
 	txConfig = app.initKeepers(appCodec, legacyAmino, logger, appOpts, keys)
 	app.initModules(appCodec, legacyAmino, interfaceRegistry, txConfig)
+	app.registerCriticalInvariantRoutes()
 	if err := app.ValidateAetraCoreWiringGate(); err != nil {
 		panic(err)
 	}
