@@ -183,10 +183,10 @@ try {
   Write-Host "bank send flow committed"
 
   $validator = Get-LocalnetBondedValidator -Binary $Binary -RPCPort $node0Ports.RPC
-  Send-LocalnetDelegateTx -Binary $Binary -FromHome $node0Home -FromKey "node0" -ValidatorAddress $validator.operator_address -Amount "5000000naet" -Fees $Fees -ChainId $ChainId -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
-  $delegation = Get-LocalnetDelegation -Binary $Binary -DelegatorAddress $node0 -ValidatorAddress $validator.operator_address -RPCPort $node0Ports.RPC
-  Assert-True ([int64]$delegation.delegation_response.balance.amount -eq 5000000) "staking delegation query did not preserve expected amount"
-  Write-Host "staking delegate flow committed"
+  $delegateTx = Invoke-LocalnetCliJson -Binary $Binary -Arguments (New-SignedTxArgs -ActionArgs @("tx", "staking", "delegate", $validator.operator_address, "5000000naet") -FromHome $node0Home)
+  Assert-True ((Get-LocalnetTxCode -Tx $delegateTx) -ne 0) "direct staking delegation must be rejected"
+  Assert-True ((Get-LocalnetTxLog -Tx $delegateTx) -match "direct user delegation to validators is disabled") "direct staking delegation rejection log mismatch"
+  Write-Host "direct staking delegate rejection verified"
 
   Send-SignedTx -ActionArgs @("tx", "contract-assets", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
   Send-SignedTx -ActionArgs @("tx", "contract-assets", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
@@ -237,9 +237,8 @@ try {
 
   Assert-True ($genesis.app_state.staking.params.bond_denom -eq "naet") "exported staking bond denom mismatch"
   $exportedDelegation = @($genesis.app_state.staking.delegations | Where-Object { $_.delegator_address -eq $node0 -and $_.validator_address -eq $validator.operator_address } | Select-Object -First 1)
-  Assert-True ($exportedDelegation.Count -eq 1) "exported staking delegation missing"
-  Assert-True ($exportedDelegation[0].shares -match '^5000000(\.0+)?$') "exported staking delegation shares mismatch"
-  Write-Host "exported genesis preserves bank, staking, fees, contract-assets, and DEX state"
+  Assert-True ($exportedDelegation.Count -eq 0) "exported genesis must not include rejected direct staking delegation"
+  Write-Host "exported genesis preserves bank, staking params, fees, contract-assets, and DEX state"
 
   $corruptPath = Join-Path $ExportDir "node0-export-corrupt.json"
   $genesis.app_state.dex.pools[0].reserve0 = "not-an-int"
