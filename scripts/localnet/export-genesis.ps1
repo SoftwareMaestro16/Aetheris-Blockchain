@@ -43,12 +43,24 @@ $nodeHome = Join-Path $node.FullName "aetrad"
 $exportPath = Join-Path $ExportDir "$($node.Name)-export.json"
 $stderrPath = Join-Path $ExportDir "$($node.Name)-export.err.log"
 
-$exportOutput = & $Binary export --home $nodeHome 2> $stderrPath
+$exportOutput = & $Binary export --home $nodeHome --log_level error --log_no_color 2> $stderrPath
 if ($LASTEXITCODE -ne 0) {
   $err = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { "" }
   throw "genesis export failed for $($node.Name): $err"
 }
-[System.IO.File]::WriteAllText($exportPath, ($exportOutput -join "`n"), (New-Object System.Text.UTF8Encoding $false))
+$exportText = ($exportOutput -join "`n")
+$firstJson = $exportText.IndexOf("{")
+$lastJson = $exportText.LastIndexOf("}")
+if ($firstJson -lt 0 -or $lastJson -lt $firstJson) {
+  throw "genesis export did not contain a JSON object for $($node.Name)"
+}
+$exportJson = $exportText.Substring($firstJson, $lastJson - $firstJson + 1)
+try {
+  $exportJson | ConvertFrom-Json | Out-Null
+} catch {
+  throw "genesis export produced invalid JSON for $($node.Name): $($_.Exception.Message)"
+}
+[System.IO.File]::WriteAllText($exportPath, $exportJson, (New-Object System.Text.UTF8Encoding $false))
 
 & $Binary genesis validate-genesis $exportPath --home $nodeHome
 if ($LASTEXITCODE -ne 0) {
