@@ -23,7 +23,14 @@ func (app *L1App) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
 }
 
 func (app *L1App) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {
-	return lifecycle.FinalizeBlock(req, app.BaseApp.FinalizeBlock)
+	res, err := lifecycle.FinalizeBlock(req, app.BaseApp.FinalizeBlock)
+	if err != nil {
+		return res, err
+	}
+	if err := app.applyElectionValidatorUpdates(req, res); err != nil {
+		return res, err
+	}
+	return res, nil
 }
 
 func (a *L1App) Configurator() module.Configurator {
