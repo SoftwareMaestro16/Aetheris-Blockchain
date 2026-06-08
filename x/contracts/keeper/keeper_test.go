@@ -47,7 +47,8 @@ func TestContractsKeeperTypedErrorsAndMsgQuerySurface(t *testing.T) {
 	_, err = keeper.StoreCode(types.MsgStoreCode{Authority: authority, CodeHash: codeHash, CodeBytes: 0})
 	require.ErrorContains(t, err, types.ErrInvalidBytecode)
 
-	contractAddress, _, err := types.DeriveContractAddress(authority, codeHash, "query")
+	stateInit := types.NewStateInit(authority, codeHash, nil, "query", 0)
+	contractAddress, _, err := types.DeriveContractAddressFromStateInit("", "", authority, stateInit, types.DefaultParams())
 	require.NoError(t, err)
 	query, err := keeper.Contract(types.QueryContractRequest{ContractAddress: contractAddress})
 	require.NoError(t, err)
@@ -370,11 +371,14 @@ func TestNativeStakingHookChargesStorageRentBeforeInjection(t *testing.T) {
 
 	query, err := k.Contract(types.QueryContractRequest{ContractAddress: official.ContractAddressUser})
 	require.NoError(t, err)
-	require.Equal(t, types.ContractStatusFrozen, query.Contract.Status)
+	require.Equal(t, types.ContractStatusFrozenLimited, query.Contract.Status)
 	require.Zero(t, query.Contract.Balance)
 	require.Equal(t, []byte("init"), query.Contract.Data)
 	require.NotZero(t, query.Contract.StorageRentDebt)
 	require.Empty(t, k.ExportGenesis().State.NativeStakingInjects)
+
+	_, err = k.ExecuteContract(types.MsgExecuteContract{Sender: wallet, ContractAddress: official.ContractAddressUser, Msg: []byte("blocked"), Height: 13})
+	require.ErrorContains(t, err, types.ErrAccountFrozen)
 }
 
 func TestInternalMessagesAndExportImportAreDeterministic(t *testing.T) {
@@ -469,6 +473,84 @@ func TestContractsTypedMsgAndQueryServiceSurface(t *testing.T) {
 	require.NoError(t, k.ContractStorage(types.QueryContractStorageRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}}))
 	require.NoError(t, k.ContractReceipts(types.QueryContractReceiptsRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}}))
 	require.NoError(t, k.ContractEvents(types.QueryContractEventsRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}}))
+}
+
+func TestStateInitCounterfactualDeployVirtualQueryAndExternalAttachment(t *testing.T) {
+	wallet := aeAddress("11")
+	k := NewKeeperWithAccountStatus(testAccountStatus{wallet: accountStatusActive})
+	codeHash := storeContractCode(t, &k, wallet)
+	stateInit := types.NewStateInit(wallet, codeHash, []byte("init"), "counterfactual", 1_000)
+	expectedUser, expectedRaw, err := types.DeriveContractAddressFromStateInit("chain-a", "zone-a", wallet, stateInit, k.Params())
+	require.NoError(t, err)
+
+	virtual, err := k.Contract(types.QueryContractRequest{
+		ChainID:   "chain-a",
+		Namespace: "zone-a",
+		Deployer:  wallet,
+		StateInit: &stateInit,
+	})
+	require.NoError(t, err)
+	require.False(t, virtual.Found)
+	require.True(t, virtual.Virtual)
+	require.Equal(t, expectedUser, virtual.ContractAddress)
+
+	deployed, err := k.DeployContract(types.MsgDeployContract{
+		Creator:        wallet,
+		CodeID:         codeHash,
+		ChainID:        "chain-a",
+		Namespace:      "zone-a",
+		StateInit:      &stateInit,
+		InitPayload:    []byte("init"),
+		InitialBalance: 1_000,
+		Height:         20,
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedUser, deployed.ContractAddressUser)
+	require.Equal(t, expectedRaw, deployed.ContractAddressRaw)
+
+	_, err = k.DeployContract(types.MsgDeployContract{
+		Creator:        wallet,
+		CodeID:         codeHash,
+		ChainID:        "chain-a",
+		Namespace:      "zone-a",
+		StateInit:      &stateInit,
+		InitPayload:    []byte("init"),
+		InitialBalance: 1_000,
+		Height:         21,
+	})
+	require.ErrorContains(t, err, "already exists")
+
+	lazyInit := types.NewStateInit(wallet, codeHash, []byte("lazy-init"), "lazy", 1_000)
+	lazyAddress, _, err := types.DeriveContractAddressFromStateInit("chain-a", "zone-a", wallet, lazyInit, k.Params())
+	require.NoError(t, err)
+	executed, err := k.ExecuteExternal(types.MsgExecuteExternal{
+		Sender:          wallet,
+		ContractAddress: lazyAddress,
+		ChainID:         "chain-a",
+		Namespace:       "zone-a",
+		StateInit:       &lazyInit,
+		Payload:         []byte("call"),
+		GasLimit:        k.Params().MaxGasPerExecution,
+		Height:          22,
+	})
+	require.NoError(t, err)
+	require.Equal(t, lazyAddress, executed.ContractAddressUser)
+
+	query, err := k.Contract(types.QueryContractRequest{ContractAddress: lazyAddress})
+	require.NoError(t, err)
+	require.True(t, query.Found)
+	require.Equal(t, []byte("call"), query.Contract.Data)
+	require.NotEmpty(t, query.Contract.StateInitHash)
+	stateInitHash, err := types.HashStateInit(lazyInit)
+	require.NoError(t, err)
+	require.Equal(t, stateInitHash, query.Contract.StateInitHash)
+
+	exported := k.ExportGenesis()
+	imported := NewKeeper()
+	require.NoError(t, imported.InitGenesis(exported))
+	roundTrip, err := imported.Contract(types.QueryContractRequest{ContractAddress: lazyAddress})
+	require.NoError(t, err)
+	require.Equal(t, query.Contract.StateInitHash, roundTrip.Contract.StateInitHash)
 }
 
 func TestInternalMessageChargesStorageRentBeforeSend(t *testing.T) {

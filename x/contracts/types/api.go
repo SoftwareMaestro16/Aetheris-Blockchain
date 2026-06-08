@@ -14,7 +14,10 @@ const (
 type MsgDeployContract struct {
 	Creator        string
 	CodeID         string
+	ChainID        string
+	Namespace      string
 	Salt           string
+	StateInit      *StateInit
 	InitPayload    []byte
 	InitialBalance uint64
 	Admin          string
@@ -25,6 +28,9 @@ type MsgDeployContract struct {
 type MsgExecuteExternal struct {
 	Sender          string
 	ContractAddress string
+	ChainID         string
+	Namespace       string
+	StateInit       *StateInit
 	Payload         []byte
 	Funds           uint64
 	GasLimit        uint64
@@ -47,20 +53,43 @@ type MsgUpdateContractParams struct {
 	Params    Params
 }
 
+type MsgUpdateContractParamsResponse struct {
+	StateRoot string
+}
+
 type PageRequest struct {
 	Limit uint32
+}
+
+type QueryParamsRequest struct{}
+
+type QueryParamsResponse struct {
+	Params Params
 }
 
 type QueryCodeRequest struct {
 	CodeID string
 }
 
+type QueryCodeResponse struct {
+	Code  CodeRecord
+	Found bool
+}
+
 type QueryCodesRequest struct {
 	Pagination PageRequest
 }
 
+type QueryCodesResponse struct {
+	Codes []CodeRecord
+}
+
 type QueryContractsRequest struct {
 	Pagination PageRequest
+}
+
+type QueryContractsResponse struct {
+	Contracts []Contract
 }
 
 type QueryContractStorageRequest struct {
@@ -69,14 +98,22 @@ type QueryContractStorageRequest struct {
 	Pagination      PageRequest
 }
 
+type QueryContractStorageResponse struct{}
+
 type QueryContractReceiptsRequest struct {
 	ContractAddress string
 	Pagination      PageRequest
 }
 
+type QueryContractReceiptsResponse struct{}
+
 type QueryContractQueueRequest struct {
 	ContractAddress string
 	Pagination      PageRequest
+}
+
+type QueryContractQueueResponse struct {
+	Messages []InternalMessage
 }
 
 type QueryContractEventsRequest struct {
@@ -84,8 +121,14 @@ type QueryContractEventsRequest struct {
 	Pagination      PageRequest
 }
 
+type QueryContractEventsResponse struct{}
+
 type QueryContractStateRootRequest struct {
 	ContractAddress string
+}
+
+type QueryContractStateRootResponse struct {
+	StateRoot string
 }
 
 func (m MsgStoreCode) ValidateBasic(params Params) error {
@@ -101,12 +144,17 @@ func (m MsgStoreCode) ValidateBasic(params Params) error {
 	return validateHashText("store code hash", m.CodeHash)
 }
 
-func (m MsgDeployContract) ValidateBasic(_ Params) error {
+func (m MsgDeployContract) ValidateBasic(params Params) error {
 	if err := ValidateUserFacingAEAddress("deploy creator", m.Creator); err != nil {
 		return err
 	}
 	if m.CodeID == "" {
 		return errors.New("deploy code id is required")
+	}
+	if m.StateInit != nil {
+		if err := m.StateInit.Validate(params); err != nil {
+			return err
+		}
 	}
 	if len(m.InitPayload) > MaxContractPayloadBytes {
 		return errors.New("deploy payload exceeds maximum size")
@@ -131,6 +179,11 @@ func (m MsgExecuteExternal) ValidateBasic(params Params) error {
 	}
 	if err := ValidateContractAddress(m.ContractAddress); err != nil {
 		return err
+	}
+	if m.StateInit != nil {
+		if err := m.StateInit.Validate(params); err != nil {
+			return err
+		}
 	}
 	if len(m.Payload) > MaxContractPayloadBytes {
 		return errors.New("external execute payload exceeds maximum size")

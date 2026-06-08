@@ -1,12 +1,14 @@
 package keeper
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 
 	corestore "cosmossdk.io/core/store"
 	coretypes "github.com/sovereign-l1/l1/x/aetracore/types"
@@ -187,24 +189,43 @@ func (k *Keeper) DeployContract(msg types.MsgDeployContract) (types.InstantiateC
 	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
-	admin := msg.Admin
-	if admin == "" {
-		admin = msg.Creator
-	}
 	return k.InstantiateContract(types.MsgInstantiateContract{
-		Creator: msg.Creator,
-		CodeID:  msg.CodeID,
-		InitMsg: append([]byte(nil), msg.InitPayload...),
-		Funds:   msg.InitialBalance,
-		Admin:   admin,
-		Salt:    msg.Salt,
-		Height:  msg.Height,
+		Creator:   msg.Creator,
+		CodeID:    msg.CodeID,
+		ChainID:   msg.ChainID,
+		Namespace: msg.Namespace,
+		StateInit: msg.StateInit,
+		InitMsg:   append([]byte(nil), msg.InitPayload...),
+		Funds:     msg.InitialBalance,
+		Admin:     msg.Admin,
+		Salt:      msg.Salt,
+		Height:    msg.Height,
 	})
 }
 
 func (k *Keeper) ExecuteExternal(msg types.MsgExecuteExternal) (types.ExecuteContractResponse, error) {
 	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
 		return types.ExecuteContractResponse{}, err
+	}
+	if _, found := findContract(k.genesis.State.Contracts, msg.ContractAddress); !found && msg.StateInit != nil {
+		user, _, err := types.DeriveContractAddressFromStateInit(msg.ChainID, msg.Namespace, msg.Sender, *msg.StateInit, k.genesis.Params)
+		if err != nil {
+			return types.ExecuteContractResponse{}, err
+		}
+		if user != msg.ContractAddress {
+			return types.ExecuteContractResponse{}, errors.New(types.ErrContractNotFound + ": state init address does not match external execute target")
+		}
+		_, err = k.InstantiateContract(types.MsgInstantiateContract{
+			Creator:   msg.Sender,
+			CodeID:    msg.StateInit.Normalize().CodeID,
+			ChainID:   msg.ChainID,
+			Namespace: msg.Namespace,
+			StateInit: msg.StateInit,
+			Height:    msg.Height,
+		})
+		if err != nil {
+			return types.ExecuteContractResponse{}, err
+		}
 	}
 	return k.ExecuteContract(types.MsgExecuteContract{
 		Sender:          msg.Sender,
@@ -270,10 +291,27 @@ func (k *Keeper) UpdateContractParams(msg types.MsgUpdateContractParams) error {
 }
 
 func (k Keeper) Contract(req types.QueryContractRequest) (types.QueryContractResponse, error) {
+	if strings.TrimSpace(req.ContractAddress) == "" && req.StateInit != nil {
+		user, _, err := types.DeriveContractAddressFromStateInit(req.ChainID, req.Namespace, req.Deployer, *req.StateInit, k.genesis.Params)
+		if err != nil {
+			return types.QueryContractResponse{}, err
+		}
+		req.ContractAddress = user
+	}
 	if err := types.ValidateContractAddress(req.ContractAddress); err != nil {
 		return types.QueryContractResponse{}, err
 	}
 	contract, found := findContract(k.genesis.State.Contracts, req.ContractAddress)
+	if !found && req.StateInit != nil {
+		user, _, err := types.DeriveContractAddressFromStateInit(req.ChainID, req.Namespace, req.Deployer, *req.StateInit, k.genesis.Params)
+		if err != nil {
+			return types.QueryContractResponse{}, err
+		}
+		if user != req.ContractAddress {
+			return types.QueryContractResponse{}, errors.New(types.ErrContractNotFound + ": state init address does not match query address")
+		}
+		return types.QueryContractResponse{ContractAddress: req.ContractAddress, StateRoot: k.genesis.StateRoot, Found: false, Virtual: true}, nil
+	}
 	return types.QueryContractResponse{ContractAddress: req.ContractAddress, StateRoot: k.genesis.StateRoot, Found: found, Contract: contract}, nil
 }
 
@@ -359,21 +397,24 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 	if code.Owner != msg.Creator {
 		return types.InstantiateContractResponse{}, errors.New(types.ErrUnauthorized + ": contract instantiate requires code owner")
 	}
+	stateInit, data, funds, err := k.stateInitForInstantiate(msg, code)
+	if err != nil {
+		return types.InstantiateContractResponse{}, err
+	}
 	admin := msg.Admin
 	if admin == "" {
-		admin = msg.Creator
+		admin = stateInit.Owner
 	}
 	if err := types.ValidateUserFacingAEAddress("contract admin", admin); err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
-	user, raw, err := types.DeriveContractAddress(msg.Creator, msg.CodeID, msg.Salt)
+	user, raw, err := types.DeriveContractAddressFromStateInit(msg.ChainID, msg.Namespace, msg.Creator, stateInit, k.genesis.Params)
 	if err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
 	if _, found := findContract(k.genesis.State.Contracts, user); found {
 		return types.InstantiateContractResponse{}, errors.New(types.ErrContractNotFound + ": contract address already exists")
 	}
-	data := append([]byte(nil), msg.InitMsg...)
 	storageBytes, err := contractStorageBytesForCode(code, data)
 	if err != nil {
 		return types.InstantiateContractResponse{}, err
@@ -384,17 +425,23 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 	if storageBytes > k.genesis.Params.MaxContractStorageBytes {
 		return types.InstantiateContractResponse{}, errors.New(types.ErrStorageRent + ": contract storage exceeds configured limit")
 	}
+	stateInitHash, err := types.HashStateInit(stateInit)
+	if err != nil {
+		return types.InstantiateContractResponse{}, err
+	}
 	contract := types.Contract{
 		AddressUser:             user,
 		AddressRaw:              raw,
 		CodeID:                  msg.CodeID,
 		CodeHash:                code.CodeHash,
+		StateInitHash:           stateInitHash,
+		StateInit:               stateInit,
 		Creator:                 msg.Creator,
-		Owner:                   msg.Creator,
+		Owner:                   stateInit.Owner,
 		Admin:                   admin,
 		InitMsg:                 append([]byte(nil), data...),
 		Data:                    append([]byte(nil), data...),
-		Balance:                 msg.Funds,
+		Balance:                 funds,
 		Status:                  types.ContractStatusActive,
 		StorageBytes:            storageBytes,
 		LastStorageChargeHeight: msg.Height,
@@ -420,7 +467,7 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 			Type:        types.EventTypeContractInstantiated,
 			Actor:       msg.Creator,
 			Contract:    user,
-			Amount:      msg.Funds,
+			Amount:      funds,
 			InternalRaw: raw,
 		}},
 	}, nil
@@ -432,6 +479,36 @@ func (k *Keeper) InstantiateContractState(ctx context.Context, msg types.MsgInst
 		return types.InstantiateContractResponse{}, err
 	}
 	return res, k.writeGenesis(ctx)
+}
+
+func (k Keeper) stateInitForInstantiate(msg types.MsgInstantiateContract, code types.CodeRecord) (types.StateInit, []byte, uint64, error) {
+	if msg.StateInit == nil {
+		stateInit := types.NewStateInit(msg.Creator, code.CodeHash, msg.InitMsg, msg.Salt, msg.Funds).Normalize()
+		if err := stateInit.Validate(k.genesis.Params); err != nil {
+			return types.StateInit{}, nil, 0, err
+		}
+		return stateInit, append([]byte(nil), stateInit.InitData...), stateInit.InitialBalanceNAET, nil
+	}
+	stateInit := msg.StateInit.Normalize()
+	if err := stateInit.Validate(k.genesis.Params); err != nil {
+		return types.StateInit{}, nil, 0, err
+	}
+	if stateInit.CodeID != msg.CodeID {
+		return types.StateInit{}, nil, 0, errors.New("state init code id must match instantiate code id")
+	}
+	if stateInit.CodeHash != code.CodeHash {
+		return types.StateInit{}, nil, 0, errors.New("state init code hash must match stored code")
+	}
+	if len(msg.InitMsg) != 0 && !bytes.Equal(msg.InitMsg, stateInit.InitData) {
+		return types.StateInit{}, nil, 0, errors.New("state init data must match instantiate init message")
+	}
+	if msg.Funds != 0 && msg.Funds != stateInit.InitialBalanceNAET {
+		return types.StateInit{}, nil, 0, errors.New("state init initial balance must match instantiate funds")
+	}
+	if msg.Salt != "" && msg.Salt != stateInit.Salt && !bytes.Equal([]byte(msg.Salt), stateInit.SaltBytesForAddress()) {
+		return types.StateInit{}, nil, 0, errors.New("state init salt must match instantiate salt")
+	}
+	return stateInit, append([]byte(nil), stateInit.InitData...), stateInit.InitialBalanceNAET, nil
 }
 
 func (k *Keeper) ExecuteContract(msg types.MsgExecuteContract) (types.ExecuteContractResponse, error) {
@@ -451,7 +528,7 @@ func (k *Keeper) ExecuteContract(msg types.MsgExecuteContract) (types.ExecuteCon
 	if !found {
 		return types.ExecuteContractResponse{}, errors.New(types.ErrContractNotFound + ": contract not found")
 	}
-	if contract.Status == types.ContractStatusFrozen {
+	if contract.Status != types.ContractStatusActive {
 		return types.ExecuteContractResponse{}, errors.New(types.ErrAccountFrozen + ": frozen contract cannot execute normal calls")
 	}
 	contract, err := k.chargeContractRentAt(idx, contract, msg.Height)
@@ -755,7 +832,7 @@ func (k *Keeper) chargeContractRentAt(idx int, contract types.Contract, height u
 		return types.Contract{}, err
 	}
 	if contract.StorageRentDebt > 0 {
-		contract.Status = types.ContractStatusFrozen
+		contract.Status = k.storageRentFrozenStatus(contract)
 		if err := k.persistContractAt(idx, contract); err != nil {
 			return types.Contract{}, err
 		}
@@ -767,6 +844,13 @@ func (k *Keeper) chargeContractRentAt(idx int, contract types.Contract, height u
 		}
 	}
 	return contract, nil
+}
+
+func (k Keeper) storageRentFrozenStatus(contract types.Contract) string {
+	if contract.Status == types.ContractStatusFrozenLimited || hasAnyNativeStakingCapability(k.genesis.State.StakingCapabilities, contract.AddressUser) {
+		return types.ContractStatusFrozenLimited
+	}
+	return types.ContractStatusFrozen
 }
 
 func (k *Keeper) persistContractAt(idx int, contract types.Contract) error {
@@ -900,6 +984,15 @@ func findContractWithIndex(contracts []types.Contract, address string) (int, typ
 func hasCapability(caps []types.ContractCapability, contract string, poolID string) bool {
 	for _, cap := range caps {
 		if cap.ContractAddressUser == contract && cap.PoolID == poolID && cap.Capability == types.NativeStakingCapability {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyNativeStakingCapability(caps []types.ContractCapability, contract string) bool {
+	for _, cap := range caps {
+		if cap.ContractAddressUser == contract && cap.Capability == types.NativeStakingCapability {
 			return true
 		}
 	}

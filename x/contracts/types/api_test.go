@@ -13,7 +13,8 @@ import (
 func TestContractsTxAPIValidationRejectsMalformedAddressesAndBounds(t *testing.T) {
 	params := DefaultParams()
 	sender := contractAPIAddress(0x11)
-	contract, _, err := DeriveContractAddress(sender, strings.Repeat("a", 64), "api")
+	stateInit := NewStateInit(sender, strings.Repeat("a", 64), nil, "api", 0)
+	contract, _, err := DeriveContractAddressFromStateInit("", "", sender, stateInit, params)
 	require.NoError(t, err)
 
 	require.NoError(t, MsgDeployContract{

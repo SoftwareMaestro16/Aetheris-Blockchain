@@ -1,7 +1,6 @@
 package types
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -52,6 +51,8 @@ type Contract struct {
 	AddressRaw              string
 	CodeID                  string
 	CodeHash                string
+	StateInitHash           string
+	StateInit               StateInit
 	Creator                 string
 	Owner                   string
 	Admin                   string
@@ -110,6 +111,9 @@ type NativeStakingInjectionRecord struct {
 type MsgInstantiateContract struct {
 	Creator      string
 	CodeID       string
+	ChainID      string
+	Namespace    string
+	StateInit    *StateInit
 	InitMsg      []byte
 	Funds        uint64
 	Admin        string
@@ -366,6 +370,29 @@ func (c Contract) Validate(params Params) error {
 			return err
 		}
 	}
+	if c.StateInitHash != "" {
+		if err := validateHashText("contract state init hash", c.StateInitHash); err != nil {
+			return err
+		}
+	}
+	if !c.StateInit.IsZero() {
+		if err := c.StateInit.Validate(params); err != nil {
+			return err
+		}
+		stateInitHash, err := HashStateInit(c.StateInit)
+		if err != nil {
+			return err
+		}
+		if c.StateInitHash != "" && c.StateInitHash != stateInitHash {
+			return errors.New("contract state init hash mismatch")
+		}
+		if c.CodeHash != "" && c.CodeHash != c.StateInit.Normalize().CodeHash {
+			return errors.New("contract code hash must match state init")
+		}
+		if c.Owner != c.StateInit.Normalize().Owner {
+			return errors.New("contract owner must match state init")
+		}
+	}
 	if c.StateRoot != "" {
 		if err := validateHashText("contract state root", c.StateRoot); err != nil {
 			return err
@@ -521,35 +548,21 @@ func UserAddressForRawAddress(rawAddress string) (string, error) {
 	return pair.User, nil
 }
 
-func DeriveContractAddress(creator string, codeID string, salt string) (string, string, error) {
-	if err := ValidateUserFacingAEAddress("contract creator", creator); err != nil {
-		return "", "", err
-	}
-	if strings.TrimSpace(codeID) == "" {
-		return "", "", errors.New("contract code id is required")
-	}
-	sum := sha256.Sum256([]byte("aetra-contract-v1/" + creator + "/" + codeID + "/" + salt))
-	user, err := addressing.FormatUserFriendly(sum[:])
-	if err != nil {
-		return "", "", err
-	}
-	return user, addressing.Format(sum[:]), nil
-}
-
 func ComputeContractStateRoot(contract Contract) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf(
-		"aetra-contract-state-v1/%s/%s/%s/%020d/%x",
+	sum := sha256Sum([]byte(fmt.Sprintf(
+		"aetra-contract-state-v1/%s/%s/%s/%s/%020d/%x",
 		contract.AddressUser,
 		contract.CodeID,
 		contract.CodeHash,
+		contract.StateInitHash,
 		contract.LogicalTime,
 		contract.Data,
 	)))
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum)
 }
 
 func ComputeInternalMessageID(msg InternalMessage) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf(
+	sum := sha256Sum([]byte(fmt.Sprintf(
 		"aetra-internal-message-v1/%s/%s/%020d/%010d/%020d/%020d/%t/%020d/%020d/%x",
 		msg.SourceContractUser,
 		msg.DestinationAccount,
@@ -562,7 +575,7 @@ func ComputeInternalMessageID(msg InternalMessage) string {
 		msg.LogicalTime,
 		msg.Body,
 	)))
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum)
 }
 
 func RefreshStateRoot(gs GenesisState) GenesisState {
@@ -595,6 +608,7 @@ func cloneContracts(values []Contract) []Contract {
 	for i := range out {
 		out[i].InitMsg = append([]byte(nil), out[i].InitMsg...)
 		out[i].Data = append([]byte(nil), out[i].Data...)
+		out[i].StateInit = out[i].StateInit.Normalize()
 	}
 	return out
 }

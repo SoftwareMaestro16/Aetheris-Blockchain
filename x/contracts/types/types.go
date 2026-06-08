@@ -23,12 +23,15 @@ const (
 )
 
 type Params struct {
-	Authority               string
-	Enabled                 bool
-	MaxCodeBytes            uint64
-	MaxContractStorageBytes uint64
-	MaxGasPerExecution      uint64
-	StorageRentPerByteBlock uint64
+	Authority                string
+	Enabled                  bool
+	MaxCodeBytes             uint64
+	MaxContractStorageBytes  uint64
+	MaxGasPerExecution       uint64
+	StorageRentPerByteBlock  uint64
+	MaxInitDataBytes         uint64
+	MaxStateInitSaltBytes    uint64
+	MaxStateInitDependencies uint32
 }
 
 type GenesisState struct {
@@ -51,12 +54,17 @@ type StoreCodeResponse struct {
 
 type QueryContractRequest struct {
 	ContractAddress string
+	ChainID         string
+	Namespace       string
+	Deployer        string
+	StateInit       *StateInit
 }
 
 type QueryContractResponse struct {
 	ContractAddress string
 	StateRoot       string
 	Found           bool
+	Virtual         bool
 	Contract        Contract
 }
 
@@ -85,12 +93,15 @@ type QueryServer interface {
 
 func DefaultParams() Params {
 	return Params{
-		Authority:               prototype.DefaultAuthority,
-		Enabled:                 true,
-		MaxCodeBytes:            4 * 1024 * 1024,
-		MaxContractStorageBytes: 64 * 1024 * 1024,
-		MaxGasPerExecution:      100_000_000,
-		StorageRentPerByteBlock: 1,
+		Authority:                prototype.DefaultAuthority,
+		Enabled:                  true,
+		MaxCodeBytes:             4 * 1024 * 1024,
+		MaxContractStorageBytes:  64 * 1024 * 1024,
+		MaxGasPerExecution:       100_000_000,
+		StorageRentPerByteBlock:  1,
+		MaxInitDataBytes:         MaxContractPayloadBytes,
+		MaxStateInitSaltBytes:    MaxContractSaltBytes,
+		MaxStateInitDependencies: MaxContractDependencies,
 	}
 }
 
@@ -113,6 +124,15 @@ func (p Params) Validate() error {
 	}
 	if p.MaxGasPerExecution == 0 {
 		return errors.New(ErrInvalidParams + ": max gas per execution must be positive")
+	}
+	if p.MaxInitDataBytes == 0 {
+		return errors.New(ErrInvalidParams + ": max init data bytes must be positive")
+	}
+	if p.MaxStateInitSaltBytes == 0 {
+		return errors.New(ErrInvalidParams + ": max state init salt bytes must be positive")
+	}
+	if p.MaxStateInitDependencies == 0 {
+		return errors.New(ErrInvalidParams + ": max state init dependencies must be positive")
 	}
 	return nil
 }
@@ -153,13 +173,16 @@ func ComputeContractsStateRoot(gs GenesisState) string {
 		panic(err)
 	}
 	return coretypes.DeterministicEmptyRootCommitment(coretypes.RootType(ModuleName), fmt.Sprintf(
-		"authority=%s/enabled=%t/code=%020d/storage=%020d/gas=%020d/rent=%020d/state=%s",
+		"authority=%s/enabled=%t/code=%020d/storage=%020d/gas=%020d/rent=%020d/init=%020d/salt=%020d/deps=%010d/state=%s",
 		gs.Params.Authority,
 		gs.Params.Enabled,
 		gs.Params.MaxCodeBytes,
 		gs.Params.MaxContractStorageBytes,
 		gs.Params.MaxGasPerExecution,
 		gs.Params.StorageRentPerByteBlock,
+		gs.Params.MaxInitDataBytes,
+		gs.Params.MaxStateInitSaltBytes,
+		gs.Params.MaxStateInitDependencies,
 		string(stateJSON),
 	))
 }
