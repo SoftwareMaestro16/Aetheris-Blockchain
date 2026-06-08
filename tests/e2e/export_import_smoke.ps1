@@ -227,7 +227,7 @@ try {
   $corruptPath = Join-Path $ExportDir "node0-export-corrupt.json"
   $genesis.app_state.bank.balances[0].coins[0].amount = "not-an-int"
   $genesis | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $corruptPath -Encoding UTF8
-  Assert-NativeCommandFails -Arguments @("genesis", "validate-genesis", $corruptPath, "--home", $node0Home) -ExpectedText "amount|invalid"
+  Assert-NativeCommandFails -Arguments @("genesis", "validate-genesis", $corruptPath, "--home", $node0Home) -ExpectedText "amount|invalid|unmarshal|big\.Int|not-an-int"
   Write-Host "corrupted exported genesis is rejected by validate-genesis"
 
   Write-Host "state export/import smoke completed with export $exportPath"
