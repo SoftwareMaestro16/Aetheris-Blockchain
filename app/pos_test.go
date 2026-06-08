@@ -16,8 +16,10 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sovereign-l1/l1/app/addressing"
 	appparams "github.com/sovereign-l1/l1/app/params"
 	"github.com/sovereign-l1/l1/app/stakingpolicy"
+	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 )
 
 func TestPoSCreateValidatorWithNaet(t *testing.T) {
@@ -48,6 +50,7 @@ func TestPoSDirectUserDelegationMsgRouteRejected(t *testing.T) {
 	bondDenom, err := app.StakingKeeper.BondDenom(ctx)
 	require.NoError(t, err)
 	require.Equal(t, BondDenom, bondDenom)
+	require.Equal(t, appparams.DirectUserDelegationDisabled, directUserDelegationGovernanceValue(t))
 
 	delegation := sdk.TokensFromConsensusPower(5, sdk.DefaultPowerReduction)
 	delegator := AddTestAddrsIncremental(app, ctx, 1, delegation.MulRaw(2))[0]
@@ -70,6 +73,74 @@ func TestPoSDirectUserDelegationMsgRouteRejected(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, beforeTokens, updatedValidator.Tokens)
 	require.Equal(t, beforePower, updatedValidator.GetConsensusPower(sdk.DefaultPowerReduction))
+}
+
+func TestPoSValidatorSelfBondMsgDelegateAllowed(t *testing.T) {
+	app := Setup(t, false)
+	ctx := app.NewContext(false).WithBlockTime(time.Now().UTC())
+
+	selfDelegation := sdk.TokensFromConsensusPower(10, sdk.DefaultPowerReduction)
+	valAddr, validator := createFundedValidator(t, app, ctx, "self-bond-operator-path", selfDelegation)
+	operator := sdk.AccAddress(valAddr)
+	extraSelfBond := sdk.TokensFromConsensusPower(1, sdk.DefaultPowerReduction)
+	beforeTokens := validator.Tokens
+
+	msg := stakingtypes.NewMsgDelegate(
+		operator.String(),
+		validator.OperatorAddress,
+		sdk.NewCoin(BondDenom, extraSelfBond),
+	)
+	handler := app.MsgServiceRouter().Handler(msg)
+	require.NotNil(t, handler)
+	_, err := handler(ctx, msg)
+	require.NoError(t, err)
+
+	updatedValidator, err := app.StakingKeeper.GetValidator(ctx, valAddr)
+	require.NoError(t, err)
+	require.Equal(t, beforeTokens.Add(extraSelfBond), updatedValidator.Tokens)
+
+	delegation, err := app.StakingKeeper.GetDelegation(ctx, operator, valAddr)
+	require.NoError(t, err)
+	require.True(t, delegation.Shares.IsPositive())
+}
+
+func TestPoSOfficialPoolDepositPathWorksWhileDirectDelegationDisabled(t *testing.T) {
+	app := Setup(t, false)
+	ctx := app.NewContext(false).WithBlockTime(time.Now().UTC())
+	require.Equal(t, appparams.DirectUserDelegationDisabled, directUserDelegationGovernanceValue(t))
+
+	poolID := "pos-official-pool"
+	contractRaw := posRawAddress("66")
+	pool, err := app.NominatorPoolKeeper.CreateOfficialLiquidStakingPool(nominatorpooltypes.MsgCreateOfficialLiquidStakingPool{
+		Authority:           nominatorpooltypes.DefaultParams().Authority,
+		PoolID:              poolID,
+		ContractAddressUser: aeFromRawForPoSTest(t, contractRaw),
+		ContractAddressRaw:  contractRaw,
+		PoolOperator:        posRawAddress("11"),
+		PoolCommissionBps:   100,
+		Height:              1,
+	})
+	require.NoError(t, err)
+	user := aeFromRawForPoSTest(t, posRawAddress("22"))
+
+	msg := &nominatorpooltypes.MsgDepositToStakingPool{
+		PoolID:        pool.PoolID,
+		WalletAddress: user,
+		Amount:        nominatorpooltypes.DefaultMinPoolDeposit,
+		Height:        2,
+	}
+	handler := app.MsgServiceRouter().Handler(msg)
+	require.NotNil(t, handler)
+	_, err = handler(ctx, msg)
+	require.NoError(t, err)
+
+	query, found := app.NominatorPoolKeeper.PoolShare(nominatorpooltypes.QueryPoolShareRequest{
+		PoolID:    pool.PoolID,
+		Delegator: posRawAddress("22"),
+	})
+	require.True(t, found)
+	require.Equal(t, nominatorpooltypes.DefaultMinPoolDeposit, query.Share.Shares)
+	require.Zero(t, query.PendingRewards)
 }
 
 func TestPoSDirectUserUnbondingMsgRouteRejected(t *testing.T) {
@@ -319,5 +390,29 @@ func formatValidatorAddress(t *testing.T, app *L1App, addr sdk.ValAddress) strin
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(text, ValidatorAddressPrefix), text)
 	require.NotRegexp(t, `^[a-z]+1`, text)
+	return text
+}
+
+func directUserDelegationGovernanceValue(t *testing.T) string {
+	t.Helper()
+	for _, value := range appparams.DefaultGovernanceGenesisParams() {
+		if value.Key == appparams.GovernanceParamDirectUserDelegation {
+			return value.StringValue
+		}
+	}
+	t.Fatalf("%s missing from default governance genesis params", appparams.GovernanceParamDirectUserDelegation)
+	return ""
+}
+
+func posRawAddress(hexByte string) string {
+	return "4:000000000000000000000000" + strings.Repeat(hexByte, 20)
+}
+
+func aeFromRawForPoSTest(t *testing.T, raw string) string {
+	t.Helper()
+	bz, err := addressing.Parse(raw)
+	require.NoError(t, err)
+	text, err := addressing.FormatUserFriendly(bz)
+	require.NoError(t, err)
 	return text
 }

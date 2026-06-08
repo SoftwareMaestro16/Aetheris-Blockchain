@@ -1,6 +1,7 @@
 package txhandlers
 
 import (
+	"bytes"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
+	"github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/app/stakingpolicy"
 )
 
@@ -62,4 +64,25 @@ func TestRejectDirectUserStakingDecoratorAllowsCreateValidator(t *testing.T) {
 	_, err := RejectDirectUserStakingDecorator(next)(sdk.Context{}, msgTx{msgs: []sdk.Msg{&stakingtypes.MsgCreateValidator{}}}, false)
 	require.NoError(t, err)
 	require.True(t, called)
+}
+
+func TestRejectDirectUserStakingDecoratorAllowsValidatorSelfBond(t *testing.T) {
+	called := false
+	next := func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		called = true
+		return ctx, nil
+	}
+	operator := aeFromBytesForAnteTest(t, bytes.Repeat([]byte{0x44}, 20))
+	msg := stakingtypes.NewMsgDelegate(operator, operator, sdk.NewInt64Coin("naet", 10))
+
+	_, err := RejectDirectUserStakingDecorator(next)(sdk.Context{}, msgTx{msgs: []sdk.Msg{msg}}, false)
+	require.NoError(t, err)
+	require.True(t, called)
+}
+
+func aeFromBytesForAnteTest(t *testing.T, bz []byte) string {
+	t.Helper()
+	text, err := addressing.FormatUserFriendly(bz)
+	require.NoError(t, err)
+	return text
 }
