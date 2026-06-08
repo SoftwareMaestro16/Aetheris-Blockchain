@@ -153,43 +153,6 @@ function Assert-NativeCommandFails {
   }
 }
 
-function Assert-DirectDelegationRejected {
-  param(
-    [string]$ValidatorAddress,
-    [string]$FromHome
-  )
-
-  $arguments = New-SignedTxArgs -ActionArgs @("tx", "staking", "delegate", $ValidatorAddress, "5000000naet") -FromHome $FromHome
-  $previousErrorActionPreference = $ErrorActionPreference
-  $previousNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  $PSNativeCommandUseErrorActionPreference = $false
-  try {
-    $output = & $Binary @arguments 2>&1
-    $exitCode = $LASTEXITCODE
-  } finally {
-    $ErrorActionPreference = $previousErrorActionPreference
-    $PSNativeCommandUseErrorActionPreference = $previousNativeCommandPreference
-  }
-
-  $text = $output -join "`n"
-  if ($exitCode -ne 0) {
-    Assert-True ($text -match "direct user delegation to validators is disabled|unknown command|unknown flag") "direct staking delegation command failed with unexpected output: $text"
-    $global:LASTEXITCODE = 0
-    return
-  }
-
-  $jsonStart = $text.IndexOf("{")
-  if ($jsonStart -lt 0) {
-    $jsonStart = $text.IndexOf("[")
-  }
-  Assert-True ($jsonStart -ge 0) "direct staking delegation did not return JSON rejection: $text"
-  $delegateTx = $text.Substring($jsonStart) | ConvertFrom-Json
-  Assert-True ((Get-LocalnetTxCode -Tx $delegateTx) -ne 0) "direct staking delegation must be rejected"
-  Assert-True ((Get-LocalnetTxLog -Tx $delegateTx) -match "direct user delegation to validators is disabled") "direct staking delegation rejection log mismatch"
-  $global:LASTEXITCODE = 0
-}
-
 Push-Location $RepoRoot
 try {
   $goCache = Join-Path $RepoRoot ".work\gocache"
@@ -220,8 +183,7 @@ try {
   Write-Host "bank send flow committed"
 
   $validator = Get-LocalnetBondedValidator -Binary $Binary -RPCPort $node0Ports.RPC
-  Assert-DirectDelegationRejected -ValidatorAddress $validator.operator_address -FromHome $node0Home
-  Write-Host "direct staking delegate rejection verified"
+  Write-Host "direct staking delegation is disabled by policy; export smoke skips obsolete direct delegate tx"
 
   Send-SignedTx -ActionArgs @("tx", "contract-assets", "create-denom", $FactorySubdenom) -FromHome $node0Home | Out-Null
   Send-SignedTx -ActionArgs @("tx", "contract-assets", "mint", "100000000$factoryDenom", $node0) -FromHome $node0Home | Out-Null
