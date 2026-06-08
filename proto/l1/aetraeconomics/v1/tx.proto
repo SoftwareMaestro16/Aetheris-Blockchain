@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package l1.aetraeconomics.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/aetra-economics/types";
+
+service Msg {
+  rpc UpdateEconomicsParams(MsgUpdateEconomicsParams) returns (MsgUpdateEconomicsParamsResponse);
+  rpc ApplyEpochEconomics(MsgApplyEpochEconomics) returns (MsgApplyEpochEconomicsResponse);
+}
+
+message MsgUpdateEconomicsParams {}
+message MsgUpdateEconomicsParamsResponse {}
+message MsgApplyEpochEconomics {}
+message MsgApplyEpochEconomicsResponse {}

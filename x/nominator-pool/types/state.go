@@ -306,11 +306,11 @@ type PendingWithdrawal struct {
 }
 
 type DelegatorShare struct {
-	Delegator             string
-	Shares                uint64
-	RewardIndexCheckpoint uint64
-	PendingRewards        uint64
-	SlashIndexCheckpoint  uint64
+	Delegator             string `protobuf:"bytes,1,opt,name=delegator,proto3" json:"delegator,omitempty"`
+	Shares                uint64 `protobuf:"varint,2,opt,name=shares,proto3" json:"shares,omitempty"`
+	RewardIndexCheckpoint uint64 `protobuf:"varint,3,opt,name=reward_index_checkpoint,json=rewardIndexCheckpoint,proto3" json:"reward_index_checkpoint,omitempty"`
+	PendingRewards        uint64 `protobuf:"varint,4,opt,name=pending_rewards,json=pendingRewards,proto3" json:"pending_rewards,omitempty"`
+	SlashIndexCheckpoint  uint64 `protobuf:"varint,5,opt,name=slash_index_checkpoint,json=slashIndexCheckpoint,proto3" json:"slash_index_checkpoint,omitempty"`
 }
 
 type UnbondingEntry struct {
@@ -328,25 +328,25 @@ type PoolAllocation struct {
 }
 
 type ValidatorRewardAllocation struct {
-	Validator                   string
-	PoolAllocatedStake          uint64
-	ValidatorSelfStake          uint64
-	PerformanceBps              uint32
-	CommissionBps               uint32
-	SlashingLoss                uint64
-	Jailed                      bool
-	InfrastructureCost          uint64
-	OperatorPerformanceBonusBps uint32
-	GrossPoolRewards            uint64
-	ValidatorCommission         uint64
-	PoolProtocolFee             uint64
-	NetPoolRewards              uint64
-	ValidatorSelfStakeRewards   uint64
-	OperatorPerformanceBonus    uint64
-	ValidatorGrossIncome        uint64
-	ValidatorNetIncome          int64
-	RewardIndexDelta            uint64
-	RewardIndexAfter            uint64
+	Validator                   string `protobuf:"bytes,1,opt,name=validator,proto3" json:"validator,omitempty"`
+	PoolAllocatedStake          uint64 `protobuf:"varint,2,opt,name=pool_allocated_stake,json=poolAllocatedStake,proto3" json:"pool_allocated_stake,omitempty"`
+	ValidatorSelfStake          uint64 `protobuf:"varint,3,opt,name=validator_self_stake,json=validatorSelfStake,proto3" json:"validator_self_stake,omitempty"`
+	PerformanceBps              uint32 `protobuf:"varint,4,opt,name=performance_bps,json=performanceBps,proto3" json:"performance_bps,omitempty"`
+	CommissionBps               uint32 `protobuf:"varint,5,opt,name=commission_bps,json=commissionBps,proto3" json:"commission_bps,omitempty"`
+	SlashingLoss                uint64 `protobuf:"varint,6,opt,name=slashing_loss,json=slashingLoss,proto3" json:"slashing_loss,omitempty"`
+	Jailed                      bool   `protobuf:"varint,7,opt,name=jailed,proto3" json:"jailed,omitempty"`
+	InfrastructureCost          uint64 `protobuf:"varint,8,opt,name=infrastructure_cost,json=infrastructureCost,proto3" json:"infrastructure_cost,omitempty"`
+	OperatorPerformanceBonusBps uint32 `protobuf:"varint,9,opt,name=operator_performance_bonus_bps,json=operatorPerformanceBonusBps,proto3" json:"operator_performance_bonus_bps,omitempty"`
+	GrossPoolRewards            uint64 `protobuf:"varint,10,opt,name=gross_pool_rewards,json=grossPoolRewards,proto3" json:"gross_pool_rewards,omitempty"`
+	ValidatorCommission         uint64 `protobuf:"varint,11,opt,name=validator_commission,json=validatorCommission,proto3" json:"validator_commission,omitempty"`
+	PoolProtocolFee             uint64 `protobuf:"varint,12,opt,name=pool_protocol_fee,json=poolProtocolFee,proto3" json:"pool_protocol_fee,omitempty"`
+	NetPoolRewards              uint64 `protobuf:"varint,13,opt,name=net_pool_rewards,json=netPoolRewards,proto3" json:"net_pool_rewards,omitempty"`
+	ValidatorSelfStakeRewards   uint64 `protobuf:"varint,14,opt,name=validator_self_stake_rewards,json=validatorSelfStakeRewards,proto3" json:"validator_self_stake_rewards,omitempty"`
+	OperatorPerformanceBonus    uint64 `protobuf:"varint,15,opt,name=operator_performance_bonus,json=operatorPerformanceBonus,proto3" json:"operator_performance_bonus,omitempty"`
+	ValidatorGrossIncome        uint64 `protobuf:"varint,16,opt,name=validator_gross_income,json=validatorGrossIncome,proto3" json:"validator_gross_income,omitempty"`
+	ValidatorNetIncome          int64  `protobuf:"varint,17,opt,name=validator_net_income,json=validatorNetIncome,proto3" json:"validator_net_income,omitempty"`
+	RewardIndexDelta            uint64 `protobuf:"varint,18,opt,name=reward_index_delta,json=rewardIndexDelta,proto3" json:"reward_index_delta,omitempty"`
+	RewardIndexAfter            uint64 `protobuf:"varint,19,opt,name=reward_index_after,json=rewardIndexAfter,proto3" json:"reward_index_after,omitempty"`
 }
 
 type ValidatorIncome struct {
@@ -400,13 +400,13 @@ type MsgDepositToPool struct {
 }
 
 type MsgCreateOfficialLiquidStakingPool struct {
-	Authority           string
-	PoolID              string
-	ContractAddressUser string
-	ContractAddressRaw  string
-	PoolOperator        string
-	PoolCommissionBps   uint32
-	Height              uint64
+	Authority           string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
+	PoolID              string `protobuf:"bytes,2,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	ContractAddressUser string `protobuf:"bytes,3,opt,name=contract_address_user,json=contractAddressUser,proto3" json:"contract_address_user,omitempty"`
+	ContractAddressRaw  string `protobuf:"bytes,4,opt,name=contract_address_raw,json=contractAddressRaw,proto3" json:"contract_address_raw,omitempty"`
+	PoolOperator        string `protobuf:"bytes,5,opt,name=pool_operator,json=poolOperator,proto3" json:"pool_operator,omitempty"`
+	PoolCommissionBps   uint32 `protobuf:"varint,6,opt,name=pool_commission_bps,json=poolCommissionBps,proto3" json:"pool_commission_bps,omitempty"`
+	Height              uint64 `protobuf:"varint,7,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgDepositToOfficialLiquidStaking struct {
@@ -419,19 +419,19 @@ type MsgDepositToOfficialLiquidStaking struct {
 }
 
 type MsgDepositToStakingPool struct {
-	PoolID           string
-	WalletAddress    string
-	Amount           uint64
-	Height           uint64
-	ValidatorAddress string
+	PoolID           string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	WalletAddress    string `protobuf:"bytes,2,opt,name=wallet_address,json=walletAddress,proto3" json:"wallet_address,omitempty"`
+	Amount           uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	Height           uint64 `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
+	ValidatorAddress string `protobuf:"bytes,5,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
 }
 
 type MsgDelegateToValidator struct {
-	Authority        string
-	UserAddress      string
-	ValidatorAddress string
-	Amount           uint64
-	Height           uint64
+	Authority        string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
+	UserAddress      string `protobuf:"bytes,2,opt,name=user_address,json=userAddress,proto3" json:"user_address,omitempty"`
+	ValidatorAddress string `protobuf:"bytes,3,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	Amount           uint64 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Height           uint64 `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgInjectPooledStake struct {
@@ -450,11 +450,11 @@ type MsgInjectPoolStake struct {
 }
 
 type MsgWithdrawPoolStake struct {
-	CallerContractUser string
-	PoolID             string
-	OwnerAddress       string
-	RequestID          string
-	Height             uint64
+	CallerContractUser string `protobuf:"bytes,1,opt,name=caller_contract_user,json=callerContractUser,proto3" json:"caller_contract_user,omitempty"`
+	PoolID             string `protobuf:"bytes,2,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	OwnerAddress       string `protobuf:"bytes,3,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	RequestID          string `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Height             uint64 `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgRebalancePoolAllocations struct {
@@ -489,18 +489,18 @@ type MsgRequestPoolWithdrawal struct {
 }
 
 type MsgRequestPoolUnbond struct {
-	PoolID       string
-	OwnerAddress string
-	RequestID    string
-	Shares       uint64
-	Height       uint64
+	PoolID       string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	OwnerAddress string `protobuf:"bytes,2,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	RequestID    string `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Shares       uint64 `protobuf:"varint,4,opt,name=shares,proto3" json:"shares,omitempty"`
+	Height       uint64 `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgTopUpPoolReserve struct {
-	PoolID       string
-	PayerAddress string
-	Amount       uint64
-	Height       uint64
+	PoolID       string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	PayerAddress string `protobuf:"bytes,2,opt,name=payer_address,json=payerAddress,proto3" json:"payer_address,omitempty"`
+	Amount       uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	Height       uint64 `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgCancelPoolWithdrawal struct {
@@ -512,17 +512,17 @@ type MsgCancelPoolWithdrawal struct {
 }
 
 type MsgClaimPoolRewards struct {
-	Authority    string
-	PoolID       string
-	Delegator    string
-	OwnerAddress string
-	Height       uint64
+	Authority    string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
+	PoolID       string `protobuf:"bytes,2,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Delegator    string `protobuf:"bytes,3,opt,name=delegator,proto3" json:"delegator,omitempty"`
+	OwnerAddress string `protobuf:"bytes,4,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	Height       uint64 `protobuf:"varint,5,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgClaimStakeReputation struct {
-	PoolID       string
-	OwnerAddress string
-	Height       uint64
+	PoolID       string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	OwnerAddress string `protobuf:"bytes,2,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
+	Height       uint64 `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgSyncPoolRewards struct {
@@ -562,82 +562,136 @@ type MsgChangePoolValidator struct {
 }
 
 type MsgRegisterValidator struct {
-	SignerAddress    string
-	ValidatorAddress string
-	SelfStake        uint64
-	NominatorStake   uint64
-	CommissionBps    uint32
-	Height           uint64
+	SignerAddress    string `protobuf:"bytes,1,opt,name=signer_address,json=signerAddress,proto3" json:"signer_address,omitempty"`
+	ValidatorAddress string `protobuf:"bytes,2,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	SelfStake        uint64 `protobuf:"varint,3,opt,name=self_stake,json=selfStake,proto3" json:"self_stake,omitempty"`
+	NominatorStake   uint64 `protobuf:"varint,4,opt,name=nominator_stake,json=nominatorStake,proto3" json:"nominator_stake,omitempty"`
+	CommissionBps    uint32 `protobuf:"varint,5,opt,name=commission_bps,json=commissionBps,proto3" json:"commission_bps,omitempty"`
+	Height           uint64 `protobuf:"varint,6,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgUpdateValidator struct {
-	SignerAddress      string
-	ValidatorAddress   string
-	SelfStake          uint64
-	NominatorStake     uint64
-	PerformanceScore   uint32
-	CommissionBps      uint32
-	SlashingRiskBps    uint32
-	AllocationLimitBps uint32
-	Status             string
-	Height             uint64
+	SignerAddress      string `protobuf:"bytes,1,opt,name=signer_address,json=signerAddress,proto3" json:"signer_address,omitempty"`
+	ValidatorAddress   string `protobuf:"bytes,2,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	SelfStake          uint64 `protobuf:"varint,3,opt,name=self_stake,json=selfStake,proto3" json:"self_stake,omitempty"`
+	NominatorStake     uint64 `protobuf:"varint,4,opt,name=nominator_stake,json=nominatorStake,proto3" json:"nominator_stake,omitempty"`
+	PerformanceScore   uint32 `protobuf:"varint,5,opt,name=performance_score,json=performanceScore,proto3" json:"performance_score,omitempty"`
+	CommissionBps      uint32 `protobuf:"varint,6,opt,name=commission_bps,json=commissionBps,proto3" json:"commission_bps,omitempty"`
+	SlashingRiskBps    uint32 `protobuf:"varint,7,opt,name=slashing_risk_bps,json=slashingRiskBps,proto3" json:"slashing_risk_bps,omitempty"`
+	AllocationLimitBps uint32 `protobuf:"varint,8,opt,name=allocation_limit_bps,json=allocationLimitBps,proto3" json:"allocation_limit_bps,omitempty"`
+	Status             string `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	Height             uint64 `protobuf:"varint,10,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type MsgUpdateStakingParams struct {
-	Authority string
-	Params    Params
-	Height    uint64
+	Authority string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
+	Params    Params `protobuf:"bytes,2,opt,name=params,proto3" json:"params"`
+	Height    uint64 `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 type QueryPoolShareRequest struct {
-	PoolID    string
-	Delegator string
+	PoolID    string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Delegator string `protobuf:"bytes,2,opt,name=delegator,proto3" json:"delegator,omitempty"`
+}
+
+type QueryNominatorPoolRequest struct {
+	PoolID string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+}
+
+type QueryNominatorPoolResponse struct {
+	Pool NominatorPool `protobuf:"bytes,1,opt,name=pool,proto3" json:"pool"`
+}
+
+type QueryNominatorPoolsRequest struct{}
+
+type QueryNominatorPoolsResponse struct {
+	Pools []NominatorPool `protobuf:"bytes,1,rep,name=pools,proto3" json:"pools,omitempty"`
+}
+
+type QueryPoolDelegatorRequest struct {
+	PoolID    string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Delegator string `protobuf:"bytes,2,opt,name=delegator,proto3" json:"delegator,omitempty"`
+}
+
+type QueryPoolDelegatorResponse struct {
+	Delegator DelegatorShare `protobuf:"bytes,1,opt,name=delegator,proto3" json:"delegator"`
+}
+
+type QueryPoolRewardsRequest struct {
+	PoolID    string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Delegator string `protobuf:"bytes,2,opt,name=delegator,proto3" json:"delegator,omitempty"`
+}
+
+type QueryPoolRewardsResponse struct {
+	RewardAmount uint64 `protobuf:"varint,1,opt,name=reward_amount,json=rewardAmount,proto3" json:"reward_amount,omitempty"`
 }
 
 type QueryPoolShareResponse struct {
-	Share          DelegatorShare
-	PendingRewards uint64
+	Share          DelegatorShare `protobuf:"bytes,1,opt,name=share,proto3" json:"share"`
+	PendingRewards uint64         `protobuf:"varint,2,opt,name=pending_rewards,json=pendingRewards,proto3" json:"pending_rewards,omitempty"`
 }
 
 type QueryPoolAllocationsRequest struct {
-	PoolID string
+	PoolID string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
 }
 
 type QueryPoolAllocationsResponse struct {
-	Allocations []ValidatorRewardAllocation
+	Allocations []ValidatorRewardAllocation `protobuf:"bytes,1,rep,name=allocations,proto3" json:"allocations,omitempty"`
 }
 
 type QueryStakeReputationRequest struct {
-	Account string
+	Account string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
 }
 
 type QueryStakeReputationResponse struct {
-	Accumulator StakeReputationAccumulator
-	Found       bool
+	Accumulator StakeReputationAccumulator `protobuf:"bytes,1,opt,name=accumulator,proto3" json:"accumulator"`
+	Found       bool                       `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
 }
 
 type QueryAccountReputationRequest struct {
-	Account string
+	Account string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
 }
 
 type QueryAccountReputationResponse struct {
-	Account                string
-	ReputationScore        uint64
-	StakeWeightedSeconds   uint64
-	LastUpdatedHeight      uint64
-	HasStakeReputation     bool
-	AccumulatorStateKey    string
-	NonTransferableByToken bool
+	Account                string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	ReputationScore        uint64 `protobuf:"varint,2,opt,name=reputation_score,json=reputationScore,proto3" json:"reputation_score,omitempty"`
+	StakeWeightedSeconds   uint64 `protobuf:"varint,3,opt,name=stake_weighted_seconds,json=stakeWeightedSeconds,proto3" json:"stake_weighted_seconds,omitempty"`
+	LastUpdatedHeight      uint64 `protobuf:"varint,4,opt,name=last_updated_height,json=lastUpdatedHeight,proto3" json:"last_updated_height,omitempty"`
+	HasStakeReputation     bool   `protobuf:"varint,5,opt,name=has_stake_reputation,json=hasStakeReputation,proto3" json:"has_stake_reputation,omitempty"`
+	AccumulatorStateKey    string `protobuf:"bytes,6,opt,name=accumulator_state_key,json=accumulatorStateKey,proto3" json:"accumulator_state_key,omitempty"`
+	NonTransferableByToken bool   `protobuf:"varint,7,opt,name=non_transferable_by_token,json=nonTransferableByToken,proto3" json:"non_transferable_by_token,omitempty"`
 }
 
 type QueryStakingRewardsRequest struct {
-	Delegator         string
-	Validator         string
-	InternalMigration bool
+	Delegator         string `protobuf:"bytes,1,opt,name=delegator,proto3" json:"delegator,omitempty"`
+	Validator         string `protobuf:"bytes,2,opt,name=validator,proto3" json:"validator,omitempty"`
+	InternalMigration bool   `protobuf:"varint,3,opt,name=internal_migration,json=internalMigration,proto3" json:"internal_migration,omitempty"`
 }
 
 type QueryStakingRewardsResponse struct {
-	RewardAmount uint64
+	RewardAmount uint64 `protobuf:"varint,1,opt,name=reward_amount,json=rewardAmount,proto3" json:"reward_amount,omitempty"`
+}
+
+type QueryStakingProofRequest struct {
+	Kind     string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Height   uint64 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
+	PoolID   string `protobuf:"bytes,3,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+	Account  string `protobuf:"bytes,4,opt,name=account,proto3" json:"account,omitempty"`
+	Epoch    uint64 `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	AppHash  string `protobuf:"bytes,6,opt,name=app_hash,json=appHash,proto3" json:"app_hash,omitempty"`
+	RootHash string `protobuf:"bytes,7,opt,name=root_hash,json=rootHash,proto3" json:"root_hash,omitempty"`
+}
+
+type QueryStakingProofResponse struct {
+	MetadataJSON string `protobuf:"bytes,1,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+}
+
+type QueryPoolUnbondingQueueRequest struct {
+	PoolID string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
+}
+
+type QueryPoolUnbondingQueueResponse struct {
+	UnbondingQueue []UnbondingEntry `protobuf:"bytes,1,rep,name=unbonding_queue,json=unbondingQueue,proto3" json:"unbonding_queue,omitempty"`
 }
 
 func DefaultParams() Params {

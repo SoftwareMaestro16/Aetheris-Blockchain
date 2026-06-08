@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package l1.aetravalidatorscore.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/aetra-validator-score/types";
+
+service Query {
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+  rpc ValidatorScore(QueryValidatorScoreRequest) returns (QueryValidatorScoreResponse);
+  rpc PublicValidatorMetrics(QueryPublicValidatorMetricsRequest) returns (QueryPublicValidatorMetricsResponse);
+  rpc AllValidatorScores(QueryAllValidatorScoresRequest) returns (QueryAllValidatorScoresResponse);
+}
+
+message QueryParamsRequest {}
+message QueryParamsResponse {}
+message QueryValidatorScoreRequest {}
+message QueryValidatorScoreResponse {}
+message QueryPublicValidatorMetricsRequest {}
+message QueryPublicValidatorMetricsResponse {}
+message QueryAllValidatorScoresRequest {}
+message QueryAllValidatorScoresResponse {}

@@ -120,10 +120,10 @@ type RewardClaim struct {
 }
 
 type StakeReputationAccumulator struct {
-	Account              string
-	StakeWeightedSeconds uint64
-	LastUpdatedHeight    uint64
-	ReputationScore      uint64
+	Account              string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	StakeWeightedSeconds uint64 `protobuf:"varint,2,opt,name=stake_weighted_seconds,json=stakeWeightedSeconds,proto3" json:"stake_weighted_seconds,omitempty"`
+	LastUpdatedHeight    uint64 `protobuf:"varint,3,opt,name=last_updated_height,json=lastUpdatedHeight,proto3" json:"last_updated_height,omitempty"`
+	ReputationScore      uint64 `protobuf:"varint,4,opt,name=reputation_score,json=reputationScore,proto3" json:"reputation_score,omitempty"`
 }
 
 type EpochStakingSnapshot struct {

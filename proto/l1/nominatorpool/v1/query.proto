@@ -13,6 +13,8 @@ service Query {
   rpc PoolRewards(QueryPoolRewardsRequest) returns (QueryPoolRewardsResponse);
   rpc PoolShare(QueryPoolShareRequest) returns (QueryPoolShareResponse);
   rpc PoolAllocations(QueryPoolAllocationsRequest) returns (QueryPoolAllocationsResponse);
+  rpc StakeReputation(QueryStakeReputationRequest) returns (QueryStakeReputationResponse);
+  rpc AccountReputation(QueryAccountReputationRequest) returns (QueryAccountReputationResponse);
   rpc StakingRewards(QueryStakingRewardsRequest) returns (QueryStakingRewardsResponse);
   rpc StakingProof(QueryStakingProofRequest) returns (QueryStakingProofResponse);
   rpc PoolUnbondingQueue(QueryPoolUnbondingQueueRequest) returns (QueryPoolUnbondingQueueResponse);
@@ -66,6 +68,36 @@ message QueryPoolAllocationsRequest {
 
 message QueryPoolAllocationsResponse {
   repeated ValidatorRewardAllocation allocations = 1;
+}
+
+message QueryStakeReputationRequest {
+  string account = 1;
+}
+
+message QueryStakeReputationResponse {
+  QueryStakeReputationAccumulator accumulator = 1;
+  bool found = 2;
+}
+
+message QueryStakeReputationAccumulator {
+  string account = 1;
+  uint64 stake_weighted_seconds = 2;
+  uint64 last_updated_height = 3;
+  uint64 reputation_score = 4;
+}
+
+message QueryAccountReputationRequest {
+  string account = 1;
+}
+
+message QueryAccountReputationResponse {
+  string account = 1;
+  uint64 reputation_score = 2;
+  uint64 stake_weighted_seconds = 3;
+  uint64 last_updated_height = 4;
+  bool has_stake_reputation = 5;
+  string accumulator_state_key = 6;
+  bool non_transferable_by_token = 7;
 }
 
 message QueryStakingRewardsRequest {

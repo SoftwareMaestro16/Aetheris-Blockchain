@@ -8,6 +8,9 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
 
+	aetraeconomicskeeper "github.com/sovereign-l1/l1/x/aetra-economics/keeper"
+	aetrastakingpolicykeeper "github.com/sovereign-l1/l1/x/aetra-staking-policy/keeper"
+	aetravalidatorscorekeeper "github.com/sovereign-l1/l1/x/aetra-validator-score/keeper"
 	burnkeeper "github.com/sovereign-l1/l1/x/burn/keeper"
 	burntypes "github.com/sovereign-l1/l1/x/burn/types"
 	delegatorprotectionkeeper "github.com/sovereign-l1/l1/x/delegator-protection/keeper"
@@ -53,6 +56,9 @@ type NativeKeepers struct {
 	StakeConcentrationKeeper  stakeconcentrationkeeper.Keeper
 	FeeCollectorKeeper        feecollectorkeeper.Keeper
 	FeesKeeper                feeskeeper.Keeper
+	AetraStakingPolicyKeeper  aetrastakingpolicykeeper.Keeper
+	AetraEconomicsKeeper      aetraeconomicskeeper.Keeper
+	AetraValidatorScoreKeeper aetravalidatorscorekeeper.Keeper
 }
 
 func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
@@ -117,5 +123,8 @@ func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
 			deps.DistrKeeper,
 			deps.GovAuthority,
 		),
+		AetraStakingPolicyKeeper:  aetrastakingpolicykeeper.NewKeeper(deps.GovAuthority),
+		AetraEconomicsKeeper:      aetraeconomicskeeper.NewKeeper(deps.GovAuthority),
+		AetraValidatorScoreKeeper: aetravalidatorscorekeeper.NewKeeper(deps.GovAuthority),
 	}
 }

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package l1.aetrastakingpolicy.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/aetra-staking-policy/types";
+
+service Query {
+  rpc Params(QueryParamsRequest) returns (QueryParamsResponse);
+  rpc ValidatorEffectivePower(QueryValidatorEffectivePowerRequest) returns (QueryValidatorEffectivePowerResponse);
+  rpc ValidatorStake(QueryValidatorStakeRequest) returns (QueryValidatorStakeResponse);
+  rpc TopNConcentration(QueryTopNConcentrationRequest) returns (QueryTopNConcentrationResponse);
+  rpc ValidatorRewardMultiplier(QueryValidatorRewardMultiplierRequest) returns (QueryValidatorRewardMultiplierResponse);
+  rpc DelegationWarningStatus(QueryDelegationWarningStatusRequest) returns (QueryDelegationWarningStatusResponse);
+}
+
+message QueryParamsRequest {}
+message QueryParamsResponse {}
+message QueryValidatorEffectivePowerRequest {}
+message QueryValidatorEffectivePowerResponse {}
+message QueryValidatorStakeRequest {}
+message QueryValidatorStakeResponse {}
+message QueryTopNConcentrationRequest {}
+message QueryTopNConcentrationResponse {}
+message QueryValidatorRewardMultiplierRequest {}
+message QueryValidatorRewardMultiplierResponse {}
+message QueryDelegationWarningStatusRequest {}
+message QueryDelegationWarningStatusResponse {}

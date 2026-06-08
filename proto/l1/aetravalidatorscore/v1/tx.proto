@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package l1.aetravalidatorscore.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/aetra-validator-score/types";
+
+service Msg {
+  rpc UpdateValidatorScoreParams(MsgUpdateValidatorScoreParams) returns (MsgUpdateValidatorScoreParamsResponse);
+  rpc UpdateValidatorScores(MsgUpdateValidatorScores) returns (MsgUpdateValidatorScoresResponse);
+}
+
+message MsgUpdateValidatorScoreParams {}
+message MsgUpdateValidatorScoreParamsResponse {}
+message MsgUpdateValidatorScores {}
+message MsgUpdateValidatorScoresResponse {}

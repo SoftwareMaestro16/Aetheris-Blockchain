@@ -16,6 +16,17 @@ service Msg {
   rpc ClaimStakingRewards(MsgClaimStakingRewards) returns (MsgClaimStakingRewardsResponse);
   rpc UpdatePoolCommission(MsgUpdatePoolCommission) returns (MsgUpdatePoolCommissionResponse);
   rpc ChangePoolValidator(MsgChangePoolValidator) returns (MsgChangePoolValidatorResponse);
+
+  rpc DepositToStakingPool(MsgDepositToStakingPool) returns (MsgDepositToStakingPoolResponse);
+  rpc RequestPoolUnbond(MsgRequestPoolUnbond) returns (MsgRequestPoolUnbondResponse);
+  rpc WithdrawPoolStake(MsgWithdrawPoolStake) returns (MsgWithdrawPoolStakeResponse);
+  rpc TopUpPoolReserve(MsgTopUpPoolReserve) returns (MsgTopUpPoolReserveResponse);
+  rpc ClaimStakeReputation(MsgClaimStakeReputation) returns (MsgClaimStakeReputationResponse);
+  rpc DelegateToValidator(MsgDelegateToValidator) returns (MsgDelegateToValidatorResponse);
+  rpc RegisterValidator(MsgRegisterValidator) returns (MsgRegisterValidatorResponse);
+  rpc UpdateValidator(MsgUpdateValidator) returns (MsgUpdateValidatorResponse);
+  rpc UpdateStakingParams(MsgUpdateStakingParams) returns (MsgUpdateStakingParamsResponse);
+  rpc CreateOfficialLiquidStakingPool(MsgCreateOfficialLiquidStakingPool) returns (MsgCreateOfficialLiquidStakingPoolResponse);
 }
 
 message MsgCreateNominatorPool {
@@ -133,4 +144,151 @@ message MsgChangePoolValidator {
 
 message MsgChangePoolValidatorResponse {
   NominatorPool pool = 1;
+}
+
+message MsgDepositToStakingPool {
+  string pool_id = 1;
+  string wallet_address = 2;
+  uint64 amount = 3;
+  uint64 height = 4;
+  string validator_address = 5;
+}
+
+message MsgDepositToStakingPoolResponse {
+  string pool_id = 1;
+  string owner_address = 2;
+  uint64 amount = 3;
+  uint64 shares = 4;
+  uint64 height = 5;
+  string receipt_token = 6;
+}
+
+message MsgRequestPoolUnbond {
+  string pool_id = 1;
+  string owner_address = 2;
+  string request_id = 3;
+  uint64 shares = 4;
+  uint64 height = 5;
+}
+
+message MsgRequestPoolUnbondResponse {
+  string pool_id = 1;
+  string owner_address = 2;
+  string request_id = 3;
+  uint64 shares = 4;
+  uint64 amount = 5;
+  uint64 complete_height = 6;
+}
+
+message MsgWithdrawPoolStake {
+  string caller_contract_user = 1;
+  string pool_id = 2;
+  string owner_address = 3;
+  string request_id = 4;
+  uint64 height = 5;
+}
+
+message MsgWithdrawPoolStakeResponse {
+  string pool_id = 1;
+  string owner_address = 2;
+  string request_id = 3;
+  uint64 amount = 4;
+  uint64 height = 5;
+}
+
+message MsgTopUpPoolReserve {
+  string pool_id = 1;
+  string payer_address = 2;
+  uint64 amount = 3;
+  uint64 height = 4;
+}
+
+message MsgTopUpPoolReserveResponse {
+  string pool_id = 1;
+  string payer_address = 2;
+  uint64 amount = 3;
+  uint64 storage_debt_paid = 4;
+}
+
+message MsgClaimStakeReputation {
+  string pool_id = 1;
+  string owner_address = 2;
+  uint64 height = 3;
+}
+
+message MsgClaimStakeReputationResponse {
+  string account = 1;
+  string pool_id = 2;
+  uint64 reputation_delta = 3;
+  uint64 reputation_score = 4;
+}
+
+message MsgDelegateToValidator {
+  string authority = 1;
+  string user_address = 2;
+  string validator_address = 3;
+  uint64 amount = 4;
+  uint64 height = 5;
+}
+
+message MsgDelegateToValidatorResponse {}
+
+message MsgRegisterValidator {
+  string signer_address = 1;
+  string validator_address = 2;
+  uint64 self_stake = 3;
+  uint64 nominator_stake = 4;
+  uint32 commission_bps = 5;
+  uint64 height = 6;
+}
+
+message MsgRegisterValidatorResponse {
+  string validator = 1;
+  string status = 2;
+  uint64 self_stake = 3;
+  uint64 pool_stake = 4;
+}
+
+message MsgUpdateValidator {
+  string signer_address = 1;
+  string validator_address = 2;
+  uint64 self_stake = 3;
+  uint64 nominator_stake = 4;
+  uint32 performance_score = 5;
+  uint32 commission_bps = 6;
+  uint32 slashing_risk_bps = 7;
+  uint32 allocation_limit_bps = 8;
+  string status = 9;
+  uint64 height = 10;
+}
+
+message MsgUpdateValidatorResponse {
+  string validator = 1;
+  string status = 2;
+  uint64 self_stake = 3;
+  uint64 pool_stake = 4;
+}
+
+message MsgUpdateStakingParams {
+  string authority = 1;
+  Params params = 2;
+  uint64 height = 3;
+}
+
+message MsgUpdateStakingParamsResponse {}
+
+message MsgCreateOfficialLiquidStakingPool {
+  string authority = 1;
+  string pool_id = 2;
+  string contract_address_user = 3;
+  string contract_address_raw = 4;
+  string pool_operator = 5;
+  uint32 pool_commission_bps = 6;
+  uint64 height = 7;
+}
+
+message MsgCreateOfficialLiquidStakingPoolResponse {
+  string pool_id = 1;
+  string contract_address_user = 2;
+  string contract_address_raw = 3;
 }

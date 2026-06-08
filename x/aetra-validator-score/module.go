@@ -1,4 +1,4 @@
-package nominatorpool
+package aetravalidatorscore
 
 import (
 	"encoding/json"
@@ -15,9 +15,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 
+	"github.com/sovereign-l1/l1/x/aetra-validator-score/keeper"
+	"github.com/sovereign-l1/l1/x/aetra-validator-score/types"
 	"github.com/sovereign-l1/l1/x/internal/prototype"
-	"github.com/sovereign-l1/l1/x/nominator-pool/keeper"
-	"github.com/sovereign-l1/l1/x/nominator-pool/types"
 )
 
 const ConsensusVersion = prototype.NextMigrationVersion
@@ -29,15 +29,12 @@ var (
 	_ appmodule.AppModule   = AppModule{}
 )
 
-type AppModule struct {
-	keeper *keeper.Keeper
-}
+type AppModule struct{ keeper *keeper.Keeper }
 
 func NewAppModule(k *keeper.Keeper) AppModule { return AppModule{keeper: k} }
-
-func (AppModule) IsOnePerModuleType() {}
-func (AppModule) IsAppModule()        {}
-func (AppModule) Name() string        { return types.ModuleName }
+func (AppModule) IsOnePerModuleType()         {}
+func (AppModule) IsAppModule()                {}
+func (AppModule) Name() string                { return types.ModuleName }
 func (AppModule) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	types.RegisterLegacyAminoCodec(cdc)
 }
@@ -47,45 +44,39 @@ func (AppModule) RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 func (AppModule) RegisterGRPCGatewayRoutes(client.Context, *runtime.ServeMux) {}
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
-	types.RegisterQueryServer(cfg.QueryServer(), keeper.NewQueryServerImpl(am.keeper))
-	if err := cfg.RegisterMigration(types.ModuleName, 1, func(ctx sdk.Context) error {
-		return am.keeper.Migrate1to2State(ctx)
-	}); err != nil {
+	types.RegisterMsgServer(cfg.MsgServer(), keeper.NewGRPCMsgServer(am.keeper))
+	types.RegisterQueryServer(cfg.QueryServer(), keeper.NewGRPCQueryServer(am.keeper))
+	if err := cfg.RegisterMigration(types.ModuleName, 1, func(sdk.Context) error { return nil }); err != nil {
 		panic(fmt.Sprintf("failed to register x/%s migration from version 1 to 2: %v", types.ModuleName, err))
 	}
 }
 
 func (AppModule) DefaultGenesis(codec.JSONCodec) json.RawMessage {
-	return mustMarshalGenesis(types.ModuleName, keeper.DefaultGenesis())
+	return mustMarshalGenesis(types.ModuleName, types.DefaultGenesisState(prototype.DefaultAuthority))
 }
-
 func (AppModule) ValidateGenesis(_ codec.JSONCodec, _ client.TxEncodingConfig, bz json.RawMessage) error {
-	var gs keeper.GenesisState
+	var gs types.GenesisState
 	if err := unmarshalGenesis(types.ModuleName, bz, &gs); err != nil {
 		return err
 	}
 	return gs.Validate()
 }
-
-func (am AppModule) InitGenesis(ctx sdk.Context, _ codec.JSONCodec, bz json.RawMessage) {
-	var gs keeper.GenesisState
+func (am AppModule) InitGenesis(_ sdk.Context, _ codec.JSONCodec, bz json.RawMessage) {
+	var gs types.GenesisState
 	if err := unmarshalGenesis(types.ModuleName, bz, &gs); err != nil {
 		panic(err)
 	}
-	if err := am.keeper.InitGenesisState(ctx, gs); err != nil {
+	if err := am.keeper.InitGenesis(gs); err != nil {
 		panic(fmt.Errorf("failed to initialize %s genesis: %w", types.ModuleName, err))
 	}
 }
-
-func (am AppModule) ExportGenesis(ctx sdk.Context, _ codec.JSONCodec) json.RawMessage {
-	gs, err := am.keeper.ExportGenesisState(ctx)
+func (am AppModule) ExportGenesis(sdk.Context, codec.JSONCodec) json.RawMessage {
+	gs, err := am.keeper.ExportGenesis()
 	if err != nil {
 		panic(fmt.Errorf("failed to export %s genesis: %w", types.ModuleName, err))
 	}
 	return mustMarshalGenesis(types.ModuleName, gs)
 }
-
 func (AppModule) ConsensusVersion() uint64    { return ConsensusVersion }
 func (AppModule) GetTxCmd() *cobra.Command    { return types.NewTxCmd() }
 func (AppModule) GetQueryCmd() *cobra.Command { return types.NewQueryCmd() }

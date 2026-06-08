@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package l1.aetraeconomics.v1;
+
+option go_package = "github.com/sovereign-l1/l1/x/aetra-economics/types";
+
+service Query {
+  rpc CurrentInflation(QueryCurrentInflationRequest) returns (QueryCurrentInflationResponse);
+  rpc CurrentBondedRatio(QueryCurrentBondedRatioRequest) returns (QueryCurrentBondedRatioResponse);
+  rpc EstimatedAPR(QueryEstimatedAPRRequest) returns (QueryEstimatedAPRResponse);
+  rpc FeeSplitParams(QueryFeeSplitParamsRequest) returns (QueryFeeSplitParamsResponse);
+  rpc BurnedSupply(QueryBurnedSupplyRequest) returns (QueryBurnedSupplyResponse);
+  rpc TreasuryBalance(QueryTreasuryBalanceRequest) returns (QueryTreasuryBalanceResponse);
+  rpc EpochRewardSummary(QueryEpochRewardSummaryRequest) returns (QueryEpochRewardSummaryResponse);
+}
+
+message QueryCurrentInflationRequest {}
+message QueryCurrentInflationResponse {}
+message QueryCurrentBondedRatioRequest {}
+message QueryCurrentBondedRatioResponse {}
+message QueryEstimatedAPRRequest {}
+message QueryEstimatedAPRResponse {}
+message QueryFeeSplitParamsRequest {}
+message QueryFeeSplitParamsResponse {}
+message QueryBurnedSupplyRequest {}
+message QueryBurnedSupplyResponse {}
+message QueryTreasuryBalanceRequest {}
+message QueryTreasuryBalanceResponse {}
+message QueryEpochRewardSummaryRequest {}
+message QueryEpochRewardSummaryResponse {}
