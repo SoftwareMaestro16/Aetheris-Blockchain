@@ -121,6 +121,14 @@ func (k Keeper) AccountByReputation(ctx context.Context, reputationID string) (n
 	return k.AccountByUser(ctx, userAddress)
 }
 
+func (k Keeper) AccountStatus(ctx context.Context, userAddress string) (string, bool, error) {
+	account, found, err := k.AccountByUser(ctx, userAddress)
+	if err != nil || !found {
+		return nativeaccount.AccountStatusInactive, found, err
+	}
+	return account.Status, true, nil
+}
+
 func (k Keeper) AccountsAfter(ctx context.Context, cursor string, limit uint64) ([]nativeaccount.Account, bool, error) {
 	cursor = strings.TrimSpace(cursor)
 	if cursor != "" {

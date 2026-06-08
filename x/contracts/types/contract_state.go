@@ -33,6 +33,7 @@ type State struct {
 	Codes                []CodeRecord
 	Contracts            []Contract
 	InternalMessages     []InternalMessage
+	Receipts             []ContractReceipt
 	AssetOwnership       []AssetOwnershipRecord
 	StakingCapabilities  []ContractCapability
 	NativeStakingInjects []NativeStakingInjectionRecord
@@ -56,6 +57,10 @@ type Contract struct {
 	Creator                 string
 	Owner                   string
 	Admin                   string
+	Upgradeable             bool
+	UpgradesDisabled        bool
+	SystemOwned             bool
+	StorageSchemaVersion    uint64
 	InitMsg                 []byte
 	Data                    []byte
 	Balance                 uint64
@@ -108,18 +113,39 @@ type NativeStakingInjectionRecord struct {
 	Height              uint64
 }
 
+type ContractStorageEntry struct {
+	ContractAddress string
+	Key             []byte
+	Value           []byte
+}
+
+type ContractReceipt struct {
+	ReceiptID       string
+	ContractAddress string
+	Actor           string
+	Operation       string
+	ExitCode        uint32
+	Amount          uint64
+	GasUsed         uint64
+	LogicalTime     uint64
+	Height          uint64
+}
+
 type MsgInstantiateContract struct {
-	Creator      string
-	CodeID       string
-	ChainID      string
-	Namespace    string
-	StateInit    *StateInit
-	InitMsg      []byte
-	Funds        uint64
-	Admin        string
-	Salt         string
-	StorageBytes uint64
-	Height       uint64
+	Creator       string
+	CodeID        string
+	ChainID       string
+	Namespace     string
+	StateInit     *StateInit
+	InitMsg       []byte
+	Funds         uint64
+	Admin         string
+	Salt          string
+	StorageBytes  uint64
+	Upgradeable   bool
+	SystemOwned   bool
+	SchemaVersion uint64
+	Height        uint64
 }
 
 type InstantiateContractResponse struct {
@@ -144,6 +170,37 @@ type ExecuteContractResponse struct {
 	Owner               string
 	Balance             uint64
 	Events              []ContractEvent
+}
+
+type MsgUpgradeContractCode struct {
+	Actor            string
+	ContractAddress  string
+	NewCodeID        string
+	MigrationHandler string
+	Height           uint64
+}
+
+type MsgMigrateContractState struct {
+	Actor             string
+	ContractAddress   string
+	FromSchemaVersion uint64
+	ToSchemaVersion   uint64
+	MigrationHandler  string
+	Payload           []byte
+	Height            uint64
+}
+
+type MsgSetContractAdmin struct {
+	Actor           string
+	ContractAddress string
+	NewAdmin        string
+	Height          uint64
+}
+
+type MsgDisableContractUpgrades struct {
+	Actor           string
+	ContractAddress string
+	Height          uint64
 }
 
 type MsgTopUpContract struct {
@@ -235,6 +292,18 @@ func (s State) Normalize() State {
 		}
 		return out.InternalMessages[i].DestinationAccount < out.InternalMessages[j].DestinationAccount
 	})
+	sort.SliceStable(out.Receipts, func(i, j int) bool {
+		if out.Receipts[i].Height != out.Receipts[j].Height {
+			return out.Receipts[i].Height < out.Receipts[j].Height
+		}
+		if out.Receipts[i].LogicalTime != out.Receipts[j].LogicalTime {
+			return out.Receipts[i].LogicalTime < out.Receipts[j].LogicalTime
+		}
+		if out.Receipts[i].ContractAddress != out.Receipts[j].ContractAddress {
+			return out.Receipts[i].ContractAddress < out.Receipts[j].ContractAddress
+		}
+		return out.Receipts[i].ReceiptID < out.Receipts[j].ReceiptID
+	})
 	sort.SliceStable(out.AssetOwnership, func(i, j int) bool {
 		return assetKey(out.AssetOwnership[i]) < assetKey(out.AssetOwnership[j])
 	})
@@ -282,6 +351,19 @@ func (s State) Validate(params Params) error {
 		if err := msg.Validate(); err != nil {
 			return err
 		}
+	}
+	seenReceipts := map[string]struct{}{}
+	for _, receipt := range s.Receipts {
+		if err := receipt.Validate(); err != nil {
+			return err
+		}
+		if _, found := seenContracts[receipt.ContractAddress]; !found {
+			return errors.New("contract receipt references unknown contract")
+		}
+		if _, found := seenReceipts[receipt.ReceiptID]; found {
+			return errors.New("duplicate contract receipt")
+		}
+		seenReceipts[receipt.ReceiptID] = struct{}{}
 	}
 	seenAssets := map[string]struct{}{}
 	for _, asset := range s.AssetOwnership {
@@ -386,9 +468,6 @@ func (c Contract) Validate(params Params) error {
 		if c.StateInitHash != "" && c.StateInitHash != stateInitHash {
 			return errors.New("contract state init hash mismatch")
 		}
-		if c.CodeHash != "" && c.CodeHash != c.StateInit.Normalize().CodeHash {
-			return errors.New("contract code hash must match state init")
-		}
 		if c.Owner != c.StateInit.Normalize().Owner {
 			return errors.New("contract owner must match state init")
 		}
@@ -400,6 +479,12 @@ func (c Contract) Validate(params Params) error {
 	}
 	if c.Status != ContractStatusActive && c.Status != ContractStatusFrozen && c.Status != ContractStatusFrozenLimited && c.Status != ContractStatusArchived && c.Status != ContractStatusDeleted {
 		return fmt.Errorf("unsupported contract status %q", c.Status)
+	}
+	if c.UpgradesDisabled && c.Upgradeable {
+		return errors.New("contract upgrades disabled cannot remain upgradeable")
+	}
+	if c.StorageSchemaVersion == 0 && c.Status != ContractStatusDeleted {
+		return errors.New("contract storage schema version must be positive")
 	}
 	if c.StorageBytes > params.MaxContractStorageBytes {
 		return errors.New(ErrStorageRent + ": contract storage exceeds configured limit")
@@ -498,12 +583,56 @@ func (n NativeStakingInjectionRecord) Validate() error {
 	return nil
 }
 
+func (s ContractStorageEntry) Validate() error {
+	if err := ValidateContractAddress(s.ContractAddress); err != nil {
+		return err
+	}
+	if len(s.Key) == 0 {
+		return errors.New("contract storage key is required")
+	}
+	if len(s.Value) > MaxContractPayloadBytes {
+		return errors.New("contract storage value exceeds maximum size")
+	}
+	return nil
+}
+
+func (r ContractReceipt) Validate() error {
+	if err := ValidateContractAddress(r.ContractAddress); err != nil {
+		return err
+	}
+	if r.Actor != "" {
+		if err := ValidateUserFacingAEAddress("contract receipt actor", r.Actor); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(r.Operation) == "" {
+		return errors.New("contract receipt operation is required")
+	}
+	if r.Height == 0 {
+		return errors.New("contract receipt height must be positive")
+	}
+	if r.LogicalTime == 0 {
+		return errors.New("contract receipt logical time must be positive")
+	}
+	expected := ComputeContractReceiptID(r)
+	if r.ReceiptID == "" || r.ReceiptID != expected {
+		return errors.New("contract receipt id mismatch")
+	}
+	return nil
+}
+
 func ValidateUserFacingAEAddress(field, text string) error {
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, addressing.UserFriendlyPrefix) {
 		return fmt.Errorf("%s must use AE user-facing address format", field)
 	}
-	return addressing.ValidateUserAddress(field, text)
+	if err := addressing.ValidateUserAddress(field, text); err != nil {
+		return err
+	}
+	if addressing.IsReservedSystemAddressText(text) {
+		return fmt.Errorf("%s must not use reserved system address", field)
+	}
+	return nil
 }
 
 func ValidateRawAddress(field, text string) error {
@@ -550,11 +679,15 @@ func UserAddressForRawAddress(rawAddress string) (string, error) {
 
 func ComputeContractStateRoot(contract Contract) string {
 	sum := sha256Sum([]byte(fmt.Sprintf(
-		"aetra-contract-state-v1/%s/%s/%s/%s/%020d/%x",
+		"aetra-contract-state-v2/%s/%s/%s/%s/%t/%t/%t/%020d/%020d/%x",
 		contract.AddressUser,
 		contract.CodeID,
 		contract.CodeHash,
 		contract.StateInitHash,
+		contract.Upgradeable,
+		contract.UpgradesDisabled,
+		contract.SystemOwned,
+		contract.StorageSchemaVersion,
 		contract.LogicalTime,
 		contract.Data,
 	)))
@@ -578,6 +711,21 @@ func ComputeInternalMessageID(msg InternalMessage) string {
 	return hex.EncodeToString(sum)
 }
 
+func ComputeContractReceiptID(receipt ContractReceipt) string {
+	sum := sha256Sum([]byte(fmt.Sprintf(
+		"aetra-contract-receipt-v1/%s/%s/%s/%010d/%020d/%020d/%020d/%020d",
+		receipt.ContractAddress,
+		receipt.Actor,
+		receipt.Operation,
+		receipt.ExitCode,
+		receipt.Amount,
+		receipt.GasUsed,
+		receipt.LogicalTime,
+		receipt.Height,
+	)))
+	return hex.EncodeToString(sum)
+}
+
 func RefreshStateRoot(gs GenesisState) GenesisState {
 	gs.State = gs.State.Normalize()
 	gs.StateRoot = ComputeContractsStateRoot(gs)
@@ -589,6 +737,7 @@ func cloneState(s State) State {
 		Codes:                cloneCodes(s.Codes),
 		Contracts:            cloneContracts(s.Contracts),
 		InternalMessages:     cloneInternalMessages(s.InternalMessages),
+		Receipts:             cloneReceipts(s.Receipts),
 		AssetOwnership:       append([]AssetOwnershipRecord(nil), s.AssetOwnership...),
 		StakingCapabilities:  append([]ContractCapability(nil), s.StakingCapabilities...),
 		NativeStakingInjects: append([]NativeStakingInjectionRecord(nil), s.NativeStakingInjects...),
@@ -619,6 +768,10 @@ func cloneInternalMessages(values []InternalMessage) []InternalMessage {
 		out[i].Body = append([]byte(nil), out[i].Body...)
 	}
 	return out
+}
+
+func cloneReceipts(values []ContractReceipt) []ContractReceipt {
+	return append([]ContractReceipt(nil), values...)
 }
 
 func assetKey(a AssetOwnershipRecord) string {

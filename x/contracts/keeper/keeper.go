@@ -32,7 +32,7 @@ var genesisKey = []byte{0x01}
 // AccountStatusReader is a temporary integration boundary for CHAT 1 native-account wiring.
 // It keeps contract auth/freeze checks local until the account keeper interface is finalized.
 type AccountStatusReader interface {
-	AccountStatus(address string) (string, bool)
+	AccountStatus(context.Context, string) (string, bool, error)
 }
 
 func NewKeeper() Keeper {
@@ -45,6 +45,11 @@ func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
 
 func NewKeeperWithAccountStatus(reader AccountStatusReader) Keeper {
 	k := NewKeeper()
+	k.accountStatusReader = reader
+	return k
+}
+
+func (k Keeper) WithAccountStatusReader(reader AccountStatusReader) Keeper {
 	k.accountStatusReader = reader
 	return k
 }
@@ -141,9 +146,13 @@ func (k *Keeper) StoreCode(msg types.MsgStoreCode) (types.StoreCodeResponse, err
 	if err := types.ValidateUserFacingAEAddress("contract code authority", msg.Authority); err != nil {
 		return types.StoreCodeResponse{}, err
 	}
-	if err := k.ensureActiveWallet(msg.Authority, "contract code store"); err != nil {
+	if err := k.ensureActiveWallet(context.Background(), msg.Authority, "contract code store"); err != nil {
 		return types.StoreCodeResponse{}, err
 	}
+	return k.storeCodeUnchecked(msg)
+}
+
+func (k *Keeper) storeCodeUnchecked(msg types.MsgStoreCode) (types.StoreCodeResponse, error) {
 	if len(msg.Bytecode) > 0 {
 		if err := types.ValidateAVMBytecode(k.genesis.Params, msg.Bytecode); err != nil {
 			return types.StoreCodeResponse{}, err
@@ -178,7 +187,16 @@ func (k *Keeper) StoreCode(msg types.MsgStoreCode) (types.StoreCodeResponse, err
 }
 
 func (k *Keeper) StoreCodeState(ctx context.Context, msg types.MsgStoreCode) (types.StoreCodeResponse, error) {
-	res, err := k.StoreCode(msg)
+	if !k.genesis.Params.Enabled {
+		return types.StoreCodeResponse{}, errors.New(types.ErrExecutionFailed + ": module disabled")
+	}
+	if err := types.ValidateUserFacingAEAddress("contract code authority", msg.Authority); err != nil {
+		return types.StoreCodeResponse{}, err
+	}
+	if err := k.ensureActiveWallet(ctx, msg.Authority, "contract code store"); err != nil {
+		return types.StoreCodeResponse{}, err
+	}
+	res, err := k.storeCodeUnchecked(msg)
 	if err != nil {
 		return types.StoreCodeResponse{}, err
 	}
@@ -186,24 +204,51 @@ func (k *Keeper) StoreCodeState(ctx context.Context, msg types.MsgStoreCode) (ty
 }
 
 func (k *Keeper) DeployContract(msg types.MsgDeployContract) (types.InstantiateContractResponse, error) {
+	return k.deployContract(context.Background(), msg)
+}
+
+func (k *Keeper) DeployContractState(ctx context.Context, msg types.MsgDeployContract) (types.InstantiateContractResponse, error) {
+	res, err := k.deployContract(ctx, msg)
+	if err != nil {
+		return types.InstantiateContractResponse{}, err
+	}
+	return res, k.writeGenesis(ctx)
+}
+
+func (k *Keeper) deployContract(ctx context.Context, msg types.MsgDeployContract) (types.InstantiateContractResponse, error) {
 	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
-	return k.InstantiateContract(types.MsgInstantiateContract{
-		Creator:   msg.Creator,
-		CodeID:    msg.CodeID,
-		ChainID:   msg.ChainID,
-		Namespace: msg.Namespace,
-		StateInit: msg.StateInit,
-		InitMsg:   append([]byte(nil), msg.InitPayload...),
-		Funds:     msg.InitialBalance,
-		Admin:     msg.Admin,
-		Salt:      msg.Salt,
-		Height:    msg.Height,
+	return k.instantiateContract(ctx, types.MsgInstantiateContract{
+		Creator:       msg.Creator,
+		CodeID:        msg.CodeID,
+		ChainID:       msg.ChainID,
+		Namespace:     msg.Namespace,
+		StateInit:     msg.StateInit,
+		InitMsg:       append([]byte(nil), msg.InitPayload...),
+		Funds:         msg.InitialBalance,
+		Admin:         msg.Admin,
+		Salt:          msg.Salt,
+		Upgradeable:   msg.Upgradeable,
+		SystemOwned:   msg.SystemOwned,
+		SchemaVersion: msg.SchemaVersion,
+		Height:        msg.Height,
 	})
 }
 
 func (k *Keeper) ExecuteExternal(msg types.MsgExecuteExternal) (types.ExecuteContractResponse, error) {
+	return k.executeExternal(context.Background(), msg)
+}
+
+func (k *Keeper) ExecuteExternalState(ctx context.Context, msg types.MsgExecuteExternal) (types.ExecuteContractResponse, error) {
+	res, err := k.executeExternal(ctx, msg)
+	if err != nil {
+		return types.ExecuteContractResponse{}, err
+	}
+	return res, k.writeGenesis(ctx)
+}
+
+func (k *Keeper) executeExternal(ctx context.Context, msg types.MsgExecuteExternal) (types.ExecuteContractResponse, error) {
 	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
 		return types.ExecuteContractResponse{}, err
 	}
@@ -215,7 +260,7 @@ func (k *Keeper) ExecuteExternal(msg types.MsgExecuteExternal) (types.ExecuteCon
 		if user != msg.ContractAddress {
 			return types.ExecuteContractResponse{}, errors.New(types.ErrContractNotFound + ": state init address does not match external execute target")
 		}
-		_, err = k.InstantiateContract(types.MsgInstantiateContract{
+		_, err = k.instantiateContract(ctx, types.MsgInstantiateContract{
 			Creator:   msg.Sender,
 			CodeID:    msg.StateInit.Normalize().CodeID,
 			ChainID:   msg.ChainID,
@@ -227,7 +272,7 @@ func (k *Keeper) ExecuteExternal(msg types.MsgExecuteExternal) (types.ExecuteCon
 			return types.ExecuteContractResponse{}, err
 		}
 	}
-	return k.ExecuteContract(types.MsgExecuteContract{
+	return k.executeContract(ctx, types.MsgExecuteContract{
 		Sender:          msg.Sender,
 		ContractAddress: msg.ContractAddress,
 		Msg:             append([]byte(nil), msg.Payload...),
@@ -326,18 +371,54 @@ func (k Keeper) Contracts(req types.QueryContractsRequest) ([]types.Contract, er
 	return append([]types.Contract(nil), contracts...), nil
 }
 
-func (k Keeper) ContractStorage(req types.QueryContractStorageRequest) error {
+func (k Keeper) ContractStorage(req types.QueryContractStorageRequest) ([]types.ContractStorageEntry, error) {
 	if err := types.ValidateContractAddress(req.ContractAddress); err != nil {
-		return err
+		return nil, err
 	}
-	return types.ValidateQueryPagination(req.Pagination)
+	if err := types.ValidateQueryPagination(req.Pagination); err != nil {
+		return nil, err
+	}
+	contract, found := findContract(k.genesis.State.Contracts, req.ContractAddress)
+	if !found {
+		return nil, errors.New(types.ErrContractNotFound + ": contract not found")
+	}
+	entries := []types.ContractStorageEntry{{
+		ContractAddress: contract.AddressUser,
+		Key:             []byte("data"),
+		Value:           append([]byte(nil), contract.Data...),
+	}}
+	out := make([]types.ContractStorageEntry, 0, len(entries))
+	for _, entry := range entries {
+		if len(req.KeyPrefix) != 0 && !bytes.HasPrefix(entry.Key, req.KeyPrefix) {
+			continue
+		}
+		out = append(out, entry)
+		if uint32(len(out)) == req.Pagination.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
-func (k Keeper) ContractReceipts(req types.QueryContractReceiptsRequest) error {
+func (k Keeper) ContractReceipts(req types.QueryContractReceiptsRequest) ([]types.ContractReceipt, error) {
 	if err := types.ValidateContractAddress(req.ContractAddress); err != nil {
-		return err
+		return nil, err
 	}
-	return types.ValidateQueryPagination(req.Pagination)
+	if err := types.ValidateQueryPagination(req.Pagination); err != nil {
+		return nil, err
+	}
+	receipts := k.genesis.State.Normalize().Receipts
+	out := make([]types.ContractReceipt, 0)
+	for _, receipt := range receipts {
+		if receipt.ContractAddress != req.ContractAddress {
+			continue
+		}
+		out = append(out, receipt)
+		if uint32(len(out)) == req.Pagination.Limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (k Keeper) ContractQueue(req types.QueryContractQueueRequest) ([]types.InternalMessage, error) {
@@ -378,13 +459,17 @@ func (k Keeper) ContractStateRoot(req types.QueryContractStateRootRequest) (stri
 }
 
 func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.InstantiateContractResponse, error) {
+	return k.instantiateContract(context.Background(), msg)
+}
+
+func (k *Keeper) instantiateContract(ctx context.Context, msg types.MsgInstantiateContract) (types.InstantiateContractResponse, error) {
 	if !k.genesis.Params.Enabled {
 		return types.InstantiateContractResponse{}, errors.New(types.ErrExecutionFailed + ": module disabled")
 	}
 	if err := types.ValidateUserFacingAEAddress("contract creator", msg.Creator); err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
-	if err := k.ensureActiveWallet(msg.Creator, "contract instantiate"); err != nil {
+	if err := k.ensureActiveWallet(ctx, msg.Creator, "contract instantiate"); err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
 	if msg.Height == 0 {
@@ -429,6 +514,10 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 	if err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
+	schemaVersion := msg.SchemaVersion
+	if schemaVersion == 0 {
+		schemaVersion = 1
+	}
 	contract := types.Contract{
 		AddressUser:             user,
 		AddressRaw:              raw,
@@ -439,6 +528,9 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 		Creator:                 msg.Creator,
 		Owner:                   stateInit.Owner,
 		Admin:                   admin,
+		Upgradeable:             msg.Upgradeable,
+		SystemOwned:             msg.SystemOwned,
+		StorageSchemaVersion:    schemaVersion,
 		InitMsg:                 append([]byte(nil), data...),
 		Data:                    append([]byte(nil), data...),
 		Balance:                 funds,
@@ -452,6 +544,7 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 	contract.StateRoot = types.ComputeContractStateRoot(contract)
 	next := k.genesis
 	next.State.Contracts = append(next.State.Contracts, contract)
+	next.State.Receipts = append(next.State.Receipts, newContractReceipt(contract.AddressUser, msg.Creator, "deploy", types.ExitCodeOK, funds, 0, contract.LogicalTime, msg.Height))
 	next = types.RefreshStateRoot(next)
 	if err := next.Validate(); err != nil {
 		return types.InstantiateContractResponse{}, err
@@ -474,11 +567,160 @@ func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.In
 }
 
 func (k *Keeper) InstantiateContractState(ctx context.Context, msg types.MsgInstantiateContract) (types.InstantiateContractResponse, error) {
-	res, err := k.InstantiateContract(msg)
+	res, err := k.instantiateContract(ctx, msg)
 	if err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
 	return res, k.writeGenesis(ctx)
+}
+
+func (k *Keeper) UpgradeContractCode(msg types.MsgUpgradeContractCode) (types.ContractReceipt, error) {
+	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	idx, contract, found := findContractWithIndex(k.genesis.State.Contracts, msg.ContractAddress)
+	if !found {
+		return types.ContractReceipt{}, errors.New(types.ErrContractNotFound + ": contract not found")
+	}
+	if err := k.authorizeContractUpgradeActor(contract, msg.Actor); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	if !contract.Upgradeable || contract.UpgradesDisabled {
+		return types.ContractReceipt{}, errors.New(types.ErrUnauthorized + ": contract is immutable")
+	}
+	code, found := findCode(k.genesis.State.Codes, msg.NewCodeID)
+	if !found {
+		return types.ContractReceipt{}, errors.New(types.ErrContractNotFound + ": upgrade code not found")
+	}
+	if code.CodeHash != contract.CodeHash && strings.TrimSpace(msg.MigrationHandler) == "" {
+		return types.ContractReceipt{}, errors.New(types.ErrExecutionFailed + ": code hash change requires migration handler")
+	}
+	nextContract := contract
+	nextContract.CodeID = code.CodeID
+	nextContract.CodeHash = code.CodeHash
+	storageBytes, err := contractStorageBytesForCode(code, nextContract.Data)
+	if err != nil {
+		return types.ContractReceipt{}, err
+	}
+	if storageBytes > k.genesis.Params.MaxContractStorageBytes {
+		return types.ContractReceipt{}, errors.New(types.ErrStorageRent + ": contract storage exceeds configured limit")
+	}
+	nextContract.StorageBytes = storageBytes
+	nextContract.LogicalTime++
+	nextContract.UpdatedHeight = msg.Height
+	nextContract.StateRoot = types.ComputeContractStateRoot(nextContract)
+	receipt := newContractReceipt(nextContract.AddressUser, receiptActor(contract, msg.Actor), "upgrade_code", types.ExitCodeOK, 0, 0, nextContract.LogicalTime, msg.Height)
+	next := k.genesis
+	next.State.Contracts[idx] = nextContract
+	next.State.Receipts = append(next.State.Receipts, receipt)
+	next = types.RefreshStateRoot(next)
+	if err := next.Validate(); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	k.genesis = next
+	return receipt, nil
+}
+
+func (k *Keeper) MigrateContractState(msg types.MsgMigrateContractState) (types.ContractReceipt, error) {
+	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	idx, contract, found := findContractWithIndex(k.genesis.State.Contracts, msg.ContractAddress)
+	if !found {
+		return types.ContractReceipt{}, errors.New(types.ErrContractNotFound + ": contract not found")
+	}
+	if err := k.authorizeContractUpgradeActor(contract, msg.Actor); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	if !contract.Upgradeable || contract.UpgradesDisabled {
+		return types.ContractReceipt{}, errors.New(types.ErrUnauthorized + ": contract is immutable")
+	}
+	if contract.StorageSchemaVersion != msg.FromSchemaVersion {
+		return types.ContractReceipt{}, errors.New(types.ErrExecutionFailed + ": contract migration schema version mismatch")
+	}
+	nextContract := contract
+	data, err := applyContractMigration(nextContract.Data, msg.MigrationHandler, msg.Payload)
+	if err != nil {
+		return types.ContractReceipt{}, err
+	}
+	nextContract.Data = data
+	nextContract.StorageSchemaVersion = msg.ToSchemaVersion
+	storageBytes, err := k.contractStorageBytes(nextContract)
+	if err != nil {
+		return types.ContractReceipt{}, err
+	}
+	if storageBytes > k.genesis.Params.MaxContractStorageBytes {
+		return types.ContractReceipt{}, errors.New(types.ErrStorageRent + ": migrated contract storage exceeds configured limit")
+	}
+	nextContract.StorageBytes = storageBytes
+	nextContract.LogicalTime++
+	nextContract.UpdatedHeight = msg.Height
+	nextContract.StateRoot = types.ComputeContractStateRoot(nextContract)
+	receipt := newContractReceipt(nextContract.AddressUser, receiptActor(contract, msg.Actor), "migrate_state", types.ExitCodeOK, msg.ToSchemaVersion, 0, nextContract.LogicalTime, msg.Height)
+	next := k.genesis
+	next.State.Contracts[idx] = nextContract
+	next.State.Receipts = append(next.State.Receipts, receipt)
+	next = types.RefreshStateRoot(next)
+	if err := next.Validate(); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	k.genesis = next
+	return receipt, nil
+}
+
+func (k *Keeper) SetContractAdmin(msg types.MsgSetContractAdmin) (types.ContractReceipt, error) {
+	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	idx, contract, found := findContractWithIndex(k.genesis.State.Contracts, msg.ContractAddress)
+	if !found {
+		return types.ContractReceipt{}, errors.New(types.ErrContractNotFound + ": contract not found")
+	}
+	if err := k.authorizeContractUpgradeActor(contract, msg.Actor); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	contract.Admin = msg.NewAdmin
+	contract.LogicalTime++
+	contract.UpdatedHeight = msg.Height
+	contract.StateRoot = types.ComputeContractStateRoot(contract)
+	receipt := newContractReceipt(contract.AddressUser, receiptActor(contract, msg.Actor), "set_admin", types.ExitCodeOK, 0, 0, contract.LogicalTime, msg.Height)
+	next := k.genesis
+	next.State.Contracts[idx] = contract
+	next.State.Receipts = append(next.State.Receipts, receipt)
+	next = types.RefreshStateRoot(next)
+	if err := next.Validate(); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	k.genesis = next
+	return receipt, nil
+}
+
+func (k *Keeper) DisableContractUpgrades(msg types.MsgDisableContractUpgrades) (types.ContractReceipt, error) {
+	if err := msg.ValidateBasic(k.genesis.Params); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	idx, contract, found := findContractWithIndex(k.genesis.State.Contracts, msg.ContractAddress)
+	if !found {
+		return types.ContractReceipt{}, errors.New(types.ErrContractNotFound + ": contract not found")
+	}
+	if err := k.authorizeContractUpgradeActor(contract, msg.Actor); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	contract.Upgradeable = false
+	contract.UpgradesDisabled = true
+	contract.LogicalTime++
+	contract.UpdatedHeight = msg.Height
+	contract.StateRoot = types.ComputeContractStateRoot(contract)
+	receipt := newContractReceipt(contract.AddressUser, receiptActor(contract, msg.Actor), "disable_upgrades", types.ExitCodeOK, 0, 0, contract.LogicalTime, msg.Height)
+	next := k.genesis
+	next.State.Contracts[idx] = contract
+	next.State.Receipts = append(next.State.Receipts, receipt)
+	next = types.RefreshStateRoot(next)
+	if err := next.Validate(); err != nil {
+		return types.ContractReceipt{}, err
+	}
+	k.genesis = next
+	return receipt, nil
 }
 
 func (k Keeper) stateInitForInstantiate(msg types.MsgInstantiateContract, code types.CodeRecord) (types.StateInit, []byte, uint64, error) {
@@ -512,13 +754,17 @@ func (k Keeper) stateInitForInstantiate(msg types.MsgInstantiateContract, code t
 }
 
 func (k *Keeper) ExecuteContract(msg types.MsgExecuteContract) (types.ExecuteContractResponse, error) {
+	return k.executeContract(context.Background(), msg)
+}
+
+func (k *Keeper) executeContract(ctx context.Context, msg types.MsgExecuteContract) (types.ExecuteContractResponse, error) {
 	if !k.genesis.Params.Enabled {
 		return types.ExecuteContractResponse{}, errors.New(types.ErrExecutionFailed + ": module disabled")
 	}
 	if err := types.ValidateUserFacingAEAddress("contract execute sender", msg.Sender); err != nil {
 		return types.ExecuteContractResponse{}, err
 	}
-	if err := k.ensureActiveWallet(msg.Sender, "contract execute"); err != nil {
+	if err := k.ensureActiveWallet(ctx, msg.Sender, "contract execute"); err != nil {
 		return types.ExecuteContractResponse{}, err
 	}
 	if msg.Height == 0 {
@@ -554,6 +800,7 @@ func (k *Keeper) ExecuteContract(msg types.MsgExecuteContract) (types.ExecuteCon
 	contract.StateRoot = types.ComputeContractStateRoot(contract)
 	next := k.genesis
 	next.State.Contracts[idx] = contract
+	next.State.Receipts = append(next.State.Receipts, newContractReceipt(contract.AddressUser, msg.Sender, "execute", types.ExitCodeOK, msg.Funds, 0, contract.LogicalTime, msg.Height))
 	next = types.RefreshStateRoot(next)
 	if err := next.Validate(); err != nil {
 		return types.ExecuteContractResponse{}, err
@@ -574,7 +821,7 @@ func (k *Keeper) ExecuteContract(msg types.MsgExecuteContract) (types.ExecuteCon
 }
 
 func (k *Keeper) ExecuteContractState(ctx context.Context, msg types.MsgExecuteContract) (types.ExecuteContractResponse, error) {
-	res, err := k.ExecuteContract(msg)
+	res, err := k.executeContract(ctx, msg)
 	if err != nil {
 		return types.ExecuteContractResponse{}, err
 	}
@@ -608,6 +855,14 @@ func (k *Keeper) TopUpContract(msg types.MsgTopUpContract) (types.Contract, erro
 	return contract, nil
 }
 
+func (k *Keeper) TopUpContractState(ctx context.Context, msg types.MsgTopUpContract) (types.Contract, error) {
+	contract, err := k.TopUpContract(msg)
+	if err != nil {
+		return types.Contract{}, err
+	}
+	return contract, k.writeGenesis(ctx)
+}
+
 func (k *Keeper) PayContractStorageDebt(msg types.MsgPayContractStorageDebt) (types.Contract, error) {
 	if err := types.ValidateUserFacingAEAddress("contract rent payer", msg.Sender); err != nil {
 		return types.Contract{}, err
@@ -635,11 +890,31 @@ func (k *Keeper) PayContractStorageDebt(msg types.MsgPayContractStorageDebt) (ty
 	return contract, nil
 }
 
+func (k *Keeper) PayContractStorageDebtState(ctx context.Context, msg types.MsgPayContractStorageDebt) (types.Contract, error) {
+	contract, err := k.PayContractStorageDebt(msg)
+	if err != nil {
+		return types.Contract{}, err
+	}
+	return contract, k.writeGenesis(ctx)
+}
+
 func (k *Keeper) UnfreezeContract(msg types.MsgUnfreezeContract) (types.Contract, error) {
+	return k.unfreezeContract(context.Background(), msg)
+}
+
+func (k *Keeper) UnfreezeContractState(ctx context.Context, msg types.MsgUnfreezeContract) (types.Contract, error) {
+	contract, err := k.unfreezeContract(ctx, msg)
+	if err != nil {
+		return types.Contract{}, err
+	}
+	return contract, k.writeGenesis(ctx)
+}
+
+func (k *Keeper) unfreezeContract(ctx context.Context, msg types.MsgUnfreezeContract) (types.Contract, error) {
 	if err := types.ValidateUserFacingAEAddress("contract unfreeze sender", msg.Sender); err != nil {
 		return types.Contract{}, err
 	}
-	if err := k.ensureActiveWallet(msg.Sender, "contract unfreeze"); err != nil {
+	if err := k.ensureActiveWallet(ctx, msg.Sender, "contract unfreeze"); err != nil {
 		return types.Contract{}, err
 	}
 	if msg.Height == 0 {
@@ -769,12 +1044,28 @@ func (k *Keeper) ReceiveInternalMessage(msg types.MsgReceiveInternalMessage) (ty
 	}
 	next := k.genesis
 	next.State.InternalMessages = append(next.State.InternalMessages, record)
+	next.State.Receipts = append(next.State.Receipts, newContractReceipt(record.SourceContractUser, record.SourceContractUser, "internal_message_queued", types.ExitCodeOK, record.Funds, record.GasLimit, record.LogicalTime, record.Height))
 	next = types.RefreshStateRoot(next)
 	if err := next.Validate(); err != nil {
 		return types.InternalMessage{}, err
 	}
 	k.genesis = next
 	return record, nil
+}
+
+func newContractReceipt(contractAddress, actor, operation string, exitCode uint32, amount, gasUsed, logicalTime, height uint64) types.ContractReceipt {
+	receipt := types.ContractReceipt{
+		ContractAddress: contractAddress,
+		Actor:           actor,
+		Operation:       operation,
+		ExitCode:        exitCode,
+		Amount:          amount,
+		GasUsed:         gasUsed,
+		LogicalTime:     logicalTime,
+		Height:          height,
+	}
+	receipt.ReceiptID = types.ComputeContractReceiptID(receipt)
+	return receipt
 }
 
 func (k Keeper) AssetOwner(req types.QueryAssetOwnerRequest) (types.QueryAssetOwnerResponse, error) {
@@ -809,11 +1100,14 @@ func (k *Keeper) SetAssetOwner(record types.AssetOwnershipRecord) error {
 	return nil
 }
 
-func (k *Keeper) ensureActiveWallet(address string, operation string) error {
+func (k *Keeper) ensureActiveWallet(ctx context.Context, address string, operation string) error {
 	if k.accountStatusReader == nil {
 		return nil
 	}
-	status, found := k.accountStatusReader.AccountStatus(address)
+	status, found, err := k.accountStatusReader.AccountStatus(ctx, address)
+	if err != nil {
+		return err
+	}
 	if !found || status == accountStatusInactive {
 		return fmt.Errorf("%s: %s", operation, types.ErrAccountInactive)
 	}
@@ -904,6 +1198,47 @@ func (k Keeper) contractStorageBytes(contract types.Contract) (uint64, error) {
 		return 0, errors.New(types.ErrContractNotFound + ": contract code not found")
 	}
 	return contractStorageBytesForCode(code, contract.Data)
+}
+
+func (k Keeper) authorizeContractUpgradeActor(contract types.Contract, actor string) error {
+	actor = strings.TrimSpace(actor)
+	if contract.SystemOwned {
+		if actor != k.genesis.Params.Authority {
+			return errors.New(types.ErrUnauthorized + ": system contract upgrade requires governance authority")
+		}
+		return nil
+	}
+	if err := types.ValidateUserFacingAEAddress("contract upgrade actor", actor); err != nil {
+		return err
+	}
+	if actor != contract.Admin {
+		return errors.New(types.ErrUnauthorized + ": contract upgrade requires admin")
+	}
+	return nil
+}
+
+func receiptActor(contract types.Contract, actor string) string {
+	if contract.SystemOwned {
+		return ""
+	}
+	return actor
+}
+
+func applyContractMigration(current []byte, handler string, payload []byte) ([]byte, error) {
+	switch strings.TrimSpace(handler) {
+	case "schema_only":
+		return append([]byte(nil), current...), nil
+	case "replace":
+		return append([]byte(nil), payload...), nil
+	case "append":
+		out := append([]byte(nil), current...)
+		out = append(out, payload...)
+		return out, nil
+	case "fail":
+		return nil, errors.New(types.ErrExecutionFailed + ": contract migration handler failed")
+	default:
+		return nil, errors.New(types.ErrExecutionFailed + ": unsupported contract migration handler")
+	}
 }
 
 func contractStorageBytesForCode(code types.CodeRecord, data []byte) (uint64, error) {

@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -21,6 +22,9 @@ type MsgDeployContract struct {
 	InitPayload    []byte
 	InitialBalance uint64
 	Admin          string
+	Upgradeable    bool
+	SystemOwned    bool
+	SchemaVersion  uint64
 	Metadata       []byte
 	Height         uint64
 }
@@ -98,14 +102,18 @@ type QueryContractStorageRequest struct {
 	Pagination      PageRequest
 }
 
-type QueryContractStorageResponse struct{}
+type QueryContractStorageResponse struct {
+	Entries []ContractStorageEntry
+}
 
 type QueryContractReceiptsRequest struct {
 	ContractAddress string
 	Pagination      PageRequest
 }
 
-type QueryContractReceiptsResponse struct{}
+type QueryContractReceiptsResponse struct {
+	Receipts []ContractReceipt
+}
 
 type QueryContractQueueRequest struct {
 	ContractAddress string
@@ -220,6 +228,80 @@ func (m MsgSendInternalMessage) ValidateBasic(_ Params) error {
 		msg.Height = m.Height
 	}
 	return msg.Validate()
+}
+
+func (m MsgUpgradeContractCode) ValidateBasic(params Params) error {
+	if strings.TrimSpace(m.Actor) == "" {
+		return errors.New("contract upgrade actor is required")
+	}
+	if err := ValidateContractAddress(m.ContractAddress); err != nil {
+		return err
+	}
+	if strings.TrimSpace(m.NewCodeID) == "" {
+		return errors.New("contract upgrade code id is required")
+	}
+	if len(m.MigrationHandler) > MaxContractMetadataBytes {
+		return errors.New("contract migration handler exceeds maximum size")
+	}
+	if m.Height == 0 {
+		return errors.New("contract upgrade height must be positive")
+	}
+	_ = params
+	return nil
+}
+
+func (m MsgMigrateContractState) ValidateBasic(_ Params) error {
+	if strings.TrimSpace(m.Actor) == "" {
+		return errors.New("contract migration actor is required")
+	}
+	if err := ValidateContractAddress(m.ContractAddress); err != nil {
+		return err
+	}
+	if m.FromSchemaVersion == 0 || m.ToSchemaVersion == 0 || m.ToSchemaVersion <= m.FromSchemaVersion {
+		return errors.New("contract migration schema versions are invalid")
+	}
+	if strings.TrimSpace(m.MigrationHandler) == "" {
+		return errors.New("contract migration handler is required")
+	}
+	if len(m.MigrationHandler) > MaxContractMetadataBytes {
+		return errors.New("contract migration handler exceeds maximum size")
+	}
+	if len(m.Payload) > MaxContractPayloadBytes {
+		return errors.New("contract migration payload exceeds maximum size")
+	}
+	if m.Height == 0 {
+		return errors.New("contract migration height must be positive")
+	}
+	return nil
+}
+
+func (m MsgSetContractAdmin) ValidateBasic(_ Params) error {
+	if strings.TrimSpace(m.Actor) == "" {
+		return errors.New("contract admin actor is required")
+	}
+	if err := ValidateContractAddress(m.ContractAddress); err != nil {
+		return err
+	}
+	if err := ValidateUserFacingAEAddress("new contract admin", m.NewAdmin); err != nil {
+		return err
+	}
+	if m.Height == 0 {
+		return errors.New("contract admin height must be positive")
+	}
+	return nil
+}
+
+func (m MsgDisableContractUpgrades) ValidateBasic(_ Params) error {
+	if strings.TrimSpace(m.Actor) == "" {
+		return errors.New("contract upgrade disable actor is required")
+	}
+	if err := ValidateContractAddress(m.ContractAddress); err != nil {
+		return err
+	}
+	if m.Height == 0 {
+		return errors.New("contract upgrade disable height must be positive")
+	}
+	return nil
 }
 
 func (m MsgUpdateContractParams) ValidateBasic() error {

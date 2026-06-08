@@ -74,6 +74,10 @@ type MsgServer interface {
 	ExecuteExternal(MsgExecuteExternal) (ExecuteContractResponse, error)
 	ExecuteInternal(MsgExecuteInternal) (InternalMessage, error)
 	SendInternalMessage(MsgSendInternalMessage) (InternalMessage, error)
+	UpgradeContractCode(MsgUpgradeContractCode) (ContractReceipt, error)
+	MigrateContractState(MsgMigrateContractState) (ContractReceipt, error)
+	SetContractAdmin(MsgSetContractAdmin) (ContractReceipt, error)
+	DisableContractUpgrades(MsgDisableContractUpgrades) (ContractReceipt, error)
 	UpdateContractParams(MsgUpdateContractParams) error
 }
 
@@ -83,8 +87,8 @@ type QueryServer interface {
 	Codes(QueryCodesRequest) ([]CodeRecord, error)
 	Contract(QueryContractRequest) (QueryContractResponse, error)
 	Contracts(QueryContractsRequest) ([]Contract, error)
-	ContractStorage(QueryContractStorageRequest) error
-	ContractReceipts(QueryContractReceiptsRequest) error
+	ContractStorage(QueryContractStorageRequest) ([]ContractStorageEntry, error)
+	ContractReceipts(QueryContractReceiptsRequest) ([]ContractReceipt, error)
 	ContractQueue(QueryContractQueueRequest) ([]InternalMessage, error)
 	ContractEvents(QueryContractEventsRequest) error
 	ContractStateRoot(QueryContractStateRootRequest) (string, error)

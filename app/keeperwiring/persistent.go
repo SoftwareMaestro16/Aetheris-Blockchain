@@ -94,6 +94,10 @@ type PersistentKeepers struct {
 }
 
 func NewPersistentKeepers(keys map[string]*storetypes.KVStoreKey) PersistentKeepers {
+	nativeAccountKeeper := nativeaccountkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nativeaccounttypes.StoreKey]))
+	contractsKeeper := contractskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[contractstypes.StoreKey]))
+	contractsKeeper = contractsKeeper.WithAccountStatusReader(nativeAccountKeeper)
+
 	return PersistentKeepers{
 		ConstitutionKeeper:        constitutionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[constitutiontypes.StoreKey])),
 		ConfigKeeper:              configkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[configtypes.StoreKey])),
@@ -112,12 +116,12 @@ func NewPersistentKeepers(keys map[string]*storetypes.KVStoreKey) PersistentKeep
 		ZonesKeeper:               zoneskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[zonestypes.StoreKey])),
 		MeshKeeper:                meshkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[meshtypes.StoreKey])),
 		NetworkingKeeper:          networkingkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[networkingtypes.StoreKey])),
-		NativeAccountKeeper:       nativeaccountkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nativeaccounttypes.StoreKey])),
+		NativeAccountKeeper:       nativeAccountKeeper,
 		PaymentsKeeper:            paymentskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[paymentstypes.StoreKey])),
 		SchedulerKeeper:           schedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[schedulertypes.StoreKey])),
 		AVMSchedulerKeeper:        avmschedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[avmschedulertypes.StoreKey])),
 		ActorRegistryKeeper:       actorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[actorregistrytypes.StoreKey])),
-		ContractsKeeper:           contractskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[contractstypes.StoreKey])),
+		ContractsKeeper:           contractsKeeper,
 		StorageRentKeeper:         storagerentkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[storagerenttypes.StoreKey])),
 		IdentityRootKeeper:        identityrootkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[identityroottypes.StoreKey])),
 		BridgeHubKeeper:           bridgehubkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[bridgehubtypes.StoreKey])),

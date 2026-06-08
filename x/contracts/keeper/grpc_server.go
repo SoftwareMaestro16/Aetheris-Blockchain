@@ -42,11 +42,7 @@ func (m grpcMsgServer) DeployContract(ctx context.Context, msg *types.MsgDeployC
 	if msg == nil {
 		return nil, errors.New("empty contracts deploy request")
 	}
-	res, err := m.keeper.DeployContract(*msg)
-	if err != nil {
-		return nil, err
-	}
-	err = m.keeper.writeGenesis(ctx)
+	res, err := m.keeper.DeployContractState(ctx, *msg)
 	return &res, err
 }
 
@@ -54,11 +50,7 @@ func (m grpcMsgServer) ExecuteExternal(ctx context.Context, msg *types.MsgExecut
 	if msg == nil {
 		return nil, errors.New("empty contracts external execution request")
 	}
-	res, err := m.keeper.ExecuteExternal(*msg)
-	if err != nil {
-		return nil, err
-	}
-	err = m.keeper.writeGenesis(ctx)
+	res, err := m.keeper.ExecuteExternalState(ctx, *msg)
 	return &res, err
 }
 
@@ -143,14 +135,16 @@ func (q grpcQueryServer) ContractStorage(_ context.Context, req *types.QueryCont
 	if req == nil {
 		return nil, errors.New("empty contracts storage query")
 	}
-	return &types.QueryContractStorageResponse{}, q.keeper.ContractStorage(*req)
+	entries, err := q.keeper.ContractStorage(*req)
+	return &types.QueryContractStorageResponse{Entries: entries}, err
 }
 
 func (q grpcQueryServer) ContractReceipts(_ context.Context, req *types.QueryContractReceiptsRequest) (*types.QueryContractReceiptsResponse, error) {
 	if req == nil {
 		return nil, errors.New("empty contracts receipts query")
 	}
-	return &types.QueryContractReceiptsResponse{}, q.keeper.ContractReceipts(*req)
+	receipts, err := q.keeper.ContractReceipts(*req)
+	return &types.QueryContractReceiptsResponse{Receipts: receipts}, err
 }
 
 func (q grpcQueryServer) ContractQueue(_ context.Context, req *types.QueryContractQueueRequest) (*types.QueryContractQueueResponse, error) {

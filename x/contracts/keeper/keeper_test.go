@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -140,6 +141,95 @@ func TestWalletInstantiatesExecutesAndPassesFunds(t *testing.T) {
 	require.Equal(t, contractStorageBytes(128, execMsg), query.Contract.StorageBytes)
 	require.Equal(t, uint64(2), query.Contract.LogicalTime)
 	require.Equal(t, types.ComputeContractStateRoot(query.Contract), query.Contract.StateRoot)
+}
+
+func TestContractUpgradeMigrationAndAdminPolicy(t *testing.T) {
+	wallet := aeAddress("11")
+	admin := aeAddress("22")
+	other := aeAddress("33")
+	k := NewKeeperWithAccountStatus(testAccountStatus{wallet: accountStatusActive, admin: accountStatusActive, other: accountStatusActive})
+	codeV1 := storeContractCode(t, &k, wallet)
+	codeV2Hash := sha256Hex("code-v2")
+	_, err := k.StoreCode(types.MsgStoreCode{Authority: wallet, CodeHash: codeV2Hash, CodeBytes: 256})
+	require.NoError(t, err)
+
+	immutable, err := k.InstantiateContract(types.MsgInstantiateContract{
+		Creator: wallet, CodeID: codeV1, InitMsg: []byte("v1"), Admin: admin, Salt: "immutable", Height: 10,
+	})
+	require.NoError(t, err)
+	_, err = k.UpgradeContractCode(types.MsgUpgradeContractCode{
+		Actor: admin, ContractAddress: immutable.ContractAddressUser, NewCodeID: codeV2Hash, MigrationHandler: "schema_only", Height: 11,
+	})
+	require.ErrorContains(t, err, "immutable")
+
+	upgradeable, err := k.InstantiateContract(types.MsgInstantiateContract{
+		Creator: wallet, CodeID: codeV1, InitMsg: []byte("v1"), Admin: admin, Salt: "upgradeable", Upgradeable: true, SchemaVersion: 1, Height: 20,
+	})
+	require.NoError(t, err)
+	_, err = k.UpgradeContractCode(types.MsgUpgradeContractCode{
+		Actor: other, ContractAddress: upgradeable.ContractAddressUser, NewCodeID: codeV2Hash, MigrationHandler: "schema_only", Height: 21,
+	})
+	require.ErrorContains(t, err, types.ErrUnauthorized)
+	receipt, err := k.UpgradeContractCode(types.MsgUpgradeContractCode{
+		Actor: admin, ContractAddress: upgradeable.ContractAddressUser, NewCodeID: codeV2Hash, MigrationHandler: "schema_only", Height: 22,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "upgrade_code", receipt.Operation)
+	query, err := k.Contract(types.QueryContractRequest{ContractAddress: upgradeable.ContractAddressUser})
+	require.NoError(t, err)
+	require.Equal(t, codeV2Hash, query.Contract.CodeID)
+	require.Equal(t, uint64(1), query.Contract.StorageSchemaVersion)
+
+	beforeRoot := query.Contract.StateRoot
+	_, err = k.MigrateContractState(types.MsgMigrateContractState{
+		Actor: admin, ContractAddress: upgradeable.ContractAddressUser, FromSchemaVersion: 1, ToSchemaVersion: 2, MigrationHandler: "fail", Payload: []byte("bad"), Height: 23,
+	})
+	require.ErrorContains(t, err, "migration handler failed")
+	rolledBack, err := k.Contract(types.QueryContractRequest{ContractAddress: upgradeable.ContractAddressUser})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), rolledBack.Contract.StorageSchemaVersion)
+	require.Equal(t, beforeRoot, rolledBack.Contract.StateRoot)
+
+	receipt, err = k.MigrateContractState(types.MsgMigrateContractState{
+		Actor: admin, ContractAddress: upgradeable.ContractAddressUser, FromSchemaVersion: 1, ToSchemaVersion: 2, MigrationHandler: "append", Payload: []byte(":v2"), Height: 24,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "migrate_state", receipt.Operation)
+	migrated, err := k.Contract(types.QueryContractRequest{ContractAddress: upgradeable.ContractAddressUser})
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), migrated.Contract.StorageSchemaVersion)
+	require.Equal(t, []byte("v1:v2"), migrated.Contract.Data)
+
+	newAdmin := aeAddress("44")
+	_, err = k.SetContractAdmin(types.MsgSetContractAdmin{Actor: admin, ContractAddress: upgradeable.ContractAddressUser, NewAdmin: newAdmin, Height: 25})
+	require.NoError(t, err)
+	_, err = k.DisableContractUpgrades(types.MsgDisableContractUpgrades{Actor: newAdmin, ContractAddress: upgradeable.ContractAddressUser, Height: 26})
+	require.NoError(t, err)
+	_, err = k.UpgradeContractCode(types.MsgUpgradeContractCode{
+		Actor: newAdmin, ContractAddress: upgradeable.ContractAddressUser, NewCodeID: codeV1, MigrationHandler: "schema_only", Height: 27,
+	})
+	require.ErrorContains(t, err, "immutable")
+}
+
+func TestSystemOwnedContractUpgradeRequiresGovernanceAuthority(t *testing.T) {
+	wallet := aeAddress("11")
+	k := NewKeeperWithAccountStatus(testAccountStatus{wallet: accountStatusActive})
+	codeV1 := storeContractCode(t, &k, wallet)
+	codeV2 := sha256Hex("system-code-v2")
+	_, err := k.StoreCode(types.MsgStoreCode{Authority: wallet, CodeHash: codeV2, CodeBytes: 256})
+	require.NoError(t, err)
+	created, err := k.InstantiateContract(types.MsgInstantiateContract{
+		Creator: wallet, CodeID: codeV1, InitMsg: []byte("sys"), Admin: wallet, Salt: "system-owned", Upgradeable: true, SystemOwned: true, Height: 10,
+	})
+	require.NoError(t, err)
+	_, err = k.UpgradeContractCode(types.MsgUpgradeContractCode{
+		Actor: wallet, ContractAddress: created.ContractAddressUser, NewCodeID: codeV2, MigrationHandler: "schema_only", Height: 11,
+	})
+	require.ErrorContains(t, err, "governance authority")
+	_, err = k.UpgradeContractCode(types.MsgUpgradeContractCode{
+		Actor: k.Params().Authority, ContractAddress: created.ContractAddressUser, NewCodeID: codeV2, MigrationHandler: "schema_only", Height: 12,
+	})
+	require.NoError(t, err)
 }
 
 func TestFrozenWalletCannotInstantiateOrExecuteUntilUnfrozen(t *testing.T) {
@@ -470,8 +560,19 @@ func TestContractsTypedMsgAndQueryServiceSurface(t *testing.T) {
 	queue, err := k.ContractQueue(types.QueryContractQueueRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 10}})
 	require.NoError(t, err)
 	require.Equal(t, []types.InternalMessage{internal}, queue)
-	require.NoError(t, k.ContractStorage(types.QueryContractStorageRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}}))
-	require.NoError(t, k.ContractReceipts(types.QueryContractReceiptsRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}}))
+	storage, err := k.ContractStorage(types.QueryContractStorageRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}})
+	require.NoError(t, err)
+	require.Equal(t, []types.ContractStorageEntry{{
+		ContractAddress: deployed.ContractAddressUser,
+		Key:             []byte("data"),
+		Value:           []byte("call"),
+	}}, storage)
+	receipts, err := k.ContractReceipts(types.QueryContractReceiptsRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 10}})
+	require.NoError(t, err)
+	require.Len(t, receipts, 3)
+	require.Equal(t, "deploy", receipts[0].Operation)
+	require.Equal(t, "execute", receipts[1].Operation)
+	require.Equal(t, "internal_message_queued", receipts[2].Operation)
 	require.NoError(t, k.ContractEvents(types.QueryContractEventsRequest{ContractAddress: deployed.ContractAddressUser, Pagination: types.PageRequest{Limit: 1}}))
 }
 
@@ -577,9 +678,9 @@ func TestInternalMessageChargesStorageRentBeforeSend(t *testing.T) {
 
 type testAccountStatus map[string]string
 
-func (s testAccountStatus) AccountStatus(address string) (string, bool) {
+func (s testAccountStatus) AccountStatus(_ context.Context, address string) (string, bool, error) {
 	status, found := s[address]
-	return status, found
+	return status, found, nil
 }
 
 func storeContractCode(t *testing.T, k *Keeper, owner string) string {

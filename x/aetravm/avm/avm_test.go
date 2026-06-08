@@ -62,7 +62,7 @@ func TestVerifierRejectsOversizedCodeAndNondeterministicOpcode(t *testing.T) {
 
 	badImport := counterModule()
 	badImport.Imports = append(badImport.Imports, HostFunction(999))
-	require.ErrorContains(t, verifier.Verify(badImport), "not allowed")
+	require.ErrorContains(t, verifier.Verify(badImport), "unknown")
 
 	missingImport := counterModule()
 	missingImport.Imports = []HostFunction{HostReadStorage, HostReturn}
