@@ -255,7 +255,7 @@ function Wait-LocalnetTx {
   $lastError = $null
   while ((Get-Date) -lt $deadline) {
     try {
-      $result = Invoke-LocalnetCliJson -Binary $Binary -Arguments @("query", "tx", $TxHash, "--node", $node, "--output", "json")
+      $result = Invoke-LocalnetCliJson -Binary $Binary -Arguments @("query", "tx", "--type", "hash", $TxHash, "--node", $node, "--output", "json")
     } catch {
       $lastError = $_.Exception.Message
       Start-Sleep -Milliseconds 500

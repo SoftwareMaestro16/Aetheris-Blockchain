@@ -112,6 +112,53 @@ function Get-LocalnetKeyAddress {
   return (($output | Select-Object -Last 1).ToString().Trim())
 }
 
+function Convert-LocalnetCoinParts {
+  param([string]$Coin)
+
+  if ($Coin -notmatch '^([0-9]+)([a-zA-Z][a-zA-Z0-9/:._-]*)$') {
+    throw "invalid coin amount: $Coin"
+  }
+  return @{
+    Amount = [decimal]$Matches[1]
+    Denom  = $Matches[2]
+  }
+}
+
+function Wait-LocalnetBankBalanceIncrease {
+  param(
+    [string]$Binary,
+    [string]$Address,
+    [string]$Amount,
+    [object]$BeforeBalance,
+    [int]$RPCPort = 26657,
+    [int]$TimeoutSeconds = 60
+  )
+
+  $coin = Convert-LocalnetCoinParts -Coin $Amount
+  $beforeAmount = 0
+  if ($BeforeBalance -and $BeforeBalance.amount) {
+    $beforeAmount = [decimal]$BeforeBalance.amount
+  }
+  $expectedAmount = $beforeAmount + $coin.Amount
+
+  return Wait-LocalnetCondition -TimeoutSeconds $TimeoutSeconds -Description "bank balance $Address >= $expectedAmount$($coin.Denom)" -Condition {
+    $current = Get-LocalnetBankBalance -Binary $Binary -Address $Address -Denom $coin.Denom -RPCPort $RPCPort
+    $currentAmount = 0
+    if ($current -and $current.amount) {
+      $currentAmount = [decimal]$current.amount
+    }
+    if ($currentAmount -ge $expectedAmount) {
+      return @{
+        Address = $Address
+        Denom   = $coin.Denom
+        Before  = $beforeAmount.ToString()
+        Current = $currentAmount.ToString()
+      }
+    }
+    return $null
+  }
+}
+
 function Send-LocalnetDelegateTx {
   param(
     [string]$Binary,
@@ -180,6 +227,8 @@ function Send-LocalnetBankTx {
   )
 
   $node = "tcp://127.0.0.1:$RPCPort"
+  $coin = Convert-LocalnetCoinParts -Coin $Amount
+  $balanceBefore = Get-LocalnetBankBalance -Binary $Binary -Address $ToAddress -Denom $coin.Denom -RPCPort $RPCPort
   $tx = Invoke-LocalnetCliJson -Binary $Binary -Arguments @(
     "tx", "bank", "send", $FromKey, $ToAddress, $Amount,
     "--home", $FromHome,
@@ -200,5 +249,13 @@ function Send-LocalnetBankTx {
     throw "bank send did not return txhash"
   }
 
-  return Wait-LocalnetTx -Binary $Binary -TxHash $txHash -RPCPort $RPCPort -TimeoutSeconds $TimeoutSeconds
+  Wait-LocalnetBankBalanceIncrease `
+    -Binary $Binary `
+    -Address $ToAddress `
+    -Amount $Amount `
+    -BeforeBalance $balanceBefore `
+    -RPCPort $RPCPort `
+    -TimeoutSeconds $TimeoutSeconds | Out-Null
+
+  return $tx
 }
