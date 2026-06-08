@@ -161,17 +161,21 @@ function Assert-DirectDelegationRejected {
 
   $arguments = New-SignedTxArgs -ActionArgs @("tx", "staking", "delegate", $ValidatorAddress, "5000000naet") -FromHome $FromHome
   $previousErrorActionPreference = $ErrorActionPreference
+  $previousNativeCommandPreference = $PSNativeCommandUseErrorActionPreference
   $ErrorActionPreference = "Continue"
+  $PSNativeCommandUseErrorActionPreference = $false
   try {
     $output = & $Binary @arguments 2>&1
     $exitCode = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $previousErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $previousNativeCommandPreference
   }
 
   $text = $output -join "`n"
   if ($exitCode -ne 0) {
     Assert-True ($text -match "direct user delegation to validators is disabled|unknown command|unknown flag") "direct staking delegation command failed with unexpected output: $text"
+    $global:LASTEXITCODE = 0
     return
   }
 
@@ -183,6 +187,7 @@ function Assert-DirectDelegationRejected {
   $delegateTx = $text.Substring($jsonStart) | ConvertFrom-Json
   Assert-True ((Get-LocalnetTxCode -Tx $delegateTx) -ne 0) "direct staking delegation must be rejected"
   Assert-True ((Get-LocalnetTxLog -Tx $delegateTx) -match "direct user delegation to validators is disabled") "direct staking delegation rejection log mismatch"
+  $global:LASTEXITCODE = 0
 }
 
 Push-Location $RepoRoot
