@@ -114,7 +114,16 @@ func TestPoSDirectUserRedelegationMsgRouteRejected(t *testing.T) {
 
 	delegation := sdk.TokensFromConsensusPower(4, sdk.DefaultPowerReduction)
 	redelegate := sdk.TokensFromConsensusPower(2, sdk.DefaultPowerReduction)
-	delegator := AddTestAddrsIncremental(app, ctx, 1, delegation.MulRaw(2))[0]
+	sourceOperator := sdk.AccAddress(parseValidatorAddress(t, app, source.OperatorAddress)).String()
+	destinationOperator := sdk.AccAddress(dstValAddr).String()
+	delegator := sdk.AccAddress(nil)
+	for _, candidate := range AddTestAddrsIncremental(app, ctx, 4, delegation.MulRaw(2)) {
+		if candidate.String() != sourceOperator && candidate.String() != destinationOperator {
+			delegator = candidate
+			break
+		}
+	}
+	require.NotNil(t, delegator)
 
 	delegateStakeFixture(t, app, ctx, delegator, source, delegation)
 

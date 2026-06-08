@@ -84,6 +84,64 @@ func TestNominatorPoolStateSurvivesFinalizeBlockRestart(t *testing.T) {
 	require.Equal(t, poolGenesis.State.Pools[0].RewardIndex, exported.State.Pools[0].RewardIndex)
 }
 
+func TestNominatorPoolRuntimeMutationPersistsToKVStore(t *testing.T) {
+	db := dbm.NewMemDB()
+	appOptions := sims.AppOptionsMap{flags.FlagHome: DefaultNodeHome}
+	source := NewL1App(log.NewNopLogger(), db, true, appOptions)
+	genesis := GenesisStateWithSingleValidator(t, source)
+	stateBytes, err := json.MarshalIndent(genesis, "", " ")
+	require.NoError(t, err)
+
+	_, err = source.InitChain(&abci.RequestInitChain{
+		Validators:      []abci.ValidatorUpdate{},
+		ConsensusParams: sims.DefaultConsensusParams,
+		AppStateBytes:   stateBytes,
+	})
+	require.NoError(t, err)
+
+	sourceCtx := source.NewUncachedContext(false, cmtproto.Header{Height: 1})
+	initial, err := source.NominatorPoolKeeper.ExportGenesisState(sourceCtx)
+	require.NoError(t, err)
+	contractUser, contractRaw := nominatorPoolAddressPair(t, "77")
+	userAddress, _ := nominatorPoolAddressPair(t, "44")
+
+	pool, err := source.NominatorPoolKeeper.CreateOfficialLiquidStakingPool(nominatorpooltypes.MsgCreateOfficialLiquidStakingPool{
+		Authority:           initial.Params.Authority,
+		PoolID:              "runtime-kv-official-pool",
+		ContractAddressUser: contractUser,
+		ContractAddressRaw:  contractRaw,
+		PoolOperator:        nominatorPoolRawAddress("11"),
+		PoolCommissionBps:   100,
+		Height:              2,
+	})
+	require.NoError(t, err)
+	_, err = source.NominatorPoolKeeper.DepositToStakingPool(nominatorpooltypes.MsgDepositToStakingPool{
+		PoolID:        pool.PoolID,
+		WalletAddress: userAddress,
+		Amount:        nominatorpooltypes.DefaultMinPoolDeposit,
+		Height:        3,
+	})
+	require.NoError(t, err)
+
+	_, err = source.FinalizeBlock(&abci.RequestFinalizeBlock{
+		Height: 1,
+		Hash:   source.LastCommitID().Hash,
+	})
+	require.NoError(t, err)
+	_, err = source.Commit()
+	require.NoError(t, err)
+
+	restarted := NewL1App(log.NewNopLogger(), db, true, appOptions)
+	restartedCtx := restarted.NewUncachedContext(false, cmtproto.Header{Height: restarted.LastBlockHeight()})
+	exported, err := restarted.NominatorPoolKeeper.ExportGenesisState(restartedCtx)
+	require.NoError(t, err)
+	require.Len(t, exported.State.Pools, 1)
+	require.Equal(t, pool.PoolID, exported.State.Pools[0].PoolID)
+	require.Len(t, exported.State.PoolShares, 1)
+	require.Equal(t, userAddress, exported.State.PoolShares[0].Owner)
+	require.Equal(t, nominatorpooltypes.DefaultMinPoolDeposit, exported.State.PoolShares[0].Shares)
+}
+
 func TestFinalAppWiringOfficialStakingPoolFlowExportImportRestart(t *testing.T) {
 	appOptions := sims.AppOptionsMap{flags.FlagHome: DefaultNodeHome}
 	source := NewL1App(log.NewNopLogger(), dbm.NewMemDB(), true, appOptions)

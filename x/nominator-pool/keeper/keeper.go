@@ -48,6 +48,7 @@ type poolIndexEntry struct {
 type Keeper struct {
 	genesis             GenesisState
 	storeService        corestore.KVStoreService
+	runtimeCtx          context.Context
 	accountStatusReader AccountStatusReader
 	indexes             map[string]poolIndexEntry
 	counters            OperationCounters
@@ -97,15 +98,12 @@ func (k *Keeper) InitGenesisState(ctx context.Context, gs GenesisState) error {
 		return err
 	}
 	k.genesis = cloneGenesis(gs)
+	k.runtimeCtx = ctx
 	k.rebuildIndexes()
 	if k.storeService == nil {
 		return nil
 	}
-	bz, err := json.Marshal(cloneGenesis(gs))
-	if err != nil {
-		return err
-	}
-	return k.storeService.OpenKVStore(ctx).Set(genesisKey, bz)
+	return k.writeGenesisState(ctx, k.genesis)
 }
 
 func (k Keeper) ExportGenesis() GenesisState {
@@ -136,6 +134,30 @@ func (k Keeper) ExportGenesisState(ctx context.Context) (GenesisState, error) {
 	return cloneGenesis(gs), nil
 }
 
+func (k *Keeper) saveGenesis(next GenesisState) error {
+	next.State = next.State.Normalize(next.Params)
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	k.genesis = cloneGenesis(next)
+	k.rebuildIndexes()
+	if k.storeService == nil || k.runtimeCtx == nil {
+		return nil
+	}
+	return k.writeGenesisState(k.runtimeCtx, k.genesis)
+}
+
+func (k Keeper) writeGenesisState(ctx context.Context, gs GenesisState) error {
+	if k.storeService == nil {
+		return nil
+	}
+	bz, err := json.Marshal(cloneGenesis(gs))
+	if err != nil {
+		return err
+	}
+	return k.storeService.OpenKVStore(ctx).Set(genesisKey, bz)
+}
+
 func (k Keeper) OperationCounters() OperationCounters {
 	return k.counters
 }
@@ -153,11 +175,11 @@ func (k *Keeper) UpdateParams(msg types.MsgUpdateParams) (types.Params, error) {
 		return types.Params{}, err
 	}
 	next.Authority = k.genesis.Params.Authority
-	k.genesis.Params = next
-	if err := k.genesis.Validate(); err != nil {
+	updated := cloneGenesis(k.genesis)
+	updated.Params = next
+	if err := k.saveGenesis(updated); err != nil {
 		return types.Params{}, err
 	}
-	k.rebuildIndexes()
 	return k.genesis.Params, nil
 }
 
@@ -212,8 +234,9 @@ func (k *Keeper) RegisterValidator(msg types.MsgRegisterValidator) (types.Valida
 	if err := next.Validate(); err != nil {
 		return types.ValidatorRegistrationReceipt{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.ValidatorRegistrationReceipt{}, err
+	}
 	return types.ValidatorRegistrationReceipt{
 		Validator:   msg.ValidatorAddress,
 		Status:      validator.Status,
@@ -276,8 +299,9 @@ func (k *Keeper) UpdateValidator(msg types.MsgUpdateValidator) (types.ValidatorR
 	if err := next.Validate(); err != nil {
 		return types.ValidatorRegistrationReceipt{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.ValidatorRegistrationReceipt{}, err
+	}
 	return types.ValidatorRegistrationReceipt{
 		Validator:   validator.Address,
 		Status:      validator.Status,
@@ -361,8 +385,9 @@ func (k *Keeper) CreateNominatorPool(msg types.MsgCreateNominatorPool) (types.No
 	if err := next.Validate(); err != nil {
 		return types.NominatorPool{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.NominatorPool{}, err
+	}
 	return pool, nil
 }
 
@@ -403,8 +428,9 @@ func (k *Keeper) CreateOfficialLiquidStakingPool(msg types.MsgCreateOfficialLiqu
 	if err := next.Validate(); err != nil {
 		return types.NominatorPool{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.NominatorPool{}, err
+	}
 	return pool, nil
 }
 
@@ -680,8 +706,9 @@ func (k *Keeper) RebalancePoolAllocations(msg types.MsgRebalancePoolAllocations)
 	if err := next.Validate(); err != nil {
 		return types.PoolRebalanceReceipt{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.PoolRebalanceReceipt{}, err
+	}
 	return k.poolAllocationReceipt(pool, msg.Epoch, msg.Height)
 }
 
@@ -724,8 +751,9 @@ func (k *Keeper) SetOfficialLiquidStakingContract(msg types.MsgSetOfficialLiquid
 	if err := next.Validate(); err != nil {
 		return types.NominatorPool{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.NominatorPool{}, err
+	}
 	return pool, nil
 }
 
@@ -789,8 +817,9 @@ func (k *Keeper) RequestPoolWithdrawal(msg types.MsgRequestPoolWithdrawal) (type
 	if err := next.Validate(); err != nil {
 		return types.PendingWithdrawal{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.PendingWithdrawal{}, err
+	}
 	return withdrawal, nil
 }
 
@@ -894,8 +923,9 @@ func (k *Keeper) WithdrawPoolStake(msg types.MsgWithdrawPoolStake) (types.PoolWi
 	if err := next.Validate(); err != nil {
 		return types.PoolWithdrawalReceipt{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.PoolWithdrawalReceipt{}, err
+	}
 	if err := k.upsertLiquidPoolAfterPoolMutation(pool, msg.Height); err != nil {
 		return types.PoolWithdrawalReceipt{}, err
 	}
@@ -962,8 +992,9 @@ func (k *Keeper) TopUpPoolReserve(msg types.MsgTopUpPoolReserve) (types.PoolTopU
 	if err := next.Validate(); err != nil {
 		return types.PoolTopUpReceipt{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.PoolTopUpReceipt{}, err
+	}
 	return types.PoolTopUpReceipt{
 		PoolID:          msg.PoolID,
 		PayerAddress:    msg.PayerAddress,
@@ -1036,8 +1067,9 @@ func (k *Keeper) CancelPoolWithdrawal(msg types.MsgCancelPoolWithdrawal) (types.
 	if err := next.Validate(); err != nil {
 		return types.PendingWithdrawal{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.PendingWithdrawal{}, err
+	}
 	return withdrawal, nil
 }
 
@@ -1076,7 +1108,11 @@ func (k *Keeper) ClaimPoolRewards(msg types.MsgClaimPoolRewards) (uint64, error)
 	if err := share.Validate(); err != nil {
 		return 0, err
 	}
-	k.genesis.State.Pools[idx].DelegatorShares[delegatorIdx] = share
+	next := cloneGenesis(k.genesis)
+	next.State.Pools[idx].DelegatorShares[delegatorIdx] = share
+	if err := k.saveGenesis(next); err != nil {
+		return 0, err
+	}
 	k.counters.DelegatorRewardUpdates++
 	if ownerAddress != "" {
 		if err := k.upsertRewardClaim(msg.PoolID, ownerAddress, pool.RewardEpoch, reward); err != nil {
@@ -1192,8 +1228,9 @@ func (k *Keeper) ClaimStakeReputation(msg types.MsgClaimStakeReputation) (types.
 	if err := next.Validate(); err != nil {
 		return types.StakeReputationClaimReceipt{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.StakeReputationClaimReceipt{}, err
+	}
 	rawOwner, err := types.RawAddressForUserAddress(msg.OwnerAddress)
 	if err != nil {
 		return types.StakeReputationClaimReceipt{}, err
@@ -1225,7 +1262,11 @@ func (k *Keeper) SyncPoolRewards(msg types.MsgSyncPoolRewards) (types.PoolReward
 		return types.PoolRewardSummary{}, err
 	}
 	k.counters.ValidatorAllocationReads += summary.AllocationsTouched
-	k.genesis.State.Pools[idx] = nextPool
+	next := cloneGenesis(k.genesis)
+	next.State.Pools[idx] = nextPool
+	if err := k.saveGenesis(next); err != nil {
+		return types.PoolRewardSummary{}, err
+	}
 	return summary, nil
 }
 
@@ -1441,8 +1482,9 @@ func (k *Keeper) savePool(idx int, pool types.NominatorPool, delegator types.Del
 	if err := next.Validate(); err != nil {
 		return types.DelegatorShare{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.DelegatorShare{}, err
+	}
 	return delegator, nil
 }
 
@@ -1453,8 +1495,9 @@ func (k *Keeper) savePoolOnly(idx int, pool types.NominatorPool) (types.Nominato
 	if err := next.Validate(); err != nil {
 		return types.NominatorPool{}, err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
+	if err := k.saveGenesis(next); err != nil {
+		return types.NominatorPool{}, err
+	}
 	return pool, nil
 }
 
@@ -1506,9 +1549,7 @@ func (k *Keeper) upsertLiquidPoolAfterPoolMutation(pool types.NominatorPool, hei
 	if err := next.Validate(); err != nil {
 		return err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
-	return nil
+	return k.saveGenesis(next)
 }
 
 func (k *Keeper) upsertPoolShare(poolID string, owner string, delegator types.DelegatorShare, principalDelta uint64, height uint64) error {
@@ -1536,9 +1577,7 @@ func (k *Keeper) upsertPoolShare(poolID string, owner string, delegator types.De
 	if err := next.Validate(); err != nil {
 		return err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
-	return nil
+	return k.saveGenesis(next)
 }
 
 func (k *Keeper) upsertPoolUnbonding(poolID string, owner string, withdrawal types.PendingWithdrawal) error {
@@ -1561,9 +1600,7 @@ func (k *Keeper) upsertPoolUnbonding(poolID string, owner string, withdrawal typ
 	if err := next.Validate(); err != nil {
 		return err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
-	return nil
+	return k.saveGenesis(next)
 }
 
 func (k *Keeper) updatePoolShareAfterUnbond(poolID string, owner string, withdrawal types.PendingWithdrawal, height uint64) error {
@@ -1588,9 +1625,7 @@ func (k *Keeper) updatePoolShareAfterUnbond(poolID string, owner string, withdra
 	if err := next.Validate(); err != nil {
 		return err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
-	return nil
+	return k.saveGenesis(next)
 }
 
 func (k *Keeper) upsertRewardClaim(poolID string, owner string, epoch uint64, amount uint64) error {
@@ -1616,9 +1651,7 @@ func (k *Keeper) upsertRewardClaim(poolID string, owner string, epoch uint64, am
 	if err := next.Validate(); err != nil {
 		return err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
-	return nil
+	return k.saveGenesis(next)
 }
 
 func (k *Keeper) upsertPoolValidatorAllocation(poolID string, validatorAddress string, amount uint64, height uint64) error {
@@ -1658,9 +1691,7 @@ func (k *Keeper) upsertPoolValidatorAllocation(poolID string, validatorAddress s
 	if err := next.Validate(); err != nil {
 		return err
 	}
-	k.genesis = next
-	k.rebuildIndexes()
-	return nil
+	return k.saveGenesis(next)
 }
 
 func (k Keeper) poolAllocationReceipt(pool types.NominatorPool, epoch uint64, height uint64) (types.PoolRebalanceReceipt, error) {
