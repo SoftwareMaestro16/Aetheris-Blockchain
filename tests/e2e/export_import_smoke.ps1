@@ -89,11 +89,13 @@ function Send-SignedTx {
     [string]$FromKey = "node0"
   )
 
-  return Send-LocalnetTx `
-    -Binary $Binary `
-    -Arguments (New-SignedTxArgs -ActionArgs $ActionArgs -FromHome $FromHome -FromKey $FromKey) `
-    -RPCPort $node0Ports.RPC `
-    -TimeoutSeconds $TimeoutSeconds
+  $tx = Invoke-LocalnetCliJson -Binary $Binary -Arguments (New-SignedTxArgs -ActionArgs $ActionArgs -FromHome $FromHome -FromKey $FromKey)
+  $broadcastCode = Get-LocalnetTxCode -Tx $tx
+  if ($broadcastCode -ne 0) {
+    throw "broadcast failed with code $broadcastCode`: $(Get-LocalnetTxLog -Tx $tx)"
+  }
+  Wait-LocalnetHeightIncreasing -RPCPort $node0Ports.RPC -TimeoutSeconds $TimeoutSeconds | Out-Null
+  return $tx
 }
 
 function Invoke-QueryCliJson {

@@ -164,6 +164,27 @@ function Wait-LocalnetBankBalanceIncrease {
   }
 }
 
+function Wait-LocalnetDelegationBalance {
+  param(
+    [string]$Binary,
+    [string]$DelegatorAddress,
+    [string]$ValidatorAddress,
+    [string]$Amount,
+    [int]$RPCPort = 26657,
+    [int]$TimeoutSeconds = 60
+  )
+
+  $coin = Convert-LocalnetCoinParts -Coin $Amount
+  return Wait-LocalnetCondition -TimeoutSeconds $TimeoutSeconds -Description "delegation $DelegatorAddress -> $ValidatorAddress = $($coin.Amount)$($coin.Denom)" -Condition {
+    $delegation = Get-LocalnetDelegation -Binary $Binary -DelegatorAddress $DelegatorAddress -ValidatorAddress $ValidatorAddress -RPCPort $RPCPort
+    $balance = $delegation.delegation_response.balance
+    if ($balance -and $balance.denom -eq $coin.Denom -and [decimal]$balance.amount -eq $coin.Amount) {
+      return $delegation
+    }
+    return $null
+  }
+}
+
 function Set-LocalnetBankSendMessageAddresses {
   param(
     [object]$UnsignedTx,
@@ -200,6 +221,7 @@ function Send-LocalnetDelegateTx {
   )
 
   $node = "tcp://127.0.0.1:$RPCPort"
+  $delegatorAddress = Get-LocalnetKeyAddress -Binary $Binary -NodeHome $FromHome -KeyName $FromKey
   $tx = Invoke-LocalnetCliJson -Binary $Binary -Arguments @(
     "tx", "staking", "delegate", $ValidatorAddress, $Amount,
     "--from", $FromKey,
@@ -213,6 +235,11 @@ function Send-LocalnetDelegateTx {
     "--output", "json"
   )
 
+  $broadcastCode = Get-LocalnetTxCode -Tx $tx
+  if ($broadcastCode -ne 0) {
+    throw "staking delegate broadcast failed with code $broadcastCode`: $(Get-LocalnetTxLog -Tx $tx)"
+  }
+
   $txHash = $tx.txhash
   if (-not $txHash -and $tx.tx_response) {
     $txHash = $tx.tx_response.txhash
@@ -221,7 +248,13 @@ function Send-LocalnetDelegateTx {
     throw "staking delegate did not return txhash"
   }
 
-  return Wait-LocalnetTx -Binary $Binary -TxHash $txHash -RPCPort $RPCPort -TimeoutSeconds $TimeoutSeconds
+  return Wait-LocalnetDelegationBalance `
+    -Binary $Binary `
+    -DelegatorAddress $delegatorAddress `
+    -ValidatorAddress $ValidatorAddress `
+    -Amount $Amount `
+    -RPCPort $RPCPort `
+    -TimeoutSeconds $TimeoutSeconds
 }
 
 function Get-LocalnetDelegation {
