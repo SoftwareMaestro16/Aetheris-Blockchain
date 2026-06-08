@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"testing"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -184,6 +185,75 @@ func TestCHAT3PoolRewardClaimUpdatesCallerOnlyAndScalesToMillionUsers(t *testing
 		require.Len(t, receipt.InternalMetadata.TouchedKeys, 1)
 		require.Equal(t, ownerA, next.Delegator)
 	}
+}
+
+func TestCHAT3PoolRewardStateRecordsAndExportImportRoundTrip(t *testing.T) {
+	params := DefaultParams()
+	owner := chat3AEAddress(0xb1)
+	pool := chat3RewardPool()
+	nextPool, _, err := SyncPoolRewards(params, pool, MsgSyncPoolRewards{
+		Authority:          params.Authority,
+		PoolID:             pool.PoolID,
+		Epoch:              4,
+		Height:             40,
+		RewardRateBps:      1_000,
+		EmissionsAllocated: 20_000,
+		Allocations: []ValidatorRewardAllocation{{
+			Validator:          chat3AEAddress(0xb2),
+			PoolAllocatedStake: 100_000,
+			ValidatorSelfStake: 50_000,
+			PerformanceBps:     MaxBasisPoints,
+			CommissionBps:      500,
+		}},
+	})
+	require.NoError(t, err)
+	share, receipt, err := ClaimPoolRewardShare(PoolRewardClaimInput{
+		PoolID:      pool.PoolID,
+		Share:       DelegatorShare{Delegator: owner, Shares: 1_000},
+		RewardIndex: nextPool.RewardIndex,
+		Epoch:       4,
+		Height:      41,
+	})
+	require.NoError(t, err)
+	require.Equal(t, nextPool.RewardIndex, share.RewardIndexCheckpoint)
+
+	claims, claim, err := RecordPoolRewardClaim(params, nil, receipt)
+	require.NoError(t, err)
+	require.Equal(t, RewardClaim{PoolID: pool.PoolID, Owner: owner, Epoch: 4, Amount: receipt.Amount}, claim)
+	_, _, err = RecordPoolRewardClaim(params, claims, receipt)
+	require.ErrorContains(t, err, "duplicate reward claim")
+	_, _, err = RecordPoolRewardClaim(params, nil, PoolRewardClaimReceipt{
+		PoolID:       pool.PoolID,
+		OwnerAddress: "aevaloper1notallowed",
+		Amount:       receipt.Amount,
+		Epoch:        4,
+		Height:       41,
+	})
+	require.Error(t, err)
+	_, _, err = RecordPoolRewardClaim(params, nil, PoolRewardClaimReceipt{
+		PoolID:       pool.PoolID,
+		OwnerAddress: owner,
+		Epoch:        4,
+		Height:       41,
+	})
+	require.ErrorContains(t, err, "amount must be positive")
+
+	state := State{
+		PoolRewardIndexes: []PoolRewardIndex{{PoolID: nextPool.PoolID, RewardIndex: nextPool.RewardIndex, Epoch: nextPool.RewardEpoch}},
+		RewardClaims:      claims,
+	}
+	normalized := state.Normalize(params)
+	require.NoError(t, normalized.Validate(params))
+	exported, err := json.Marshal(normalized)
+	require.NoError(t, err)
+	var imported State
+	require.NoError(t, json.Unmarshal(exported, &imported))
+
+	roundTrip := imported.Normalize(params)
+	require.Equal(t, normalized.PoolRewardIndexes, roundTrip.PoolRewardIndexes)
+	require.Equal(t, normalized.RewardClaims, roundTrip.RewardClaims)
+	require.Equal(t, nextPool.RewardIndex, roundTrip.PoolRewardIndexes[0].RewardIndex)
+	require.Equal(t, receipt.Amount, roundTrip.RewardClaims[0].Amount)
 }
 
 func TestCHAT3RewardFormulaFixtureForThreeHundredThousandAET(t *testing.T) {
