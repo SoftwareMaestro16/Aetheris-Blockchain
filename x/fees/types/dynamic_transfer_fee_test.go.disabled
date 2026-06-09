@@ -1,0 +1,250 @@
+package types
+
+import (
+	"reflect"
+	"testing"
+
+	sdkmath "cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+)
+
+func TestDynamicTransferFeeUsesPublicTestnetTargetAnchor(t *testing.T) {
+	params, err := DefaultDynamicTransferFeeParams(DefaultParams())
+	if err != nil {
+		t.Fatalf("dynamic fee params should derive from genesis params: %v", err)
+	}
+	if params.TargetTransferFeeNaet != 10_000_000 {
+		t.Fatalf("expected target_transfer_fee_naet 10000000, got %d", params.TargetTransferFeeNaet)
+	}
+	if params.MinTxFeeNaet != 3_000_000 {
+		t.Fatalf("expected min_tx_fee_naet safety floor 3000000, got %d", params.MinTxFeeNaet)
+	}
+	neutral, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{
+		Params:             params,
+		ReputationScoreBps: NeutralReputationBps,
+	})
+	if err != nil {
+		t.Fatalf("neutral quote should compute: %v", err)
+	}
+	if neutral.RequiredFee.String() != "10000000naet" || !neutral.NeutralTransferAnchor {
+		t.Fatalf("expected neutral transfer anchor 10000000naet, got %+v", neutral)
+	}
+}
+
+func TestTinyNaetFeeFixtureRequiresExplicitLowGovernanceProfile(t *testing.T) {
+	params, err := DefaultDynamicTransferFeeParams(DefaultParams())
+	if err != nil {
+		t.Fatalf("dynamic fee params should derive: %v", err)
+	}
+	_, err = QuoteDynamicTransferFee(DynamicTransferFeeInput{Params: params, GasUsed: params.MaxTxGas + 1})
+	if err == nil {
+		t.Fatal("expected public profile to reject oversized gas")
+	}
+
+	params.MinTxFeeNaet = 1
+	params.BaseTransferFeeNaet = 1_000
+	params.TargetTransferFeeNaet = 1_000
+	params.BaseFeePerGasNaet = 0
+	quote, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{Params: params, ReputationScoreBps: NeutralReputationBps})
+	if err != nil {
+		t.Fatalf("explicit low test profile should compute: %v", err)
+	}
+	if quote.RequiredFee.String() != "1000naet" {
+		t.Fatalf("expected 1000naet only under low test profile, got %s", quote.RequiredFee)
+	}
+}
+
+func TestGoldenTransferFeeFixturesAtTinyScale(t *testing.T) {
+	params := DynamicTransferFeeParams{
+		MinTxFeeNaet:                 1,
+		BaseTransferFeeNaet:          1_000,
+		TargetTransferFeeNaet:        1_000,
+		BaseFeePerGasNaet:            1,
+		ByteFeeNaet:                  1,
+		MessageFeeNaet:               0,
+		CongestionSurchargeCapNaet:   100,
+		LowReputationPremiumCapNaet:  0,
+		ReputationDiscountCapNaet:    0,
+		StorageRentSideEffectCapNaet: 0,
+		TargetBlockUtilizationBps:    5_000,
+		CongestionThresholdBps:       8_000,
+		MaxTxGas:                     1_000,
+		MaxBlockGas:                  10_000,
+		MaxMessagesPerTx:             4,
+	}
+
+	tests := map[string]struct {
+		gasUsed          uint64
+		txSizeBytes      uint64
+		blockGasConsumed uint64
+		want             string
+	}{
+		"low load":    {gasUsed: 20, txSizeBytes: 4, blockGasConsumed: 0, want: "1024naet"},
+		"medium load": {gasUsed: 10, txSizeBytes: 5, blockGasConsumed: 6_000, want: "1045naet"},
+		"high load":   {gasUsed: 10, txSizeBytes: 30, blockGasConsumed: 9_000, want: "1130naet"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			quote, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{
+				Params:             params,
+				GasUsed:            tc.gasUsed,
+				TxSizeBytes:        tc.txSizeBytes,
+				BlockGasConsumed:   tc.blockGasConsumed,
+				ReputationScoreBps: NeutralReputationBps,
+			})
+			if err != nil {
+				t.Fatalf("golden quote should compute: %v", err)
+			}
+			if quote.RequiredFee.String() != tc.want {
+				t.Fatalf("expected %s, got %+v", tc.want, quote)
+			}
+		})
+	}
+}
+
+func TestReputationPremiumDiscountIsBoundedAndNeverZero(t *testing.T) {
+	params, err := DefaultDynamicTransferFeeParams(DefaultParams())
+	if err != nil {
+		t.Fatalf("dynamic fee params should derive: %v", err)
+	}
+	neutral, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{Params: params, GasUsed: 10_000, TxSizeBytes: 250, MessageCount: 1, ReputationScoreBps: NeutralReputationBps})
+	if err != nil {
+		t.Fatalf("neutral quote should compute: %v", err)
+	}
+	low, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{Params: params, GasUsed: 10_000, TxSizeBytes: 250, MessageCount: 1, ReputationScoreBps: 1_000})
+	if err != nil {
+		t.Fatalf("low reputation quote should compute: %v", err)
+	}
+	high, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{Params: params, GasUsed: 10_000, TxSizeBytes: 250, MessageCount: 1, ReputationScoreBps: 9_000})
+	if err != nil {
+		t.Fatalf("high reputation quote should compute: %v", err)
+	}
+	if !low.RequiredFee.Amount.GT(neutral.RequiredFee.Amount) || low.LowReputationPremiumNaet > params.LowReputationPremiumCapNaet {
+		t.Fatalf("expected low reputation bounded premium: neutral=%+v low=%+v", neutral, low)
+	}
+	if !high.RequiredFee.Amount.LT(neutral.RequiredFee.Amount) || high.RequiredFee.Amount.LT(sdkmath.NewIntFromUint64(params.MinTxFeeNaet)) || !high.RequiredFee.IsPositive() {
+		t.Fatalf("expected high reputation bounded nonzero discount: neutral=%+v high=%+v", neutral, high)
+	}
+	if high.ReputationDiscountNaet > params.ReputationDiscountCapNaet {
+		t.Fatalf("discount exceeded cap: %+v", high)
+	}
+}
+
+func TestContractExecutionFeeIncludesGasBytesCongestionReputationAndStorage(t *testing.T) {
+	params, err := DefaultDynamicTransferFeeParams(DefaultParams())
+	if err != nil {
+		t.Fatalf("dynamic fee params should derive: %v", err)
+	}
+	contract, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{
+		Params:                     params,
+		GasUsed:                    75_000,
+		TxSizeBytes:                1_024,
+		MessageCount:               3,
+		BlockGasConsumed:           params.MaxBlockGas - 75_000,
+		ReputationScoreBps:         2_500,
+		StorageRentSideEffectsNaet: 123_456,
+	})
+	if err != nil {
+		t.Fatalf("contract execution quote should compute: %v", err)
+	}
+	if contract.GasFeeNaet == 0 || contract.ByteFeeNaet == 0 || contract.MessageFeeNaet == 0 ||
+		contract.CongestionSurchargeNaet == 0 || contract.LowReputationPremiumNaet == 0 ||
+		contract.StorageRentSideEffectsNaet != 123_456 {
+		t.Fatalf("expected all dynamic components in contract quote: %+v", contract)
+	}
+	repeated, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{
+		Params:                     params,
+		GasUsed:                    75_000,
+		TxSizeBytes:                1_024,
+		MessageCount:               3,
+		BlockGasConsumed:           params.MaxBlockGas - 75_000,
+		ReputationScoreBps:         2_500,
+		StorageRentSideEffectsNaet: 123_456,
+	})
+	if err != nil {
+		t.Fatalf("repeated contract quote should compute: %v", err)
+	}
+	if !reflect.DeepEqual(contract, repeated) {
+		t.Fatalf("fee calculation must be deterministic: left=%+v right=%+v", contract, repeated)
+	}
+}
+
+func TestDynamicFeeExportImportStability(t *testing.T) {
+	gs := DefaultGenesisState()
+	params, err := DefaultDynamicTransferFeeParams(gs.Params)
+	if err != nil {
+		t.Fatalf("dynamic fee params should derive: %v", err)
+	}
+	input := DynamicTransferFeeInput{
+		Params:                     params,
+		GasUsed:                    42_000,
+		TxSizeBytes:                512,
+		MessageCount:               2,
+		BlockGasConsumed:           4_000_000,
+		ReputationScoreBps:         7_500,
+		StorageRentSideEffectsNaet: 5_000,
+	}
+	before, err := QuoteDynamicTransferFee(input)
+	if err != nil {
+		t.Fatalf("initial quote should compute: %v", err)
+	}
+	exported := *gs
+	imported := GenesisState{Params: exported.Params, ProtocolFeeState: exported.ProtocolFeeState}
+	if err := imported.Validate(); err != nil {
+		t.Fatalf("imported genesis should validate: %v", err)
+	}
+	importedParams, err := DefaultDynamicTransferFeeParams(imported.Params)
+	if err != nil {
+		t.Fatalf("imported dynamic fee params should derive: %v", err)
+	}
+	input.Params = importedParams
+	after, err := QuoteDynamicTransferFee(input)
+	if err != nil {
+		t.Fatalf("imported quote should compute: %v", err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("export/import must preserve fee result: before=%+v after=%+v", before, after)
+	}
+
+	imported.Params.BaseFeeAmount = "11000000"
+	imported.Params.BaseTransferFeeNaet = 11_000_000
+	imported.Params.TargetTransferFeeNaet = 11_000_000
+	imported.Params.MaxFeeAmount = "100000000"
+	updatedParams, err := DefaultDynamicTransferFeeParams(imported.Params)
+	if err != nil {
+		t.Fatalf("updated dynamic fee params should derive: %v", err)
+	}
+	input.Params = updatedParams
+	updated, err := QuoteDynamicTransferFee(input)
+	if err != nil {
+		t.Fatalf("updated quote should compute: %v", err)
+	}
+	roundTrip := GenesisState{Params: imported.Params, ProtocolFeeState: imported.ProtocolFeeState}
+	roundTripParams, err := DefaultDynamicTransferFeeParams(roundTrip.Params)
+	if err != nil {
+		t.Fatalf("round-trip dynamic params should derive: %v", err)
+	}
+	input.Params = roundTripParams
+	updatedAgain, err := QuoteDynamicTransferFee(input)
+	if err != nil {
+		t.Fatalf("updated round-trip quote should compute: %v", err)
+	}
+	if !reflect.DeepEqual(updated, updatedAgain) || !updated.RequiredFee.Amount.GT(before.RequiredFee.Amount) {
+		t.Fatalf("fee-market state changes must be stable: before=%+v updated=%+v updatedAgain=%+v", before, updated, updatedAgain)
+	}
+}
+
+func TestDynamicTransferFeesRemainNaetOnly(t *testing.T) {
+	params, err := DefaultDynamicTransferFeeParams(DefaultParams())
+	if err != nil {
+		t.Fatalf("dynamic fee params should derive: %v", err)
+	}
+	quote, err := QuoteDynamicTransferFee(DynamicTransferFeeInput{Params: params, GasUsed: 1})
+	if err != nil {
+		t.Fatalf("quote should compute: %v", err)
+	}
+	if quote.RequiredFee.Denom != BondDenom || !sdk.NewCoins(quote.RequiredFee).IsValid() {
+		t.Fatalf("dynamic fees must be paid only in %s: %+v", BondDenom, quote)
+	}
+}

@@ -1,0 +1,43 @@
+services:
+  init:
+    build:
+      context: .
+      args:
+        VERSION: ${AETRA_VERSION:-compose-dev}
+        COMMIT: ${AETRA_COMMIT:-unknown}
+    image: aetra-validator:localnet
+    user: "0:0"
+    command:
+      - sh
+      - -ec
+      - |
+        /usr/local/bin/aetrad init-localnet \
+          --output-dir /home/aetra/localnet \
+          --chain-id aetra-local-1 \
+          --validator-count 1 \
+          --single-host \
+          --keyring-backend test \
+          --node-dir-prefix node \
+          --node-daemon-home aetrad \
+          --staking-denom naet \
+          --minimum-gas-prices 0naet
+        chown -R 10001:10001 /home/aetra
+    volumes:
+      - aetra-home:/home/aetra
+
+  node0:
+    image: aetra-validator:localnet
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    command: ["start", "--home", "/home/aetra/localnet/node0/aetrad", "--log_level", "info"]
+    ports:
+      - "26656:26656"
+      - "26657:26657"
+      - "1317:1317"
+      - "9090:9090"
+    volumes:
+      - aetra-home:/home/aetra
+
+volumes:
+  aetra-home:

@@ -1,0 +1,11 @@
+.git
+.work
+.localnet
+.localnet-*
+dist
+build
+tmp
+*.log
+*.out
+*.err
+node_modules

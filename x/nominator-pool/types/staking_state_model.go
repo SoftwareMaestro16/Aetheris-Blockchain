@@ -14,6 +14,9 @@ const (
 	StateValidatorStatusRetired = "retired"
 
 	RentPayerPolicyPoolReserve = "pool_reserve"
+
+	SlashingFaultDowntime   = "downtime"
+	SlashingFaultDoubleSign = "double_sign"
 )
 
 type Validator struct {
@@ -124,6 +127,17 @@ type StakeReputationAccumulator struct {
 	StakeWeightedSeconds uint64 `protobuf:"varint,2,opt,name=stake_weighted_seconds,json=stakeWeightedSeconds,proto3" json:"stake_weighted_seconds,omitempty"`
 	LastUpdatedHeight    uint64 `protobuf:"varint,3,opt,name=last_updated_height,json=lastUpdatedHeight,proto3" json:"last_updated_height,omitempty"`
 	ReputationScore      uint64 `protobuf:"varint,4,opt,name=reputation_score,json=reputationScore,proto3" json:"reputation_score,omitempty"`
+	SlashingExposure     uint64 `protobuf:"varint,5,opt,name=slashing_exposure,json=slashingExposure,proto3" json:"slashing_exposure,omitempty"`
+	ClaimedSettlements   uint64 `protobuf:"varint,6,opt,name=claimed_settlements,json=claimedSettlements,proto3" json:"claimed_settlements,omitempty"`
+}
+
+type IdentityReputationRecord struct {
+	Account              string
+	StakeWeightedSeconds uint64
+	LastUpdatedHeight    uint64
+	ReputationScore      uint64
+	SlashingExposure     uint64
+	ClaimedSettlements   uint64
 }
 
 type EpochStakingSnapshot struct {
@@ -139,6 +153,18 @@ type ValidatorSetSnapshot struct {
 	Validators    []string
 	TotalPower    uint64
 	SnapshotHash  string
+}
+
+type ValidatorSlashEvent struct {
+	Height              uint64
+	Validator           string
+	PoolID              string
+	Fault               string
+	Epoch               uint64
+	SlashingLoss        uint64
+	ValidatorStatus     string
+	Tombstoned          bool
+	PoolSlashIndexAfter uint64
 }
 
 func (v Validator) Validate(params Params) error {
@@ -366,6 +392,51 @@ func (s ValidatorSetSnapshot) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (r IdentityReputationRecord) Validate() error {
+	if err := ValidateUserFacingAEAddress("identity reputation account", r.Account); err != nil {
+		return err
+	}
+	if r.LastUpdatedHeight == 0 {
+		return errors.New("identity reputation record height must be positive")
+	}
+	return nil
+}
+
+func MergeIdentityReputationRecords(records []IdentityReputationRecord, legacy []StakeReputationAccumulator) []IdentityReputationRecord {
+	byAccount := make(map[string]IdentityReputationRecord, len(records)+len(legacy))
+	for _, r := range records {
+		byAccount[r.Account] = r
+	}
+	for _, l := range legacy {
+		r, found := byAccount[l.Account]
+		if !found {
+			r = IdentityReputationRecord{
+				Account:              l.Account,
+				StakeWeightedSeconds: l.StakeWeightedSeconds,
+				LastUpdatedHeight:    l.LastUpdatedHeight,
+				ReputationScore:      l.ReputationScore,
+				SlashingExposure:     l.SlashingExposure,
+				ClaimedSettlements:   l.ClaimedSettlements,
+			}
+		} else {
+			if l.LastUpdatedHeight > r.LastUpdatedHeight {
+				r.StakeWeightedSeconds = l.StakeWeightedSeconds
+				r.LastUpdatedHeight = l.LastUpdatedHeight
+				r.ReputationScore = l.ReputationScore
+				r.SlashingExposure = l.SlashingExposure
+				r.ClaimedSettlements = l.ClaimedSettlements
+			}
+		}
+		byAccount[l.Account] = r
+	}
+	out := make([]IdentityReputationRecord, 0, len(byAccount))
+	for _, r := range byAccount {
+		out = append(out, r)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Account < out[j].Account })
+	return out
 }
 
 func isStateValidatorStatus(status string) bool {

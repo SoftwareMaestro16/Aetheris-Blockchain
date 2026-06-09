@@ -62,3 +62,7 @@ func EpochSnapshotKey(epoch uint64) []byte {
 func ValidatorSetSnapshotKey(heightOrEpoch uint64) []byte {
 	return []byte(fmt.Sprintf("staking/snapshot/validator_set/%020d", heightOrEpoch))
 }
+
+func IdentityReputationKey(account string) []byte {
+	return []byte("identity/reputation/" + account)
+}

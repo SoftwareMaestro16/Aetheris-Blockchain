@@ -1,0 +1,10 @@
+[
+  {
+    "node_id": "example_node_id_1",
+    "address": "127.0.0.1:26656"
+  },
+  {
+    "node_id": "example_node_id_2",
+    "address": "127.0.0.1:26656"
+  }
+]

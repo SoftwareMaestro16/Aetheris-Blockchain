@@ -1766,6 +1766,22 @@ func ValidateOfficialLiquidStakingDeposit(msg MsgDepositToOfficialLiquidStaking,
 	return validateID("official liquid staking pool id", msg.PoolID, params.MaxPoolIDBytes)
 }
 
+func ValidateStakingPoolDeposit(msg MsgDepositToStakingPool, params Params) error {
+	if err := ValidateUserFacingAEAddress("staking pool depositor", msg.WalletAddress); err != nil {
+		return err
+	}
+	if strings.TrimSpace(msg.ValidatorAddress) != "" {
+		return errors.New("staking pool deposit must not include a validator address")
+	}
+	if msg.Amount < params.MinPoolDeposit {
+		return fmt.Errorf("staking pool deposit below configured minimum %d", params.MinPoolDeposit)
+	}
+	if msg.Height == 0 {
+		return errors.New("staking pool deposit height must be positive")
+	}
+	return validateID("staking pool id", msg.PoolID, params.MaxPoolIDBytes)
+}
+
 func ValidateDirectUserDelegation(msg MsgDelegateToValidator, params Params) error {
 	if err := params.Authorize(msg.Authority); err != nil {
 		return err
