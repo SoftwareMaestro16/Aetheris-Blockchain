@@ -1,5 +1,10 @@
 package types
 
+type ExitCodeSpec struct {
+	Code uint32
+	Name string
+}
+
 const (
 	ExitCodeOK uint32 = iota
 	ExitCodeValidationFailed
@@ -143,4 +148,58 @@ func ExitCodeName(code uint32) string {
 	default:
 		return "unknown"
 	}
+}
+
+func CanonicalExitCodes() []ExitCodeSpec {
+	return []ExitCodeSpec{
+		{ExitCodeOK, "ok"},
+		{ExitCodeValidationFailed, "validation_failed"},
+		{ExitCodeUnauthorized, "unauthorized"},
+		{ExitCodeAccountInactive, "account_inactive"},
+		{ExitCodeAccountFrozen, "account_frozen"},
+		{ExitCodeContractFrozen, "contract_frozen"},
+		{ExitCodeCodeRejected, "code_rejected"},
+		{ExitCodeOutOfGas, "out_of_gas"},
+		{ExitCodeStorageLimit, "storage_limit"},
+		{ExitCodeStorageRentDebt, "storage_rent_debt"},
+		{ExitCodeMessageExpired, "message_expired"},
+		{ExitCodeQueueLimit, "queue_limit"},
+		{ExitCodeExecutionFailed, "execution_failed"},
+		{ExitCodeInternalBounce, "internal_bounce"},
+		{ExitCodeForbiddenHostCall, "forbidden_host_call"},
+		{ExitCodeInvalidJump, "invalid_jump"},
+		{ExitCodeCallStackOverflow, "call_stack_overflow"},
+		{ExitCodeContinuationNotFound, "continuation_not_found"},
+		{ExitCodeRecursionLimitExceeded, "recursion_limit_exceeded"},
+		{ExitCodeInvalidMemoryAccess, "invalid_memory_access"},
+		{ExitCodeNullReference, "null_reference"},
+		{ExitCodeInvalidChunkReference, "invalid_chunk_reference"},
+		{ExitCodeCorruptedStateObject, "corrupted_state_object"},
+		{ExitCodeDivisionByZero, "division_by_zero"},
+		{ExitCodeInvalidShift, "invalid_shift"},
+		{ExitCodeArithmeticUnderflow, "arithmetic_underflow"},
+		{ExitCodeGasLimitExceeded, "gas_limit_exceeded"},
+		{ExitCodeGasReservationFailed, "gas_reservation_failed"},
+		{ExitCodeExecutionTimeout, "execution_timeout"},
+		{ExitCodeStackOverflow, "stack_overflow"},
+		{ExitCodeStackUnderflow, "stack_underflow"},
+		{ExitCodeTypeCheckError, "type_check_error"},
+		{ExitCodeMessageRoutingFailed, "message_routing_failed"},
+		{ExitCodeQueueOverflow, "queue_overflow"},
+		{ExitCodeShardUnavailable, "shard_unavailable"},
+		{ExitCodeInsufficientBalance, "insufficient_balance"},
+		{ExitCodeInsufficientGas, "insufficient_gas"},
+		{ExitCodeStateCorruption, "state_corruption"},
+		{ExitCodeStateVersionMismatch, "state_version_mismatch"},
+		{ExitCodeSnapshotFailure, "snapshot_failure"},
+		{ExitCodeExplicitAbort, "explicit_abort"},
+		{ExitCodeAssertionFailed, "assertion_failed"},
+		{ExitCodeAccountStateTooBig, "account_state_too_big"},
+		{ExitCodeInactiveFrozen, "inactive_frozen"},
+		{ExitCodeContractAbort, "contract_abort"},
+	}
+}
+
+func KnownExitCode(code uint32) bool {
+	return ExitCodeName(code) != "unknown"
 }

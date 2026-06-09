@@ -196,7 +196,6 @@ func StakeReputationProofStateKey(account string) string {
 }
 
 func ComputeStakingProofMetadataHash(m StakingProofMetadata) string {
-	m.MetadataHash = ""
 	parts := []string{
 		"staking-proof-metadata-v1",
 		string(m.Kind),

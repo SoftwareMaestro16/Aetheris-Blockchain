@@ -28,10 +28,15 @@ message QueryNominatorPoolResponse {
   NominatorPool pool = 1;
 }
 
-message QueryNominatorPoolsRequest {}
+message QueryNominatorPoolsRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+}
 
 message QueryNominatorPoolsResponse {
   repeated NominatorPool pools = 1;
+  uint64 next_offset = 2;
+  uint64 total = 3;
 }
 
 message QueryPoolDelegatorRequest {

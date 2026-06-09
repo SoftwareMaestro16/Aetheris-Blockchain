@@ -1356,6 +1356,133 @@ func (k *Keeper) ApplyPoolSlash(poolID string, slashAmount uint64) (types.Nomina
 	return k.savePoolOnly(idx, pool)
 }
 
+func (k *Keeper) ApplyValidatorSlash(msg types.MsgApplyValidatorSlash) ([]types.ValidatorSlashEvent, error) {
+	if err := k.genesis.Params.Authorize(msg.Authority); err != nil {
+		return nil, err
+	}
+
+	var slashBps uint32
+	switch msg.Fault {
+	case types.SlashingFaultDowntime:
+		slashBps = k.genesis.Params.DowntimeSlashBps
+	case types.SlashingFaultDoubleSign:
+		slashBps = k.genesis.Params.DoubleSignSlashBps
+	default:
+		return nil, errors.New("unknown slashing fault")
+	}
+
+	// Find and update the validator
+	var validatorIdx int
+	var validator types.Validator
+	var found bool
+	for i, v := range k.genesis.State.Validators {
+		if v.Address == msg.ValidatorAddress {
+			validatorIdx = i
+			validator = v
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, errors.New("validator not found")
+	}
+
+	// Determine new status
+	var newStatus string
+	var tombstoned bool
+	switch msg.Fault {
+	case types.SlashingFaultDowntime:
+		newStatus = types.StateValidatorStatusJailed
+	case types.SlashingFaultDoubleSign:
+		newStatus = types.StateValidatorStatusSlashed
+		if k.genesis.Params.DoubleSignTombstone {
+			tombstoned = true
+		}
+	default:
+		newStatus = validator.Status
+	}
+
+	// Update validator status and fields
+	validator.Status = newStatus
+	validator.SlashingRiskBps = slashBps
+	if msg.Fault == types.SlashingFaultDowntime {
+		validator.Jailed = true
+	}
+	if tombstoned {
+		validator.Tombstoned = true
+	}
+	k.genesis.State.Validators[validatorIdx] = validator
+
+	// Create slash events for affected pools
+	var events []types.ValidatorSlashEvent
+
+	// Apply slash to each pool that has allocations with this validator
+	for poolIdx, pool := range k.genesis.State.Pools {
+		slashAmount := uint64(0)
+
+		// Calculate total slashing loss for this pool
+		for allocIdx, alloc := range pool.Allocations {
+			if alloc.ValidatorAddress == msg.ValidatorAddress {
+				loss := alloc.Amount * uint64(slashBps) / uint64(types.MaxBasisPoints)
+				slashAmount += loss
+				pool.Allocations[allocIdx].Amount -= loss
+			}
+		}
+
+		if slashAmount > 0 {
+			// Update pool totals
+			if pool.TotalBondedStake >= slashAmount {
+				pool.TotalBondedStake -= slashAmount
+			} else {
+				pool.TotalBondedStake = 0
+			}
+
+			// Update pool slash index
+			pool.SlashIndex += types.RewardDelta(slashAmount, pool.TotalShares)
+
+			k.genesis.State.Pools[poolIdx] = pool
+
+			// Create event for this pool
+			event := types.ValidatorSlashEvent{
+				Height:              msg.Height,
+				Validator:           msg.ValidatorAddress,
+				PoolID:              pool.PoolID,
+				Fault:               msg.Fault,
+				Epoch:               msg.Epoch,
+				SlashingLoss:        slashAmount,
+				ValidatorStatus:     newStatus,
+				Tombstoned:          tombstoned,
+				PoolSlashIndexAfter: pool.SlashIndex,
+			}
+			events = append(events, event)
+
+			// Also update PoolValidatorAllocation if it exists
+			for pvIdx, pv := range k.genesis.State.PoolValidatorAllocations {
+				if pv.PoolID == pool.PoolID && pv.Validator == msg.ValidatorAddress {
+					// Reduce active stake proportionally
+					loss := pv.ActiveStake * uint64(slashBps) / uint64(types.MaxBasisPoints)
+					if pv.ActiveStake >= loss {
+						k.genesis.State.PoolValidatorAllocations[pvIdx].ActiveStake -= loss
+					} else {
+						k.genesis.State.PoolValidatorAllocations[pvIdx].ActiveStake = 0
+					}
+					// Clear target weight for slashed validators
+					if newStatus != types.StateValidatorStatusActive {
+						k.genesis.State.PoolValidatorAllocations[pvIdx].TargetWeightBps = 0
+					}
+				}
+			}
+		}
+	}
+
+	// Store the slash event in the State
+	for _, event := range events {
+		k.genesis.State.ValidatorSlashEvents = append(k.genesis.State.ValidatorSlashEvents, event)
+	}
+
+	return events, nil
+}
+
 func (k *Keeper) NominatorPool(poolID string) (types.NominatorPool, bool) {
 	_, pool, found := k.lookupPool(poolID)
 	return pool, found

@@ -138,5 +138,5 @@ func TestStateGrowthRefundDecayResistsWriteDeleteExtraction(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, out.DeleteRefundAfterDecayNaet.IsZero())
-	require.True(t, out.Alerts == nil || len(out.Alerts) == 0)
+	require.True(t, len(out.Alerts) == 0)
 }

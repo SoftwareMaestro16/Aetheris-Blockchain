@@ -29,6 +29,8 @@ type Validator struct {
 	SlashingRiskBps    uint32
 	AllocationLimitBps uint32
 	UpdatedHeight      uint64
+	Jailed             bool
+	Tombstoned         bool
 }
 
 type ValidatorPerformanceScore struct {
@@ -68,6 +70,7 @@ type LiquidStakingPool struct {
 	AllocationEpoch         uint64
 	LastStorageChargeHeight uint64
 	StorageRentDebt         uint64
+	StorageRentReserve      uint64
 	RentPayerPolicy         string
 	Status                  string
 }

@@ -25,7 +25,9 @@ func (s *StoreService) RawStore() *Store {
 }
 
 type Store struct {
-	values map[string][]byte
+	values    map[string][]byte
+	setCounts map[string]uint64
+	delCounts map[string]uint64
 }
 
 func (s *Store) Get(key []byte) ([]byte, error) {
@@ -52,6 +54,10 @@ func (s *Store) Set(key, value []byte) error {
 		return errors.New("nil key or value")
 	}
 	s.values[string(key)] = append([]byte(nil), value...)
+	if s.setCounts == nil {
+		s.setCounts = make(map[string]uint64)
+	}
+	s.setCounts[string(key)]++
 	return nil
 }
 
@@ -60,7 +66,30 @@ func (s *Store) Delete(key []byte) error {
 		return errors.New("nil key")
 	}
 	delete(s.values, string(key))
+	if s.delCounts == nil {
+		s.delCounts = make(map[string]uint64)
+	}
+	s.delCounts[string(key)]++
 	return nil
+}
+
+func (s *Store) ResetWriteCounts() {
+	s.setCounts = make(map[string]uint64)
+	s.delCounts = make(map[string]uint64)
+}
+
+func (s *Store) SetCount(key []byte) uint64 {
+	if s.setCounts == nil {
+		return 0
+	}
+	return s.setCounts[string(key)]
+}
+
+func (s *Store) DeleteCount(key []byte) uint64 {
+	if s.delCounts == nil {
+		return 0
+	}
+	return s.delCounts[string(key)]
 }
 
 func (s *Store) Iterator(_, _ []byte) (dbm.Iterator, error) {

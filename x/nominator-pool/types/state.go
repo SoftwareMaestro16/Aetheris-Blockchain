@@ -85,6 +85,9 @@ type Params struct {
 	ValidatorCommissionMaxDailyChangeBps   uint32
 	ValidatorPowerCapBps                   uint32
 	ValidatorPowerCapSchedule              []ValidatorPowerCapPhase
+	DowntimeSlashBps                       uint32
+	DoubleSignSlashBps                     uint32
+	DoubleSignTombstone                    bool
 	OverflowRewardMultiplierMinBps         uint32
 	OverflowRewardMultiplierMaxBps         uint32
 	UnbondingBlocks                        uint64
@@ -145,22 +148,37 @@ type ValidatorFunding struct {
 }
 
 type ValidatorPolicyCandidate struct {
-	ValidatorAddress     string
-	ReputationScore      uint32
-	UptimeBps            uint32
-	CommissionBps        uint32
-	StakeEfficiencyBps   uint32
-	SlashingRiskBps      uint32
-	NetworkLoadBps       uint32
-	CurrentAllocationBps uint32
-	Jailed               bool
-	Slashed              bool
+	ValidatorAddress      string
+	ReputationScore       uint32
+	UptimeBps             uint32
+	UptimeWindow          uint64
+	MissedBlocks          uint64
+	CommissionBps         uint32
+	StakeEfficiencyBps    uint32
+	SlashingRiskBps       uint32
+	NetworkLoadBps        uint32
+	CurrentAllocationBps  uint32
+	AllocationLimitBps    uint32
+	OperationalHistoryBps uint32
+	Jailed                bool
+	Slashed               bool
 }
 
 type AllocationWeight struct {
 	ValidatorAddress string
 	Score            uint64
 	WeightBps        uint32
+}
+
+type ValidatorScore struct {
+	Eligible                bool
+	OverallScoreBps         uint32
+	SlashingRiskScoreBps    uint32
+	UptimeScoreBps          uint32
+	CommissionScoreBps      uint32
+	ReputationScoreBps      uint32
+	StakeEfficiencyScoreBps uint32
+	NetworkLoadScoreBps     uint32
 }
 
 type PoolStateMetadata struct {
@@ -257,8 +275,10 @@ type State struct {
 	PoolRewardIndexes           []PoolRewardIndex
 	RewardClaims                []RewardClaim
 	StakeReputationAccumulators []StakeReputationAccumulator
+	IdentityReputationRecords   []IdentityReputationRecord
 	EpochStakingSnapshots       []EpochStakingSnapshot
 	ValidatorSetSnapshots       []ValidatorSetSnapshot
+	ValidatorSlashEvents        []ValidatorSlashEvent
 }
 
 type NominatorPool struct {
@@ -424,6 +444,7 @@ type MsgDepositToStakingPool struct {
 	Amount           uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
 	Height           uint64 `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
 	ValidatorAddress string `protobuf:"bytes,5,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
+	OfficialContract string `protobuf:"bytes,6,opt,name=official_contract,json=officialContract,proto3" json:"official_contract,omitempty"`
 }
 
 type MsgDelegateToValidator struct {
@@ -477,6 +498,14 @@ type MsgUpdateParams struct {
 	Authority string
 	Params    Params
 	Height    uint64
+}
+
+type MsgApplyValidatorSlash struct {
+	Authority        string
+	ValidatorAddress string
+	Fault            string
+	Epoch            uint64
+	Height           uint64
 }
 
 type MsgRequestPoolWithdrawal struct {
@@ -602,10 +631,15 @@ type QueryNominatorPoolResponse struct {
 	Pool NominatorPool `protobuf:"bytes,1,opt,name=pool,proto3" json:"pool"`
 }
 
-type QueryNominatorPoolsRequest struct{}
+type QueryNominatorPoolsRequest struct {
+	Offset uint64 `protobuf:"varint,1,opt,name=offset,proto3" json:"offset,omitempty"`
+	Limit  uint64 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+}
 
 type QueryNominatorPoolsResponse struct {
-	Pools []NominatorPool `protobuf:"bytes,1,rep,name=pools,proto3" json:"pools,omitempty"`
+	Pools      []NominatorPool `protobuf:"bytes,1,rep,name=pools,proto3" json:"pools,omitempty"`
+	NextOffset uint64          `protobuf:"varint,2,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
+	Total      uint64          `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
 }
 
 type QueryPoolDelegatorRequest struct {
@@ -729,6 +763,9 @@ func DefaultParams() Params {
 			{MaxValidatorCount: 250, PowerCapBps: 250},
 			{MaxValidatorCount: 0, PowerCapBps: 200},
 		},
+		DowntimeSlashBps:                       5,
+		DoubleSignSlashBps:                     500,
+		DoubleSignTombstone:                    true,
 		OverflowRewardMultiplierMinBps:         0,
 		OverflowRewardMultiplierMaxBps:         3_000,
 		UnbondingBlocks:                        DefaultUnbondingBlocks,
@@ -1058,6 +1095,51 @@ func (p Params) AllocationScore(candidate ValidatorPolicyCandidate) uint64 {
 		uint64(candidate.StakeEfficiencyBps)*uint64(p.AllocationStakeEfficiencyWeight) +
 		uint64(slashingSafety)*uint64(p.AllocationSlashingRiskWeight) +
 		uint64(networkHeadroom)*uint64(p.AllocationNetworkLoadWeight)
+}
+
+func (p Params) ComputeValidatorScoreV1(candidate ValidatorPolicyCandidate) (ValidatorScore, error) {
+	score := ValidatorScore{
+		Eligible:                true,
+		UptimeScoreBps:          candidate.UptimeBps,
+		CommissionScoreBps:      0,
+		ReputationScoreBps:      candidate.ReputationScore,
+		StakeEfficiencyScoreBps: candidate.StakeEfficiencyBps,
+		NetworkLoadScoreBps:     MaxBasisPoints - candidate.NetworkLoadBps,
+		SlashingRiskScoreBps:    MaxBasisPoints - candidate.SlashingRiskBps,
+	}
+
+	// Check if missed blocks exceed uptime window
+	if candidate.MissedBlocks > candidate.UptimeWindow {
+		return score, errors.New("missed blocks exceed uptime window")
+	}
+
+	// Check eligibility
+	if candidate.Jailed || candidate.Slashed {
+		score.Eligible = false
+	}
+
+	// Calculate overall score
+	if candidate.CommissionBps <= p.ValidatorCommissionCeilingBps {
+		score.CommissionScoreBps = p.ValidatorCommissionCeilingBps - candidate.CommissionBps
+	}
+
+	if !score.Eligible {
+		score.OverallScoreBps = 0
+	} else {
+		totalScore := uint64(score.UptimeScoreBps)*uint64(p.AllocationUptimeWeight) +
+			uint64(score.CommissionScoreBps)*uint64(p.AllocationCommissionWeight) +
+			uint64(score.ReputationScoreBps)*uint64(p.AllocationReputationWeight) +
+			uint64(score.StakeEfficiencyScoreBps)*uint64(p.AllocationStakeEfficiencyWeight) +
+			uint64(score.SlashingRiskScoreBps)*uint64(p.AllocationSlashingRiskWeight) +
+			uint64(score.NetworkLoadScoreBps)*uint64(p.AllocationNetworkLoadWeight)
+
+		// Normalize to basis points
+		if totalScore > 0 {
+			score.OverallScoreBps = uint32(totalScore / (uint64(p.AllocationUptimeWeight + p.AllocationCommissionWeight + p.AllocationReputationWeight + p.AllocationStakeEfficiencyWeight + p.AllocationSlashingRiskWeight + p.AllocationNetworkLoadWeight)))
+		}
+	}
+
+	return score, nil
 }
 
 func (s State) Validate(params Params) error {
