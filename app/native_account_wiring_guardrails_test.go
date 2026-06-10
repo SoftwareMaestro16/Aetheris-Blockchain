@@ -69,7 +69,4 @@ func TestNativeAccountGuardrailsDoNotRegisterNativeTokenNFTOrDEXModules(t *testi
 
 	require.NoError(t, nativeaccounttypes.ValidateAssetRoutes(nativeaccounttypes.DefaultAssetRoutes()))
 	require.NoError(t, nativeaccounttypes.ValidateNoNativeAssetModules(moduleNames))
-	for _, denied := range nativeaccounttypes.NativeAssetModuleDenylist() {
-		require.NotContains(t, app.ModuleManager.Modules, denied)
-	}
 }

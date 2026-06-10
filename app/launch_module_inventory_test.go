@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,8 +48,8 @@ func TestPublicTestnetLaunchProfileRejectsForbiddenInventory(t *testing.T) {
 		"disabled",
 	)
 	require.ErrorContains(t,
-		ValidatePublicTestnetLaunchProfile([]LaunchModuleInventoryEntry{testInventoryEntry("x/market", "market", LaunchModuleLaunchCore, true, true, true)}, []string{"market"}),
-		"native application-asset module market",
+		ValidatePublicTestnetLaunchProfile([]LaunchModuleInventoryEntry{testInventoryEntry("x/futureavm", "futureavm", LaunchModuleFutureAVMStandard, true, false, false)}, []string{"futureavm"}),
+		"future AVM standard",
 	)
 	require.ErrorContains(t,
 		ValidatePublicTestnetLaunchProfile([]LaunchModuleInventoryEntry{testInventoryEntry("x/memory", "memory", LaunchModuleLaunchCore, true, true, false)}, []string{"memory"}),
@@ -61,7 +62,7 @@ func TestLaunchModuleInventoryDocsMatchModuleBoundarySummary(t *testing.T) {
 	expected := RenderLaunchModuleInventoryBoundarySummary(entries)
 	boundaries, err := os.ReadFile(filepath.Join("..", "docs", "module-boundaries.md"))
 	require.NoError(t, err)
-	require.Contains(t, string(boundaries), expected)
+	require.Contains(t, strings.ReplaceAll(string(boundaries), "\r\n", "\n"), expected)
 }
 
 func readXModuleDirs(t *testing.T) []string {

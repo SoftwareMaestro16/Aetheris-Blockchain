@@ -1,5 +1,29 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> Note: historical native asset-factory and native exchange modules have been removed from the active app graph.
 # Module Boundaries
+
+## Launch Module Inventory
+
+Machine-readable launch inventory: `app/launch_module_inventory.json`.
+Generated launch scope doc: `docs/TESTNET.md`.
+
+Classification counts:
+- `disabled`: 2
+- `future_avm_standard`: 16
+- `launch_core`: 14
+- `launch_support`: 28
+- `prototype_only`: 7
+
+Public testnet profile rejects `prototype_only` and `disabled` modules in app wiring, rejects memory-only consensus keepers, and rejects native application-asset modules.
+
+Core SDK module responsibilities and Aetra-specific wrappers are documented
+in [Core Module Architecture](architecture/core-module-architecture.md). This
+file focuses on custom modules and readiness packages. Economy and interop
+boundaries are documented in
+[Economy And Interop Module Architecture](architecture/economy-interop-architecture.md).
+Application module architecture is documented in
+[Application Module Architecture](architecture/application-module-architecture.md).
+Additional support modules are documented in
+[Additional Modules](architecture/additional-modules.md).
 
 Core SDK module responsibilities and Aetra-specific wrappers are documented
 in [Core Module Architecture](architecture/core-module-architecture.md). This
@@ -14,11 +38,8 @@ Additional support modules are documented in
 ## Historical `x/tokenfactory` Prototype Boundary
 
 Historical purpose: create and manage custom denoms without EVM dependency
-during prototype testing. This is not the production token design. Production
-fungible token behavior belongs in AVM contracts such as AFT-44, and historical
-`x/tokenfactory` behavior is retained only as migration compatibility evidence.
-
-Production fungible token behavior belongs in AVM contracts such as AFT-44.
+during prototype testing. Historical `x/tokenfactory` behavior is retained only
+as migration compatibility evidence.
 
 State:
 - Denom registry keyed by full denom.
@@ -46,19 +67,13 @@ Security invariants:
 ## Historical `x/dex` Prototype Boundary
 
 Historical purpose: deterministic constant-product AMM during prototype
-testing. This is not the production DEX design. Production DEX pools and routers
-belong in AVM contracts, and historical `x/dex` prototype language is retained
-only as a migration compatibility reference.
-
-Production DEX pools and routers belong in AVM contracts.
+testing. Historical `x/dex` prototype language is retained only as a migration
+compatibility reference.
 
 Current direction:
-- token, NFT, market, and DEX application logic must not be reintroduced as
-  active native asset modules.
+- Application-level asset logic must not be reintroduced as active native modules.
 - Future contract-based pools/routers must treat the historical prototype as the
   reference implementation or migration bridge until audited.
-
-token, NFT, market, and DEX application logic must not be reintroduced as active native asset modules.
 
 State:
 - Pool registry keyed by pool ID.
@@ -83,12 +98,12 @@ Security invariants:
 - No pool operation can create value.
 - LP shares must remain backed by pool reserves.
 - User-provided min-out values protect against slippage.
-- Governance-controlled DEX params are bounded and cannot mutate reserves or LP supply.
+- Governance-controlled pool params are bounded and cannot mutate reserves or LP supply.
 - Duplicate pair lookup uses a deterministic pair index instead of scanning all pools.
 - Native AET metadata cannot be spoofed through display denoms, factory denoms,
   or arbitrary LP denoms.
 - Recorded reserves must match module account balances, and LP supply must
-  match pool shares after every DEX state transition.
+  match pool shares after every pool state transition.
 
 ## `x/identity`
 
@@ -98,8 +113,8 @@ Current status:
 - Pure validation helpers only.
 - No SDK stores, keepers, module accounts, genesis, or CLI tx surface are
   registered yet.
-- Registry records are the source of truth; NFT representation is a UI/wallet
-  proof layer, not a replacement for registry ownership checks.
+- Registry records are the source of truth; UI/wallet proof layers are not a
+  replacement for registry ownership checks.
 
 State:
 - Domain record keyed by normalized name.
@@ -107,7 +122,7 @@ State:
 - Optional resolver address.
 - Expiry and renewal state.
 - Auction status.
-- NFT item reference for wallet/UI representation.
+- Contract item reference for wallet/UI representation.
 
 Security invariants:
 - Domain names are normalized and restricted to lowercase ASCII `a-z`, digits
@@ -130,7 +145,7 @@ Security invariants:
 - Resolver payment routing fails before funds move when `primary` is unset,
   the resolver target is zero, the registry owner does not match, or the domain
   is expired.
-- Subdomains such as `dex.alice.aet`, `nft.alice.aet`, and `bot.alice.aet`
+- Subdomains such as `app.alice.aet`, `bot.alice.aet`, and `pool.alice.aet`
   resolve through the base `.aet` registry owner.
 
 ## `x/workflow`
@@ -146,8 +161,8 @@ Current status:
 Examples:
 - resolver-based payment.
 - domain auction finalization.
-- token mint and wallet deploy.
-- NFT mint and metadata attach.
+- contract mint and wallet deploy.
+- contract mint and metadata attach.
 - contract deployment plus first message.
 
 Security invariants:
@@ -446,7 +461,7 @@ Security invariants:
 ## `x/indexer`
 
 Purpose: fast query layer for state search, event search, memo search, domain
-lookup, token discovery, and NFT discovery.
+lookup, and asset discovery.
 
 Current status:
 - Pure executable projection specification only.
@@ -465,7 +480,7 @@ State:
 Security invariants:
 - Indexer must never be required for consensus.
 - Query limits are required for bounded result sets.
-- State, event, memo, domain, token, and NFT indexes are projections only.
+- State, event, memo, domain, and asset indexes are projections only.
 - Search output is deterministic for tests but cannot affect state
   transitions.
 
@@ -576,45 +591,13 @@ Security invariants:
   byte cost, and tightens contract deploy limits.
 - High score may improve deterministic queue priority within bounded weights,
   but cannot bypass fees, signatures, or validation.
-- Token creation, contract deployment, and DEX pool creation may require a
+- Contract deployment may require a
   score threshold or bonded deposit.
 - Domain auction spam can be rate-limited by score.
 - Contract reputation updates on deterministic failed or successful executions.
 - Reputation must not bypass signer checks, sequence replay protection,
   zero-address rejection, `naet` fee validation, or module authorization.
 
-## `x/aetravm/standards`
-
-Purpose: define Aetra-native contract standards before the VM runtime is
-wired into the app. Standards are VM-independent executable specifications with
-async/AVM-compatible conformance handlers.
-
-State:
-- No chain state.
-- Standard packages are executable specifications, validation helpers, message
-  codecs, and async conformance handlers only.
-
-Current standards:
-- `aft`: AFT-44 fungible token master/wallet contract model.
-- `anft`: ANFT-66 NFT collection/item model and ASBT-67 soulbound extension.
-- `aw`: AW-5 replay-safe contract wallet model.
-
-Security invariants:
-- Standards must not register SDK modules, stores, keepers, or protocol fee
-  denoms by themselves.
-- Standards must define explicit storage schema, inbound messages, outbound
-  messages, getters, unknown-message policy, bounce behavior, fee behavior, and
-  deployment behavior before runtime wiring.
-- Standard `AsyncHandler` conformance paths must execute through the bounded
-  async queue and must not bypass native-only fee validation.
-- Native `AET`/`naet` is not a user token standard instance.
-- User token balances cannot satisfy base-chain protocol fees.
-- Contract address derivation and supply accounting rules must be deterministic
-  and regression-tested before VM wiring.
-- NFT collection/item membership and SBT non-transferability must be
-  deterministic and regression-tested before VM wiring.
-- Wallet `seqno`, `wallet_id`, `valid_until`, signature, extension auth, and
-  native-only fee rules must fail before state mutation.
 
 ## `x/aetravm/async`
 

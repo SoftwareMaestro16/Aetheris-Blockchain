@@ -51,7 +51,6 @@ foreach ($term in @(
     'Incident response and rollback docs are tested',
     'cosmwasm_smoke.ps1 -EnableWasm',
     'go test ./x/aetravm/avm ./x/aetravm/async',
-    'go test ./x/aetravm/standards/...',
     'untriaged `Critical` or `High`',
     'Production Gate',
     'long-running public testnet',

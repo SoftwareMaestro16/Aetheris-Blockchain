@@ -12,6 +12,18 @@ import (
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
 
+// stateCreatingMsgTypes contains message type URLs whose execution creates or
+// expands chain state. Transactions carrying at least one such message should
+// incur the additional StorageRentSideEffects fee.
+var stateCreatingMsgTypes = map[string]bool{
+	"/l1.contracts.v1.MsgStoreCode":            true,
+	"/l1.contracts.v1.MsgDeployContract":       true,
+	"/l1.contracts.v1.MsgExecuteExternal":      true,
+	"/l1.contracts.v1.MsgExecuteInternal":      true,
+	"/l1.contracts.v1.MsgSendInternalMessage":  true,
+	"/l1.contracts.v1.MsgUpdateContractParams": true,
+}
+
 func (k Keeper) ValidateTxFees(ctx context.Context, fees sdk.Coins) error {
 	params, err := k.GetParams(ctx)
 	if err != nil {
@@ -22,6 +34,10 @@ func (k Keeper) ValidateTxFees(ctx context.Context, fees sdk.Coins) error {
 
 func (k Keeper) AdmitTx(ctx sdk.Context, tx sdk.FeeTx, sender sdk.AccAddress, simulate bool) (types.FeeQuote, error) {
 	params, err := k.GetParams(ctx)
+	if err != nil {
+		return types.FeeQuote{}, err
+	}
+	formulaParams, err := k.GetFeeFormulaParams(ctx)
 	if err != nil {
 		return types.FeeQuote{}, err
 	}
@@ -37,6 +53,9 @@ func (k Keeper) AdmitTx(ctx sdk.Context, tx sdk.FeeTx, sender sdk.AccAddress, si
 	if ctx.BlockGasMeter() != nil {
 		gasConsumed = ctx.BlockGasMeter().GasConsumed()
 	}
+
+	// Validate admission limits (rate limiting, gas limits, fee denom/amount) using
+	// the existing dynamic market logic.
 	quote, err := types.ValidateAdmission(params, types.AdmissionInput{
 		Fee:              tx.GetFee(),
 		GasLimit:         tx.GetGas(),
@@ -48,6 +67,73 @@ func (k Keeper) AdmitTx(ctx sdk.Context, tx sdk.FeeTx, sender sdk.AccAddress, si
 	if err != nil {
 		return types.FeeQuote{}, err
 	}
+
+	// Read deterministic block utilization bps from KV-state (not mempool, not wall-clock).
+	// Falls back to current gas meter utilization if no stored congestion state yet.
+	kvUtilizationBps := k.getKVCongestionBps(ctx, gasConsumed, tx.GetGas(), params.MaxBlockGas)
+
+	// Read reputation score for the sender (nil-safe via GetReputationScore).
+	reputationScore, reputationFound, err := k.GetReputationScore(ctx, sender)
+	if err != nil {
+		// Non-fatal: if reputation read fails, treat as neutral.
+		reputationScore = types.ReputationNeutralScore
+		reputationFound = false
+	}
+
+	// Compute storage rent side effects budget — only for state-creating txs.
+	storageRentNaet := sdkmath.ZeroInt()
+	if srDefault, parseErr := formulaParams.StorageRentSideEffectsInt(); parseErr == nil && srDefault.IsPositive() {
+		for _, msg := range tx.GetMsgs() {
+			if stateCreatingMsgTypes[sdk.MsgTypeURL(msg)] {
+				storageRentNaet = srDefault
+				break
+			}
+		}
+	}
+
+	// Compute the full deterministic fee per Requirement 1.1.
+	var txSizeBytes uint64
+	if txBytes := ctx.TxBytes(); len(txBytes) > 0 {
+		txSizeBytes = uint64(len(txBytes))
+	}
+	msgCount := uint64(len(tx.GetMsgs()))
+
+	requiredFull, err := types.ComputeFullTransferFee(
+		params,
+		formulaParams,
+		tx.GetGas(),
+		txSizeBytes,
+		msgCount,
+		kvUtilizationBps,
+		reputationScore,
+		reputationFound,
+		storageRentNaet,
+	)
+	if err != nil {
+		return types.FeeQuote{}, err
+	}
+
+	// The full formula result is our required fee. Verify the paid fee meets it.
+	paidAmount := tx.GetFee().AmountOf(types.BondDenom)
+	if paidAmount.LT(requiredFull) {
+		return types.FeeQuote{}, types.ErrInvalidFee.Wrapf(
+			"fee must be at least %s%s (full formula requirement), paid %s%s",
+			requiredFull.String(), types.BondDenom,
+			paidAmount.String(), types.BondDenom,
+		)
+	}
+
+	// Also enforce the hard cap from params.
+	maxFee, err := params.MaxFeeInt()
+	if err != nil {
+		return types.FeeQuote{}, err
+	}
+	if paidAmount.GT(maxFee) {
+		return types.FeeQuote{}, types.ErrInvalidFee.Wrapf(
+			"fee must not exceed hard cap %s%s", maxFee.String(), types.BondDenom,
+		)
+	}
+
 	if !simulate {
 		observability.RecordEconomicControl(
 			quote.EconomicControl.InflationBps,

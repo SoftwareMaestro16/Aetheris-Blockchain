@@ -23,13 +23,13 @@ until an explicit migration replaces them with compatibility tests.
 | `x/validator-*` | Validator registry, election, insurance, admission, and validator lifecycle metadata. |
 | `x/stake-concentration` | Concentration snapshots, power-cap metrics, and anti-centralization signals. |
 | `x/fees` / `x/burn` / `x/treasury` | Fee policy, burn accounting, and treasury allocation records using bank keeper movement. |
-| `x/contracts`, `x/vm`, `x/aetravm/*` | Contract code/data, VM routing, contract standards, async messages, token/NFT/DEX contract state. |
+| `x/contracts`, `x/vm`, `x/aetravm/*` | Contract code/data, VM routing, contract standards, async messages, contract state. |
 
 ## Guardrails
 
 - Private keys and seed phrases are never account state.
 - Balances stay in the bank/native balance layer.
-- Token, NFT, and DEX behavior is contract-routed, not reintroduced as native
+- Application-level asset behavior is contract-routed, not reintroduced as native
   asset modules.
 - Cross-module writes into native account auth policy, sequence, status, or
   account number are rejected; future integrations use explicit interfaces.

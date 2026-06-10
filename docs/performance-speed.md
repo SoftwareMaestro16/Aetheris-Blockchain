@@ -10,7 +10,7 @@ shows the before/after cost. Performance changes must not bypass signer, fee, de
 Run targeted baselines with:
 
 ```powershell
-.\.work\tools\go1.25.11\go\bin\go.exe test -run '^$' -bench 'Benchmark(Parse|ValidateUser|ValidateFee|Dex|Tokenfactory|Queue|ContractState|Token|NFT|SBT|Wallet)' -benchmem ./app/addressing ./x/fees/types ./x/dex/keeper ./x/tokenfactory/keeper ./x/aetravm/async ./x/aetravm/standards/...
+.\.work\tools\go1.25.11\go\bin\go.exe test -run '^$' -bench 'Benchmark(Parse|ValidateUser|ValidateFee|Dex|Tokenfactory|Queue|ContractState)' -benchmem ./app/addressing ./x/fees/types ./x/dex/keeper ./x/tokenfactory/keeper ./x/aetravm/async
 ```
 
 Current benchmark coverage:

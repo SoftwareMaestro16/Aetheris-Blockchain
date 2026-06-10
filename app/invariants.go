@@ -16,6 +16,7 @@ import (
 
 	"github.com/sovereign-l1/l1/app/accounts"
 	"github.com/sovereign-l1/l1/app/addressing"
+	"github.com/sovereign-l1/l1/app/params"
 	economicstypes "github.com/sovereign-l1/l1/x/aetra-economics/types"
 	contractstypes "github.com/sovereign-l1/l1/x/contracts/types"
 	nativeaccounttypes "github.com/sovereign-l1/l1/x/native-account/types"
@@ -46,6 +47,12 @@ const (
 	AppInvariantSystemStorageReserveRunway    = nativeaccounttypes.InvariantSystemStorageReserveRunway
 	AppInvariantProtocolCriticalExecutable    = nativeaccounttypes.InvariantProtocolCriticalExecutableUnderUnderfunding
 	AppInvariantSystemRentTopUpBeforeUserWork = nativeaccounttypes.InvariantSystemRentTopUpBeforeUserFreeze
+
+	AppInvariantEmissionCap            = "emission_cap_total_minted_below_constitutional_max"
+	AppInvariantBurnAccounting         = "burn_accounting_reconciles_denom_burned_vs_bank_supply"
+	AppInvariantTreasuryAccounting     = "treasury_accounting_reconciles_bank_balance"
+	AppInvariantFeeCollectorAccounting = "fee_collector_accounting_reconciles_bank_balance"
+	AppInvariantRentReserveBalance     = "storage_rent_reserve_balance_above_protocol_minimum"
 )
 
 // AppInvariant binds a consensus invariant ID to live application state.
@@ -127,6 +134,11 @@ func RequiredAppInvariantIDs() []string {
 		AppInvariantEconomicsAccounting,
 		AppInvariantAVMQueueReceipts,
 		AppInvariantReservedSystemAddressPolicy,
+		AppInvariantEmissionCap,
+		AppInvariantBurnAccounting,
+		AppInvariantTreasuryAccounting,
+		AppInvariantFeeCollectorAccounting,
+		AppInvariantRentReserveBalance,
 	)
 	sort.Strings(required)
 	return required
@@ -203,6 +215,11 @@ func (app *L1App) AppInvariantRegistry() []AppInvariant {
 		{ID: AppInvariantEconomicsAccounting, Description: "burn, treasury, and validator reward accounting must reconcile by epoch"},
 		{ID: AppInvariantAVMQueueReceipts, Description: "AVM contract state roots and internal message queue records must be canonical"},
 		{ID: AppInvariantReservedSystemAddressPolicy, Description: "reserved system address mappings and receive blocking policy must hold"},
+		{ID: AppInvariantEmissionCap, Description: "total minted accounting must not exceed constitutional max inflation"},
+		{ID: AppInvariantBurnAccounting, Description: "burn keeper burned amount must reconcile with bank supply"},
+		{ID: AppInvariantTreasuryAccounting, Description: "treasury module accounting state must match feecollector_treasury bank balance"},
+		{ID: AppInvariantFeeCollectorAccounting, Description: "fee-collector module accounting state must match feecollector bank balance"},
+		{ID: AppInvariantRentReserveBalance, Description: "feecollector_storage_rent_reserve bank balance must be >= protocol minimum"},
 	} {
 		id := invariant.ID
 		description := invariant.Description
@@ -299,6 +316,16 @@ func (app *L1App) checkAppInvariant(ctx sdk.Context, id string) error {
 		return app.assertReservedSystemAddressInvariant(ctx)
 	case AppInvariantValidatorInsuranceBounds:
 		return app.assertValidatorInsuranceBoundsInvariant(ctx)
+	case AppInvariantEmissionCap:
+		return app.assertEmissionCapInvariant(ctx)
+	case AppInvariantBurnAccounting:
+		return app.assertBurnAccountingInvariant(ctx)
+	case AppInvariantTreasuryAccounting:
+		return app.assertTreasuryAccountingInvariant(ctx)
+	case AppInvariantFeeCollectorAccounting:
+		return app.assertFeeCollectorAccountingInvariant(ctx)
+	case AppInvariantRentReserveBalance:
+		return app.assertRentReserveBalanceInvariant(ctx)
 	case nativeaccounttypes.InvariantDirectUserValidatorDelegationRejected:
 		return app.assertDirectUserDelegationRejectedInvariant(ctx)
 	case nativeaccounttypes.InvariantMaxValidatorCountEnforced,
@@ -866,6 +893,76 @@ func validateValidatorInsuranceBounds(registryState validatorregistrytypes.State
 		}
 	}
 	return nil
+}
+
+func (app *L1App) assertEmissionCapInvariant(ctx sdk.Context) error {
+	totalMinted, err := app.EmissionsKeeper.GetTotalMintedAccounting(ctx)
+	if err != nil {
+		return err
+	}
+	emParams, err := app.EmissionsKeeper.GetParams(ctx)
+	if err != nil {
+		return err
+	}
+	maxAnnualSupply := emParams.AnnualReferenceSupply
+	if maxAnnualSupply.IsZero() {
+		return nil
+	}
+	maxMintable := maxAnnualSupply.Amount.Mul(sdkmath.NewInt(int64(emParams.ConstitutionalMaxInflationBps))).Quo(sdkmath.NewInt(10_000))
+	if totalMinted.Amount.GT(maxMintable) {
+		return fmt.Errorf("emissions total minted accounting %s exceeds constitutional max %s", totalMinted.String(), sdk.NewCoin(maxAnnualSupply.Denom, maxMintable).String())
+	}
+	return nil
+}
+
+func (app *L1App) assertBurnAccountingInvariant(ctx sdk.Context) error {
+	burnedEntries, err := app.BurnKeeper.GetAllBurnedByDenom(ctx)
+	if err != nil {
+		return err
+	}
+	burnedEpochs, err := app.BurnKeeper.GetAllBurnedByEpoch(ctx)
+	if err != nil {
+		return err
+	}
+	baseDenom := params.BaseDenom
+	denomSum := sdkmath.ZeroInt()
+	for _, entry := range burnedEntries {
+		if entry.Denom == baseDenom {
+			denomSum = denomSum.Add(entry.Amount[0].Amount)
+		}
+	}
+	epochSum := sdkmath.ZeroInt()
+	for _, entry := range burnedEpochs {
+		for _, coin := range entry.Amount {
+			if coin.Denom == baseDenom {
+				epochSum = epochSum.Add(coin.Amount)
+			}
+		}
+	}
+	if !denomSum.Equal(epochSum) {
+		return fmt.Errorf("burn accounting mismatch: denom sum=%s epoch sum=%s", denomSum.String(), epochSum.String())
+	}
+	return nil
+}
+
+func (app *L1App) assertRentReserveBalanceInvariant(ctx sdk.Context) error {
+	gs, err := app.StorageRentKeeper.ExportGenesisState(ctx)
+	if err != nil {
+		return err
+	}
+	result := gs.State.SystemReserve.Evaluate()
+	if result.Alert == storagerenttypes.SystemRentAlertInvariant {
+		return fmt.Errorf("storage rent system reserve is in invariant alert state")
+	}
+	return nil
+}
+
+func (app *L1App) assertTreasuryAccountingInvariant(ctx sdk.Context) error {
+	return app.TreasuryKeeper.AssertTreasuryAccountingInvariant(ctx)
+}
+
+func (app *L1App) assertFeeCollectorAccountingInvariant(ctx sdk.Context) error {
+	return app.FeeCollectorKeeper.AssertModuleAccountingInvariant(ctx)
 }
 
 func (app *L1App) assertReservedSystemAddressInvariant(ctx sdk.Context) error {

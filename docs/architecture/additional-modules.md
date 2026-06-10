@@ -60,7 +60,7 @@ Purpose:
 - event search;
 - memo search;
 - domain lookup;
-- token/NFT discovery.
+- asset discovery.
 
 Rule:
 
@@ -68,7 +68,7 @@ Rule:
 
 `x/indexer/types` defines deterministic projection records, canonical fields,
 bounded query results, and search indexes for state, event, memo, domain,
-token, and NFT records. ConsensusRequired() returns false to keep the consensus
+and asset records. ConsensusRequired() returns false to keep the consensus
 boundary explicit.
 
 ## x/market

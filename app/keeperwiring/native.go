@@ -1,9 +1,12 @@
 package keeperwiring
 
 import (
+	"context"
+
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
@@ -35,6 +38,28 @@ import (
 	treasurytypes "github.com/sovereign-l1/l1/x/treasury/types"
 )
 
+// reputationReaderAdapter wraps the reputation module keeper as a feestypes.ReputationReader.
+// AWCE-1 temporary integration boundary: scales the reputation module's uint8 score [0..255]
+// to the fee module's uint32 score [0..10000].
+type reputationReaderAdapter struct {
+	Keeper reputationkeeper.Keeper
+}
+
+func (a reputationReaderAdapter) GetIdentityReputationScore(ctx context.Context, addr sdk.AccAddress) (uint32, bool, error) {
+	resp, err := a.Keeper.AccountReputation(ctx, reputationtypes.QueryAccountReputationRequest{
+		Account: addr.String(),
+	})
+	if err != nil {
+		return feestypes.ReputationNeutralScore, false, nil
+	}
+	// Scale from uint8 [0..255] to uint32 [0..10000].
+	score := uint32(resp.Record.Score) * 10000 / 255
+	if score > 10000 {
+		score = 10000
+	}
+	return score, true, nil
+}
+
 type NativeKeeperDeps struct {
 	AppCodec      codec.Codec
 	Keys          map[string]*storetypes.KVStoreKey
@@ -62,6 +87,17 @@ type NativeKeepers struct {
 }
 
 func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
+	repKeeper := reputationkeeper.NewKeeper(
+		runtime.NewKVStoreService(deps.Keys[reputationtypes.StoreKey]),
+		deps.GovAuthority,
+	)
+	fcKeeper := feecollectorkeeper.NewKeeper(
+		deps.AppCodec,
+		runtime.NewKVStoreService(deps.Keys[feecollectortypes.StoreKey]),
+		deps.AccountKeeper,
+		deps.BankKeeper,
+		deps.GovAuthority,
+	)
 	return NativeKeepers{
 		BurnKeeper: burnkeeper.NewKeeper(
 			deps.AppCodec,
@@ -90,10 +126,7 @@ func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
 			runtime.NewKVStoreService(deps.Keys[delegatorprotectiontypes.StoreKey]),
 			deps.GovAuthority,
 		),
-		ReputationKeeper: reputationkeeper.NewKeeper(
-			runtime.NewKVStoreService(deps.Keys[reputationtypes.StoreKey]),
-			deps.GovAuthority,
-		),
+		ReputationKeeper: repKeeper,
 		PerformanceKeeper: performancekeeper.NewKeeper(
 			runtime.NewKVStoreService(deps.Keys[performancetypes.StoreKey]),
 			deps.GovAuthority,
@@ -108,13 +141,7 @@ func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
 			runtime.NewKVStoreService(deps.Keys[stakeconcentrationtypes.StoreKey]),
 			deps.GovAuthority,
 		),
-		FeeCollectorKeeper: feecollectorkeeper.NewKeeper(
-			deps.AppCodec,
-			runtime.NewKVStoreService(deps.Keys[feecollectortypes.StoreKey]),
-			deps.AccountKeeper,
-			deps.BankKeeper,
-			deps.GovAuthority,
-		),
+		FeeCollectorKeeper: fcKeeper,
 		FeesKeeper: feeskeeper.NewKeeper(
 			deps.AppCodec,
 			runtime.NewKVStoreService(deps.Keys[feestypes.StoreKey]),
@@ -122,7 +149,7 @@ func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
 			deps.BankKeeper,
 			deps.DistrKeeper,
 			deps.GovAuthority,
-		),
+		).WithReputationReader(reputationReaderAdapter{Keeper: repKeeper}).WithFeeCollector(fcKeeper),
 		AetraStakingPolicyKeeper:  aetrastakingpolicykeeper.NewKeeper(deps.GovAuthority),
 		AetraEconomicsKeeper:      aetraeconomicskeeper.NewKeeper(deps.GovAuthority),
 		AetraValidatorScoreKeeper: aetravalidatorscorekeeper.NewKeeper(deps.GovAuthority),

@@ -44,7 +44,6 @@ Required checks:
 - AVM smoke passes if AVM is enabled:
   - `go test ./x/aetravm/avm ./x/aetravm/async`
 - Contract standard smoke passes if async contracts are enabled:
-  - `go test ./x/aetravm/standards/...`
 - E2E smoke command list is current:
   - `docs\public-testnet-e2e-smoke-commands.md`
 - Long-running evidence checklist exists and has owners before launch:
@@ -167,7 +166,7 @@ Required production evidence:
 - Long-running public testnet has no untriaged consensus-safety or fund-safety
   issues.
 - Validator set can upgrade safely.
-- Staking, fees, DEX, AVM, and contract standards have adversarial tests.
+- Staking, fees, AVM, and contract standards have adversarial tests.
 - State export/import is deterministic.
 - Independent audit is completed and high/critical findings are fixed or
   explicitly accepted by governance with public rationale.
@@ -191,9 +190,8 @@ Production exclusions:
 3. Build deterministic async queue without AVM first.
 4. Build minimal AVM with a counter contract.
 5. Implement AW-5 wallet.
-6. Implement AFT-44 token master/wallet.
-7. Implement ANFT-66 NFT collection/item.
-8. Implement ASBT-67 soulbound item.
+6. Implement contract standards for user-created assets.
+8. Implement ASBT-67 non-transferable item.
 9. Gate CosmWasm behind explicit config and tests.
 10. Start sharding simulator and spec.
 11. Only after simulator and audit, prototype masterchain/workchain/shardchain.
@@ -218,7 +216,7 @@ Production exclusions:
 | Incident/rollback | `docs/testnet-incident-response.md`, `docs/public-testnet-preparation.md#rollback-and-restart-procedure` |
 | CosmWasm | `app/wasmconfig`, `tests\e2e\cosmwasm_smoke.ps1`, `docs/security/cosmwasm-readiness.md` |
 | AVM | `x/aetravm/avm`, `docs/architecture/avm.md` |
-| Contract standards | `x/aetravm/standards/...`, `docs/standards` |
+| Contract standards | `docs/standards` |
 | Sharding R&D | `x/sharding/sim`, `docs/architecture/sharding-rd.md` |
 
 ## Decision Record

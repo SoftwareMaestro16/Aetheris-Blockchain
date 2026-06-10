@@ -92,7 +92,7 @@ The CI surface should compile and run the minimal AVM examples:
 
 - counter;
 - domain registry;
-- token-like ledger;
+- asset ledger;
 - internal message;
 - bounce/refund;
 - get methods.
@@ -106,5 +106,4 @@ go test ./x/aetravm/avm ./x/aetravm/async ./x/aetravm/messageabi ./x/aetravm/sta
 ## Non-Goals
 
 AVM is the runtime for application logic, not a native asset module system.
-Token, NFT, DEX, and similar application behavior belongs in AVM contracts
-and standards.
+Application-level asset behavior belongs in AVM contracts and standards.

@@ -86,13 +86,6 @@ type RentExemption struct {
 	Reason  string
 }
 
-type MsgPayStorageRent struct {
-	Payer           string
-	ContractAddress string
-	Amount          uint64
-	Height          uint64
-}
-
 type MsgWithdrawExcessRent struct {
 	Authority       string
 	ContractAddress string
@@ -103,13 +96,6 @@ type MsgWithdrawExcessRent struct {
 type MsgFreezeExpiredContract struct {
 	Authority       string
 	ContractAddress string
-	Height          uint64
-}
-
-type MsgUnfreezeContract struct {
-	Payer           string
-	ContractAddress string
-	Amount          uint64
 	Height          uint64
 }
 

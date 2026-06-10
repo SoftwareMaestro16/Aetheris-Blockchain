@@ -35,9 +35,8 @@ Current AVM implementation surface:
   async handler adapter.
 - `x/aetravm/async`: deterministic queue behavior, bounce behavior, fee/value
   denomination, limits, observability, and export/import.
-- `x/aetravm/standards/aft`: AFT-44 token standard runtime.
-- `x/aetravm/standards/anft`: ANFT-66 and ASBT-67 NFT/SBT standard runtime.
-- `x/aetravm/standards/aw`: AW-5 wallet standard runtime.
+
+
 
 ## Optional CosmWasm Compatibility Layer
 
@@ -112,9 +111,8 @@ proof are complete.
 ## Compatibility Boundaries
 
 Contract standards are AVM-native first, but their message schemas must remain
-explicit enough for future gated adapters. The Go packages under
-`x/aetravm/standards` define executable specifications, deterministic message
-codecs, and async/AVM-compatible conformance handlers.
+explicit enough for future gated adapters.
+
 
 Every contract standard must define:
 
@@ -142,6 +140,5 @@ become the default path silently.
   enabled.
 - Contract standards can be tested independent of optional compatibility layers.
 - `go test ./app/wasmconfig`
-- `go test ./x/aetravm/standards/...`
 - `go test ./x/aetravm/async`
 - `go test ./x/aetravm/avm`

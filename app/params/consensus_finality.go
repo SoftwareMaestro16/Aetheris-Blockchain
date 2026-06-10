@@ -1,6 +1,77 @@
 package params
 
-import "fmt"
+import (
+	"fmt"
+)
+
+const (
+	NetworkLocalnet = "localnet"
+	NetworkTestnet  = "testnet"
+	NetworkMainnet  = "mainnet"
+)
+
+type PerformanceProfile struct {
+	Name             string
+	BlockTimeSeconds int
+	MaxBlockGas      int64
+	MaxTxPerBlock    int
+}
+
+func LocalnetPerformanceProfile() PerformanceProfile {
+	return PerformanceProfile{
+		Name:             NetworkLocalnet,
+		BlockTimeSeconds: 2,
+		MaxBlockGas:      50_000_000,
+		MaxTxPerBlock:    500,
+	}
+}
+
+func TestnetPerformanceProfile() PerformanceProfile {
+	return PerformanceProfile{
+		Name:             NetworkTestnet,
+		BlockTimeSeconds: 5,
+		MaxBlockGas:      100_000_000,
+		MaxTxPerBlock:    1_000,
+	}
+}
+
+func MainnetPerformanceProfile() PerformanceProfile {
+	return PerformanceProfile{
+		Name:             NetworkMainnet,
+		BlockTimeSeconds: 6,
+		MaxBlockGas:      200_000_000,
+		MaxTxPerBlock:    2_000,
+	}
+}
+
+func DefaultPerformanceProfile(name string) (PerformanceProfile, error) {
+	switch name {
+	case NetworkLocalnet:
+		return LocalnetPerformanceProfile(), nil
+	case NetworkTestnet:
+		return TestnetPerformanceProfile(), nil
+	case NetworkMainnet:
+		return MainnetPerformanceProfile(), nil
+	default:
+		return PerformanceProfile{}, fmt.Errorf("unknown network profile: %q", name)
+	}
+}
+
+func (p PerformanceProfile) Validate() error {
+	if p.Name == "" {
+		return fmt.Errorf("performance profile name is required")
+	}
+	if p.BlockTimeSeconds < 1 || p.BlockTimeSeconds > 30 {
+		return fmt.Errorf("block time must be between 1 and 30 seconds")
+	}
+	if p.MaxBlockGas < 1_000_000 || p.MaxBlockGas > 1_000_000_000 {
+		return fmt.Errorf("max block gas must be between 1M and 1B")
+	}
+	if p.MaxTxPerBlock < 1 || p.MaxTxPerBlock > 100_000 {
+		return fmt.Errorf("max tx per block must be between 1 and 100k")
+	}
+	return nil
+}
 
 type ConsensusFinalityReport struct {
 	ValidatorCount              int

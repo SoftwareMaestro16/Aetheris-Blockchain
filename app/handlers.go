@@ -10,6 +10,7 @@ func (app *L1App) setAnteHandler(txConfig client.TxConfig) {
 	anteHandler := txhandlers.NewAnteHandler(txConfig, app.AccountKeeper, app.BankKeeper, app.FeeGrantKeeper)
 	anteHandler = app.FeesKeeper.AnteHandlerDecorator(anteHandler)
 	anteHandler = txhandlers.RejectDirectUserStakingDecorator(anteHandler)
+	anteHandler = txhandlers.StorageRentDecorator(app.NativeAccountKeeper, anteHandler)
 	app.SetAnteHandler(anteHandler)
 }
 

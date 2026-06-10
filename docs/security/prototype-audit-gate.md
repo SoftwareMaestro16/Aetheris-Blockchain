@@ -134,9 +134,6 @@ Each release candidate needs a reviewer to mark every item `PASS`, `FINDING`, or
 | Tokenfactory query malformed/not found/bounded list | `x/tokenfactory/keeper/query_server_test.go` |
 | DEX duplicate pair, wrong denom, corrupted pool, LP accounting, slippage | `x/dex/keeper/msg_server_test.go`, `x/dex/keeper/math_test.go`, `tests/e2e/dex_smoke.ps1` |
 | DEX query malformed/not found/bounded list | `x/dex/keeper/query_server_test.go` |
-| AW-5 wallet replay/wallet_id/extension takeover | `x/aetravm/standards/aw/*_test.go` |
-| AFT-44 token supply divergence/admin takeover/metadata spoofing | `x/aetravm/standards/aft/*_test.go` |
-| ANFT-66/ASBT-67 unauthorized transfer/SBT bypass/metadata spoofing | `x/aetravm/standards/anft/*_test.go` |
 | Async queue DoS and bounce/refund behavior | `x/aetravm/async/*_test.go` |
 | Full prototype tx/query composition | `tests/e2e/prototype_acceptance.ps1` |
 

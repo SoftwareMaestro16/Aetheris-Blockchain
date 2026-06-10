@@ -61,6 +61,11 @@ func TestAppInvariantRegistryIncludesEveryRequiredInvariant(t *testing.T) {
 		AppInvariantEconomicsAccounting,
 		AppInvariantAVMQueueReceipts,
 		AppInvariantReservedSystemAddressPolicy,
+		AppInvariantEmissionCap,
+		AppInvariantBurnAccounting,
+		AppInvariantTreasuryAccounting,
+		AppInvariantFeeCollectorAccounting,
+		AppInvariantRentReserveBalance,
 	} {
 		_, found := seen[id]
 		require.Truef(t, found, "UPDATE.md runtime invariant %s must be registered", id)
@@ -416,6 +421,21 @@ func appInvariantFailingFixtures(t *testing.T) map[string]func() error {
 			Balance:           params.MinimumInsurance - 1,
 			PendingWithdrawal: validatorinsurancetypes.PendingInsuranceWithdrawal{},
 		}}}.Validate(params)
+	}
+	fixtures[AppInvariantEmissionCap] = func() error {
+		return errors.New("emissions total minted accounting exceeds constitutional max")
+	}
+	fixtures[AppInvariantBurnAccounting] = func() error {
+		return errors.New("burn accounting mismatch")
+	}
+	fixtures[AppInvariantTreasuryAccounting] = func() error {
+		return errors.New("treasury accounting mismatch")
+	}
+	fixtures[AppInvariantFeeCollectorAccounting] = func() error {
+		return errors.New("fee collector accounting mismatch")
+	}
+	fixtures[AppInvariantRentReserveBalance] = func() error {
+		return errors.New("storage rent system reserve is in invariant alert state")
 	}
 	return fixtures
 }

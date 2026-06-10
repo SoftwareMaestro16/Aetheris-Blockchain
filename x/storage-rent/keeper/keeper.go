@@ -6,11 +6,22 @@ import (
 	"math"
 
 	corestore "cosmossdk.io/core/store"
+	sdkmath "cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/sovereign-l1/l1/x/internal/prefixgenesis"
 	"github.com/sovereign-l1/l1/x/internal/prototype"
 	"github.com/sovereign-l1/l1/x/storage-rent/types"
 )
+
+const storageRentReserveModule = "feecollector_storage_rent_reserve"
+
+var storageRentBaseDenom = "naet"
+
+// BankKeeper defines the subset of bank functionality needed by the storage rent keeper.
+type BankKeeper interface {
+	SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
+}
 
 var genesisKey = []byte{0x01}
 
@@ -25,6 +36,7 @@ type Keeper struct {
 	genesis      GenesisState
 	storeService corestore.KVStoreService
 	runtimeCtx   context.Context
+	bankKeeper   BankKeeper
 }
 
 func NewKeeper() Keeper {
@@ -33,6 +45,15 @@ func NewKeeper() Keeper {
 
 func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
 	return Keeper{genesis: DefaultGenesis(), storeService: storeService}
+}
+
+func (k Keeper) WithBankKeeper(bk BankKeeper) Keeper {
+	k.bankKeeper = bk
+	return k
+}
+
+func (k Keeper) StorageRentRatePerByteBlock() uint64 {
+	return k.genesis.RentParams.RentRatePerByteBlock
 }
 
 func DefaultGenesis() GenesisState {
@@ -167,11 +188,18 @@ func (k *Keeper) TrackContractStorageUsage(authority, contractAddress, actorID s
 	return contract, nil
 }
 
-func (k *Keeper) PayStorageRent(msg types.MsgPayStorageRent) (types.ContractRentRecord, types.RentDistributionRecord, error) {
+func (k *Keeper) PayStorageRent(ctx context.Context, msg types.MsgPayStorageRent) (types.ContractRentRecord, types.RentDistributionRecord, error) {
 	if msg.Payer == "" {
 		return types.ContractRentRecord{}, types.RentDistributionRecord{}, errors.New("storage rent payer is required")
 	}
-	return k.pay(msg.ContractAddress, msg.Amount, msg.Height, false)
+	record, distribution, err := k.pay(msg.ContractAddress, msg.Amount, msg.Height, false)
+	if err != nil {
+		return types.ContractRentRecord{}, types.RentDistributionRecord{}, err
+	}
+	if err := k.collectRentPayment(ctx, msg.Payer, msg.Amount); err != nil {
+		return types.ContractRentRecord{}, types.RentDistributionRecord{}, err
+	}
+	return record, distribution, nil
 }
 
 func (k *Keeper) WithdrawExcessRent(msg types.MsgWithdrawExcessRent) (types.ContractRentRecord, error) {
@@ -250,7 +278,7 @@ func (k *Keeper) FreezeExpiredContract(msg types.MsgFreezeExpiredContract) (type
 	return contract.Normalize(), nil
 }
 
-func (k *Keeper) UnfreezeContract(msg types.MsgUnfreezeContract) (types.ContractRentRecord, types.RentDistributionRecord, error) {
+func (k *Keeper) UnfreezeContract(ctx context.Context, msg types.MsgUnfreezeContract) (types.ContractRentRecord, types.RentDistributionRecord, error) {
 	if msg.Payer == "" {
 		return types.ContractRentRecord{}, types.RentDistributionRecord{}, errors.New("storage rent payer is required")
 	}
@@ -291,6 +319,9 @@ func (k *Keeper) UnfreezeContract(msg types.MsgUnfreezeContract) (types.Contract
 		return types.ContractRentRecord{}, types.RentDistributionRecord{}, err
 	}
 	if err := k.saveGenesis(next); err != nil {
+		return types.ContractRentRecord{}, types.RentDistributionRecord{}, err
+	}
+	if err := k.collectRentPayment(ctx, msg.Payer, msg.Amount); err != nil {
 		return types.ContractRentRecord{}, types.RentDistributionRecord{}, err
 	}
 	return contract.Normalize(), distribution, nil
@@ -495,6 +526,18 @@ func applyPaymentChecked(contract types.ContractRentRecord, amount uint64) (type
 	}
 	contract.PrepaidRentBalance += excess
 	return contract, nil
+}
+
+func (k *Keeper) collectRentPayment(ctx context.Context, payer string, amount uint64) error {
+	if k.bankKeeper == nil {
+		return nil
+	}
+	payerAddr, err := sdk.AccAddressFromBech32(payer)
+	if err != nil {
+		return err
+	}
+	coin := sdk.NewCoins(sdk.NewCoin(storageRentBaseDenom, sdkmath.NewInt(int64(amount))))
+	return k.bankKeeper.SendCoinsFromAccountToModule(ctx, payerAddr, storageRentReserveModule, coin)
 }
 
 func cloneGenesis(gs GenesisState) GenesisState {

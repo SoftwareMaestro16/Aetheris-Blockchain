@@ -1,4 +1,4 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> Note: historical native asset-factory and native exchange modules have been removed from the active app graph.
 # Genesis And Params Model
 
 ## Global Defaults
@@ -9,8 +9,8 @@ Initial Aetra chain choices:
 - Address prefix: `orb`
 - Native base denom: `naet`
 - Display denom: `AET`
-- Native token name: `Aetra`
-- Native token decimals: `9`
+- Native base unit name: `Aetra`
+- Native base unit decimals: `9`
 - Governance authority: the `x/gov` module account or SDK authority configured at genesis.
 
 ## Governance Genesis Params
@@ -38,9 +38,9 @@ The governance parameter catalog is represented by `DefaultGovernanceParameterSp
 | `system_storage_reserve_warning_runway_days` | storage rent | `180` | Must be between minimum and critical runway. |
 | `system_storage_reserve_critical_runway_days` | storage rent | `90` | Must be positive and no greater than warning runway. |
 
-## `x/tokenfactory`
+## Historical `x/tokenfactory`
 
-Genesis state:
+Historical state and validation rules (retained as migration compatibility evidence):
 - `denoms`
 
 Validation:
@@ -50,9 +50,9 @@ Validation:
 - Subdenoms must not directly spoof native names: `naet`, `AET`, or `Aetra`.
 - Prototype default genesis starts with no factory denoms.
 
-## `x/dex`
+## Historical `x/dex`
 
-Genesis state:
+Historical state and validation rules (retained as migration compatibility evidence):
 - `next_pool_id`
 - `pools`
 

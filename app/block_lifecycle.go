@@ -19,7 +19,14 @@ func (app *L1App) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
 }
 
 func (app *L1App) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
-	return app.ModuleManager.EndBlock(ctx)
+	res, err := app.ModuleManager.EndBlock(ctx)
+	if err != nil {
+		return res, err
+	}
+	if err := app.maybeFinalizeNativeEmissionEpoch(ctx); err != nil {
+		return sdk.EndBlock{}, err
+	}
+	return res, nil
 }
 
 func (app *L1App) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.ResponseFinalizeBlock, error) {

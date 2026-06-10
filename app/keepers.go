@@ -183,7 +183,7 @@ func (app *L1App) initKeepers(
 	app.EpochsKeeper = &epochsKeeper
 	app.EpochsKeeper.SetHooks(epochstypes.NewMultiEpochHooks())
 
-	persistentKeepers := keeperwiring.NewPersistentKeepers(keys)
+	persistentKeepers := keeperwiring.NewPersistentKeepers(keys, app.BankKeeper)
 	app.ConstitutionKeeper = persistentKeepers.ConstitutionKeeper
 	app.ConfigKeeper = persistentKeepers.ConfigKeeper
 	app.ConfigVotingKeeper = persistentKeepers.ConfigVotingKeeper

@@ -148,6 +148,8 @@ func EndBlockerOrder() []string {
 		bridgehubtypes.ModuleName,
 		crosschainregistrytypes.ModuleName,
 		shardingcoordinatortypes.ModuleName,
+		feestypes.ModuleName,
+		feecollectortypes.ModuleName,
 	}
 }
 

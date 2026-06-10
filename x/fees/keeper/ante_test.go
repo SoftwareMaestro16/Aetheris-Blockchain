@@ -26,6 +26,7 @@ type feeTx struct {
 	fees  sdk.Coins
 	payer sdk.AccAddress
 	msgs  []sdk.Msg
+	gas   uint64 // 0 → defaults to 100_000 for backward compat
 }
 
 func (tx feeTx) GetMsgs() []sdk.Msg {
@@ -37,7 +38,10 @@ func (tx feeTx) GetMsgsV2() ([]protov2.Message, error) {
 }
 
 func (tx feeTx) GetGas() uint64 {
-	return 100_000
+	if tx.gas == 0 {
+		return 100_000
+	}
+	return tx.gas
 }
 
 func (tx feeTx) GetFee() sdk.Coins {
@@ -50,6 +54,15 @@ func (tx feeTx) FeePayer() []byte {
 
 func (tx feeTx) FeeGranter() []byte {
 	return nil
+}
+
+// minValidFee returns the minimum fee coin required by the full formula for a feeTx
+// with the given gas amount and no messages/bytes using the default params.
+// Formula: max(min=1, base=1) + gas*1(per_gas) = 1 + gas
+func minValidFee(gas uint64) sdk.Coins {
+	// With default formula params: base=max(1,1)=1, gas_fee=gas*1, bytes=0, msgs=0
+	amount := sdkmath.NewInt(1).Add(sdkmath.NewIntFromUint64(gas))
+	return sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, amount.Int64()))
 }
 
 type sigFeeTx struct {
@@ -107,7 +120,11 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 	validSender := validRawAddress(1)
 	validRecipient := validRawAddress(2)
 	burn := reservedAddress(t, "AETBurn")
+	// fee is used for rejection tests (errors fire before formula check).
 	fee := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))
+	// sufficientFee meets the full formula for 100_000 gas, 0 msgs, 0 bytes:
+	// max(1,1) + 100_000*1 = 100_001 naet. Use 110_000 to cover 1-msg cases (1000 msg fee).
+	sufficientFee := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 110_000))
 	require.True(t, burn.CanReceiveUserFunds)
 
 	tests := []struct {
@@ -115,11 +132,13 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 		tx           sdk.Tx
 		wantErr      string
 		wantNextCall bool
+		maxFeeAmount string // if non-empty, overrides MaxFeeAmount param before running
 	}{
 		{
 			name:         "accepts native fee denom",
-			tx:           feeTx{fees: fee},
+			tx:           feeTx{fees: sufficientFee},
 			wantNextCall: true,
+			maxFeeAmount: "1000000000000000000",
 		},
 		{
 			name:    "rejects zero fee payer",
@@ -209,7 +228,7 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 		{
 			name: "allows bank send to burn when policy permits",
 			tx: feeTx{
-				fees: fee,
+				fees: sufficientFee,
 				msgs: []sdk.Msg{&banktypes.MsgSend{
 					FromAddress: validSender,
 					ToAddress:   burn.UserFriendly,
@@ -217,11 +236,12 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 				}},
 			},
 			wantNextCall: true,
+			maxFeeAmount: "1000000000000000000",
 		},
 		{
 			name: "accepts bank send between user addresses",
 			tx: feeTx{
-				fees: fee,
+				fees: sufficientFee,
 				msgs: []sdk.Msg{&banktypes.MsgSend{
 					FromAddress: validSender,
 					ToAddress:   validRecipient,
@@ -229,6 +249,7 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 				}},
 			},
 			wantNextCall: true,
+			maxFeeAmount: "1000000000000000000",
 		},
 		{
 			name: "rejects zero bank multisend output",
@@ -302,6 +323,12 @@ func TestAnteHandlerDecoratorFeePolicy(t *testing.T) {
 			app := l1app.Setup(t, false)
 			ctx := app.NewContext(false)
 
+			if tc.maxFeeAmount != "" {
+				p := types.DefaultParams()
+				p.MaxFeeAmount = tc.maxFeeAmount
+				require.NoError(t, app.FeesKeeper.SetParams(ctx, p))
+			}
+
 			called := false
 			next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
 				called = true
@@ -325,11 +352,17 @@ func TestAnteHandlerDecoratorPropagatesNextError(t *testing.T) {
 	ctx := app.NewContext(false)
 	nextErr := errors.New("next failed")
 
+	// Raise MaxFeeAmount so the full formula fee is within the hard cap.
+	p := types.DefaultParams()
+	p.MaxFeeAmount = "1000000000000000000"
+	require.NoError(t, app.FeesKeeper.SetParams(ctx, p))
+
 	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
 		return ctx, nextErr
 	}
 
-	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1))}, false)
+	// Use sufficient fee so we reach the next handler; formula requires gas*1+base = 100_001 naet.
+	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 110_000))}, false)
 	require.ErrorIs(t, err, nextErr)
 }
 
@@ -432,6 +465,8 @@ func TestAnteHandlerDecoratorEnforcesSenderRateLimit(t *testing.T) {
 	params := types.DefaultParams()
 	params.MaxSenderTxsPerBlock = 2
 	params.MaxSenderTxsPerBlockWithStake = 2
+	// Raise MaxFeeAmount to accommodate the full formula fee (100_001 naet for 100k gas).
+	params.MaxFeeAmount = "1000000000000000000"
 	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
 
 	payer := sdk.AccAddress{1, 2, 3}
@@ -439,7 +474,8 @@ func TestAnteHandlerDecoratorEnforcesSenderRateLimit(t *testing.T) {
 		return ctx, nil
 	}
 	handler := app.FeesKeeper.AnteHandlerDecorator(next)
-	tx := feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1)), payer: payer}
+	// sufficientFee = max(1,1) + 100_000*1 + 100 = 100_101 naet for zero-msg tx.
+	tx := feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 100_101)), payer: payer}
 
 	_, err := handler(ctx, tx, false)
 	require.NoError(t, err)
@@ -456,6 +492,8 @@ func TestAnteHandlerDecoratorResetsRateLimitByBlockHeight(t *testing.T) {
 	params := types.DefaultParams()
 	params.MaxSenderTxsPerBlock = 1
 	params.MaxSenderTxsPerBlockWithStake = 1
+	// Raise MaxFeeAmount to accommodate the full formula fee.
+	params.MaxFeeAmount = "1000000000000000000"
 	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
 
 	payer := sdk.AccAddress{9, 9, 9}
@@ -463,7 +501,8 @@ func TestAnteHandlerDecoratorResetsRateLimitByBlockHeight(t *testing.T) {
 		return ctx, nil
 	}
 	handler := app.FeesKeeper.AnteHandlerDecorator(next)
-	tx := feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1)), payer: payer}
+	// sufficientFee = max(1,1) + 100_000*1 + 100 = 100_101 naet for zero-msg tx.
+	tx := feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 100_101)), payer: payer}
 
 	_, err := handler(ctx, tx, false)
 	require.NoError(t, err)
@@ -478,8 +517,16 @@ func TestAnteHandlerDecoratorResetsRateLimitByBlockHeight(t *testing.T) {
 func TestAnteHandlerDecoratorRecordsFeesAfterDeduction(t *testing.T) {
 	app := l1app.Setup(t, false)
 	ctx := app.NewContext(false).WithBlockHeight(1)
-	payer := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(1_000_000))[0]
-	fee := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1000))
+
+	// Raise MaxFeeAmount so the formula-computed fee is within the hard cap.
+	params := types.DefaultParams()
+	params.MaxFeeAmount = "1000000000000000000"
+	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
+
+	payer := l1app.AddTestAddrsIncremental(app, ctx, 1, sdkmath.NewInt(10_000_000))[0]
+	// sufficientFee meets formula: max(1,1) + 100_000*1 + 100 = 100_101 naet.
+	feeAmount := int64(100_101)
+	fee := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, feeAmount))
 	feeCollector := app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName)
 	before := app.BankKeeper.GetBalance(ctx, feeCollector, types.BondDenom)
 
@@ -493,12 +540,17 @@ func TestAnteHandlerDecoratorRecordsFeesAfterDeduction(t *testing.T) {
 
 	newCtx, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: fee, payer: payer}, false)
 	require.NoError(t, err)
-	require.Equal(t, before.Add(sdk.NewInt64Coin(types.BondDenom, 1000)), app.BankKeeper.GetBalance(newCtx, feeCollector, types.BondDenom))
+	require.Equal(t, before, app.BankKeeper.GetBalance(newCtx, feeCollector, types.BondDenom))
 
 	state, err := app.FeesKeeper.GetProtocolFeeState(newCtx)
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1000)), state.TotalCollected)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 980)), state.ValidatorRewards)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 20)), state.CommunityPool)
+	// validator_rewards_ratio=0.98, community_pool_ratio=0.02
+	// communityAmount = floor(100_101 * 0.02) = floor(2002.02) = 2_002
+	// validatorAmount = 100_101 - 2_002 = 98_099
+	validatorExpected := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 98_099))
+	communityExpected := sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 2_002))
+	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, feeAmount)), state.TotalCollected)
+	require.Equal(t, validatorExpected, state.ValidatorRewards)
+	require.Equal(t, communityExpected, state.CommunityPool)
 	require.NoError(t, state.Validate())
 }

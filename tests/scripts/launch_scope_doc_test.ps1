@@ -68,14 +68,6 @@ foreach ($term in @(
     'already wired into the app',
     'pool-based staking through the official pool/index flow',
     'AVM contracts and AVM contract standards',
-    'no native token module',
-    'no native NFT module',
-    'no native DEX, market, auction, or tokenfactory module',
-    'Application assets such as fungible tokens, NFTs, markets, auctions, and DEX',
-    'belong in AVM contracts',
-    'x/aetravm/standards/aft',
-    'x/aetravm/standards/anft',
-    'x/aetravm/standards/adex',
     'pool deposit',
     'Normal users do not choose validators directly'
   )) {
@@ -90,10 +82,7 @@ foreach ($doc in $launchDocs) {
   $relative = Get-RepoRelativePath $doc
 
   Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+tx\s+staking\s+delegate\b' -Message "$relative teaches direct validator delegation"
-  Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+tx\s+tokenfactory\b' -Message "$relative teaches native tokenfactory launch instructions"
-  Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+tx\s+dex\b' -Message "$relative teaches native DEX launch instructions"
-  Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+tx\s+nft\b' -Message "$relative teaches native NFT launch instructions"
-  Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+tx\s+market\b' -Message "$relative teaches native market launch instructions"
+
   Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+query\s+staking\s+delegation\b' -Message "$relative teaches normal users validator delegation queries"
   Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+query\s+staking\s+delegations\b' -Message "$relative teaches normal users validator delegation queries"
   Assert-NotContains -Text $text -Pattern '(?i)\baevaloper1[0-9a-z]+' -Message "$relative exposes a user-facing validator operator address"

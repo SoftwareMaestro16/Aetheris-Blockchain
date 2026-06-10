@@ -5,6 +5,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 
 	aetraaddress "github.com/sovereign-l1/l1/app/addressing"
 	emissionstypes "github.com/sovereign-l1/l1/x/emissions/types"
@@ -26,10 +27,9 @@ func (app *L1App) FinalizeNativeEconomyEpoch(ctx sdk.Context, epoch uint64, stak
 	if record.EmissionAmount.Amount.IsZero() {
 		return record, nil
 	}
-	collector := app.AccountKeeper.GetModuleAddress(feecollectortypes.CollectorModuleName)
-	if collector == nil {
-		return emissionstypes.EmissionEpoch{}, fmt.Errorf("module account %s is not configured", feecollectortypes.CollectorModuleName)
-	}
+	// Mint to fee_collector directly (SendCoinsFromModuleToModule bypasses BlockedAddr).
+	// Cannot use MintProtocolCoins because its internal SendCoinsFromModuleToAccount
+	// rejects all module accounts (CanReceiveUserFunds=false).
 	decision := mintauthoritytypes.EmissionDecision{
 		Caller:   mintauthoritytypes.DefaultEmissionCaller,
 		Denom:    record.EmissionAmount.Denom,
@@ -39,15 +39,31 @@ func (app *L1App) FinalizeNativeEconomyEpoch(ctx sdk.Context, epoch uint64, stak
 		Approved: true,
 	}
 	decision.DecisionHash = mintauthoritytypes.ComputeEmissionDecisionHash(decision)
-	if _, err := app.MintAuthorityKeeper.MintProtocolCoins(ctx, mintauthoritytypes.MsgMintProtocolCoins{
+	// Update mint authority state
+	state, err := app.MintAuthorityKeeper.GetState(ctx)
+	if err != nil {
+		return emissionstypes.EmissionEpoch{}, err
+	}
+	newState, _, err := mintauthoritytypes.ApplyMintProtocolCoins(state, mintauthoritytypes.MsgMintProtocolCoins{
 		Caller:                mintauthoritytypes.DefaultEmissionCaller,
-		Recipient:             aetraaddress.FormatAccAddress(collector),
+		Recipient:             aetraaddress.FormatAccAddress(app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName)),
 		Denom:                 record.EmissionAmount.Denom,
 		Amount:                record.EmissionAmount.Amount,
 		Epoch:                 epoch,
 		Height:                uint64(ctx.BlockHeight()),
 		EmissionsDecisionHash: decision.DecisionHash,
-	}, decision, mintauthoritytypes.ConstitutionEmergencyAuthorization{}); err != nil {
+	}, decision, mintauthoritytypes.ConstitutionEmergencyAuthorization{})
+	if err != nil {
+		return emissionstypes.EmissionEpoch{}, err
+	}
+	if err := app.MintAuthorityKeeper.SetState(ctx, newState); err != nil {
+		return emissionstypes.EmissionEpoch{}, err
+	}
+	// Mint to mint module, then send to fee_collector via ModuleToModule
+	if err := app.BankKeeper.MintCoins(ctx, minttypes.ModuleName, sdk.NewCoins(record.EmissionAmount)); err != nil {
+		return emissionstypes.EmissionEpoch{}, err
+	}
+	if err := app.BankKeeper.SendCoinsFromModuleToModule(ctx, minttypes.ModuleName, authtypes.FeeCollectorName, sdk.NewCoins(record.EmissionAmount)); err != nil {
 		return emissionstypes.EmissionEpoch{}, err
 	}
 	if err := app.distributeNativeEmission(ctx, epoch, record); err != nil {
@@ -80,41 +96,31 @@ func (app *L1App) maybeFinalizeNativeEmissionEpoch(ctx sdk.Context) error {
 }
 
 func (app *L1App) distributeNativeEmission(ctx sdk.Context, epoch uint64, record emissionstypes.EmissionEpoch) error {
-	if err := app.sendEmissionModuleCoins(ctx, authtypes.FeeCollectorName, record.ValidatorReward); err != nil {
-		return err
-	}
+	// Validator reward stays in fee_collector (already there after mint)
 	treasury := record.Treasury
 	if record.RoundingRemainder.Amount.IsPositive() {
 		treasury = treasury.Add(record.RoundingRemainder)
 	}
-	if err := app.sendEmissionModuleCoins(ctx, feecollectortypes.TreasuryModuleName, treasury); err != nil {
+	if err := app.sendFromFeeCollector(ctx, feecollectortypes.TreasuryModuleName, treasury); err != nil {
 		return err
 	}
-	if err := app.sendEmissionModuleCoins(ctx, feecollectortypes.ProtectionModuleName, record.ProtectionFund); err != nil {
+	if err := app.sendFromFeeCollector(ctx, feecollectortypes.ProtectionModuleName, record.ProtectionFund); err != nil {
 		return err
 	}
-	if err := app.sendEmissionModuleCoins(ctx, feecollectortypes.EcosystemGrantsModuleName, record.Ecosystem); err != nil {
+	if err := app.sendFromFeeCollector(ctx, feecollectortypes.EcosystemGrantsModuleName, record.Ecosystem); err != nil {
 		return err
 	}
 	if record.Burn.Amount.IsPositive() {
-		if _, err := app.BurnKeeper.BurnProtocolCoins(ctx, feecollectortypes.CollectorModuleName, sdk.NewCoins(record.Burn), epoch, "emissions.distribute"); err != nil {
+		if _, err := app.BurnKeeper.BurnProtocolCoins(ctx, authtypes.FeeCollectorName, sdk.NewCoins(record.Burn), epoch, "emissions.distribute"); err != nil {
 			return err
 		}
-	}
-	collector := app.AccountKeeper.GetModuleAddress(feecollectortypes.CollectorModuleName)
-	if collector == nil {
-		return fmt.Errorf("module account %s is not configured", feecollectortypes.CollectorModuleName)
-	}
-	balance := app.BankKeeper.GetAllBalances(ctx, collector)
-	if !balance.Empty() {
-		return fmt.Errorf("native emission collector balance must be empty after distribution: %s", balance)
 	}
 	return nil
 }
 
-func (app *L1App) sendEmissionModuleCoins(ctx sdk.Context, recipientModule string, coin sdk.Coin) error {
+func (app *L1App) sendFromFeeCollector(ctx sdk.Context, recipientModule string, coin sdk.Coin) error {
 	if coin.Amount.IsNil() || !coin.Amount.IsPositive() {
 		return nil
 	}
-	return app.BankKeeper.SendCoinsFromModuleToModule(ctx, feecollectortypes.CollectorModuleName, recipientModule, sdk.NewCoins(coin))
+	return app.BankKeeper.SendCoinsFromModuleToModule(ctx, authtypes.FeeCollectorName, recipientModule, sdk.NewCoins(coin))
 }

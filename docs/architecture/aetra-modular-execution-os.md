@@ -1,4 +1,4 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> Note: historical native asset-factory and native exchange modules have been removed from the active app graph.
 # Aetra Modular L1 Execution OS
 
 This document defines the target architecture for Aetra as a scalable,
@@ -136,11 +136,11 @@ Each zone has:
 
 Default zone classes:
 
-- `Financial Zone`: native AET settlement, bank transfers, fees, tokenfactory
+- `Financial Zone`: native AET settlement, bank transfers, fees, asset modules
   assets, and protocol accounting.
 - `Identity Zone`: `.aet` domains, resolver records, reverse records,
-  subdomains, expiry, renewal, and NFT-based ownership.
-- `Application Zone`: application modules such as DEX, workflow, scheduler, or
+  subdomains, expiry, renewal, and contract-based ownership.
+- `Application Zone`: application modules such as pool, workflow, scheduler, or
   future app-specific state machines.
 - `Contract Zone`: AVM smart contracts and explicitly gated CosmWasm contracts.
 

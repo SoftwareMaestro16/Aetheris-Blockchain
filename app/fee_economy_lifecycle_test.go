@@ -37,8 +37,8 @@ func TestEndBlockerDistributesNativeTransactionFees(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 10_000_000)), pending.Burn)
 	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 3_000_000)), pending.Treasury)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 1_000_000)), pending.Protection)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 6_000_000)), pending.Validators)
+	require.True(t, pending.Protection.Empty())
+	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 7_000_000)), pending.Validators)
 
 	_, err = app.EndBlocker(ctx)
 	require.NoError(t, err)
@@ -48,14 +48,10 @@ func TestEndBlockerDistributesNativeTransactionFees(t *testing.T) {
 	require.True(t, pending.Total().Empty())
 	require.Equal(t, sdk.NewCoins(), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.CollectorModuleName)))
 	require.Equal(t, treasuryBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 3_000_000)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.TreasuryModuleName), appparams.BaseDenom))
-	require.Equal(t, protectionBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 1_000_000)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.ProtectionModuleName), appparams.BaseDenom))
-	require.Equal(t, validatorsBeforeDistribution.Add(sdk.NewInt64Coin(appparams.BaseDenom, 6_000_000)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), appparams.BaseDenom))
+	require.Equal(t, protectionBefore, app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.ProtectionModuleName), appparams.BaseDenom))
+	require.Equal(t, validatorsBeforeDistribution.Add(sdk.NewInt64Coin(appparams.BaseDenom, 7_000_000)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), appparams.BaseDenom))
 	require.Equal(t, supplyBefore.Amount.Sub(sdkmath.NewInt(10_000_000)), app.BankKeeper.GetSupply(ctx, appparams.BaseDenom).Amount)
 
-	byDenom, found, err := app.BurnKeeper.GetBurnedDenomEntry(ctx, burntypes.BaseDenom)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 10_000_000)), byDenom.Amount)
 	history, found, err := app.FeeCollectorKeeper.GetFeeHistory(ctx, 42)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -69,7 +65,6 @@ func TestGoldenNativeEconomyLoopCoversFeesEmissionsPoolRewardsAndStorageRent(t *
 	ctx := app.NewContext(false).WithBlockHeight(42)
 	rentPayer := AddTestAddrsWithCoins(t, app, ctx, 1, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 1_000)))[0]
 
-	validatorsBefore := app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), appparams.BaseDenom)
 	fees := sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 20_000_000))
 	require.NoError(t, app.BankKeeper.MintCoins(ctx, minttypes.ModuleName, fees))
 	require.NoError(t, app.BankKeeper.SendCoinsFromModuleToModule(ctx, minttypes.ModuleName, authtypes.FeeCollectorName, fees))
@@ -80,9 +75,12 @@ func TestGoldenNativeEconomyLoopCoversFeesEmissionsPoolRewardsAndStorageRent(t *
 	storageReserveBefore := app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.StorageRentReserveModuleName), appparams.BaseDenom)
 
 	require.NoError(t, app.FeesKeeper.RecordCollectedFees(ctx, fees))
+	// validatorsBefore captured after RecordCollectedFees (20M moved from fee_collector to feecollector)
+	validatorsBefore := app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), appparams.BaseDenom)
 	_, err := app.EndBlocker(ctx)
 	require.NoError(t, err)
 
+	configureGoldenBurnParams(t, app, ctx)
 	configureGoldenEmissionParams(t, app, ctx)
 	ctx = ctx.WithBlockHeight(43)
 	emission, err := app.FinalizeNativeEconomyEpoch(ctx, 7, 5_000)
@@ -107,7 +105,7 @@ func TestGoldenNativeEconomyLoopCoversFeesEmissionsPoolRewardsAndStorageRent(t *
 		Epoch:              7,
 		RewardRateBps:      1_000,
 		EmissionsAllocated: uint64(emission.ValidatorReward.Amount.Uint64()),
-		FeesAllocated:      6_000_000,
+		FeesAllocated:      7_000_000,
 		Height:             43,
 		Allocations: []nominatorpooltypes.ValidatorRewardAllocation{{
 			Validator:          testAEAddress(0x51),
@@ -139,9 +137,9 @@ func TestGoldenNativeEconomyLoopCoversFeesEmissionsPoolRewardsAndStorageRent(t *
 	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 2)), byBucket[feecollectortypes.BucketBurn])
 	require.Equal(t, sdk.NewCoins(), app.BankKeeper.GetAllBalances(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.CollectorModuleName)))
 
-	require.Equal(t, validatorsBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 6_000_738)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), appparams.BaseDenom))
+	require.Equal(t, validatorsBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 7_000_738)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(authtypes.FeeCollectorName), appparams.BaseDenom))
 	require.Equal(t, treasuryBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 3_000_125)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.TreasuryModuleName), appparams.BaseDenom))
-	require.Equal(t, protectionBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 1_000_110)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.ProtectionModuleName), appparams.BaseDenom))
+	require.Equal(t, protectionBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 110)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.ProtectionModuleName), appparams.BaseDenom))
 	require.Equal(t, ecosystemBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 62)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.EcosystemGrantsModuleName), appparams.BaseDenom))
 	require.Equal(t, storageReserveBefore.Add(sdk.NewInt64Coin(appparams.BaseDenom, 5)), app.BankKeeper.GetBalance(ctx, app.AccountKeeper.GetModuleAddress(feecollectortypes.StorageRentReserveModuleName), appparams.BaseDenom))
 	require.Equal(t, supplyBefore.Amount.Sub(sdkmath.NewInt(10_000_000)).Add(sdkmath.NewInt(950)).Sub(sdkmath.NewInt(2)), app.BankKeeper.GetSupply(ctx, appparams.BaseDenom).Amount)
@@ -149,7 +147,7 @@ func TestGoldenNativeEconomyLoopCoversFeesEmissionsPoolRewardsAndStorageRent(t *
 	burned, found, err := app.BurnKeeper.GetBurnedDenomEntry(ctx, burntypes.BaseDenom)
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 10_000_052)), burned.Amount)
+	require.Equal(t, sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 50)), burned.Amount)
 	emissionsGenesis, err := app.EmissionsKeeper.ExportGenesis(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin(appparams.BaseDenom, 1_000), emissionsGenesis.TotalMintedAccounting)
@@ -201,6 +199,16 @@ func TestGoldenNativeEconomyLoopCoversFeesEmissionsPoolRewardsAndStorageRent(t *
 	require.NoError(t, importedApp.TreasuryKeeper.AssertTreasuryAccountingInvariant(importedCtx))
 }
 
+func configureGoldenBurnParams(t *testing.T, app *L1App, ctx sdk.Context) {
+	t.Helper()
+	params := burntypes.DefaultParams()
+	params.ProtocolBurnPermissions = append(params.ProtocolBurnPermissions, burntypes.BurnPermission{
+		ModuleName:    authtypes.FeeCollectorName,
+		AllowedDenoms: []string{appparams.BaseDenom},
+	})
+	require.NoError(t, app.BurnKeeper.SetParams(ctx, params))
+}
+
 func configureGoldenEmissionParams(t *testing.T, app *L1App, ctx sdk.Context) {
 	t.Helper()
 	params := emissionstypes.DefaultParams()
@@ -218,4 +226,98 @@ func configureGoldenEmissionParams(t *testing.T, app *L1App, ctx sdk.Context) {
 
 func testAEAddress(fill byte) string {
 	return aetraaddress.FormatAccAddress(sdk.AccAddress(bytes.Repeat([]byte{fill}, 20)))
+}
+
+func TestEmissionEpochDuplicateRejected(t *testing.T) {
+	app := Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(42)
+	configureGoldenBurnParams(t, app, ctx)
+	configureGoldenEmissionParams(t, app, ctx)
+
+	_, err := app.FinalizeNativeEconomyEpoch(ctx, 7, 5_000)
+	require.NoError(t, err)
+
+	_, err = app.FinalizeNativeEconomyEpoch(ctx, 7, 5_000)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already finalized")
+}
+
+func TestEmissionCapInvariant(t *testing.T) {
+	app := Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(42)
+	configureGoldenBurnParams(t, app, ctx)
+	configureGoldenEmissionParams(t, app, ctx)
+
+	emission, err := app.FinalizeNativeEconomyEpoch(ctx, 7, 5_000)
+	require.NoError(t, err)
+
+	totalDistributed := emission.ValidatorReward.Amount.
+		Add(emission.Treasury.Amount).
+		Add(emission.ProtectionFund.Amount).
+		Add(emission.Burn.Amount).
+		Add(emission.Ecosystem.Amount).
+		Add(emission.RoundingRemainder.Amount)
+	require.Equal(t, emission.EmissionAmount.Amount, totalDistributed,
+		"total distributed rewards must equal total emission amount")
+}
+
+func TestJailedValidatorProducesZeroPoolRewards(t *testing.T) {
+	app := Setup(t, false)
+	ctx := app.NewContext(false).WithBlockHeight(42)
+	configureGoldenBurnParams(t, app, ctx)
+	configureGoldenEmissionParams(t, app, ctx)
+
+	emission, err := app.FinalizeNativeEconomyEpoch(ctx, 7, 5_000)
+	require.NoError(t, err)
+
+	_, rewardSummary, err := nominatorpooltypes.SyncPoolRewards(nominatorpooltypes.DefaultParams(), nominatorpooltypes.NominatorPool{
+		PoolID:            "jail-test-pool",
+		TotalBondedStake:  1_000,
+		TotalShares:       1_000,
+		PoolCommissionBps: 100,
+	}, nominatorpooltypes.MsgSyncPoolRewards{
+		Authority:          nominatorpooltypes.DefaultParams().Authority,
+		PoolID:             "jail-test-pool",
+		Epoch:              7,
+		RewardRateBps:      1_000,
+		EmissionsAllocated: uint64(emission.ValidatorReward.Amount.Uint64()),
+		FeesAllocated:      0,
+		Height:             42,
+		Allocations: []nominatorpooltypes.ValidatorRewardAllocation{{
+			Validator:          testAEAddress(0x51),
+			PoolAllocatedStake: 1_000,
+			ValidatorSelfStake: 500,
+			PerformanceBps:     10_000,
+			CommissionBps:      500,
+			Jailed:             true,
+		}},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, uint64(0), rewardSummary.GrossPoolRewards)
+	require.Equal(t, uint64(0), rewardSummary.ValidatorCommission)
+	require.Equal(t, uint64(0), rewardSummary.PoolProtocolFee)
+	require.Equal(t, uint64(0), rewardSummary.PoolUserRewards)
+	require.Equal(t, uint64(0), rewardSummary.ValidatorSelfStakeRewards)
+	require.Equal(t, uint64(0), rewardSummary.ValidatorGrossIncome)
+}
+
+func TestMaybeFinalizeNativeEmissionEpochAtEpochBoundary(t *testing.T) {
+	app := Setup(t, false)
+
+	epochBoundary := int64(nominatorpooltypes.DefaultRewardEpochDurationBlocks)
+	ctx := app.NewContext(false).WithBlockHeight(epochBoundary)
+	configureGoldenBurnParams(t, app, ctx)
+	configureGoldenEmissionParams(t, app, ctx)
+
+	err := app.maybeFinalizeNativeEmissionEpoch(ctx)
+	require.NoError(t, err)
+
+	epoch1, found, err := app.EmissionsKeeper.GetEmissionEpoch(ctx, 1)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, uint64(1), epoch1.Epoch)
+
+	err = app.maybeFinalizeNativeEmissionEpoch(ctx)
+	require.NoError(t, err)
 }

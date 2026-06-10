@@ -2530,14 +2530,14 @@ function Get-AexsTxAuthBankExploitOverrides {
     "TXEXP-10" = [ordered]@{
       path            = "replay a state transition that fails after partial writes and attempt rollback bypass or cache context leakage"
       expected_state  = "failed state transition rolls back all writes and replay observes the original pre-failure state"
-      affected        = @("app cache context", "x/bank", "x/fees", "x/aetravm/standards/aft", "avm-dex-contract")
+      affected        = @("app cache context", "x/bank", "x/fees", "avm-dex-contract")
       severity        = "High"
       fix             = "add replayed failure rollback tests across bank, fees, contract-assets, and DEX handlers"
     }
     "TXEXP-11" = [ordered]@{
       path            = "inject zero address as signer, recipient, admin, authority, or bank transfer endpoint"
       expected_state  = "zero-address signer or recipient path rejects before account, balance, authority, resolver, or module state mutation"
-      affected        = @("x/auth", "x/bank", "x/aetravm/standards/aft", "x/fees", "app address validation")
+      affected        = @("x/auth", "x/bank", "x/fees", "app address validation")
       severity        = "Critical"
       fix             = "add zero-address adversarial tests for signer, recipient, admin, authority, and fee/bank paths"
     }
@@ -2550,14 +2550,14 @@ function Get-AexsTokenEconomyExploitOverrides {
     "TOKENEXP-01" = [ordered]@{
       path            = "attempt contract-assets admin takeover by spoofing denom admin, changing admin out of order, or replaying stale authority"
       expected_state  = "factory denom admin cannot be changed or used for mint authority unless the current canonical admin authorizes it"
-      affected        = @("x/aetravm/standards/aft", "x/bank", "app auth")
+      affected        = @("x/bank", "app auth")
       severity        = "Critical"
       fix             = "add admin takeover regression tests for create denom, change admin, mint, stale admin replay, and zero-admin boundaries"
     }
     "TOKENEXP-02" = [ordered]@{
       path            = "attempt unauthorized burn from another account, module account, or native denom through contract-assets burn paths"
       expected_state  = "burn requires exact authority and source ownership; unauthorized burn cannot debit balances or reduce supply"
-      affected        = @("x/aetravm/standards/aft", "x/bank")
+      affected        = @("x/bank")
       severity        = "Critical"
       fix             = "add burn-from mismatch, wrong admin, module account, native denom, and supply delta tests"
     }
@@ -2599,14 +2599,14 @@ function Get-AexsTokenEconomyExploitOverrides {
     "TOKENEXP-08" = [ordered]@{
       path            = "manipulate supply through edge-case mint amount, metadata, duplicate denom, zero admin, max amount, or export/import paths"
       expected_state  = "mint amount and denom validation reject edge cases and accepted mints change supply by exactly the requested amount"
-      affected        = @("x/aetravm/standards/aft", "x/bank", "genesis export/import")
+      affected        = @("x/bank", "genesis export/import")
       severity        = "Critical"
       fix             = "add edge-case mint tests for zero/max amounts, duplicate denom, invalid metadata, export/import, and exact supply delta"
     }
     "TOKENEXP-09" = [ordered]@{
       path            = "spoof native denom through contract-assets subdenom, bank metadata, display denom, LP denom, or fee denom aliases"
       expected_state  = "factory assets cannot spoof native denom, native metadata, protocol fee denom, staking denom, or LP denom namespace"
-      affected        = @("x/aetravm/standards/aft", "x/bank", "x/fees", "x/staking")
+      affected        = @("x/bank", "x/fees", "x/staking")
       severity        = "Critical"
       fix             = "add native denom spoof tests for metadata, base/display denom, contract-assets subdenom, fee denom, staking denom, and LP namespace"
     }
@@ -2647,7 +2647,7 @@ function Get-AexsDexExploitOverrides {
     "DEXEXP-04" = [ordered]@{
       path            = "inflate LP tokens by forged LP denom, duplicate pool id, add-liquidity rounding, or LP mint without matching reserves"
       expected_state  = "LP supply equals pool total shares and cannot be minted without matching reserve deposits"
-      affected        = @("avm-dex-contract", "x/bank", "x/aetravm/standards/aft")
+      affected        = @("avm-dex-contract", "x/bank")
       severity        = "Critical"
       fix             = "add LP inflation tests for forged LP denom, duplicate pool id, share rounding, and reserve/share reconciliation"
     }
@@ -3048,7 +3048,7 @@ function Get-AexsMeshCrossZoneExploitOverrides {
     "MESHEXP-04" = [ordered]@{
       path            = "duplicate asset commitments across source and destination zones during transfer, bounce, or refund processing"
       expected_state  = "asset commitments are consumed exactly once and destination mint/release cannot exceed finalized source lock/burn"
-      affected        = @("x/mesh", "x/bank", "x/aetravm/standards/aft", "x/queue")
+      affected        = @("x/mesh", "x/bank", "x/queue")
       severity        = "Critical"
       fix             = "add cross-zone asset conservation tests for lock/burn, release/mint, bounce, refund, and replay markers"
     }
@@ -3248,7 +3248,7 @@ function Get-AexsGenesisUpgradeStateExploitOverrides {
     "STATEEXP-01" = [ordered]@{
       path            = "inject malformed genesis accounts, balances, params, module state, zone roots, or custom module records"
       expected_state  = "genesis validation rejects malformed state before node start and never panics on corrupt but parseable input"
-      affected        = @("app", "x/bank", "x/fees", "x/aetravm/standards/aft", "avm-dex-contract")
+      affected        = @("app", "x/bank", "x/fees", "avm-dex-contract")
       severity        = "Critical"
       fix             = "add malformed genesis fixtures for accounts, balances, params, custom modules, roots, and panic-free validation"
     }
@@ -3283,14 +3283,14 @@ function Get-AexsGenesisUpgradeStateExploitOverrides {
     "STATEEXP-06" = [ordered]@{
       path            = "inject hidden privileged account, module account, authority, admin, or mint permission into genesis/export state"
       expected_state  = "privileged accounts and module permissions are explicitly validated and unauthorized hidden authorities are rejected"
-      affected        = @("app", "x/auth", "x/bank", "x/aetravm/standards/aft", "x/fees")
+      affected        = @("app", "x/auth", "x/bank", "x/fees")
       severity        = "Critical"
       fix             = "add privileged account injection tests for module accounts, authority fields, admin state, mint permissions, and export/import"
     }
     "STATEEXP-07" = [ordered]@{
       path            = "bypass InitGenesis validation with duplicate ids, duplicate denoms, invalid reserves, invalid params, or nil-like records"
       expected_state  = "InitGenesis validates duplicates, params, reserves, denoms, and nil-like records before state writes"
-      affected        = @("app", "avm-dex-contract", "x/aetravm/standards/aft", "x/fees", "x/identity")
+      affected        = @("app", "avm-dex-contract", "x/fees", "x/identity")
       severity        = "Critical"
       fix             = "add InitGenesis bypass tests for duplicates, invalid params, reserves, denoms, nil records, and panic-free errors"
     }
@@ -3428,7 +3428,7 @@ function Get-AexsCombinedFullStackExploitOverrides {
     "FULLSTACKEXP-05" = [ordered]@{
       path            = "coordinate cross-zone value extraction through mesh replay, stale receipt, proof forgery, and queue refund timing"
       expected_state  = "cross-zone value remains conserved and replay, receipt, proof, bounce, and refund paths cannot extract extra funds"
-      affected        = @("x/mesh", "x/queue", "x/messaging", "x/bank", "x/aetravm/standards/aft")
+      affected        = @("x/mesh", "x/queue", "x/messaging", "x/bank")
       severity        = "Critical"
       fix             = "add cross-zone value extraction tests for replay markers, receipts, proofs, bounce/refund, and asset conservation"
     }
@@ -3671,7 +3671,6 @@ $moduleCatalog = @(
   [ordered]@{ Module = "x/distribution"; Label = '`x/distribution`'; Prefix = "DIST"; Value = $true; EvidenceRoots = @("app", "docs\security\pos-staking-correctness.md", "tests\integration"); EvidenceTerms = @("distribution", "reward", "commission", "community pool") },
   [ordered]@{ Module = "app"; Label = '`app` / BaseApp'; Prefix = "APP"; Value = $true; EvidenceRoots = @("app", "tests\integration", "docs\genesis-migrations.md", "docs\state-export-import.md"); EvidenceTerms = @("BaseApp", "app hash", "genesis", "export", "determinism") },
   [ordered]@{ Module = "x/fees"; Label = '`x/fees`'; Prefix = "FEES"; Value = $true; EvidenceRoots = @("x\fees", "tests\adversarial", "tests\integration", "docs\fees-ante-policy.md"); EvidenceTerms = @("fees", "fee", "naet", "ante") },
-  [ordered]@{ Module = "x/aetravm/standards/aft"; Label = '`x/aetravm/standards/aft`'; Prefix = "TF"; Value = $true; EvidenceRoots = @("x\aetravm\standards\aft", "tests\adversarial", "tests\e2e", "docs\security\module-bank-movement-audit.md"); EvidenceTerms = @("contract-assets", "mint", "burn", "admin") },
   [ordered]@{ Module = "avm-dex-contract"; Label = '`avm-dex-contract`'; Prefix = "DEX"; Value = $true; EvidenceRoots = @("avm-dex-contract", "tests\adversarial", "tests\e2e", "docs\architecture\dex-direction.md"); EvidenceTerms = @("dex", "pool", "swap", "liquidity", "reserve") },
   [ordered]@{ Module = "x/identity"; Label = '`x/identity`'; Prefix = "ID"; Value = $true; EvidenceRoots = @("x\identity", "tests\adversarial", "docs\architecture\aetra-modular-execution-os.md"); EvidenceTerms = @("identity", ".aet", "domain", "resolver") },
   [ordered]@{ Module = "x/reputation"; Label = '`x/reputation`'; Prefix = "REP"; Value = $true; EvidenceRoots = @("x\reputation", "docs\module-boundaries.md", "docs\test-production-gates.md"); EvidenceTerms = @("reputation", "score", "rate limit", "priority") },
@@ -4221,7 +4220,7 @@ foreach ($record in $txAuthBankExploitRecords) {
   $record["invalid_reasons"] = $invalidReasons
 }
 $invalidTxAuthBankExploitRecords = @($txAuthBankExploitRecords | Where-Object { -not $_["valid"] })
-$tokenEconomyExploitRecords = @(Get-AexsExploitRecordsForSection -Text $taskText -CampaignId $campaignId -SectionNumber 4 -SectionTitle "Token And Economy Exploits" -IdPrefix "TOKENEXP" -SeedNamespace "token-economy-exploit" -Overrides (Get-AexsTokenEconomyExploitOverrides) -DefaultAffectedModules @("x/aetravm/standards/aft", "x/fees", "x/bank", "x/gov", "x/staking", "x/distribution") -DefaultSeverity "High")
+$tokenEconomyExploitRecords = @(Get-AexsExploitRecordsForSection -Text $taskText -CampaignId $campaignId -SectionNumber 4 -SectionTitle "Token And Economy Exploits" -IdPrefix "TOKENEXP" -SeedNamespace "token-economy-exploit" -Overrides (Get-AexsTokenEconomyExploitOverrides) -DefaultAffectedModules @("x/fees", "x/bank", "x/gov", "x/staking", "x/distribution") -DefaultSeverity "High")
 foreach ($record in $tokenEconomyExploitRecords) {
   $invalidReasons = @(Test-AexsExploitRecord -Record $record)
   $record["valid"] = $invalidReasons.Count -eq 0
@@ -4564,7 +4563,7 @@ $transactionMutators = @(
     id                = "malformed_addresses"
     name              = "inject malformed addresses"
     mutation_type     = "address_corruption"
-    target_modules    = @("x/auth", "x/bank", "x/aetravm/standards/aft", "avm-dex-contract", "x/identity")
+    target_modules    = @("x/auth", "x/bank", "avm-dex-contract", "x/identity")
     flow_covered      = "address parsing, signer checks, recipient/admin/resolver validation"
     state_transitions = "malformed address rejection before state mutation"
     attack_surfaces   = "bad bech32, wrong prefix, truncated bytes, overlong bytes"
@@ -4578,7 +4577,7 @@ $transactionMutators = @(
     id                = "zero_address_fields"
     name              = "inject zero address in signer, recipient, admin, authority, resolver, and DEX actor fields"
     mutation_type     = "zero_address"
-    target_modules    = @("x/auth", "x/bank", "x/aetravm/standards/aft", "avm-dex-contract", "x/identity", "x/vm")
+    target_modules    = @("x/auth", "x/bank", "avm-dex-contract", "x/identity", "x/vm")
     flow_covered      = "zero address validation across value-bearing actor fields"
     state_transitions = "zero address input fails before ownership or balance mutation"
     attack_surfaces   = "zero signer, recipient, admin, authority, resolver, DEX actor"
@@ -4690,7 +4689,7 @@ $transactionMutators = @(
     id                = "malformed_genesis_fragments"
     name              = "inject malformed genesis fragments for simulator startup tests"
     mutation_type     = "genesis_corruption"
-    target_modules    = @("app", "x/auth", "x/bank", "x/staking", "x/fees", "x/aetravm/standards/aft", "avm-dex-contract")
+    target_modules    = @("app", "x/auth", "x/bank", "x/staking", "x/fees", "avm-dex-contract")
     flow_covered      = "genesis validation, InitGenesis, export/import startup path"
     state_transitions = "invalid genesis rejected before app startup state commit"
     attack_surfaces   = "duplicate accounts, duplicate denoms, invalid params, hidden privileged account"

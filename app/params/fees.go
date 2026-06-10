@@ -14,4 +14,3 @@ func ValidateNativeFeeDenomsV1(denoms []string, maxAllowed int) error {
 	}
 	return nil
 }
-

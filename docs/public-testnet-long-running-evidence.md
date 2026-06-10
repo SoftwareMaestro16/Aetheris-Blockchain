@@ -29,7 +29,7 @@ Required long-run checklist:
 - Export/import roundtrip preserves account, contract, pool, storage rent, and
   governance/config state.
 - Direct user delegation remains disabled throughout the run.
-- Native token/NFT/DEX app modules remain absent; assets use AVM contracts.
+- Native application-asset modules remain absent; assets use AVM contracts.
 - Official liquid staking pool remains recoverable under `frozen_limited`.
 - Protocol-critical system state remains executable under system rent
   underfunding alerts.

@@ -1,4 +1,6 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> This document describes a future possibility; no token/NFT/DEX standards or native modules exist in the current project.
+>
+> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph.
 # DEX Direction
 
 Phase 12 historical notes kept `x/dex` in the blockchain repository while Aetra
@@ -19,8 +21,7 @@ documented in
 
 `x/dex` was the native prototype module and remains only a historical reference
 implementation for constant-product pool accounting, reserve custody, LP share
-mint/burn, slippage checks, and DEX observability. New token/NFT/DEX
-application logic belongs in AVM contracts and standards.
+mint/burn, slippage checks, and pool observability.
 
 historical reference implementation.
 
@@ -72,7 +73,7 @@ Future contract model:
 - `router_contract`: routes user swaps across one or more pools, validates
   paths and deadlines, enforces max hops, and manages async settlement.
 - LP representation:
-  - AFT-44 LP token master/wallet contracts, or
+  - LP token master/wallet contracts, or
   - native LP representation during migration, but not both without explicit
     compatibility boundaries.
 - `async_swap_settlement`: swaps settle through deterministic async messages

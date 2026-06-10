@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"strconv"
 	"runtime/debug"
 
 	"github.com/cosmos/cosmos-sdk/version"
 
 	appparams "github.com/sovereign-l1/l1/app/params"
+	"github.com/sovereign-l1/l1/x/aetravm/avm"
 )
 
 const binaryName = "aetrad"
@@ -46,6 +48,7 @@ func initVersionInfo() version.ExtraInfo {
 		"dirty":              dirtyValue,
 		"cosmos_sdk_version": dependencyVersion(info, "github.com/cosmos/cosmos-sdk"),
 		"cometbft_version":   dependencyVersion(info, "github.com/cometbft/cometbft"),
+		"avm_version":        strconv.FormatUint(uint64(avm.Version), 10),
 	}
 }
 

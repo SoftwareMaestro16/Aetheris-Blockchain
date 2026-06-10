@@ -1,47 +1,99 @@
 # syntax=docker/dockerfile:1.7
+# Aetra Blockchain Docker Image
+# Multi-stage build for aetrad validator node
 
-FROM golang:1.25.11-bookworm AS builder
+# ===========================================
+# Stage 1: Builder
+# ===========================================
+FROM golang:1.23-alpine AS builder
 
-ARG VERSION=dev
-ARG COMMIT=unknown
-ARG BUILD_DATE=1970-01-01T00:00:00Z
-ARG DIRTY=false
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    make \
+    ca-certificates \
+    tzdata
 
-WORKDIR /src
+WORKDIR /build
 
+# Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
 
+# Build arguments
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
+ARG APP_NAME=aetrad
+
+# Build the binary with version ldflags
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -trimpath -buildvcs=false \
-  -ldflags="-s -w \
-    -X github.com/sovereign-l1/l1/cmd/l1d/cmd.appVersion=${VERSION} \
-    -X github.com/sovereign-l1/l1/cmd/l1d/cmd.gitCommit=${COMMIT} \
-    -X github.com/sovereign-l1/l1/cmd/l1d/cmd.buildDate=${BUILD_DATE} \
-    -X github.com/sovereign-l1/l1/cmd/l1d/cmd.dirty=${DIRTY}" \
-  -o /out/aetrad ./cmd/l1d
+    go build \
+    -ldflags="-X github.com/sovereign-l1/l1/cmd/l1d/cmd.appVersion=${VERSION} \
+              -X github.com/sovereign-l1/l1/cmd/l1d/cmd.gitCommit=${COMMIT} \
+              -X github.com/sovereign-l1/l1/cmd/l1d/cmd.buildDate=${DATE} \
+              -X github.com/sovereign-l1/l1/cmd/l1d/cmd.dirty=false" \
+    -o /aetrad \
+    ./cmd/l1d
 
-FROM debian:bookworm-slim
+# ===========================================
+# Stage 2: Runner
+# ===========================================
+FROM alpine:3.19 AS runner
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && useradd --create-home --home-dir /home/aetra --shell /usr/sbin/nologin --uid 10001 aetra
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    bash
 
-COPY --from=builder /out/aetrad /usr/local/bin/aetrad
-COPY assets/aetra.png /usr/local/share/aetra.png
+# Create non-root user for security
+RUN addgroup -g 1000 aetra && \
+    adduser -u 1000 -G aetra -s /bin/bash -D aetra
 
-ENV DAEMON_HOME=/home/aetra
 WORKDIR /home/aetra
 
-EXPOSE 26656 26657 1317 9090
+# Copy binary from builder
+COPY --from=builder /aetrad /usr/local/bin/aetrad
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=6 \
-  CMD /usr/local/bin/aetrad status --node tcp://127.0.0.1:26657 --output json >/dev/null 2>&1 || exit 1
+# Copy Aetra logo
+COPY assets/aetra.png /home/aetra/assets/aetra.png
 
+# Create data directory
+RUN mkdir -p /home/aetra/.aetrad && \
+    chown -R aetra:aetra /home/aetra
+
+# Set non-root user
 USER aetra
 
+# Expose ports
+# CometBFT P2P
+EXPOSE 26656
+# CometBFT RPC
+EXPOSE 26657
+# REST API
+EXPOSE 1317
+# gRPC
+EXPOSE 9090
+# Prometheus metrics
+EXPOSE 6060
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:26657/health || exit 1
+
+# Default command
 ENTRYPOINT ["/usr/local/bin/aetrad"]
 CMD ["start"]
+
+# Labels
+LABEL org.opencontainers.image.title="Aetra Blockchain"
+LABEL org.opencontainers.image.description="Aetra testnet validator node"
+LABEL org.opencontainers.image.source="https://github.com/sovereign-l1/l1"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.created="${DATE}"
+LABEL maintainer="Aetra Team"

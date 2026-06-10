@@ -18,7 +18,7 @@ Aetra is a runnable Cosmos SDK chain with a broader native protocol surface laye
 
 - native `x/` modules are kept for consensus safety, validator economics, fees, treasury accounting, governance/config, system entities, scheduling, storage rent, and AVM coordination;
 - user application logic belongs in AVM contracts, including fungible tokens, NFTs, wallets, markets, auctions, workflow apps, and custom service logic;
-- native tokenfactory and native exchange runtime modules are not part of the active app graph. AFT/ANFT/wallet standards remain as AVM contract standards under `x/aetravm/standards`.
+- native tokenfactory and native exchange runtime modules are not part of the active app graph. AFT/ANFT/wallet standards remain as AVM contract standards.
 
 ```mermaid
 flowchart TD
@@ -109,9 +109,9 @@ The active runtime keeps native code for protocol responsibilities:
 
 Application features are meant to be built as AVM contracts:
 
-- fungible tokens: AFT-44 contracts in `x/aetravm/standards/aft`;
-- NFTs and SBTs: ANFT-66 contracts in `x/aetravm/standards/anft`;
-- wallet/account behavior: wallet standard in `x/aetravm/standards/aw`;
+- fungible tokens: AFT-44 contracts;
+- NFTs and SBTs: ANFT-66 contracts;
+- wallet/account behavior: wallet standard;
 - app markets, auctions, services, workflow logic, permission models, and custom business rules should be contracts or SDK tooling around contracts.
 
 The old `x/identity` package remains as a legacy/spec migration target. Root-only `.aet` logic belongs in native `x/identity-root`; domain NFT collections, resolvers, subdomain managers, auctions, and domain governance should migrate to AVM contracts.

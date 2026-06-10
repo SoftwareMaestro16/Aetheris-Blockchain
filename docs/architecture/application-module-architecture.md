@@ -1,4 +1,4 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> Note: historical native asset-factory and native exchange modules have been removed from the active app graph.
 # Application Module Architecture
 
 Track 2.4 defines the application layer as native modules and future contract
@@ -10,19 +10,19 @@ event contracts.
 ## Historical DEX Prototype Boundary
 
 Historical `x/dex` prototype language is retained only as a migration and test
-reference. The production target is contract-only DEX behavior through AVM
-contracts and standards; token, NFT, market, and DEX application logic must not
-be reintroduced as active native asset modules.
+reference. The production target is contract-only pool behavior through AVM
+contracts and standards; application-level asset logic must not
+be reintroduced as active native modules.
 
-token, NFT, market, and DEX application logic must not be reintroduced as active native asset modules.
+Application-level asset logic must not be reintroduced as active native modules.
 
-Historical native DEX behavior that any contract migration must preserve:
+Historical native pool behavior that any contract migration must preserve:
 
 - pool creator, liquidity provider, withdrawer, swap trader, and swap recipient
   are valid non-zero user addresses;
 - native denom spoofing through pool denoms, factory denoms, LP denoms, or
   display metadata is rejected;
-- reserves match the DEX module account balances;
+- reserves match the module account balances;
 - LP supply matches pool shares;
 - swap math preserves constant-product constraints within fee and rounding
   policy;

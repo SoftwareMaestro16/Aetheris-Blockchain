@@ -106,6 +106,8 @@ func TestVersionCommandShowsOperatorMetadata(t *testing.T) {
 	require.NotEmpty(t, info.ExtraInfo["build_date"])
 	require.NotEmpty(t, info.ExtraInfo["dirty"])
 	require.NotEmpty(t, info.ExtraInfo["cometbft_version"])
+	require.NotEmpty(t, info.ExtraInfo["avm_version"])
+	require.Equal(t, "1", info.ExtraInfo["avm_version"])
 }
 
 func TestPrototypeCommandsAreRegistered(t *testing.T) {

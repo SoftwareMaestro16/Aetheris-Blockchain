@@ -47,7 +47,6 @@ Acceptance tests assert that:
 | `x/tokenfactory` | `2` | `1 -> 2`, validates factory denom metadata and params |
 | `x/dex` | `2` | `1 -> 2`, validates pool IDs, pair uniqueness, reserves, LP supply, and params |
 | `x/aetravm/async` | n/a | executable spec only; import validates exported queue state before runtime wiring |
-| `x/aetravm/standards/*` | n/a | executable specs only; standard states validate independently from VM choice |
 
 ## Legacy Format Isolation
 

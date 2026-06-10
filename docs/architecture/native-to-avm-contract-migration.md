@@ -1,4 +1,6 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> This document describes a future possibility; no token/NFT/DEX standards or native modules exist in the current project.
+>
+> Note: historical native asset-factory and native exchange modules have been removed from the active app graph.
 # Native to AVM Contract Migration Plan
 
 Status: Phase 1 audit and safe marking.

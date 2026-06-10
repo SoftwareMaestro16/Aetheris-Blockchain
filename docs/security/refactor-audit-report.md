@@ -7,7 +7,6 @@ security review.
 ## Scope
 
 - `x/aetravm/async`
-- async contract standard callers under `x/aetravm/standards`
 - repository-wide scan for obvious Cosmos consensus-risk patterns
 
 ## Refactor Result

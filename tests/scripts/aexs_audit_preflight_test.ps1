@@ -97,7 +97,6 @@ try {
   foreach ($module in @(
       "app",
       "x/fees",
-      "x/aetravm/standards/aft",
       "avm-dex-contract",
       "x/aetravm",
       "x/execution",

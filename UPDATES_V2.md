@@ -332,6 +332,8 @@ Acceptance:
 - Export/import before and after fee-market state changes preserves fee
   calculation results exactly. -->
 <!-- 
+
+
 ### Blocker 3B - Live Native Economy Wiring
 
 Current risk:
@@ -764,124 +766,174 @@ Done:
 
 - Local testnet can be booted repeatedly with clear commands. -->
 
-<!-- ### Task 1.4 - Export/Import Roundtrip
+## Phase 0 - Launch Scope Freeze
+
+### Task 0.1 - Define Testnet Kernel
 
 Implementation:
 
-- Export state after blocks and committed txs.
-- Validate exported genesis.
-- Import into fresh home.
-- Restart from imported state.
-- Verify app hash/critical state consistency where feasible.
+- Create a short `docs/TESTNET.md` that states the testnet kernel:
+  - Cosmos SDK + CometBFT node;
+  - AWCE-1 wallet compatibility layer;
+  - native bank balance layer;
+  - native account/auth/freeze/rent only where already wired;
+  - pool-based staking;
+  - AVM contracts;
+  - no native token/NFT/DEX app modules for application assets.
+- Add a machine-checkable launch scope test.
+- Make the release workflow fail if docs teach normal users to stake by choosing
+  validators directly.
 
 Tests:
 
-- `tests/e2e/export_import_smoke.ps1`.
-- App-level export/import restart test.
-- Negative: corrupted exported state is rejected.
+- Static doc test: no user-facing `aevaloper` / `aevalcons`.
+- Static doc test: no native DEX/token/NFT launch instructions.
+- Static doc test: user staking examples mention official pool deposit.
 
 Done:
 
-- Runtime mutations survive restart/export/import.
+- Everyone can read one page and know what the testnet actually launches.
 
-### Task 1.5 - Upgrade Rehearsal
+### Task 0.2 - Remove Or Quarantine Prototype Noise
 
 Implementation:
 
-- Add a canonical no-op upgrade handler for rehearsal.
-- Add upgrade dry-run:
-  - pre-upgrade state;
-  - version map;
-  - handler execution;
-  - post-upgrade export validation.
-- Document Cosmovisor upgrade path.
+- Identify modules/docs that are prototype-only or future-only.
+- Move future concepts into `docs/future/` or mark them as AVM standards, not
+  launch-critical modules.
+- Ensure app wiring does not include native DEX/token/NFT modules.
+- Keep `x/aetravm/standards/aft`, `anft`, `adex` as future AVM standards only
+  unless they are runnable as contracts.
 
 Tests:
 
-- `go test ./app/upgrades ./app -run Upgrade`.
-- Localnet upgrade smoke:
-  - schedule upgrade;
-  - stop at height;
-  - swap binary or no-op handler;
-  - restart;
-  - export validate.
+- App module wiring test rejects `tokenfactory`, `dex`, `nft`, `market` native
+  asset modules in launch profile.
+- Release docs test rejects launch instructions for native application-asset
+  modules.
 
 Done:
 
-- Testnet can rehearse a coordinated upgrade before public launch. -->
+- Testnet scope is small and not confused by prototype-era docs. -->
 <!-- 
-## Phase 2 - Validator-Grade Infrastructure
+### Task 0.3 - Launch Module Inventory
 
-### Task 2.1 - Canonical Operator Docs
+Implementation:
 
-Create:
-
-- `docs/VALIDATOR.md`;
-- `docs/TESTNET.md`;
-- `docs/COSMOVISOR.md`;
-- `docs/HEALTH.md`;
-- `docs/AVM.md`.
-
-Current audit:
-
-- Top-level `docs/VALIDATOR.md`, `docs/TESTNET.md`, and
-  `docs/COSMOVISOR.md` are missing and must be created as canonical docs, even
-  if older partial docs such as `validator-onboarding.md` or
-  `public-testnet-preparation.md` exist.
-
-`docs/VALIDATOR.md` must cover:
-
-- hardware;
-- OS;
-- build/download binary;
-- version verification;
-- chain-id;
-- genesis validation;
-- keyring;
-- validator key safety;
-- state sync;
-- snapshots;
-- create validator;
-- monitor;
-- restart;
-- upgrade;
-- incident response.
-
-`docs/TESTNET.md` must cover:
-
-- chain-id;
-- AWCE-1 wallet compatibility summary;
-- genesis URL/checksum placeholder;
-- seed nodes;
-- persistent peers;
-- RPC endpoints;
-- faucet path if enabled;
-- minimum fees;
-- expected block time;
-- launch profile;
-- known non-goals.
-
-`docs/COSMOVISOR.md` must cover:
-
-- install;
-- directory layout;
-- current binary;
-- upgrades directory;
-- environment;
-- upgrade handler naming;
-- rollback policy.
+- Create a machine-readable launch inventory that classifies every `x/*` module:
+  - `launch_core`;
+  - `launch_support`;
+  - `future_avm_standard`;
+  - `prototype_only`;
+  - `disabled`.
+- For every module in app wiring, record:
+  - why it is needed for public testnet;
+  - whether it owns consensus state;
+  - whether it has KV-backed runtime mutations;
+  - export/import status;
+  - invariant status;
+  - block lifecycle scanning risk.
+- Public testnet profile must fail if a `prototype_only` or `disabled` module is
+  wired into launch state.
+- Future token/NFT/DEX/market modules must be either AVM standards/contracts or
+  disabled from launch profile.
 
 Tests:
 
-- Static doc coverage test for all required sections.
-- Static docs test rejects normal user direct-delegation examples.
-- Static docs test requires the `10 AET` pool minimum in user staking docs.
-- Release package includes all docs.
+- inventory covers every `x/*` directory;
+- app wiring modules are all listed in inventory;
+- launch profile rejects native DEX/token/NFT app asset modules;
+- launch profile rejects memory-only consensus keepers;
+- docs generated from inventory match module-boundary docs.
 
 Done:
 
-- A validator can join without reading source code. -->
+- The launch scope is enforceable by CI instead of tribal knowledge. -->
 <!-- 
+## Phase 1 - Runnable Testnet Core
+
+### Task 1.1 - One Stable Binary
+
+Implementation:
+
+- Build one binary: `aetrad` / `aetrad.exe`.
+- Ensure `aetrad version --long --output json` includes:
+  - app name;
+  - version;
+  - git commit;
+  - build date;
+  - dirty flag;
+  - Cosmos SDK version;
+  - CometBFT version;
+  - AVM version.
+- Add release ldflags for version metadata.
+- Release artifact must include the binary and checksums.
+
+Tests:
+
+- CLI test parses version JSON.
+- Release script test verifies binary checksum file.
+- CI job runs built binary version command.
+
+Done:
+
+- Validator can download/build one binary and verify what it is. -->
+<!-- 
+### Task 1.2 - Deterministic Genesis
+
+Implementation:
+
+- Make localnet genesis generation deterministic within one run across all nodes.
+- Chain-id must pass `ValidateAetraTestnetChainID`.
+- Genesis must reject:
+  - malformed chain-id;
+  - secrets;
+  - wrong denom;
+  - missing staking params;
+  - invalid module params;
+  - validator count outside local/testnet profile rules.
+- Genesis validation command:
+  - `aetrad genesis validate-genesis <path>`;
+  - `scripts/localnet/validate-genesis.ps1`.
+
+Tests:
+
+- Genesis validate CI job.
+- Golden test for default app genesis shape.
+- Localnet script test: all node genesis files have identical hash.
+- Negative tests: malformed chain-id, secret-like field, wrong denom.
+
+Done:
+
+- A launch operator can validate published genesis before starting.
+
+### Task 1.3 - 4-5 Node Localnet
+
+Implementation:
+
+- Add canonical 4-node and 5-node localnet profiles.
+- Keep 3-node smoke for fast CI; 4/5-node is launch rehearsal.
+- Scripts:
+  - init;
+  - validate genesis;
+  - start;
+  - wait for height;
+  - query validator set;
+  - stop;
+  - collect diagnostics.
+- No secret material in diagnostics artifacts.
+
+Tests:
+
+- CI fast: 3-node smoke.
+- Manual/release gate: 4-node and 5-node localnet smoke.
+- Negative: occupied ports, missing binary, invalid validator count.
+
+Done:
+
+- Local testnet can be booted repeatedly with clear commands. -->
+
+
 ### Task 2.2 - Docker Image
 
 Aetra logo in /assets/aetra.png

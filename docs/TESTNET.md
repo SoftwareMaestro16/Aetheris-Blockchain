@@ -1,114 +1,99 @@
-# Aetra Testnet Reference
+# Aetra Testnet Launch Scope
 
-This document is the canonical public testnet summary for operators and wallet
-integrators.
+## Overview
 
-## Chain ID
+This document defines the **testnet kernel**: the minimal, stable set of functionality that constitutes a runnable public testnet. Any functionality not listed here is out-of-scope for testnet launch and should be treated as future or prototype.
 
-The launch announcement publishes the active chain ID. Use the exact announced
-value for all txs, queries, snapshots, and state-sync commands.
+## Testnet Kernel
 
-Example placeholder:
+### 1. Core Blockchain Infrastructure
+- **Cosmos SDK + CometBFT node** (`aetrad` binary)
+  - Standard consensus, mempool, ABCI
+  - Deterministic execution
+  - Block lifecycle management
 
-```text
-aetra-<network>-<height>
+### 2. Address & Wallet Compatibility
+- **AWCE-1 wallet compatibility layer**
+  - User-facing addresses start with `AE` prefix
+  - Raw/internal addresses use `4:` prefix
+  - Validator addresses use `4:` prefix (not aevaloper/aevalcons)
+  - Private keys and seed phrases never stored on-chain
+
+### 3. Native Balance Layer
+- **Bank module** for native token balances
+  - Standard fungible transfers
+  - Fee payment in native denom
+  - Custom asset creation via AVM contracts only (not native module)
+
+### 4. Account & Security
+- **Native account/auth module**
+- **Freeze functionality** (where already wired)
+- **Storage rent** (where already wired)
+- **Delegator protection**
+
+### 5. Staking (Pool-Based Only)
+- **Nominator pool staking system**
+  - Official liquid staking pools only
+  - **No direct user delegation to validators**
+  - Minimum 10 AET per deposit
+  - No validator selection by users
+  - Validators selected by pool operators/governance
+
+### 6. AVM Smart Contracts
+- **Aetra VM** (`x/aetravm`)
+  - WASM/EVM contract execution
+  - Contract standards deployed as AVM contracts
+  - Contract upload, instantiate, execute, query
+
+### 7. Fee & Economy
+- **Dynamic fee market**
+  - Deterministic congestion-based pricing
+  - Reputation-weighted priority
+  - Burn, treasury, validator rewards distribution
+- **Fee collector module**
+- **Burn module**
+- **Treasury module**
+- **Emissions module**
+
+## Out of Scope (Not Launching)
+
+### Native Application Asset Modules
+The following are **NOT** part of the testnet kernel:
+
+| Module | Status | Target |
+|--------|--------|--------|
+
+### Prototype/Future Modules
+| Module | Status |
+|--------|--------|
+| `x/aetra-economics` | Prototype - in-memory state |
+| `x/aetra-staking-policy` | Prototype - in-memory state |
+| `x/aetra-validator-score` | Prototype - in-memory state |
+| `x/awce-1` (if exists) | Future standard |
+
+## User Staking Guide (Correct)
+
+```
+# Correct: Deposit to official liquid staking pool
+aetrad tx nominator-pool deposit-to-official-liquid-staking \
+  --pool-id official-pool-1 \
+  --amount 10aet \
+  --from my-wallet
+
+# WRONG: Direct delegation (disabled)
+aetrad tx staking delegate [validator-addr] 10aet --from my-wallet
+# This will fail - direct delegation to validators is disabled
 ```
 
-## AWCE-1 Wallet Compatibility Summary
+## Testnet Kernel Verification
 
-- user-facing addresses are `AE...`;
-- raw/internal/proof addresses are `4:...`;
-- user staking is pool/index based;
-- normal users do not choose validators directly;
-- direct user delegation to validators is disabled;
-- private keys and seed phrases are never accepted in user-facing docs, logs,
-  or genesis data.
-
-## Genesis URL And Checksum
-
-Publish both the genesis URL and the SHA256 checksum before validators join.
-
-Example placeholders:
-
-```text
-Genesis URL: https://<release-host>/genesis.json
-Genesis SHA256: <sha256>
-Genesis height: <height>
+Run the launch scope test:
+```bash
+go test ./docs/... -run TestTestnetKernel
 ```
 
-Every operator should validate the downloaded genesis before first start.
+## Revision History
 
-## Seed Nodes And Persistent Peers
-
-The launch announcement must publish:
-
-- seed node addresses;
-- persistent peer addresses;
-- `docs/testnet/peers.example.json` for JSON-based peer metadata templates;
-- `docs/testnet/seeds.example.txt` for CometBFT `node_id@host:port` seed
-  lines;
-- any RPC peers required for state sync;
-- the port profile for the public testnet launch.
-
-Operators should keep validator peers explicit and avoid copying untrusted peer
-sets into private validator nodes.
-
-## RPC Endpoints
-
-Publish the canonical RPC, REST, and gRPC endpoints for the network.
-
-Example placeholders:
-
-```text
-RPC:  tcp://<host>:26657
-REST: http://<host>:1317
-gRPC: 127.0.0.1:9090
-```
-
-Validator operators should keep a local health check and avoid depending on a
-single external RPC endpoint.
-
-## Faucet Path
-
-If a faucet is enabled, it must be off-chain and rate limited. The chain does
-not mint faucet funds through a native faucet module.
-
-Publish:
-
-- faucet URL or command path;
-- rate limit policy;
-- max grant per request;
-- cooldown window;
-- key custody and incident contact.
-
-## Minimum Fees
-
-The launch announcement publishes the minimum required tx fee policy in `naet`.
-Prototype and launch examples should use the configured floor from genesis or
-the release notes, not an ad hoc token denom.
-
-## Expected Block Time
-
-Publish the expected block time, commit timeout, and any validator-set caveats.
-Operators should measure health by height progression, not wall-clock optimism.
-
-## Launch Profile
-
-The launch profile must state the validator count and rehearsal tier:
-
-- `ValidatorProfile 3` for fast CI smoke;
-- `ValidatorProfile 4` and `ValidatorProfile 5` for launch rehearsal;
-- `ValidatorProfile All` only when every published profile is required.
-
-## Known Non-Goals
-
-Public testnet v1 does not promise:
-
-- direct user delegation to validators;
-- native token/NFT/DEX application modules;
-- production faucet custody;
-- sharding without an explicit governance gate;
-- mainnet security or uptime guarantees.
-
-Token, NFT, and DEX behavior belongs in AVM contracts and standards, not in
-native app asset modules.
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-06-09 | Initial testnet kernel definition |

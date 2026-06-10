@@ -9,6 +9,7 @@ option go_package = "github.com/sovereign-l1/l1/x/fees/types";
 message GenesisState {
   Params params = 1 [(gogoproto.nullable) = false];
   ProtocolFeeState protocol_fee_state = 2 [(gogoproto.nullable) = false];
+  uint32 congestion_bps = 3;
 }
 
 message Params {
@@ -31,6 +32,29 @@ message Params {
   uint64 max_sender_txs_per_block_with_stake = 17;
   uint32 fee_priority_weight_bps = 18;
   uint32 stake_priority_weight_bps = 19;
+  // target_transfer_fee_naet is the governance anchor for a standard transfer
+  // fee (10,000,000 naet = 0.01 AET). All bounded surcharges and discounts are
+  // expressed relative to this value.  Must be a governance/genesis parameter;
+  // never hardcoded in binary logic.
+  string target_transfer_fee_amount = 20;
+  // congestion_surcharge_cap_bps caps the bounded_congestion_surcharge as a
+  // fraction of target_transfer_fee_naet (in basis points).
+  uint32 congestion_surcharge_cap_bps = 21;
+  // low_reputation_premium_cap_naet caps the low_reputation_premium addend.
+  string low_reputation_premium_cap_amount = 22;
+  // reputation_discount_cap_naet caps the reputation discount so fees never
+  // reach zero.
+  string reputation_discount_cap_amount = 23;
+  // storage_rent_byte_fee_amount is the fee per byte of new persistent state
+  // created or enlarged by a transaction.
+  string storage_rent_byte_fee_amount = 24;
+  // base_fee_per_gas_amount is the current_base_fee_per_gas_naet parameter
+  // used in the gas component of the full fee formula.
+  string base_fee_per_gas_amount = 25;
+  // byte_fee_amount is the per-byte component of the full fee formula.
+  string byte_fee_amount = 26;
+  // message_fee_amount is the per-message component of the full fee formula.
+  string message_fee_amount = 27;
 }
 
 message ProtocolFeeState {

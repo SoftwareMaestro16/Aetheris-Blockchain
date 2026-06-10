@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"encoding/json"
 
 	corestore "cosmossdk.io/core/store"
 
@@ -13,6 +14,9 @@ import (
 	"github.com/sovereign-l1/l1/x/fees/types"
 )
 
+// FeeFormulaParamsKey is the KV key for extended formula governance params.
+var FeeFormulaParamsKey = []byte{0x10}
+
 type Keeper struct {
 	cdc                codec.BinaryCodec
 	storeService       corestore.KVStoreService
@@ -20,6 +24,10 @@ type Keeper struct {
 	bankKeeper         types.BankKeeper
 	distributionKeeper distrkeeper.Keeper
 	authority          string
+	// reputationReader is optional; nil → neutral reputation for all senders.
+	reputationReader types.ReputationReader
+	// feeCollector is the fee-collector module for distributing collected fees.
+	feeCollector types.FeeCollectorKeeper
 }
 
 func NewKeeper(
@@ -38,6 +46,20 @@ func NewKeeper(
 		distributionKeeper: distributionKeeper,
 		authority:          authority,
 	}
+}
+
+// WithReputationReader returns a Keeper with the optional ReputationReader set.
+// This is the AWCE-1 integration boundary — wired in app/keeperwiring, not in NewKeeper.
+func (k Keeper) WithReputationReader(r types.ReputationReader) Keeper {
+	k.reputationReader = r
+	return k
+}
+
+// WithFeeCollector returns a Keeper with the FeeCollectorKeeper set.
+// The fee-collector module records fees into pending distribution buckets.
+func (k Keeper) WithFeeCollector(fc types.FeeCollectorKeeper) Keeper {
+	k.feeCollector = fc
+	return k
 }
 
 func (k Keeper) Authority() string { return k.authority }
@@ -79,6 +101,35 @@ func (k Keeper) GetParams(ctx context.Context) (types.Params, error) {
 	return params, nil
 }
 
+// SetFeeFormulaParams stores the extended formula governance params in KV.
+func (k Keeper) SetFeeFormulaParams(ctx context.Context, p types.FeeFormulaParams) error {
+	p = types.NormalizeFeeFormulaParams(p)
+	if err := p.Validate(); err != nil {
+		return types.ErrInvalidParams.Wrap(err.Error())
+	}
+	bz, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return k.storeService.OpenKVStore(ctx).Set(FeeFormulaParamsKey, bz)
+}
+
+// GetFeeFormulaParams reads the extended formula governance params from KV.
+func (k Keeper) GetFeeFormulaParams(ctx context.Context) (types.FeeFormulaParams, error) {
+	bz, err := k.storeService.OpenKVStore(ctx).Get(FeeFormulaParamsKey)
+	if err != nil {
+		return types.FeeFormulaParams{}, err
+	}
+	if bz == nil {
+		return types.DefaultFeeFormulaParams(), nil
+	}
+	var p types.FeeFormulaParams
+	if err := json.Unmarshal(bz, &p); err != nil {
+		return types.FeeFormulaParams{}, err
+	}
+	return types.NormalizeFeeFormulaParams(p), nil
+}
+
 func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) error {
 	if err := gs.Validate(); err != nil {
 		return err
@@ -89,7 +140,15 @@ func (k Keeper) InitGenesis(ctx context.Context, gs types.GenesisState) error {
 	if err := k.SetProtocolFeeState(ctx, gs.ProtocolFeeState); err != nil {
 		return err
 	}
-	return nil
+	// Initialize extended formula params with defaults if not present.
+	if err := k.SetFeeFormulaParams(ctx, types.DefaultFeeFormulaParams()); err != nil {
+		return err
+	}
+	// Restore congestion state (Requirement 2b: export/import round-trip).
+	if gs.CongestionBps > uint32(types.BasisPoints) {
+		gs.CongestionBps = 0
+	}
+	return k.SetCongestionState(sdk.UnwrapSDKContext(ctx), gs.CongestionBps)
 }
 
 func (k Keeper) ExportGenesis(ctx context.Context) (*types.GenesisState, error) {
@@ -101,7 +160,11 @@ func (k Keeper) ExportGenesis(ctx context.Context) (*types.GenesisState, error) 
 	if err != nil {
 		return nil, err
 	}
-	gs := &types.GenesisState{Params: params, ProtocolFeeState: state}
+	gs := &types.GenesisState{
+		Params:           params,
+		ProtocolFeeState: state,
+		CongestionBps:    k.GetCongestionState(sdk.UnwrapSDKContext(ctx)),
+	}
 	if err := gs.Validate(); err != nil {
 		return nil, err
 	}
@@ -174,7 +237,19 @@ func (k Keeper) RecordCollectedFees(ctx context.Context, fees sdk.Coins) error {
 	state.TotalCollected = state.TotalCollected.Add(fees...)
 	state.ValidatorRewards = state.ValidatorRewards.Add(validatorRewards...)
 	state.CommunityPool = state.CommunityPool.Add(communityPool...)
-	return k.SetProtocolFeeState(ctx, state)
+	if err := k.SetProtocolFeeState(ctx, state); err != nil {
+		return err
+	}
+	// Also record into fee-collector pending distribution if wired.
+	// Move funds from the SDK fee_collector to the Aetra feecollector module
+	// before recording the split, so the accounting invariant holds.
+	if k.feeCollector != nil {
+		if err := k.bankKeeper.SendCoinsFromModuleToModule(ctx, types.FeeCollectorModuleName, "feecollector", fees); err != nil {
+			return err
+		}
+		return k.feeCollector.RecordCollectedFees(ctx, fees, "protocol")
+	}
+	return nil
 }
 
 func (k Keeper) GetModuleBalances(ctx context.Context) ([]types.ModuleBalance, error) {
@@ -213,4 +288,13 @@ func (k Keeper) syncDistributionParams(ctx context.Context, params types.Params)
 		return err
 	}
 	return k.distributionKeeper.Params.Set(ctx, distrParams)
+}
+
+// GetReputationScore returns the on-chain identity reputation score for addr.
+// If no ReputationReader is wired (nil), returns neutral score with found=false.
+func (k Keeper) GetReputationScore(ctx context.Context, addr sdk.AccAddress) (score uint32, found bool, err error) {
+	if k.reputationReader == nil {
+		return types.ReputationNeutralScore, false, nil
+	}
+	return k.reputationReader.GetIdentityReputationScore(ctx, addr)
 }

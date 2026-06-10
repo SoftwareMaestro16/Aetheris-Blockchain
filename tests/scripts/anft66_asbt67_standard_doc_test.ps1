@@ -32,15 +32,12 @@ foreach ($term in @(
     'Metadata and royalties are bounded',
     'Metadata must not spoof native AET metadata',
     'royalty policy bounded',
-    'Batch minting must have strict limits',
-    'x/aetravm/standards/anft',
-    'go test ./x/aetravm/standards/anft'
+    'Batch minting must have strict limits'
   )) {
   Assert-Contains -Text $standardText -Pattern ([regex]::Escape($term)) -Message "ANFT-66/ASBT-67 standard doc missing: $term"
 }
 
 foreach ($term in @(
-    'x/aetravm/standards',
     'No chain state',
     'ANFT-66 NFT collection/item model and ASBT-67 soulbound extension',
     'NFT collection/item membership and SBT non-transferability'

@@ -27,6 +27,7 @@ var (
 	_ module.HasGenesis     = AppModule{}
 	_ module.HasServices    = AppModule{}
 	_ appmodule.AppModule   = AppModule{}
+	_ appmodule.HasEndBlocker = AppModule{}
 )
 
 type AppModule struct {
@@ -88,6 +89,19 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 		panic(fmt.Errorf("failed to export %s genesis: %w", types.ModuleName, err))
 	}
 	return cdc.MustMarshalJSON(gs)
+}
+
+func (am AppModule) EndBlock(ctx context.Context) error {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	pending, err := am.keeper.GetPendingDistribution(ctx)
+	if err != nil {
+		return err
+	}
+	if pending.Total().Empty() {
+		return nil
+	}
+	_, err = am.keeper.DistributeFees(ctx, uint64(sdkCtx.BlockHeight()))
+	return err
 }
 
 func (am AppModule) ConsensusVersion() uint64    { return ConsensusVersion }

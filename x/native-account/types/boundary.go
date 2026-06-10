@@ -63,14 +63,13 @@ func DefaultBoundaries() []Boundary {
 				"seed phrases",
 				"token balances",
 				"NFT inventories",
-				"DEX positions",
 				"domain registry records",
 			},
 		},
 		{
 			Path:       "x/identity",
 			Owner:      ".aet domain registry, resolver state, and optional domain NFT binding proofs",
-			OwnedState: []string{"domain records", "resolver records", "domain ownership indexes", "domain NFT binding records"},
+			OwnedState: []string{"domain records", "resolver records", "domain ownership indexes", "domain binding records"},
 			Interfaces: []string{"account owner address validation", "contract resolver address validation"},
 			RejectedWrites: []string{
 				"native account status",
@@ -165,7 +164,7 @@ func DefaultBoundaries() []Boundary {
 			RejectedWrites: []string{
 				"duplicated wallet balances",
 				"account auth policy",
-				"token/NFT/DEX asset state",
+				"contract asset state",
 			},
 		},
 		{
@@ -193,7 +192,7 @@ func DefaultBoundaries() []Boundary {
 		{
 			Path:       "x/contracts, x/vm, x/aetravm/*",
 			Owner:      "contract code/data, VM routing, contract standards, async messages, and contract-owned app assets",
-			OwnedState: []string{"contract code", "contract data", "contract queues", "token contract state", "NFT contract state", "DEX contract state"},
+			OwnedState: []string{"contract code", "contract data", "contract queues", "contract application state"},
 			Interfaces: []string{"native account endpoint validation", "bank value movement", "storage-rent contract charging"},
 			RejectedWrites: []string{
 				"native account private keys",
@@ -226,22 +225,12 @@ func RejectedCrossModuleWrites() []RejectedCrossModuleWrite {
 
 func DefaultAssetRoutes() []AssetRoute {
 	return []AssetRoute{
-		{Behavior: "fungible token", Route: "contract standard AFT-44 or contract registry", NativeModuleAllowed: false},
-		{Behavior: "NFT", Route: "contract standard ANFT-66 or contract registry", NativeModuleAllowed: false},
-		{Behavior: "DEX", Route: "contract pool/router or audited contract registry", NativeModuleAllowed: false},
 		{Behavior: "native AET balance", Route: "SDK bank/native balance layer", NativeModuleAllowed: true},
 	}
 }
 
 func NativeAssetModuleDenylist() []string {
-	return []string{
-		"asset",
-		"assetfactory",
-		"dex",
-		"nft",
-		"token",
-		"tokenfactory",
-	}
+	return []string{}
 }
 
 func IsRejectedCrossModuleWrite(from, to, state string) bool {
@@ -304,28 +293,9 @@ func ValidateAssetRoutes(routes []AssetRoute) error {
 	if len(routes) == 0 {
 		return errors.New("asset routes are required")
 	}
-	requiredContractRoutes := map[string]bool{
-		"fungible token": false,
-		"NFT":            false,
-		"DEX":            false,
-	}
 	for _, route := range routes {
 		if strings.TrimSpace(route.Behavior) == "" || strings.TrimSpace(route.Route) == "" {
 			return errors.New("asset route behavior and route are required")
-		}
-		if _, required := requiredContractRoutes[route.Behavior]; required {
-			if route.NativeModuleAllowed {
-				return fmt.Errorf("%s must not be a native asset module", route.Behavior)
-			}
-			if !strings.Contains(route.Route, "contract") {
-				return fmt.Errorf("%s must be contract-routed", route.Behavior)
-			}
-			requiredContractRoutes[route.Behavior] = true
-		}
-	}
-	for behavior, found := range requiredContractRoutes {
-		if !found {
-			return fmt.Errorf("missing asset route %s", behavior)
 		}
 	}
 	return nil
@@ -338,7 +308,7 @@ func ValidateNoNativeAssetModules(moduleNames []string) error {
 	}
 	for _, moduleName := range moduleNames {
 		if _, found := denied[moduleName]; found {
-			return fmt.Errorf("native asset module %s is not allowed; route token/NFT/DEX behavior through contracts", moduleName)
+			return fmt.Errorf("native asset module %s is not allowed", moduleName)
 		}
 	}
 	return nil

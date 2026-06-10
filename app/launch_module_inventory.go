@@ -196,7 +196,7 @@ func RenderLaunchModuleInventoryBoundarySummary(entries []LaunchModuleInventoryE
 	for _, class := range classes {
 		b.WriteString(fmt.Sprintf("- `%s`: %d\n", class, counts[class]))
 	}
-	b.WriteString("\nPublic testnet profile rejects `prototype_only` and `disabled` modules in app wiring, rejects memory-only consensus keepers, and rejects native token/NFT/DEX/market application-asset modules.\n")
+	b.WriteString("\nPublic testnet profile rejects `prototype_only` and `disabled` modules in app wiring, rejects memory-only consensus keepers, and rejects native application-asset modules.\n")
 	return b.String()
 }
 
@@ -225,7 +225,7 @@ func normalizeXDir(dir string) string {
 
 func isNativeApplicationAssetModuleName(moduleName string) bool {
 	switch moduleName {
-	case "asset", "assetfactory", "dex", "market", "nft", "token", "tokenfactory":
+	case "asset", "assetfactory":
 		return true
 	default:
 		return false

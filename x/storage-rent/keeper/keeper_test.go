@@ -40,7 +40,8 @@ func TestContractWithPaidRentRemainsActive(t *testing.T) {
 	k := setupKeeper(t)
 	_, err := k.TrackContractStorageUsage(authority, contract, actor, 10, 10, 1)
 	require.NoError(t, err)
-	_, distribution, err := k.PayStorageRent(types.MsgPayStorageRent{Payer: "payer", ContractAddress: contract, Amount: 100, Height: 1})
+	ctx := context.Background()
+	_, distribution, err := k.PayStorageRent(ctx, types.MsgPayStorageRent{Payer: "payer", ContractAddress: contract, Amount: 100, Height: 1})
 	require.NoError(t, err)
 	require.Equal(t, uint64(100), distribution.Amount)
 
@@ -76,9 +77,10 @@ func TestPayingDebtUnfreezesWithBuffer(t *testing.T) {
 	_, err = k.FreezeExpiredContract(types.MsgFreezeExpiredContract{Authority: authority, ContractAddress: contract, Height: 3})
 	require.NoError(t, err)
 
-	_, _, err = k.UnfreezeContract(types.MsgUnfreezeContract{Payer: "payer", ContractAddress: contract, Amount: 49, Height: 4})
+	ctx := context.Background()
+	_, _, err = k.UnfreezeContract(ctx, types.MsgUnfreezeContract{Payer: "payer", ContractAddress: contract, Amount: 49, Height: 4})
 	require.ErrorContains(t, err, "full debt plus configured buffer")
-	record, distribution, err := k.UnfreezeContract(types.MsgUnfreezeContract{Payer: "payer", ContractAddress: contract, Amount: 50, Height: 4})
+	record, distribution, err := k.UnfreezeContract(ctx, types.MsgUnfreezeContract{Payer: "payer", ContractAddress: contract, Amount: 50, Height: 4})
 	require.NoError(t, err)
 	require.Equal(t, types.ContractStatusActive, record.Status)
 	require.Zero(t, record.RentDebt)
@@ -109,10 +111,11 @@ func TestStorageUsageAccountingExactness(t *testing.T) {
 
 func TestRentDistributionConservesConfiguredProportions(t *testing.T) {
 	k := setupKeeper(t)
+	ctx := context.Background()
 	_, err := k.TrackContractStorageUsage(authority, contract, actor, 10, 10, 1)
 	require.NoError(t, err)
 
-	_, distribution, err := k.PayStorageRent(types.MsgPayStorageRent{Payer: "payer", ContractAddress: contract, Amount: 100, Height: 1})
+	_, distribution, err := k.PayStorageRent(ctx, types.MsgPayStorageRent{Payer: "payer", ContractAddress: contract, Amount: 100, Height: 1})
 	require.NoError(t, err)
 	require.Equal(t, uint64(50), distribution.FeeCollectorAmount)
 	require.Equal(t, uint64(40), distribution.TreasuryAmount)
@@ -150,7 +153,7 @@ func TestPersistentRuntimeMutationSurvivesRestartAndImport(t *testing.T) {
 
 	_, err := source.TrackContractStorageUsage(authority, contract, actor, 10, 10, 1)
 	require.NoError(t, err)
-	_, distribution, err := source.PayStorageRent(types.MsgPayStorageRent{Payer: "payer", ContractAddress: contract, Amount: 100, Height: 1})
+	_, distribution, err := source.PayStorageRent(ctx, types.MsgPayStorageRent{Payer: "payer", ContractAddress: contract, Amount: 100, Height: 1})
 	require.NoError(t, err)
 	require.Equal(t, uint64(100), distribution.Amount)
 

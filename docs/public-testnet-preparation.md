@@ -1,4 +1,4 @@
-> Deprecated/migration note: this document contains historical native asset-factory or native exchange references. Those runtime modules have been removed from the active app graph; token, NFT, market, and exchange-style application logic now targets AVM contracts and standards such as AFT-44/ANFT-66.
+> Note: historical native asset-factory and native exchange modules have been removed from the active app graph.
 # Public Testnet Preparation
 
 This runbook is the Phase 16 gate before opening Aetra to external validators. It is not mainnet readiness.
@@ -11,7 +11,7 @@ The full public testnet and production gate ledger is
 Run the objective readiness report before starting localnet profiles. It checks
 that AVM/contracts, native-account, official pool staking, storage rent,
 governance/config safety, app invariants, export/import evidence, and
-contract-only token/NFT/DEX boundaries are implemented in runtime paths rather
+contract-only asset boundaries are implemented in runtime paths rather
 than only prototype/spec packages:
 
 ```powershell
@@ -33,7 +33,7 @@ Individual profiles:
 .\scripts\testnet\public-testnet-preflight.ps1 -ValidatorProfile 10 -SkipBuild
 ```
 
-The preflight runs full prototype acceptance, validates the requested validator count, exercises bank, fees, official liquid staking pool flows, direct delegation rejection, storage rent recovery behavior, query surfaces, restart persistence, and asserts CosmWasm remains disabled unless explicitly gated. Token, NFT, and DEX-style behavior must be exercised through AVM contracts and standards, not through native app modules. The 10-validator profile is the stress profile for public testnet readiness; it is expected to be slower and should run before advertising modular execution features.
+The preflight runs full prototype acceptance, validates the requested validator count, exercises bank, fees, official liquid staking pool flows, direct delegation rejection, storage rent recovery behavior, query surfaces, restart persistence, and asserts CosmWasm remains disabled unless explicitly gated. Application-level asset behavior must be exercised through AVM contracts and standards, not through native app modules. The 10-validator profile is the stress profile for public testnet readiness; it is expected to be slower and should run before advertising modular execution features.
 
 The focused E2E smoke command list is maintained in
 [Public Testnet E2E Smoke Commands](public-testnet-e2e-smoke-commands.md).
@@ -75,8 +75,8 @@ build\aetrad.exe tx bank send <faucet-key> <recipient-aetra-address> 1000000naet
 Minimum public testnet explorer requirements:
 
 - CometBFT RPC endpoint for block, tx, validator, and status views,
-- REST or gRPC endpoint for bank, staking, fees, tokenfactory, and DEX queries,
-- event indexing for bank sends, staking delegation, tokenfactory create/mint/burn/admin, DEX pool/liquidity/swap, and future wasm events,
+- REST or gRPC endpoint for bank, staking, fees, and historical module queries,
+- event indexing for bank sends, staking delegation, historical module events, and future wasm events,
 - indexer database credentials kept outside repo config,
 - indexer lag alert when latest indexed height falls behind node height by the launch threshold,
 - no dependency on indexer availability for validator liveness.
@@ -136,11 +136,11 @@ CosmWasm remains disabled by default. If a testnet config explicitly enables the
 The contract upload and instantiate flow is documented in [CosmWasm Readiness](security/cosmwasm-readiness.md).
 
 If async contracts are enabled in a public testnet config, run the async
-execution smoke and the AFT-44/ANFT-66/ASBT-67 standard tests before opening the
+execution smoke and the contract standards tests before opening the
 network:
 
 ```powershell
-.\.work\tools\go1.25.11\go\bin\go.exe test ./x/aetravm/async ./x/aetravm/standards/...
+.\.work\tools\go1.25.11\go\bin\go.exe test ./x/aetravm/async
 ```
 
 ## Rollback And Restart Procedure
@@ -186,4 +186,4 @@ announcement is proven bad:
 - Faucet plan is implemented or explicitly deferred.
 - Explorer/indexer plan is implemented or explicitly deferred.
 - If CosmWasm or async contracts are enabled, simple contract deployment plus
-  token/NFT/SBT smoke tests pass first.
+  contract standards smoke tests pass first.

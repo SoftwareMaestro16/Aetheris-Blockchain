@@ -62,9 +62,6 @@ Every contract-standard or async execution review must cover:
 
 Regression evidence currently lives in:
 
-- `x/aetravm/standards/aw/*_test.go`
-- `x/aetravm/standards/aft/*_test.go`
-- `x/aetravm/standards/anft/*_test.go`
 - `x/aetravm/async/*_test.go`
 - `tests/scripts/*standard_doc_test.ps1`
 - `tests/scripts/async_contract_execution_doc_test.ps1`

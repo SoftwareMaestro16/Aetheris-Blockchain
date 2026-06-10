@@ -24,10 +24,11 @@ import (
 const ConsensusVersion = 2
 
 var (
-	_ module.AppModuleBasic = AppModule{}
-	_ module.HasGenesis     = AppModule{}
-	_ module.HasServices    = AppModule{}
-	_ appmodule.AppModule   = AppModule{}
+	_ module.AppModuleBasic   = AppModule{}
+	_ module.HasGenesis       = AppModule{}
+	_ module.HasServices      = AppModule{}
+	_ appmodule.AppModule     = AppModule{}
+	_ appmodule.HasEndBlocker = AppModule{}
 )
 
 type AppModule struct {
@@ -99,3 +100,9 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 func (am AppModule) ConsensusVersion() uint64    { return ConsensusVersion }
 func (am AppModule) GetTxCmd() *cobra.Command    { return cli.GetTxCmd() }
 func (am AppModule) GetQueryCmd() *cobra.Command { return cli.GetQueryCmd() }
+
+// EndBlock records the finalized block utilization as congestion state for the next block.
+// Requirement 1.3: congestion state is KV-backed and deterministic.
+func (am AppModule) EndBlock(ctx context.Context) error {
+	return am.keeper.EndBlocker(sdk.UnwrapSDKContext(ctx))
+}

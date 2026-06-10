@@ -93,10 +93,12 @@ type PersistentKeepers struct {
 	ShardingCoordinatorKeeper shardingcoordinatorkeeper.Keeper
 }
 
-func NewPersistentKeepers(keys map[string]*storetypes.KVStoreKey) PersistentKeepers {
+func NewPersistentKeepers(keys map[string]*storetypes.KVStoreKey, bankKeeper storagerentkeeper.BankKeeper) PersistentKeepers {
 	nativeAccountKeeper := nativeaccountkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[nativeaccounttypes.StoreKey]))
+	storageRentKeeper := storagerentkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[storagerenttypes.StoreKey])).WithBankKeeper(bankKeeper)
+
 	contractsKeeper := contractskeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[contractstypes.StoreKey]))
-	contractsKeeper = contractsKeeper.WithAccountStatusReader(nativeAccountKeeper)
+	contractsKeeper = contractsKeeper.WithAccountStatusReader(nativeAccountKeeper).WithBankKeeper(bankKeeper).WithStorageRentRateProvider(storageRentKeeper)
 
 	return PersistentKeepers{
 		ConstitutionKeeper:        constitutionkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[constitutiontypes.StoreKey])),
@@ -122,7 +124,7 @@ func NewPersistentKeepers(keys map[string]*storetypes.KVStoreKey) PersistentKeep
 		AVMSchedulerKeeper:        avmschedulerkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[avmschedulertypes.StoreKey])),
 		ActorRegistryKeeper:       actorregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[actorregistrytypes.StoreKey])),
 		ContractsKeeper:           contractsKeeper,
-		StorageRentKeeper:         storagerentkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[storagerenttypes.StoreKey])),
+		StorageRentKeeper:         storageRentKeeper,
 		IdentityRootKeeper:        identityrootkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[identityroottypes.StoreKey])),
 		BridgeHubKeeper:           bridgehubkeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[bridgehubtypes.StoreKey])),
 		CrossChainRegistryKeeper:  crosschainregistrykeeper.NewPersistentKeeper(runtime.NewKVStoreService(keys[crosschainregistrytypes.StoreKey])),

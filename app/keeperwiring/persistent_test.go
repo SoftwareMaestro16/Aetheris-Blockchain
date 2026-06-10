@@ -12,6 +12,6 @@ func TestNewPersistentKeepersUsesCompleteStoreKeySet(t *testing.T) {
 	keys := storekeys.NewKVStoreKeys()
 
 	require.NotPanics(t, func() {
-		_ = NewPersistentKeepers(keys)
+		_ = NewPersistentKeepers(keys, nil)
 	})
 }

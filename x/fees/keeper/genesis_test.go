@@ -78,3 +78,57 @@ func TestFeesMigrationSucceedsOnValidState(t *testing.T) {
 	ctx := app.NewContext(false)
 	require.NoError(t, feeskeeper.NewMigrator(app.FeesKeeper).Migrate1to2(ctx))
 }
+
+// TestCongestionStateGenesisRoundTrip verifies that congestion state is exported,
+// imported, and survives a genesis export→import→re-export round trip.
+func TestCongestionStateGenesisRoundTrip(t *testing.T) {
+	sourceApp := l1app.Setup(t, false)
+	sourceCtx := sourceApp.NewContext(false)
+
+	// Set a non-default congestion state.
+	require.NoError(t, sourceApp.FeesKeeper.SetCongestionState(sourceCtx, 7_500))
+
+	exported, err := sourceApp.FeesKeeper.ExportGenesis(sourceCtx)
+	require.NoError(t, err)
+	require.Equal(t, uint32(7_500), exported.CongestionBps)
+
+	targetApp := l1app.Setup(t, false)
+	targetCtx := targetApp.NewContext(false)
+	require.NoError(t, targetApp.FeesKeeper.InitGenesis(targetCtx, *exported))
+	require.Equal(t, uint32(7_500), targetApp.FeesKeeper.GetCongestionState(targetCtx))
+
+	// Re-export and verify it matches.
+	reexported, err := targetApp.FeesKeeper.ExportGenesis(targetCtx)
+	require.NoError(t, err)
+	require.Equal(t, exported, reexported)
+}
+
+// TestCongestionStateDeterminism verifies that SetCongestionState+GetCongestionState
+// is deterministic: same input bps yields same output.
+func TestCongestionStateDeterminism(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+
+	cases := []uint32{0, 1, 5_000, 7_500, 10_000}
+	for _, bps := range cases {
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		require.NoError(t, app.FeesKeeper.SetCongestionState(ctx, bps))
+		got := app.FeesKeeper.GetCongestionState(ctx)
+		require.Equal(t, bps, got, "congestion bps determinism at block %d", ctx.BlockHeight())
+	}
+}
+
+// TestCongestionStateClampedAtBasisPoints verifies that values above 10000 bps
+// are clamped by InitGenesis.
+func TestCongestionStateInitGenesisClampsOversizedValue(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+
+	gs := &types.GenesisState{
+		Params:           types.DefaultParams(),
+		ProtocolFeeState: types.DefaultProtocolFeeState(),
+		CongestionBps:    99_999,
+	}
+	require.NoError(t, app.FeesKeeper.InitGenesis(ctx, *gs))
+	require.Equal(t, uint32(0), app.FeesKeeper.GetCongestionState(ctx))
+}

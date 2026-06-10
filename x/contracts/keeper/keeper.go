@@ -11,14 +11,29 @@ import (
 	"strings"
 
 	corestore "cosmossdk.io/core/store"
+	sdkmath "cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	aetraaddress "github.com/sovereign-l1/l1/app/addressing"
 	coretypes "github.com/sovereign-l1/l1/x/aetracore/types"
 	"github.com/sovereign-l1/l1/x/contracts/types"
 )
 
+const storageRentReserveModule = "feecollector_storage_rent_reserve"
+
+var storageRentBaseDenom = "naet"
+
+// BankKeeper defines the subset of bank functionality needed by the contracts keeper.
+type BankKeeper interface {
+	SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
+}
+
 type Keeper struct {
-	genesis             types.GenesisState
-	storeService        corestore.KVStoreService
-	accountStatusReader AccountStatusReader
+	genesis                types.GenesisState
+	storeService           corestore.KVStoreService
+	accountStatusReader    AccountStatusReader
+	bankKeeper             BankKeeper
+	runtimeCtx             context.Context
+	storageRentRateProvider StorageRentRateProvider
 }
 
 const (
@@ -29,10 +44,13 @@ const (
 
 var genesisKey = []byte{0x01}
 
-// AccountStatusReader is a temporary integration boundary for CHAT 1 native-account wiring.
-// It keeps contract auth/freeze checks local until the account keeper interface is finalized.
 type AccountStatusReader interface {
 	AccountStatus(context.Context, string) (string, bool, error)
+}
+
+// StorageRentRateProvider queries the active storage rent rate from the storage-rent module.
+type StorageRentRateProvider interface {
+	StorageRentRatePerByteBlock() uint64
 }
 
 func NewKeeper() Keeper {
@@ -54,6 +72,16 @@ func (k Keeper) WithAccountStatusReader(reader AccountStatusReader) Keeper {
 	return k
 }
 
+func (k Keeper) WithBankKeeper(bk BankKeeper) Keeper {
+	k.bankKeeper = bk
+	return k
+}
+
+func (k Keeper) WithStorageRentRateProvider(provider StorageRentRateProvider) Keeper {
+	k.storageRentRateProvider = provider
+	return k
+}
+
 func DefaultGenesis() types.GenesisState {
 	return types.DefaultGenesis()
 }
@@ -71,6 +99,7 @@ func (k *Keeper) InitGenesisState(ctx context.Context, gs types.GenesisState) er
 	if err := k.InitGenesis(gs); err != nil {
 		return err
 	}
+	k.runtimeCtx = ctx
 	return k.writeGenesis(ctx)
 }
 
@@ -146,7 +175,7 @@ func (k *Keeper) StoreCode(msg types.MsgStoreCode) (types.StoreCodeResponse, err
 	if err := types.ValidateUserFacingAEAddress("contract code authority", msg.Authority); err != nil {
 		return types.StoreCodeResponse{}, err
 	}
-	if err := k.ensureActiveWallet(context.Background(), msg.Authority, "contract code store"); err != nil {
+	if err := k.ensureActiveWallet(k.runtimeCtx, msg.Authority, "contract code store"); err != nil {
 		return types.StoreCodeResponse{}, err
 	}
 	return k.storeCodeUnchecked(msg)
@@ -204,7 +233,7 @@ func (k *Keeper) StoreCodeState(ctx context.Context, msg types.MsgStoreCode) (ty
 }
 
 func (k *Keeper) DeployContract(msg types.MsgDeployContract) (types.InstantiateContractResponse, error) {
-	return k.deployContract(context.Background(), msg)
+	return k.deployContract(k.runtimeCtx, msg)
 }
 
 func (k *Keeper) DeployContractState(ctx context.Context, msg types.MsgDeployContract) (types.InstantiateContractResponse, error) {
@@ -237,7 +266,7 @@ func (k *Keeper) deployContract(ctx context.Context, msg types.MsgDeployContract
 }
 
 func (k *Keeper) ExecuteExternal(msg types.MsgExecuteExternal) (types.ExecuteContractResponse, error) {
-	return k.executeExternal(context.Background(), msg)
+	return k.executeExternal(k.runtimeCtx, msg)
 }
 
 func (k *Keeper) ExecuteExternalState(ctx context.Context, msg types.MsgExecuteExternal) (types.ExecuteContractResponse, error) {
@@ -484,7 +513,7 @@ func (k Keeper) ContractStateRoot(req types.QueryContractStateRootRequest) (stri
 }
 
 func (k *Keeper) InstantiateContract(msg types.MsgInstantiateContract) (types.InstantiateContractResponse, error) {
-	return k.instantiateContract(context.Background(), msg)
+	return k.instantiateContract(k.runtimeCtx, msg)
 }
 
 func (k *Keeper) instantiateContract(ctx context.Context, msg types.MsgInstantiateContract) (types.InstantiateContractResponse, error) {
@@ -574,6 +603,10 @@ func (k *Keeper) instantiateContract(ctx context.Context, msg types.MsgInstantia
 	if err := next.Validate(); err != nil {
 		return types.InstantiateContractResponse{}, err
 	}
+	initialStorageFee := storageBytes * k.storageRentPerByteBlock()
+	if err := k.collectRentPayment(ctx, msg.Creator, initialStorageFee); err != nil {
+		return types.InstantiateContractResponse{}, err
+	}
 	k.genesis = next
 	return types.InstantiateContractResponse{
 		ContractAddressUser: user,
@@ -633,6 +666,13 @@ func (k *Keeper) UpgradeContractCode(msg types.MsgUpgradeContractCode) (types.Co
 	if storageBytes > k.genesis.Params.MaxContractStorageBytes {
 		return types.ContractReceipt{}, errors.New(types.ErrStorageRent + ": contract storage exceeds configured limit")
 	}
+	if storageBytes > contract.StorageBytes {
+		diff := storageBytes - contract.StorageBytes
+		extraFee := diff * k.storageRentPerByteBlock()
+		if err := k.collectRentPayment(k.runtimeCtx, msg.Actor, extraFee); err != nil {
+			return types.ContractReceipt{}, err
+		}
+	}
 	nextContract.StorageBytes = storageBytes
 	nextContract.LogicalTime++
 	nextContract.UpdatedHeight = msg.Height
@@ -682,6 +722,13 @@ func (k *Keeper) MigrateContractState(msg types.MsgMigrateContractState) (types.
 	}
 	if storageBytes > k.genesis.Params.MaxContractStorageBytes {
 		return types.ContractReceipt{}, errors.New(types.ErrStorageRent + ": migrated contract storage exceeds configured limit")
+	}
+	if storageBytes > contract.StorageBytes {
+		diff := storageBytes - contract.StorageBytes
+		extraFee := diff * k.storageRentPerByteBlock()
+		if err := k.collectRentPayment(k.runtimeCtx, msg.Actor, extraFee); err != nil {
+			return types.ContractReceipt{}, err
+		}
 	}
 	nextContract.StorageBytes = storageBytes
 	nextContract.LogicalTime++
@@ -791,7 +838,7 @@ func (k Keeper) stateInitForInstantiate(msg types.MsgInstantiateContract, code t
 }
 
 func (k *Keeper) ExecuteContract(msg types.MsgExecuteContract) (types.ExecuteContractResponse, error) {
-	return k.executeContract(context.Background(), msg)
+	return k.executeContract(k.runtimeCtx, msg)
 }
 
 func (k *Keeper) executeContract(ctx context.Context, msg types.MsgExecuteContract) (types.ExecuteContractResponse, error) {
@@ -814,7 +861,7 @@ func (k *Keeper) executeContract(ctx context.Context, msg types.MsgExecuteContra
 	if err := types.EnsureContractLifecycleAction(contract, types.ContractLifecycleActionExecuteExternal); err != nil {
 		return types.ExecuteContractResponse{}, err
 	}
-	contract, err := k.chargeContractRentAt(idx, contract, msg.Height)
+	contract, err := k.chargeContractRentAt(ctx, idx, contract, msg.Height)
 	if err != nil {
 		return types.ExecuteContractResponse{}, errors.New(types.ErrStorageRent + ": contract has storage rent debt")
 	}
@@ -942,7 +989,7 @@ func (k *Keeper) PayContractStorageDebtState(ctx context.Context, msg types.MsgP
 }
 
 func (k *Keeper) UnfreezeContract(msg types.MsgUnfreezeContract) (types.Contract, error) {
-	return k.unfreezeContract(context.Background(), msg)
+	return k.unfreezeContract(k.runtimeCtx, msg)
 }
 
 func (k *Keeper) UnfreezeContractState(ctx context.Context, msg types.MsgUnfreezeContract) (types.Contract, error) {
@@ -1030,7 +1077,7 @@ func (k *Keeper) InjectNativeStaking(msg types.MsgInjectNativeStaking) (types.Na
 	if err := types.EnsureContractLifecycleAction(contract, types.ContractLifecycleActionExecuteExternal); err != nil {
 		return types.NativeStakingInjectionRecord{}, err
 	}
-	contract, err := k.chargeContractRentAt(idx, contract, msg.Height)
+	contract, err := k.chargeContractRentAt(k.runtimeCtx, idx, contract, msg.Height)
 	if err != nil {
 		return types.NativeStakingInjectionRecord{}, errors.New(types.ErrStorageRent + ": contract has storage rent debt")
 	}
@@ -1090,7 +1137,7 @@ func (k *Keeper) ReceiveInternalMessage(msg types.MsgReceiveInternalMessage) (ty
 			return types.InternalMessage{}, err
 		}
 	}
-	if _, err := k.chargeContractRentAt(idx, contract, msg.Height); err != nil {
+	if _, err := k.chargeContractRentAt(k.runtimeCtx, idx, contract, msg.Height); err != nil {
 		return types.InternalMessage{}, errors.New(types.ErrStorageRent + ": contract has storage rent debt")
 	}
 	next := k.genesis
@@ -1171,7 +1218,8 @@ func (k *Keeper) ensureActiveWallet(ctx context.Context, address string, operati
 	return nil
 }
 
-func (k *Keeper) chargeContractRentAt(idx int, contract types.Contract, height uint64) (types.Contract, error) {
+func (k *Keeper) chargeContractRentAt(ctx context.Context, idx int, contract types.Contract, height uint64) (types.Contract, error) {
+	prevBalance := contract.Balance
 	contract, changed, err := k.chargeRent(contract, height)
 	if err != nil {
 		return types.Contract{}, err
@@ -1184,6 +1232,10 @@ func (k *Keeper) chargeContractRentAt(idx int, contract types.Contract, height u
 		return contract, errors.New(types.ErrStorageRent + ": contract has storage rent debt")
 	}
 	if changed {
+		rentCharged := prevBalance - contract.Balance
+		if err := k.chargeRentToReserve(ctx, contract, rentCharged); err != nil {
+			return types.Contract{}, err
+		}
 		if err := k.persistContractAt(idx, contract); err != nil {
 			return types.Contract{}, err
 		}
@@ -1212,11 +1264,18 @@ func (k *Keeper) persistContractAt(idx int, contract types.Contract) error {
 	return nil
 }
 
+func (k Keeper) storageRentPerByteBlock() uint64 {
+	if k.storageRentRateProvider != nil {
+		return k.storageRentRateProvider.StorageRentRatePerByteBlock()
+	}
+	return k.genesis.Params.StorageRentPerByteBlock
+}
+
 func (k Keeper) chargeRent(contract types.Contract, height uint64) (types.Contract, bool, error) {
 	if height < contract.LastStorageChargeHeight {
 		return types.Contract{}, false, errors.New(types.ErrStorageRent + ": contract storage rent height must be monotonic")
 	}
-	if height <= contract.LastStorageChargeHeight || contract.StorageBytes == 0 || k.genesis.Params.StorageRentPerByteBlock == 0 {
+	if height <= contract.LastStorageChargeHeight || contract.StorageBytes == 0 || k.storageRentPerByteBlock() == 0 {
 		return contract, false, nil
 	}
 	blocks := height - contract.LastStorageChargeHeight
@@ -1224,7 +1283,7 @@ func (k Keeper) chargeRent(contract types.Contract, height uint64) (types.Contra
 	if err != nil {
 		return types.Contract{}, false, err
 	}
-	charge, err = checkedMul(charge, k.genesis.Params.StorageRentPerByteBlock, "contract storage rent overflow")
+	charge, err = checkedMul(charge, k.storageRentPerByteBlock(), "contract storage rent overflow")
 	if err != nil {
 		return types.Contract{}, false, err
 	}
@@ -1249,6 +1308,25 @@ func (k Keeper) contractStorageBytes(contract types.Contract) (uint64, error) {
 		return 0, errors.New(types.ErrContractNotFound + ": contract code not found")
 	}
 	return contractStorageBytesForCode(code, contract.Data)
+}
+
+func (k *Keeper) collectRentPayment(ctx context.Context, payer string, amount uint64) error {
+	if k.bankKeeper == nil || ctx == nil {
+		return nil
+	}
+	payerAddr, err := aetraaddress.ParseAccAddress(payer)
+	if err != nil {
+		return err
+	}
+	coin := sdk.NewCoins(sdk.NewCoin(storageRentBaseDenom, sdkmath.NewInt(int64(amount))))
+	return k.bankKeeper.SendCoinsFromAccountToModule(ctx, payerAddr, storageRentReserveModule, coin)
+}
+
+func (k *Keeper) chargeRentToReserve(ctx context.Context, contract types.Contract, amount uint64) error {
+	if k.bankKeeper == nil || amount == 0 {
+		return nil
+	}
+	return k.collectRentPayment(ctx, contract.Creator, amount)
 }
 
 func (k Keeper) authorizeContractUpgradeActor(contract types.Contract, actor string) error {
