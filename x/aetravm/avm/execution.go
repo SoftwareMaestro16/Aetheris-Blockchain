@@ -204,6 +204,12 @@ type AVMReceipt struct {
 }
 
 // QueryFrame holds the context for a read-only query execution.
+// Query frames execute in a separate Query Execution Domain:
+//   - No mutation allowed
+//   - No action queue exists
+//   - No side-effect buffer exists
+//   - Only read-only execution frame is created
+//   - Effectful host functions are forbidden
 type QueryFrame struct {
 	Snapshot QuerySnapshot
 	Stack    []types.Value
@@ -212,11 +218,25 @@ type QueryFrame struct {
 	ExitCode uint32
 }
 
-// QuerySnapshot represents an immutable execution snapshot.
+// QuerySnapshot represents an immutable execution snapshot for get methods.
+// The snapshot MUST NOT change during execution — it captures the exact
+// state at the block height the query is executed against.
+//
+// Invariants:
+//   - StateRootChunk is an immutable content-addressed reference
+//   - BlockContext carries consensus-derived values only
+//   - ContractCodeChunk is frozen at deployment time
+//   - Snapshot is a pure value — no references to mutable state
 type QuerySnapshot struct {
-	StateRoot []byte
-	Code      []byte
-	BlockCtx  BlockContext
+	StateRootChunk *chunk.Chunk
+	Code           []byte
+	BlockCtx       BlockContext
+}
+
+// AsQueryExecutionDomainSnapshot converts a QuerySnapshot to a read-only execution domain.
+// Query methods MUST run in a separate QueryState != ExecutionState.
+func (s QuerySnapshot) AsQueryExecutionDomainSnapshot() QuerySnapshot {
+	return s
 }
 
 // QueryReceipt matches the formal query receipt structure.
