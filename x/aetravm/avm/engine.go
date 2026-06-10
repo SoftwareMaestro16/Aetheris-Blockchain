@@ -21,9 +21,9 @@ func NewEngine() *Engine {
 
 // Execute performs a deterministic state transition.
 // (StateChunk, Message, BlockContext) -> (NewStateChunk, Actions, Receipt, error)
-func (e *Engine) Execute(state *chunk.Chunk, msg Message, blockCtx BlockContext, gasLimit uint64) (*chunk.Chunk, []Action, AVMReceipt, error) {
+func (e *Engine) Execute(state *chunk.Chunk, msg Message, blockCtx BlockContext, gasLimit uint64, maxActions uint32) (*chunk.Chunk, []Action, AVMReceipt, error) {
 	msg.GasLimit = gasLimit // Override if provided explicitly
-	frame := NewExecutionFrame(state, msg)
+	frame := NewExecutionFrame(state, msg, maxActions)
 
 	// Set sandbox boundaries
 	frame.BlockCtx = blockCtx

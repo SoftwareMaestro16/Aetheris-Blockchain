@@ -5,8 +5,6 @@ import (
 	"github.com/sovereign-l1/l1/x/aetravm/types"
 )
 
-const maxActionsPerExecution = 256
-
 // Phase represents the current execution phase of the AVM.
 type Phase uint8
 
@@ -144,7 +142,7 @@ type ExecutionFrame struct {
 	ActionsUsed  uint32
 }
 
-func NewExecutionFrame(state *chunk.Chunk, msg Message) *ExecutionFrame {
+func NewExecutionFrame(state *chunk.Chunk, msg Message, maxActions uint32) *ExecutionFrame {
 	return &ExecutionFrame{
 		Phase:         PhaseStorage,
 		Message:       msg,
@@ -152,7 +150,7 @@ func NewExecutionFrame(state *chunk.Chunk, msg Message) *ExecutionFrame {
 		WorkingState:  state,
 		GasLimit:      msg.GasLimit,
 		PhaseGas:      make(map[Phase]uint64),
-		ActionBudget:  maxActionsPerExecution,
+		ActionBudget:  maxActions,
 	}
 }
 

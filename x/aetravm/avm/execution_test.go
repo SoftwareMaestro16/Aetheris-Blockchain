@@ -25,7 +25,7 @@ func TestAVMExecutionPhases(t *testing.T) {
 	engine := NewEngine()
 
 	// 1. Success execution (External)
-	newState, actions, receipt, err := engine.Execute(state, msg, blockCtx, 10000)
+	newState, actions, receipt, err := engine.Execute(state, msg, blockCtx, 10000, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint32(contractstypes.ExitCodeOK), receipt.ExitCode)
 	require.Equal(t, uint64(2100), receipt.GasUsed)
@@ -43,7 +43,7 @@ func TestAVMExecutionPhases(t *testing.T) {
 	require.NotEmpty(t, receipt.ExecutionTraceHash)
 
 	// 2. Out of gas in compute phase
-	_, _, receipt2, err := engine.Execute(state, msg, blockCtx, 1000)
+	_, _, receipt2, err := engine.Execute(state, msg, blockCtx, 1000, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint32(contractstypes.ExitCodeOutOfGas), receipt2.ExitCode)
 	require.Equal(t, uint64(1000), receipt2.GasUsed)
@@ -53,7 +53,7 @@ func TestAVMExecutionPhases(t *testing.T) {
 	// 3. Abort exit code
 	abortPayload, _ := chunk.NewBuilder().SetData([]byte("trigger_abort"), 13).Build()
 	msg.Payload = abortPayload
-	_, _, receipt3, err := engine.Execute(state, msg, blockCtx, 10000)
+	_, _, receipt3, err := engine.Execute(state, msg, blockCtx, 10000, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint32(contractstypes.ExitCodeContractAbort), receipt3.ExitCode)
 	require.Equal(t, receipt3.StateRootBefore, receipt3.StateRootAfter)
@@ -61,7 +61,7 @@ func TestAVMExecutionPhases(t *testing.T) {
 	// 4. Forbidden opcode rejection
 	forbiddenPayload, _ := chunk.NewBuilder().SetData([]byte("use_forbidden_opcode"), 20).Build()
 	msg.Payload = forbiddenPayload
-	_, _, receipt4, err := engine.Execute(state, msg, blockCtx, 10000)
+	_, _, receipt4, err := engine.Execute(state, msg, blockCtx, 10000, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint32(contractstypes.ExitCodeCodeRejected), receipt4.ExitCode)
 }
@@ -81,8 +81,8 @@ func TestDeterministicExecution(t *testing.T) {
 
 	engine := NewEngine()
 
-	res1_state, res1_actions, res1_receipt, _ := engine.Execute(state, msg, blockCtx, 5000)
-	res2_state, _, res2_receipt, _ := engine.Execute(state, msg, blockCtx, 5000)
+	res1_state, res1_actions, res1_receipt, _ := engine.Execute(state, msg, blockCtx, 5000, 256)
+	res2_state, _, res2_receipt, _ := engine.Execute(state, msg, blockCtx, 5000, 256)
 
 	require.Equal(t, res1_state.Hash(), res2_state.Hash())
 	require.Equal(t, res1_receipt.GasUsed, res2_receipt.GasUsed)
@@ -113,7 +113,7 @@ func TestSystemBounceOnRevert(t *testing.T) {
 	engine := NewEngine()
 
 	// This should fail with OutOfGas, but preserve the system bounce action
-	_, actions, receipt, err := engine.Execute(state, msg, blockCtx, 1500)
+	_, actions, receipt, err := engine.Execute(state, msg, blockCtx, 1500, 256)
 	require.NoError(t, err)
 	require.Equal(t, uint32(contractstypes.ExitCodeOutOfGas), receipt.ExitCode)
 
