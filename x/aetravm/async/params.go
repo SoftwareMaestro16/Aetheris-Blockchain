@@ -20,6 +20,7 @@ func DefaultParams() Params {
 		MaxContractDeploysPerBlock:   16,
 		MaxEmittedMessagesPerExec:    16,
 		MaxStorageWritesPerExec:      64,
+		MaxActionsPerExecution:       256,
 		MaxRetriesPerMessage:         3,
 		DefaultRetryDelayBlocks:      1,
 		MaxRetryDelayBlocks:          64,
@@ -64,6 +65,9 @@ func (p Params) Validate() error {
 	}
 	if p.MaxStorageWritesPerExec == 0 {
 		return errors.New("max storage writes per execution must be positive")
+	}
+	if p.MaxActionsPerExecution == 0 {
+		return errors.New("max actions per execution must be positive")
 	}
 	if p.MaxRetriesPerMessage == 0 {
 		return errors.New("max retries per message must be positive")

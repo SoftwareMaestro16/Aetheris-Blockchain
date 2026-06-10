@@ -50,6 +50,7 @@ var runtimeExitCodes = []RuntimeExitCodeSpec{
 	{Code: ResultAccountStateTooBig, Name: "account_state_too_big", ContractExitCode: contractstypes.ExitCodeAccountStateTooBig, ContractExitCodeName: "account_state_too_big"},
 	{Code: ResultStorageRentDebt, Name: "storage_rent_debt", ContractExitCode: contractstypes.ExitCodeStorageRentDebt, ContractExitCodeName: "storage_rent_debt"},
 	{Code: ResultInactiveFrozen, Name: "inactive_frozen", ContractExitCode: contractstypes.ExitCodeInactiveFrozen, ContractExitCodeName: "inactive_frozen"},
+	{Code: ResultActionBudgetExceeded, Name: "action_budget_exceeded", ContractExitCode: contractstypes.ExitCodeActionBudgetExceeded, ContractExitCodeName: "action_budget_exceeded"},
 }
 
 func RuntimeExitCodes() []RuntimeExitCodeSpec {
@@ -152,6 +153,8 @@ func ContractExitCodeForRuntime(code uint32, failedPhase string) uint32 {
 		return contractstypes.ExitCodeStorageRentDebt
 	case ResultInactiveFrozen:
 		return contractstypes.ExitCodeInactiveFrozen
+	case ResultActionBudgetExceeded:
+		return contractstypes.ExitCodeActionBudgetExceeded
 	default:
 		if code >= 100 && code < 200 {
 			return contractstypes.ExitCodeContractAbort

@@ -105,6 +105,12 @@ func (e *Engine) Execute(state *chunk.Chunk, msg Message, blockCtx BlockContext,
 	}
 	// Actions are collected in f.PendingActions during PhaseCompute.
 
+	if uint32(len(frame.PendingActions)) > frame.ActionBudget {
+		frame.Aborted = true
+		return frame.finalize(contractstypes.ExitCodeActionBudgetExceeded)
+	}
+	frame.ActionsUsed = uint32(len(frame.PendingActions))
+
 	// Phase 5: Finalization Phase - Commit new Chunk roots
 	frame.Phase = PhaseFinalization
 	if !frame.ChargeGas(300) {

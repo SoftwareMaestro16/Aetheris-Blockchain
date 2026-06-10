@@ -48,6 +48,7 @@ const (
 	ResultAccountStateTooBig     = uint32(35)
 	ResultStorageRentDebt        = uint32(36)
 	ResultInactiveFrozen         = uint32(37)
+	ResultActionBudgetExceeded   = uint32(38)
 
 	CodeHashLength = 32
 
@@ -94,6 +95,7 @@ type Params struct {
 	MaxContractDeploysPerBlock   uint32
 	MaxEmittedMessagesPerExec    uint32
 	MaxStorageWritesPerExec      uint32
+	MaxActionsPerExecution       uint32
 	MaxRetriesPerMessage         uint32
 	DefaultRetryDelayBlocks      uint64
 	MaxRetryDelayBlocks          uint64

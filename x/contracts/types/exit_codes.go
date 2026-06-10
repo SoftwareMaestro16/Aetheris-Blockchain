@@ -53,6 +53,7 @@ const (
 	ExitCodeMessageExpired       uint32 = 32
 	ExitCodeQueueLimit           uint32 = 33
 	ExitCodeMessageTooLarge      uint32 = 34
+	ExitCodeActionBudgetExceeded  uint32 = 35
 	ExitCodeRoutingFailed        uint32 = 38
 	ExitCodeMessageRoutingFailed uint32 = 38 // Alias for RoutingFailed
 	ExitCodeQueueOverflow        uint32 = 39
@@ -159,6 +160,8 @@ func ExitCodeName(code uint32) string {
 		return "queue_limit"
 	case ExitCodeMessageTooLarge:
 		return "message_too_large"
+	case ExitCodeActionBudgetExceeded:
+		return "action_budget_exceeded"
 	case ExitCodeRoutingFailed:
 		return "routing_failed"
 	case ExitCodeQueueOverflow:
@@ -231,6 +234,7 @@ func CanonicalExitCodes() []ExitCodeSpec {
 		{ExitCodeMessageExpired, "message_expired"},
 		{ExitCodeQueueLimit, "queue_limit"},
 		{ExitCodeMessageTooLarge, "message_too_large"},
+		{ExitCodeActionBudgetExceeded, "action_budget_exceeded"},
 		{ExitCodeRoutingFailed, "routing_failed"},
 		{ExitCodeQueueOverflow, "queue_overflow"},
 		{ExitCodeShardUnavailable, "shard_unavailable"},
