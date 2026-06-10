@@ -16,7 +16,7 @@ This document defines the **testnet kernel**: the minimal, stable set of functio
 - **AWCE-1 wallet compatibility layer**
   - User-facing addresses start with `AE` prefix
   - Raw/internal addresses use `4:` prefix
-  - Validator addresses use `4:` prefix (not aevaloper/aevalcons)
+  - Validator addresses use `4:` prefix
   - Private keys and seed phrases never stored on-chain
 
 ### 3. Native Balance Layer

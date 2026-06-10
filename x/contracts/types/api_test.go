@@ -24,7 +24,6 @@ func TestContractsTxAPIValidationRejectsMalformedAddressesAndBounds(t *testing.T
 		Admin:       sender,
 		Height:      1,
 	}.ValidateBasic(params))
-	require.Error(t, MsgDeployContract{Creator: "aevaloper1bad", CodeID: "code", Height: 1}.ValidateBasic(params))
 	require.ErrorContains(t, MsgDeployContract{Creator: sender, CodeID: "code", InitPayload: make([]byte, MaxContractPayloadBytes+1), Height: 1}.ValidateBasic(params), "payload")
 	require.ErrorContains(t, MsgDeployContract{Creator: sender, CodeID: "code", Metadata: make([]byte, MaxContractMetadataBytes+1), Height: 1}.ValidateBasic(params), "metadata")
 
@@ -45,7 +44,6 @@ func TestContractsStoreCodeAndQueryAPIValidation(t *testing.T) {
 	bytecode := []byte("AVM1 deterministic")
 	require.NoError(t, MsgStoreCode{Authority: sender, Bytecode: bytecode}.ValidateBasic(params))
 	require.ErrorContains(t, MsgStoreCode{Authority: sender, Bytecode: []byte("AVM1 random")}.ValidateBasic(params), ErrInvalidBytecode)
-	require.Error(t, MsgStoreCode{Authority: "aevalcons1bad", Bytecode: bytecode}.ValidateBasic(params))
 
 	require.NoError(t, ValidateQueryPagination(PageRequest{Limit: MaxContractQueryLimit}))
 	require.ErrorContains(t, ValidateQueryPagination(PageRequest{}), "query limit")

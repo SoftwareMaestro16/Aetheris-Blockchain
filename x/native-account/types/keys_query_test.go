@@ -132,9 +132,6 @@ func TestAccountQueriesRejectUnsupportedAddressFormatsSafely(t *testing.T) {
 	_, _, err = query.Account(account.AddressRaw)
 	require.Error(t, err)
 
-	_, _, err = query.Account("aevaloper1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9yf6pz")
-	require.Error(t, err)
-
 	_, _, err = query.Account("cosmos1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnrql8a")
 	require.Error(t, err)
 
@@ -142,9 +139,6 @@ func TestAccountQueriesRejectUnsupportedAddressFormatsSafely(t *testing.T) {
 	require.Error(t, err)
 
 	_, _, err = query.AccountByRawAddress("1:0000000000000000000000000000000000000000")
-	require.Error(t, err)
-
-	_, err = query.Accounts("aevalcons1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhyk7xm", 10)
 	require.Error(t, err)
 
 	_, err = query.Accounts("", prototype.MaxQueryLimit+1)

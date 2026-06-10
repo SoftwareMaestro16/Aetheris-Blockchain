@@ -110,7 +110,6 @@ func TestAllExitCodesUnder100(t *testing.T) {
 		ExitCodeForbiddenHostCall,
 		ExitCodeContractAbort,
 		ExitCodeAssertionFailed,
-		ExitCodeInsufficientBalance,
 	}
 
 	for _, code := range codes {

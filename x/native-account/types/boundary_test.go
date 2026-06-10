@@ -61,5 +61,5 @@ func TestBoundaryManifestIsDeterministic(t *testing.T) {
 	require.NotEmpty(t, lines)
 
 	hash := sha256.Sum256([]byte(strings.Join(lines, "\n")))
-	require.Equal(t, "6d32818702e7d359131e54f4f91717a3d09784a8e37feee9155dd4e417fe16da", hex.EncodeToString(hash[:]))
+	require.Equal(t, "7521daf0575cebf63c6992ea6720259e299713f11dfbcb6f729a498d0e32571a", hex.EncodeToString(hash[:]))
 }

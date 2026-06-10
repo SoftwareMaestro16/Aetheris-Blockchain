@@ -13,7 +13,7 @@ consensus_address = AEAAAQAAAAAAAAAAAAAAAAA0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0
 raw_internal_key = 4:0000000000000000000000002222222222222222222222222222222222222222
 ```
 
-Legacy `aevaloper` and `aevalcons`, foreign Bech32, old raw prefixes, mixed-case
+Foreign Bech32, old raw prefixes, mixed-case
 raw addresses, and malformed `AE...` strings are rejected at user-facing
 message and query boundaries.
 

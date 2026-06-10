@@ -253,7 +253,7 @@ func TestCHAT3PoolRewardStateRecordsAndExportImportRoundTrip(t *testing.T) {
 	require.ErrorContains(t, err, "duplicate reward claim")
 	_, _, err = RecordPoolRewardClaim(params, nil, PoolRewardClaimReceipt{
 		PoolID:       pool.PoolID,
-		OwnerAddress: "aevaloper1notallowed",
+		OwnerAddress: "notvalid1address",
 		Amount:       receipt.Amount,
 		Epoch:        4,
 		Height:       41,

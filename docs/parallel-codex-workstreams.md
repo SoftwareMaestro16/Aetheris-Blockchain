@@ -55,8 +55,6 @@ Address contract:
 user-facing account/validator/consensus/pool address = AE...
 internal raw address = 4:...
 AE... <-> 4:... roundtrip must be stable
-no aevaloper
-no aevalcons
 ```
 
 Validator entry contract:
@@ -322,7 +320,7 @@ W0 tasks:
 - Freeze `AE...` and `4:...` golden vectors.
 - Add pool address helpers if missing: `FormatPoolAddress`,
   `ParsePoolAddress`, or explicit reuse of the account codec.
-- Reject `aevaloper` and `aevalcons` in user-facing account, validator,
+- Ensure only `AE...` and `4:...` address formats are used in user-facing account, validator,
   consensus, and pool APIs.
 - Add stable `AE... <-> 4:...` roundtrip tests for accounts, validators,
   consensus addresses, and pools.

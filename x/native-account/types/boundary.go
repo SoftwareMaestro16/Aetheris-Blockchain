@@ -141,7 +141,7 @@ func DefaultBoundaries() []Boundary {
 			Interfaces: []string{"pool allocation registry queries", "validator admission policy"},
 			RejectedWrites: []string{
 				"native account auth policy",
-				"user-facing aevaloper or aevalcons addresses",
+				"user-facing legacy validator addresses",
 				"normal-user direct validator delegation",
 			},
 		},

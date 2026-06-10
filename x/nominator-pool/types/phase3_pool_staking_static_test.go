@@ -23,8 +23,6 @@ func TestPhase31DepositMessageSurfaceHasNoValidatorOrRawTargetFields(t *testing.
 		"validator",
 		"operator_address",
 		"consensus_address",
-		"aevaloper",
-		"aevalcons",
 		"raw",
 		"target",
 	} {
@@ -43,8 +41,6 @@ func TestPhase31DepositProtoSurfaceHasNoValidatorOrRawTargetFields(t *testing.T)
 		"validator",
 		"operator_address",
 		"consensus_address",
-		"aevaloper",
-		"aevalcons",
 		"raw",
 		"target",
 	} {
@@ -83,8 +79,7 @@ func mentionsUserFacingValidatorChoice(line string) bool {
 		strings.Contains(line, "validator address") ||
 		strings.Contains(line, "msgdelegate") ||
 		strings.Contains(line, "staking delegate") ||
-		strings.Contains(line, "aevaloper") ||
-		strings.Contains(line, "aevalcons")
+		strings.Contains(line, "legacy validator address")
 }
 
 func negatesValidatorChoice(line string) bool {

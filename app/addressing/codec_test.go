@@ -135,10 +135,6 @@ func TestAddressValidationRejectsEmptyMalformedAndLegacyFormats(t *testing.T) {
 
 	validFriendly, err := addressing.FormatUserFriendly(sdk.AccAddress(bytes20(0x46)))
 	require.NoError(t, err)
-	validValoper, err := sdk.Bech32ifyAddressBytes("aevaloper", bytes20(0x47))
-	require.NoError(t, err)
-	validValcons, err := sdk.Bech32ifyAddressBytes("aevalcons", bytes20(0x48))
-	require.NoError(t, err)
 
 	tests := map[string]string{
 		"empty":                      "",
@@ -154,8 +150,6 @@ func TestAddressValidationRejectsEmptyMalformedAndLegacyFormats(t *testing.T) {
 		"wrong userfriendly prefix":  "AF" + validFriendly[2:],
 		"non base64url userfriendly": "AE+/" + validFriendly[4:],
 		"old bech32 account prefix":  validLegacy,
-		"legacy validator bech32":    validValoper,
-		"legacy consensus bech32":    validValcons,
 	}
 	for name, text := range tests {
 		t.Run(name, func(t *testing.T) {

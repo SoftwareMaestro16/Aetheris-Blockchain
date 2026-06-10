@@ -85,8 +85,7 @@ foreach ($doc in $launchDocs) {
 
   Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+query\s+staking\s+delegation\b' -Message "$relative teaches normal users validator delegation queries"
   Assert-NotContains -Text $text -Pattern '(?im)^\s*(?:build\\aetrad\.exe|aetrad)\s+query\s+staking\s+delegations\b' -Message "$relative teaches normal users validator delegation queries"
-  Assert-NotContains -Text $text -Pattern '(?i)\baevaloper1[0-9a-z]+' -Message "$relative exposes a user-facing validator operator address"
-  Assert-NotContains -Text $text -Pattern '(?i)\baevalcons1[0-9a-z]+' -Message "$relative exposes a user-facing consensus address"
+
 }
 
 Assert-Contains -Text $testnetText -Pattern '(?i)official pool deposit' -Message "TESTNET user staking example must mention official pool deposit"

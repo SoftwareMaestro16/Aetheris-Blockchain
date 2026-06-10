@@ -75,7 +75,7 @@ Rules:
 
 - `AE...` is the only user-facing address family.
 - `4:...` is raw/internal and proof-oriented.
-- `aevaloper` and `aevalcons` are not used in user-facing APIs.
+- Only `AE...` and `4:...` address formats are used in user-facing APIs.
 - Address derivation does not change during account migration, auth policy
   update, recovery, multisig changes, metadata changes, or staking changes.
 - `AE...` address roundtrip and `4:...` raw roundtrip are invariant checks.

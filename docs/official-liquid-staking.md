@@ -31,4 +31,4 @@ Addresses:
 
 - user-facing account, pool, and validator addresses are always `AE...`;
 - raw/internal addresses are `4:...`;
-- `aevaloper` and `aevalcons` are not used in user-facing staking APIs.
+

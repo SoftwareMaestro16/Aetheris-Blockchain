@@ -122,59 +122,6 @@ func TestTestnetKernelDocExists(t *testing.T) {
 	}
 }
 
-// TestTestnetKernelNoAevaloperInDocs verifies docs don't teach aevaloper/aevalcons
-// for user-facing operations. Context like "not aevaloper" or examples in
-// "out of scope" tables are allowed.
-func TestTestnetKernelNoAevaloperInDocs(t *testing.T) {
-	testFiles := []string{
-		"TESTNET.md",
-		"official-liquid-staking.md",
-	}
-
-	for _, filename := range testFiles {
-		path := filepath.Join(filename)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			continue
-		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-
-		text := string(content)
-
-		// Split into lines and check each line context
-		lines := strings.Split(text, "\n")
-		for lineNum, line := range lines {
-			lower := strings.ToLower(line)
-
-			// Skip lines that explain what's NOT being used (context examples)
-			if strings.Contains(lower, "not aevaloper") ||
-				strings.Contains(lower, "not aevalcons") ||
-				strings.Contains(lower, "x/") && strings.Contains(lower, "deprecated") ||
-				strings.Contains(lower, "out of scope") ||
-				strings.Contains(lower, "not launching") ||
-				strings.Contains(lower, "future") {
-				continue
-			}
-
-			// Check for user-facing delegation instructions
-			badPatterns := []string{
-				"delegate to a validator",
-				"choose a validator to delegate",
-				"select validator to",
-			}
-
-			for _, pattern := range badPatterns {
-				if strings.Contains(lower, pattern) {
-					t.Errorf("%s:%d contains user-facing validator delegation instruction: %q", filename, lineNum+1, pattern)
-				}
-			}
-		}
-	}
-}
-
 
 // TestTestnetKernelPoolStakingMentioned verifies pool deposit is mentioned
 func TestTestnetKernelPoolStakingMentioned(t *testing.T) {

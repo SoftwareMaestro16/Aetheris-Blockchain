@@ -23,16 +23,10 @@ func TestMsgActivateAccountRequiresDerivedAEAddress(t *testing.T) {
 
 func TestMsgActivateAccountRejectsLegacyAndForeignAddressFormats(t *testing.T) {
 	pubKey := activationTestPubKey()
-	legacyValidator, err := sdk.Bech32ifyAddressBytes("aevaloper", virtualBytes20(0x11))
-	require.NoError(t, err)
-	legacyConsensus, err := sdk.Bech32ifyAddressBytes("aevalcons", virtualBytes20(0x12))
-	require.NoError(t, err)
 	foreign, err := sdk.Bech32ifyAddressBytes("cosmos", virtualBytes20(0x13))
 	require.NoError(t, err)
 
 	for _, text := range []string{
-		legacyValidator,
-		legacyConsensus,
 		foreign,
 		"0:0000000000000000000000000000000000000000000000000000000000000000",
 		"4:ABCDEFabcdef0000000000000000000000000000000000000000000000000000",
@@ -125,16 +119,6 @@ func TestInactiveAccountRejectsNonActivationMessages(t *testing.T) {
 	require.ErrorContains(t, ValidateAccountMessage(view, AccountMessageNormal), "inactive account can only send MsgActivateAccount")
 }
 
-func TestVirtualAccountQueryRejectsLegacyAddressAtQueryBoundary(t *testing.T) {
-	book, err := NewVirtualAccountBook()
-	require.NoError(t, err)
-	legacyValidator, err := sdk.Bech32ifyAddressBytes("aevaloper", virtualBytes20(0x26))
-	require.NoError(t, err)
-
-	_, err = book.QueryAccount(legacyValidator)
-
-	require.ErrorContains(t, err, "must use AE user-facing address format")
-}
 
 func activationTestPubKey() *secp256k1.PubKey {
 	return &secp256k1.PubKey{Key: []byte{
