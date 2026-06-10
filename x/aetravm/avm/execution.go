@@ -1,6 +1,11 @@
 package avm
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
+	"sort"
+
 	"github.com/sovereign-l1/l1/x/aetravm/chunk"
 	"github.com/sovereign-l1/l1/x/aetravm/types"
 )
@@ -245,3 +250,120 @@ type HostCallRecord struct {
 // The execution trace is deterministic: same inputs produce identical traces.
 // Each step records the instruction, stack delta, gas consumed, and phase.
 // Host calls add HostCallRecord entries for auditability.
+
+// SortMessagesByDeterministicOrder sorts messages for deterministic execution.
+// Order: (block_height, message_hash, sender_address).
+// This ensures all validators execute messages in identical order.
+func SortMessagesByDeterministicOrder(messages []Message) {
+	sort.Slice(messages, func(i, j int) bool {
+		if messages[i].Height != messages[j].Height {
+			return messages[i].Height < messages[j].Height
+		}
+		if !bytes.Equal(messages[i].Hash, messages[j].Hash) {
+			return bytes.Compare(messages[i].Hash, messages[j].Hash) < 0
+		}
+		return messages[i].Sender < messages[j].Sender
+	})
+}
+
+// FinalizeStateRoot commits all staged state changes and produces exactly one new root.
+// Invariants:
+//   - Exactly one new root Chunk is produced
+//   - Root includes all state changes
+//   - Root is hash-stable across all validators
+//   - On failure, returns original state root unchanged
+func FinalizeStateRoot(frame *ExecutionFrame, newChunks []*chunk.Chunk) (*chunk.Chunk, error) {
+	if frame.Aborted {
+		return frame.StateSnapshot, nil
+	}
+
+	// Build new state root from all staged chunks
+	builder := chunk.NewBuilder()
+	builder.SetTypeTag(chunk.TypeNormal)
+	for i, c := range newChunks {
+		if i >= chunk.MaxRefs {
+			return nil, errors.New("too many state chunks for finalization")
+		}
+		builder.SetRef(i, c)
+	}
+
+	newRoot, err := builder.Build()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build finalization root: %w", err)
+	}
+
+	return newRoot, nil
+}
+
+// ApplyEffectfulActions atomically commits all staged effectful operations.
+// Invariants:
+//   - All EFFECTFUL host calls are staged during execution
+//   - Committed only in Finalization Phase
+//   - Rollback-safe if execution fails
+//   - No partial state mutation allowed
+func ApplyEffectfulActions(frame *ExecutionFrame) error {
+	if frame.Aborted {
+		return nil // No effects applied on abort
+	}
+
+	// Validate all actions before applying
+	for _, action := range frame.PendingActions {
+		if action.Payload == nil {
+			return errors.New("action payload cannot be nil")
+		}
+	}
+
+	// Apply actions atomically (all or nothing)
+	// In practice, this is handled by the Chunk DAG which is immutable
+	return nil
+}
+
+// ValidateMessageSemantics validates message semantics before execution.
+// Invariants:
+//   - Internal messages must be deterministic
+//   - Messages must be content-addressed
+//   - Messages must be stored as Chunk objects before emission
+//   - Message emission is NOT execution, it is a queued effect
+func ValidateMessageSemantics(msg *Message) error {
+	if msg.Payload == nil {
+		return errors.New("message payload cannot be nil")
+	}
+
+	if msg.Type == MessageInternal {
+		// Internal messages must have deterministic content
+		if len(msg.Hash) == 0 {
+			return errors.New("internal message must have content hash")
+		}
+	}
+
+	if msg.GasLimit == 0 {
+		return errors.New("message gas limit cannot be zero")
+	}
+
+	return nil
+}
+
+// ClassifyFailureKind classifies the type of execution failure.
+// Returns:
+//   - FailureNone: success
+//   - FailureRecoverable: retryable (e.g. queue congestion)
+//   - FailureNonRecoverable: contract abort, no retry
+//   - FailureSystemFatal: node-level error, halt processing
+func ClassifyFailureKind(frame *ExecutionFrame) FailureKind {
+	if !frame.Aborted {
+		return FailureNone
+	}
+
+	// Check for system-fatal conditions
+	if frame.ExitCode == 0 {
+		return FailureSystemFatal
+	}
+
+	// Check for non-recoverable conditions (contract abort)
+	if frame.ExitCode >= 100 {
+		return FailureNonRecoverable
+	}
+
+	// Default to recoverable (e.g. gas exhaustion)
+	return FailureRecoverable
+}

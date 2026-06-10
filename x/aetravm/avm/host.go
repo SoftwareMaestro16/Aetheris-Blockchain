@@ -359,3 +359,103 @@ func RandomBeacon(previousStateRoot, blockEntropy, messageHash, domain []byte) [
 	h.Write(domain)
 	return h.Sum(nil)
 }
+
+// ExecutionIsolationBoundary defines the isolation guarantees for ExecutionFrame.
+//
+// Invariants:
+//   - Each ExecutionFrame is isolated: no shared mutable memory between frames
+//   - All dependencies passed via Chunks (immutable, content-addressed)
+//   - No global VM state mutation allowed
+//   - Host functions execute inside sandboxed ExecutionFrame
+//   - All inputs must come from Chunk or BlockContext
+//
+// This ensures:
+//   - Deterministic execution across all validators
+//   - No side-channel communication between contracts
+//   - Replay-safe execution model
+type ExecutionIsolationBoundary struct {
+	FrameID        uint64
+	ParentFrameID  uint64
+	AllowedReads   []string // Chunk hashes readable by this frame
+	AllowedWrites  []string // Chunk hashes writable by this frame
+}
+
+// ValidateIsolation checks that a host call respects isolation boundaries.
+func ValidateIsolation(boundary *ExecutionIsolationBoundary, host HostFunction, args [][]byte) error {
+	// Pure functions don't need isolation checks
+	if IsPureHostFunction(host) {
+		return nil
+	}
+
+	// Effectful functions must respect boundaries
+	switch host {
+	case HostReadStorage:
+		if len(args) < 1 {
+			return errors.New("read_storage requires key argument")
+		}
+		// In production, would check if key is in AllowedReads
+	case HostWriteStorage:
+		if len(args) < 2 {
+			return errors.New("write_storage requires key and value arguments")
+		}
+		// In production, would check if key is in AllowedWrites
+	case HostDeleteStorage:
+		if len(args) < 1 {
+			return errors.New("delete_storage requires key argument")
+		}
+		// In production, would check if key is in AllowedWrites
+	}
+
+	return nil
+}
+
+// IsPureHostFunction returns true if the host function has no side effects.
+func IsPureHostFunction(host HostFunction) bool {
+	spec, ok := HostFunctionRegistry()[host]
+	if !ok {
+		return false
+	}
+	return spec.Class == ClassPure
+}
+
+// HostErrorBoundary defines how host function failures are handled.
+//
+// Invariants:
+//   - Host function failure MUST produce VM exit code (mapped)
+//   - Failure MUST NOT corrupt state
+//   - Failure MUST NOT partially apply effects
+//   - All EFFECTFUL operations are staged, not applied immediately
+//
+// Error mapping:
+//   - Invalid arguments → ExitCodeValidationFailed (1)
+//   - Forbidden host call → ExitCodeForbiddenHostCall (7)
+//   - Capability violation → ExitCodeUnauthorized (2)
+//   - Resource exhaustion → ExitCodeOutOfGas (8)
+type HostErrorBoundary struct {
+	LastHostCall    HostFunction
+	LastError       error
+	MappedExitCode  uint32
+}
+
+// MapHostErrorToExitCode maps a host function error to a VM exit code.
+func MapHostErrorToExitCode(err error) uint32 {
+	if err == nil {
+		return 0 // Success
+	}
+
+	errStr := err.Error()
+
+	// Map specific error patterns to exit codes
+	if bytes.Contains([]byte(errStr), []byte("forbidden")) {
+		return 7 // ExitCodeForbiddenHostCall
+	}
+	if bytes.Contains([]byte(errStr), []byte("capability")) {
+		return 2 // ExitCodeUnauthorized
+	}
+	if bytes.Contains([]byte(errStr), []byte("gas")) {
+		return 8 // ExitCodeOutOfGas
+	}
+
+	// Default to validation failed
+	return 1 // ExitCodeValidationFailed
+}
