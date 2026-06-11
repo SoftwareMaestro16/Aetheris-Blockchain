@@ -14,9 +14,6 @@ const (
 	MetricTxLatency                    = "aetra_tx_latency_seconds"
 	MetricModuleErrors                 = "aetra_module_errors_total"
 	MetricFailedTxReasons              = "aetra_failed_tx_reasons_total"
-	MetricDexPoolCount                 = "aetra_dex_pool_count"
-	MetricDexLiquidityNaet             = "aetra_dex_liquidity_naet"
-	MetricDexSwaps                     = "aetra_dex_swaps_total"
 	MetricFeesAccepted                 = "aetra_fees_accepted_total"
 	MetricFeesRejected                 = "aetra_fees_rejected_total"
 	MetricEconomyInflationBps          = "aetra_economy_inflation_bps"
@@ -91,9 +88,6 @@ var Definitions = []Definition{
 	{MetricTxLatency, "Approximate per-transaction FinalizeBlock processing latency.", kindSummary},
 	{MetricModuleErrors, "Custom module errors counted with bounded labels.", kindCounter},
 	{MetricFailedTxReasons, "Failed transaction reasons counted with bounded reason labels.", kindCounter},
-	{MetricDexPoolCount, "DEX pools observed by this process since startup.", kindGauge},
-	{MetricDexLiquidityNaet, "DEX native naet liquidity observed by this process since startup.", kindGauge},
-	{MetricDexSwaps, "Successful DEX swaps observed by this process.", kindCounter},
 	{MetricFeesAccepted, "Transactions whose fees passed custom fee policy.", kindCounter},
 	{MetricFeesRejected, "Transactions rejected by custom fee policy.", kindCounter},
 	{MetricEconomyInflationBps, "Last economic controller inflation output in basis points.", kindGauge},

@@ -24,18 +24,6 @@ func RecordModuleError(module, action, reason string) {
 	IncCounter(MetricModuleErrors, Labels{"module": module, "action": action, "reason": reason}, 1)
 }
 
-func RecordDexPoolCreated() {
-	AddGauge(MetricDexPoolCount, nil, 1)
-}
-
-func RecordDexLiquidityNaetDelta(delta int64) {
-	AddGauge(MetricDexLiquidityNaet, Labels{"denom": "naet"}, float64(delta))
-}
-
-func RecordDexSwap() {
-	IncCounter(MetricDexSwaps, Labels{"result": "success"}, 1)
-}
-
 func RecordFeeAccepted() {
 	IncCounter(MetricFeesAccepted, Labels{"result": "accepted"}, 1)
 }

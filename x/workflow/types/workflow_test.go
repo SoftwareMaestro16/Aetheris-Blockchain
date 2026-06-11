@@ -42,7 +42,7 @@ func TestValidateWorkflowBounds(t *testing.T) {
 
 	err = ValidateStep(Step{
 		ID:      "oversized",
-		Kind:    StepKindTokenMintWalletDeploy,
+		Kind:    StepKindContractDeployFirstMsg,
 		Payload: bytes.Repeat([]byte{1}, MaxWorkflowPayloadBytes+1),
 	})
 	require.ErrorContains(t, err, "payload")

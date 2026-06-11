@@ -502,7 +502,7 @@ Current implementation direction:
 - AVM modules, docs, smoke tests, and malicious-contract tests are the canonical launch path;
 - CosmWasm is optional compatibility research only and remains disabled unless an explicit governance/feature gate enables it after security, gas, storage-rent, and export/import review;
 - default app wiring must not add the CosmWasm store key, genesis state, Msg service, Query service, or CLI surface;
-- token, NFT, and DEX behavior remains contract-routed under the AVM-first policy and must not be reintroduced as native asset modules.
+- asset-backed behavior remains contract-routed under the AVM-first policy and must not be reintroduced as native asset modules.
 
 Reasons:
 

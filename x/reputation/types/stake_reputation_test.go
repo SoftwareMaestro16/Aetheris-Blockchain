@@ -213,8 +213,6 @@ func TestStakeReputationExportImportPreservesAccumulator(t *testing.T) {
 
 func TestStakeReputationCannotBeMintedByMetadataOrTransferredAsset(t *testing.T) {
 	record := NewStakeReputationRecord(mustParseAE(t, aeAddr(0x40)))
-	require.ErrorContains(t, ValidateStakeReputationTransfer(record, "token"), "cannot be transferred")
-	require.ErrorContains(t, ValidateStakeReputationTransfer(record, "nft"), "cannot be transferred")
 	require.ErrorContains(t, ValidateStakeReputationTransfer(record, "domain"), "cannot be transferred")
 
 	state := reputationStateForStakeTest(t)

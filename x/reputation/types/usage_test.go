@@ -52,15 +52,10 @@ func TestValidateAccessOperationThresholdOrDeposit(t *testing.T) {
 	low := ApplyComputedScore(ReputationRecord{Account: addr(1), AgeScore: 20})
 	normal := ApplyComputedScore(ReputationRecord{Account: addr(2), AgeScore: 50})
 
-	require.ErrorContains(t, ValidateAccessOperation(OperationTokenCreation, low, sdkmath.ZeroInt(), policy), "requires reputation")
-	require.NoError(t, ValidateAccessOperation(OperationTokenCreation, low, policy.TokenCreationDeposit, policy))
-	require.NoError(t, ValidateAccessOperation(OperationTokenCreation, normal, sdkmath.ZeroInt(), policy))
-
 	require.ErrorContains(t, ValidateAccessOperation(OperationContractDeployment, low, sdkmath.ZeroInt(), policy), "requires reputation")
 	require.NoError(t, ValidateAccessOperation(OperationContractDeployment, low, policy.ContractDeployDeposit, policy))
+	require.NoError(t, ValidateAccessOperation(OperationContractDeployment, normal, sdkmath.ZeroInt(), policy))
 
-	require.ErrorContains(t, ValidateAccessOperation(OperationDEXPoolCreation, low, sdkmath.ZeroInt(), policy), "requires reputation")
-	require.NoError(t, ValidateAccessOperation(OperationDEXPoolCreation, low, policy.DEXPoolCreationDeposit, policy))
 	require.ErrorContains(t, ValidateAccessOperation("unknown", normal, sdkmath.ZeroInt(), policy), "unknown")
 	require.False(t, IsDirectReputationPurchaseAllowed())
 }

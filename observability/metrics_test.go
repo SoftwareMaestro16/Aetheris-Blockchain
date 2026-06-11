@@ -25,9 +25,6 @@ func TestMetricNamesSnapshot(t *testing.T) {
 		MetricTxLatency,
 		MetricModuleErrors,
 		MetricFailedTxReasons,
-		MetricDexPoolCount,
-		MetricDexLiquidityNaet,
-		MetricDexSwaps,
 		MetricFeesAccepted,
 		MetricFeesRejected,
 		MetricEconomyInflationBps,
@@ -148,11 +145,8 @@ func (r *Registry) RecordTestSamples() {
 	r.Observe(MetricFinalityLatencySeconds, Labels{"phase": "commit"}, 6)
 	r.Observe(MetricBlockProcessing, Labels{"result": "finalized"}, 0.01)
 	r.Observe(MetricTxLatency, Labels{"result": "finalized"}, 0.001)
-	r.IncCounter(MetricModuleErrors, Labels{"module": "dex", "action": "swap", "reason": "invalid"}, 1)
+	r.IncCounter(MetricModuleErrors, Labels{"module": "transfer", "action": "send", "reason": "invalid"}, 1)
 	r.IncCounter(MetricFailedTxReasons, Labels{"reason": "invalid_fee"}, 1)
-	r.AddGauge(MetricDexPoolCount, nil, 1)
-	r.AddGauge(MetricDexLiquidityNaet, Labels{"denom": "naet"}, 100)
-	r.IncCounter(MetricDexSwaps, Labels{"result": "success"}, 1)
 	r.IncCounter(MetricFeesAccepted, Labels{"result": "accepted"}, 1)
 	r.IncCounter(MetricFeesRejected, Labels{"reason": "invalid_fee"}, 1)
 	r.SetGauge(MetricEconomyInflationBps, nil, 300)

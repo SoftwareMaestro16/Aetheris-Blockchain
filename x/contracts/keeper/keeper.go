@@ -1167,8 +1167,8 @@ func newContractReceipt(contractAddress, actor, operation string, exitCode uint3
 }
 
 func (k Keeper) AssetOwner(req types.QueryAssetOwnerRequest) (types.QueryAssetOwnerResponse, error) {
-	if req.AssetType != types.AssetTypeToken && req.AssetType != types.AssetTypeNFT && req.AssetType != types.AssetTypeDEX {
-		return types.QueryAssetOwnerResponse{}, fmt.Errorf("unsupported contract asset type %q", req.AssetType)
+	if req.AssetType == "" {
+		return types.QueryAssetOwnerResponse{}, fmt.Errorf("contract asset type must not be empty")
 	}
 	if err := types.ValidateUserFacingAEAddress("asset contract address", req.ContractAddressUser); err != nil {
 		return types.QueryAssetOwnerResponse{}, err

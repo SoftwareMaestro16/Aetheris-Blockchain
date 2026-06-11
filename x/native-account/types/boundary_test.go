@@ -28,8 +28,7 @@ func TestDefaultBoundariesValidateAndDeclareNativeAccountOwner(t *testing.T) {
 	require.Contains(t, native.OwnedState, "account/storage")
 	require.Contains(t, native.RejectedWrites, "private keys")
 	require.Contains(t, native.RejectedWrites, "seed phrases")
-	require.Contains(t, native.RejectedWrites, "token balances")
-	require.Contains(t, native.RejectedWrites, "NFT inventories")
+	require.Contains(t, native.RejectedWrites, "private keys")
 }
 
 func TestRejectedCrossModuleWritesCoverSecurityBoundaries(t *testing.T) {
@@ -44,7 +43,7 @@ func TestRejectedCrossModuleWritesCoverSecurityBoundaries(t *testing.T) {
 	require.False(t, IsRejectedCrossModuleWrite(ModulePath, "x/reputation", "reputation id reference"))
 }
 
-func TestTokenNFTAndDEXBehaviorRemainContractRouted(t *testing.T) {
+func TestDefaultAssetRoutesPassValidation(t *testing.T) {
 	routes := DefaultAssetRoutes()
 
 	require.NoError(t, ValidateAssetRoutes(routes))
@@ -61,5 +60,5 @@ func TestBoundaryManifestIsDeterministic(t *testing.T) {
 	require.NotEmpty(t, lines)
 
 	hash := sha256.Sum256([]byte(strings.Join(lines, "\n")))
-	require.Equal(t, "7521daf0575cebf63c6992ea6720259e299713f11dfbcb6f729a498d0e32571a", hex.EncodeToString(hash[:]))
+	require.Equal(t, "a5edcd1809b0873772833b4968666eb77dee250f850bd0c240e4159f46478d74", hex.EncodeToString(hash[:]))
 }

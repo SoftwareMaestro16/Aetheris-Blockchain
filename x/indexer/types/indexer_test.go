@@ -6,13 +6,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProjectionSearchesStateEventsMemoDomainTokenAndNFT(t *testing.T) {
+func TestProjectionSearchesStateEventsMemoAndDomain(t *testing.T) {
 	records := []Record{
-		record(KindNFT, "nft:1", 6, Field{Key: "owner", Value: "alice"}),
 		record(KindDomain, "alice.aet", 5, Field{Key: "domain", Value: "alice.aet"}),
 		record(KindMemo, "tx:1", 3, Field{Key: "memo", Value: "hello"}),
 		record(KindEvent, "event:transfer", 2, Field{Key: "event", Value: "transfer"}),
-		record(KindToken, "token:aft", 4, Field{Key: "symbol", Value: "USDTA"}),
 		record(KindState, "contract:counter", 1, Field{Key: "contract", Value: "counter"}),
 	}
 	projection, err := BuildProjection(records)
@@ -25,10 +23,6 @@ func TestProjectionSearchesStateEventsMemoDomainTokenAndNFT(t *testing.T) {
 	domain, err := projection.Search(Query{Key: "alice.aet", Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, KindDomain, domain[0].Kind)
-
-	token, err := projection.Search(Query{Field: Field{Key: "symbol", Value: "USDTA"}, Limit: 10})
-	require.NoError(t, err)
-	require.Equal(t, KindToken, token[0].Kind)
 }
 
 func TestIndexerSearchIsDeterministicAndBounded(t *testing.T) {

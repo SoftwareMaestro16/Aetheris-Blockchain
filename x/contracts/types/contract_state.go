@@ -17,10 +17,6 @@ const (
 	ContractStatusArchived      = "archived"
 	ContractStatusDeleted       = "deleted"
 
-	AssetTypeToken = "token"
-	AssetTypeNFT   = "nft"
-	AssetTypeDEX   = "dex"
-
 	NativeStakingCapability = "native_staking_injection"
 
 	ErrUnauthorized    = "contracts_unauthorized"
@@ -526,8 +522,8 @@ func (m InternalMessage) Validate() error {
 }
 
 func (a AssetOwnershipRecord) Validate() error {
-	if a.AssetType != AssetTypeToken && a.AssetType != AssetTypeNFT && a.AssetType != AssetTypeDEX {
-		return fmt.Errorf("unsupported contract asset type %q", a.AssetType)
+	if strings.TrimSpace(a.AssetType) == "" {
+		return fmt.Errorf("contract asset type must not be empty")
 	}
 	if err := ValidateUserFacingAEAddress("asset contract address", a.ContractAddressUser); err != nil {
 		return err
@@ -537,10 +533,6 @@ func (a AssetOwnershipRecord) Validate() error {
 	}
 	if strings.TrimSpace(a.AssetID) == "" {
 		return errors.New("asset id is required")
-	}
-	assetID := strings.ToLower(strings.TrimSpace(a.AssetID))
-	if strings.HasPrefix(assetID, "stake_reputation") || strings.HasPrefix(assetID, "reputation/stake") {
-		return errors.New("stake reputation is account-owned and cannot be transferred as token or NFT")
 	}
 	return nil
 }

@@ -38,7 +38,6 @@ const (
 	StoreV2BenchContractStorageReadWrite StoreV2BenchmarkOperation = "contract_storage_read_write"
 	StoreV2BenchMessageEnqueueDequeue    StoreV2BenchmarkOperation = "message_enqueue_dequeue"
 	StoreV2BenchPaymentChannelSettle     StoreV2BenchmarkOperation = "payment_channel_settle"
-	StoreV2BenchDEXPoolUpdate            StoreV2BenchmarkOperation = "dex_pool_update"
 	StoreV2BenchProofGeneration          StoreV2BenchmarkOperation = "proof_generation"
 )
 
@@ -460,7 +459,6 @@ func RequiredStoreV2Benchmarks() []StoreV2BenchmarkOperation {
 		StoreV2BenchContractStorageReadWrite,
 		StoreV2BenchMessageEnqueueDequeue,
 		StoreV2BenchPaymentChannelSettle,
-		StoreV2BenchDEXPoolUpdate,
 		StoreV2BenchProofGeneration,
 	}
 }

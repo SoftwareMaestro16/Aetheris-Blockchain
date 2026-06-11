@@ -36,7 +36,6 @@ const (
 	RequiredSimulationIdentityUpdateBursts    = "identity_resolver_update_bursts"
 	RequiredSimulationContractAsyncChains     = "contract_async_call_chains"
 	RequiredSimulationPaymentTimeoutBounce    = "payment_route_timeout_and_bounce"
-	RequiredSimulationDEXShardConflict        = "dex_pool_updates_under_shard_conflict"
 	RequiredSimulationCrossZoneCongestion     = "cross_zone_congestion"
 	RequiredSimulationShardSplitLoad          = "shard_split_under_sustained_load"
 	RequiredSimulationAdaptiveSyncQueues      = "node_recovery_adaptivesync_active_message_queues"
@@ -75,7 +74,6 @@ var requiredSimulationCoverage = map[string]struct{}{
 	RequiredSimulationIdentityUpdateBursts:    {},
 	RequiredSimulationContractAsyncChains:     {},
 	RequiredSimulationPaymentTimeoutBounce:    {},
-	RequiredSimulationDEXShardConflict:        {},
 	RequiredSimulationCrossZoneCongestion:     {},
 	RequiredSimulationShardSplitLoad:          {},
 	RequiredSimulationAdaptiveSyncQueues:      {},

@@ -20,8 +20,6 @@ type StepKind string
 const (
 	StepKindResolverPayment           StepKind = "resolver_payment"
 	StepKindDomainAuctionFinalization StepKind = "domain_auction_finalization"
-	StepKindTokenMintWalletDeploy     StepKind = "token_mint_wallet_deploy"
-	StepKindNFTMintMetadataAttach     StepKind = "nft_mint_metadata_attach"
 	StepKindContractDeployFirstMsg    StepKind = "contract_deploy_first_message"
 )
 
@@ -84,8 +82,6 @@ func IsStepKind(kind StepKind) bool {
 	switch kind {
 	case StepKindResolverPayment,
 		StepKindDomainAuctionFinalization,
-		StepKindTokenMintWalletDeploy,
-		StepKindNFTMintMetadataAttach,
 		StepKindContractDeployFirstMsg:
 		return true
 	default:

@@ -59,7 +59,7 @@ func TestNativeAccountGuardrailsKeepSDKAndCustomModuleWiring(t *testing.T) {
 	require.NoError(t, app.ValidateAetraCoreWiringGate())
 }
 
-func TestNativeAccountGuardrailsDoNotRegisterNativeTokenNFTOrDEXModules(t *testing.T) {
+func TestNativeAccountGuardrailsDoNotRegisterNativeAssetModules(t *testing.T) {
 	app, _ := setup(true, 5)
 
 	moduleNames := make([]string, 0, len(app.ModuleManager.Modules))

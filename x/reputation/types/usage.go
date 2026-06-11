@@ -8,9 +8,7 @@ import (
 )
 
 const (
-	OperationTokenCreation      = "token_creation"
 	OperationContractDeployment = "contract_deployment"
-	OperationDEXPoolCreation    = "dex_pool_creation"
 	OperationDomainAuctionBid   = "domain_auction_bid"
 
 	DefaultMemoByteCost    = uint64(1)
@@ -30,12 +28,8 @@ const (
 )
 
 type UsagePolicy struct {
-	TokenCreationMinScore      uint8
-	TokenCreationDeposit       sdkmath.Int
 	ContractDeployMinScore     uint8
 	ContractDeployDeposit      sdkmath.Int
-	DEXPoolCreationMinScore    uint8
-	DEXPoolCreationDeposit     sdkmath.Int
 	DomainAuctionMaxBidsByUser uint32
 	BaseMemoByteCost           uint64
 	BaseStorageByteCost        uint64
@@ -58,12 +52,8 @@ type PriorityKey struct {
 
 func DefaultUsagePolicy() UsagePolicy {
 	return UsagePolicy{
-		TokenCreationMinScore:      50,
-		TokenCreationDeposit:       sdkmath.NewInt(1_000_000_000),
 		ContractDeployMinScore:     50,
 		ContractDeployDeposit:      sdkmath.NewInt(10_000_000_000),
-		DEXPoolCreationMinScore:    50,
-		DEXPoolCreationDeposit:     sdkmath.NewInt(10_000_000_000),
 		DomainAuctionMaxBidsByUser: 5,
 		BaseMemoByteCost:           DefaultMemoByteCost,
 		BaseStorageByteCost:        DefaultStorageByteCost,
@@ -180,12 +170,8 @@ func ApplyContractExecutionOutcome(record ReputationRecord, success bool, epoch 
 
 func accessRequirement(operation string, policy UsagePolicy) (uint8, sdkmath.Int, error) {
 	switch operation {
-	case OperationTokenCreation:
-		return policy.TokenCreationMinScore, policy.TokenCreationDeposit, nil
 	case OperationContractDeployment:
 		return policy.ContractDeployMinScore, policy.ContractDeployDeposit, nil
-	case OperationDEXPoolCreation:
-		return policy.DEXPoolCreationMinScore, policy.DEXPoolCreationDeposit, nil
 	case OperationDomainAuctionBid:
 		return 0, sdkmath.ZeroInt(), nil
 	default:

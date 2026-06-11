@@ -114,7 +114,6 @@ func validRequiredTestCoverageInput() RequiredTestCoverageInput {
 			requiredCoverage(RequiredSimulationIdentityUpdateBursts, RequiredCoverageSimulation, "identity_resolver"),
 			requiredCoverage(RequiredSimulationContractAsyncChains, RequiredCoverageSimulation, "contract_async"),
 			requiredCoverage(RequiredSimulationPaymentTimeoutBounce, RequiredCoverageSimulation, "payment_routes"),
-			requiredCoverage(RequiredSimulationDEXShardConflict, RequiredCoverageSimulation, "dex_shards"),
 			requiredCoverage(RequiredSimulationCrossZoneCongestion, RequiredCoverageSimulation, "cross_zone_congestion"),
 			requiredCoverage(RequiredSimulationShardSplitLoad, RequiredCoverageSimulation, "shard_split_load"),
 			requiredCoverage(RequiredSimulationAdaptiveSyncQueues, RequiredCoverageSimulation, "adaptive_sync_queues"),

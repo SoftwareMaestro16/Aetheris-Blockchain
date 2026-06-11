@@ -12,8 +12,6 @@ const (
 	KindEvent  = "event"
 	KindMemo   = "memo"
 	KindDomain = "domain"
-	KindToken  = "token"
-	KindNFT    = "nft"
 )
 
 type Field struct {
@@ -144,7 +142,7 @@ func ConsensusRequired() bool {
 
 func IsKind(kind string) bool {
 	switch kind {
-	case KindState, KindEvent, KindMemo, KindDomain, KindToken, KindNFT:
+	case KindState, KindEvent, KindMemo, KindDomain:
 		return true
 	default:
 		return false

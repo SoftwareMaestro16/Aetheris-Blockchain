@@ -12,22 +12,16 @@ import (
 
 const (
 	AssetTypeNative   = "native"
-	AssetTypeToken    = "token"
-	AssetTypeNFT      = "nft"
 	AssetTypeSBT      = "sbt"
 	AssetTypeContract = "contract"
 	AssetTypeDomain   = "domain"
-	AssetTypeDEX      = "dex"
 
 	EventTypeBankTransfer     = "bank_transfer"
 	EventTypeResolverPayment  = "resolver_payment"
-	EventTypeTokenTransfer    = "token_transfer"
-	EventTypeNFTTransfer      = "nft_transfer"
 	EventTypeSBTProofRevoke   = "sbt_proof_revoke"
 	EventTypeContractCall     = "contract_call"
 	EventTypeDomainAuctionBid = "domain_auction_bid"
 	EventTypeDomainRenewal    = "domain_renewal"
-	EventTypeDEXSwapLiquidity = "dex_swap_liquidity"
 	EventTypeMemoAttached     = "memo_attached"
 
 	StoragePolicyFullMemo        = "full_memo_onchain"
@@ -210,7 +204,7 @@ func validateMemoRecordBase(record MemoStoreRecord) error {
 
 func IsAssetType(assetType string) bool {
 	switch assetType {
-	case AssetTypeNative, AssetTypeToken, AssetTypeNFT, AssetTypeSBT, AssetTypeContract, AssetTypeDomain, AssetTypeDEX:
+	case AssetTypeNative, AssetTypeSBT, AssetTypeContract, AssetTypeDomain:
 		return true
 	default:
 		return false
@@ -221,13 +215,10 @@ func IsEventType(eventType string) bool {
 	switch eventType {
 	case EventTypeBankTransfer,
 		EventTypeResolverPayment,
-		EventTypeTokenTransfer,
-		EventTypeNFTTransfer,
 		EventTypeSBTProofRevoke,
 		EventTypeContractCall,
 		EventTypeDomainAuctionBid,
 		EventTypeDomainRenewal,
-		EventTypeDEXSwapLiquidity,
 		EventTypeMemoAttached:
 		return true
 	default:

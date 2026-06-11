@@ -97,7 +97,7 @@ func PlanIdentityDataFlow(state IdentityState, request IdentityDataFlowRequest, 
 		}
 		flow.AccessSet = accessSet
 		flow.StoreWrites = writes
-		flow.EventTypes = []string{"identity_domain_registered", "identity_domain_nft_minted"}
+		flow.EventTypes = []string{"identity_domain_registered"}
 	case IdentityOperationRenew:
 		domain, nft, err := ValidateRegistryNFTAuthority(state, normalized, height)
 		if err != nil {

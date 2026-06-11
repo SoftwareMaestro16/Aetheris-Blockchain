@@ -33,13 +33,10 @@ const (
 
 	RouteBankTransfer    = "bank_transfer"
 	RouteResolverPayment = "resolver_payment"
-	RouteTokenTransfer   = "token_transfer"
-	RouteNFTTransfer     = "nft_transfer"
 	RouteSBTProofRevoke  = "sbt_proof_revoke"
 	RouteContractCall    = "contract_call"
 	RouteDomainAuction   = "domain_auction_bid"
 	RouteDomainRenewal   = "domain_renewal"
-	RouteDEXAction       = "dex_action"
 
 	VMRouteNone     = ""
 	VMRouteAVM      = "avm"
@@ -253,13 +250,10 @@ func IsExecutionRoute(route string) bool {
 	switch route {
 	case RouteBankTransfer,
 		RouteResolverPayment,
-		RouteTokenTransfer,
-		RouteNFTTransfer,
 		RouteSBTProofRevoke,
 		RouteContractCall,
 		RouteDomainAuction,
-		RouteDomainRenewal,
-		RouteDEXAction:
+		RouteDomainRenewal:
 		return true
 	default:
 		return false

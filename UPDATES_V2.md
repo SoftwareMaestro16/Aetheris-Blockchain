@@ -5260,6 +5260,8 @@ Done:
   never accidental 20-byte address padding, while existing state compatibility is
   handled explicitly.
 
+  ......................................
+
 ### AWCE-1.3 - Account Lifecycle Model
 
 Account statuses:
@@ -5445,6 +5447,16 @@ Tests:
 Done:
 
 - Aetra account abstraction is policy-based without breaking wallet identity.
+
+
+
+
+
+
+
+
+
+
 
 ### AWCE-1.7 - Execution And Message Rules
 

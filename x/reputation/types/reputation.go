@@ -920,8 +920,8 @@ func EffectivePoolStakeExposure(params ReputationParams, exposure StakePoolExpos
 
 func ValidateStakeReputationTransfer(record StakeReputationRecord, assetKind string) error {
 	switch strings.TrimSpace(assetKind) {
-	case "token", "nft", "domain":
-		return errors.New("stake reputation is account-owned and cannot be transferred as token, NFT, or domain ownership")
+	case "domain":
+		return errors.New("stake reputation is account-owned and cannot be transferred as domain ownership")
 	default:
 		if !record.NonTransferable {
 			return errors.New("stake reputation record must be marked non-transferable")

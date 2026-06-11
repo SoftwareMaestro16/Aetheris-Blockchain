@@ -1455,7 +1455,6 @@ func validateStoreV2Benchmarks(checks []StoreV2BenchmarkCheck) error {
 		"contract_storage_read_write":   {},
 		"message_enqueue_dequeue":       {},
 		"payment_channel_settle":        {},
-		"dex_pool_update":               {},
 		"proof_generation":              {},
 	}
 	for _, check := range checks {

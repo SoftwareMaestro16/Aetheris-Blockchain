@@ -424,7 +424,6 @@ func validMigrationPhase7Input() MigrationPhase7Input {
 			storeV2Benchmark("contract_storage_read_write"),
 			storeV2Benchmark("message_enqueue_dequeue"),
 			storeV2Benchmark("payment_channel_settle"),
-			storeV2Benchmark("dex_pool_update"),
 			storeV2Benchmark("proof_generation"),
 		},
 		IndependentExecutionScalesParallel:  true,
