@@ -273,10 +273,8 @@ type State struct {
 	PoolValidatorAllocations    []PoolValidatorAllocation
 	PoolUnbondingRequests       []PoolUnbondingRequest
 	PoolRewardIndexes           []PoolRewardIndex
-	RewardClaims                []RewardClaim
-	StakeReputationAccumulators []StakeReputationAccumulator
-	IdentityReputationRecords   []IdentityReputationRecord
-	EpochStakingSnapshots       []EpochStakingSnapshot
+	RewardClaims              []RewardClaim
+	EpochStakingSnapshots     []EpochStakingSnapshot
 	ValidatorSetSnapshots       []ValidatorSetSnapshot
 	ValidatorSlashEvents        []ValidatorSlashEvent
 }
@@ -439,12 +437,12 @@ type MsgDepositToOfficialLiquidStaking struct {
 }
 
 type MsgDepositToStakingPool struct {
-	PoolID           string `protobuf:"bytes,1,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
-	WalletAddress    string `protobuf:"bytes,2,opt,name=wallet_address,json=walletAddress,proto3" json:"wallet_address,omitempty"`
+	PoolID           string `protobuf:"bytes,1,opt,name=pool_id,json=poolid,proto3" json:"pool_id,omitempty"`
+	WalletAddress    string `protobuf:"bytes,2,opt,name=wallet_address,json=walletaddress,proto3" json:"wallet_address,omitempty"`
 	Amount           uint64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
 	Height           uint64 `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
-	ValidatorAddress string `protobuf:"bytes,5,opt,name=validator_address,json=validatorAddress,proto3" json:"validator_address,omitempty"`
-	OfficialContract string `protobuf:"bytes,6,opt,name=official_contract,json=officialContract,proto3" json:"official_contract,omitempty"`
+	ReservedRouting   string `protobuf:"bytes,5,opt,name=reserved_routing,json=reservedRouting,proto3" json:"reserved_routing,omitempty"`
+	OfficialContract string `protobuf:"bytes,6,opt,name=official_contract,json=officialcontract,proto3" json:"official_contract,omitempty"`
 }
 
 type MsgDelegateToValidator struct {
@@ -673,27 +671,25 @@ type QueryPoolAllocationsResponse struct {
 	Allocations []ValidatorRewardAllocation `protobuf:"bytes,1,rep,name=allocations,proto3" json:"allocations,omitempty"`
 }
 
+// Deprecated: QueryStakeReputationRequest is retained for proto compatibility.
+// Wallet-facing stake reputation queries are removed. Use x/reputation instead.
 type QueryStakeReputationRequest struct {
 	Account string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
 }
 
+// Deprecated: QueryStakeReputationResponse is retained for proto compatibility.
 type QueryStakeReputationResponse struct {
-	Accumulator StakeReputationAccumulator `protobuf:"bytes,1,opt,name=accumulator,proto3" json:"accumulator"`
-	Found       bool                       `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	Found bool `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
 }
 
+// Deprecated: QueryAccountReputationRequest is retained for proto compatibility.
 type QueryAccountReputationRequest struct {
 	Account string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
 }
 
+// Deprecated: QueryAccountReputationResponse is retained for proto compatibility.
 type QueryAccountReputationResponse struct {
-	Account                string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
-	ReputationScore        uint64 `protobuf:"varint,2,opt,name=reputation_score,json=reputationScore,proto3" json:"reputation_score,omitempty"`
-	StakeWeightedSeconds   uint64 `protobuf:"varint,3,opt,name=stake_weighted_seconds,json=stakeWeightedSeconds,proto3" json:"stake_weighted_seconds,omitempty"`
-	LastUpdatedHeight      uint64 `protobuf:"varint,4,opt,name=last_updated_height,json=lastUpdatedHeight,proto3" json:"last_updated_height,omitempty"`
-	HasStakeReputation     bool   `protobuf:"varint,5,opt,name=has_stake_reputation,json=hasStakeReputation,proto3" json:"has_stake_reputation,omitempty"`
-	AccumulatorStateKey    string `protobuf:"bytes,6,opt,name=accumulator_state_key,json=accumulatorStateKey,proto3" json:"accumulator_state_key,omitempty"`
-	NonTransferableByToken bool   `protobuf:"varint,7,opt,name=non_transferable_by_token,json=nonTransferableByToken,proto3" json:"non_transferable_by_token,omitempty"`
+	Account string `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
 }
 
 type QueryStakingRewardsRequest struct {
@@ -1098,9 +1094,21 @@ func (p Params) AllocationScore(candidate ValidatorPolicyCandidate) uint64 {
 }
 
 func (p Params) ComputeValidatorScoreV1(candidate ValidatorPolicyCandidate) (ValidatorScore, error) {
+	uptimeScoreBps := candidate.UptimeBps
+	if candidate.UptimeWindow > 0 && candidate.MissedBlocks > 0 {
+		if candidate.MissedBlocks > candidate.UptimeWindow {
+			return ValidatorScore{}, errors.New("missed blocks exceed uptime window")
+		}
+		adjusted := uint64(candidate.UptimeBps) * uint64(candidate.UptimeWindow-candidate.MissedBlocks) / uint64(candidate.UptimeWindow)
+		if adjusted > uint64(MaxBasisPoints) {
+			adjusted = uint64(MaxBasisPoints)
+		}
+		uptimeScoreBps = uint32(adjusted)
+	}
+
 	score := ValidatorScore{
 		Eligible:                true,
-		UptimeScoreBps:          candidate.UptimeBps,
+		UptimeScoreBps:          uptimeScoreBps,
 		CommissionScoreBps:      0,
 		ReputationScoreBps:      candidate.ReputationScore,
 		StakeEfficiencyScoreBps: candidate.StakeEfficiencyBps,
@@ -1290,16 +1298,6 @@ func (s State) Validate(params Params) error {
 			return fmt.Errorf("duplicate reward claim %s", key)
 		}
 		rewardClaims[key] = struct{}{}
-	}
-	reputations := map[string]struct{}{}
-	for _, accumulator := range s.StakeReputationAccumulators {
-		if err := accumulator.Validate(); err != nil {
-			return err
-		}
-		if _, found := reputations[accumulator.Account]; found {
-			return fmt.Errorf("duplicate stake reputation accumulator %s", accumulator.Account)
-		}
-		reputations[accumulator.Account] = struct{}{}
 	}
 	epochs := map[uint64]struct{}{}
 	for _, snapshot := range s.EpochStakingSnapshots {
@@ -1570,7 +1568,6 @@ func (s State) Normalize(params Params) State {
 	s.PoolUnbondingRequests = SortPoolUnbondingRequests(s.PoolUnbondingRequests)
 	s.PoolRewardIndexes = SortPoolRewardIndexes(s.PoolRewardIndexes)
 	s.RewardClaims = SortRewardClaims(s.RewardClaims)
-	s.StakeReputationAccumulators = SortStakeReputationAccumulators(s.StakeReputationAccumulators)
 	s.EpochStakingSnapshots = SortEpochStakingSnapshots(s.EpochStakingSnapshots)
 	s.ValidatorSetSnapshots = SortValidatorSetSnapshots(s.ValidatorSetSnapshots)
 	return s
@@ -1703,12 +1700,6 @@ func SortRewardClaims(values []RewardClaim) []RewardClaim {
 		}
 		return out[i].Epoch < out[j].Epoch
 	})
-	return out
-}
-
-func SortStakeReputationAccumulators(values []StakeReputationAccumulator) []StakeReputationAccumulator {
-	out := append([]StakeReputationAccumulator(nil), values...)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Account < out[j].Account })
 	return out
 }
 
@@ -1852,8 +1843,8 @@ func ValidateStakingPoolDeposit(msg MsgDepositToStakingPool, params Params) erro
 	if err := ValidateUserFacingAEAddress("staking pool depositor", msg.WalletAddress); err != nil {
 		return err
 	}
-	if strings.TrimSpace(msg.ValidatorAddress) != "" {
-		return errors.New("staking pool deposit must not include a validator address")
+	if strings.TrimSpace(msg.ReservedRouting) != "" {
+		return errors.New("staking pool deposit must not include a routing field")
 	}
 	if msg.Amount < params.MinPoolDeposit {
 		return fmt.Errorf("staking pool deposit below configured minimum %d", params.MinPoolDeposit)
@@ -2003,9 +1994,13 @@ func SyncPoolRewards(params Params, pool NominatorPool, msg MsgSyncPoolRewards) 
 			return NominatorPool{}, PoolRewardSummary{}, err
 		}
 		effectivePerformanceBps := allocation.PerformanceBps
+		operatorBonusBps := allocation.OperatorPerformanceBonusBps
 		if allocation.Jailed {
 			effectivePerformanceBps = 0
-			allocation.OperatorPerformanceBonusBps = 0
+			operatorBonusBps = 0
+		}
+		if allocation.SlashingLoss > 0 {
+			operatorBonusBps = 0
 		}
 		grossPoolRewards, err := RewardForStake(allocation.PoolAllocatedStake, msg.RewardRateBps, effectivePerformanceBps)
 		if err != nil {
@@ -2025,7 +2020,7 @@ func SyncPoolRewards(params Params, pool NominatorPool, msg MsgSyncPoolRewards) 
 		if err != nil {
 			return NominatorPool{}, PoolRewardSummary{}, err
 		}
-		operatorBonus, err := MulDivUint64(grossPoolRewards, uint64(allocation.OperatorPerformanceBonusBps), uint64(MaxBasisPoints))
+		operatorBonus, err := MulDivUint64(grossPoolRewards, uint64(operatorBonusBps), uint64(MaxBasisPoints))
 		if err != nil {
 			return NominatorPool{}, PoolRewardSummary{}, err
 		}
@@ -2071,6 +2066,7 @@ func SyncPoolRewards(params Params, pool NominatorPool, msg MsgSyncPoolRewards) 
 		allocation.PoolProtocolFee = poolFee
 		allocation.NetPoolRewards = netPoolRewards
 		allocation.ValidatorSelfStakeRewards = selfStakeRewards
+		allocation.OperatorPerformanceBonusBps = operatorBonusBps
 		allocation.OperatorPerformanceBonus = operatorBonus
 		allocation.ValidatorGrossIncome = validatorGross
 		allocation.ValidatorNetIncome = SaturatingNetIncome(validatorGross, allocation.InfrastructureCost)

@@ -21,7 +21,7 @@ var runtimeExitCodes = []RuntimeExitCodeSpec{
 
 	{Code: ResultInvalidJump, Name: "invalid_jump", ContractExitCode: contractstypes.ExitCodeInvalidJump, ContractExitCodeName: "invalid_jump"},
 	{Code: ResultCallStackOverflow, Name: "call_stack_overflow", ContractExitCode: contractstypes.ExitCodeCallStackOverflow, ContractExitCodeName: "call_stack_overflow"},
-	{Code: ResultContinuationNotFound, Name: "continuation_not_found", ContractExitCode: contractstypes.ExitCodeContinuationNotFound, ContractExitCodeName: "continuation_not_found"},
+	{Code: ResultContinuationNotFound, Name: "continuation_not_found", ContractExitCode: contractstypes.ExitCodeContinuationMissing, ContractExitCodeName: "continuation_missing"},
 	{Code: ResultRecursionLimitExceeded, Name: "recursion_limit_exceeded", ContractExitCode: contractstypes.ExitCodeRecursionLimitExceeded, ContractExitCodeName: "recursion_limit_exceeded"},
 	{Code: ResultInvalidMemoryAccess, Name: "invalid_memory_access", ContractExitCode: contractstypes.ExitCodeInvalidMemoryAccess, ContractExitCodeName: "invalid_memory_access"},
 	{Code: ResultNullReference, Name: "null_reference", ContractExitCode: contractstypes.ExitCodeNullReference, ContractExitCodeName: "null_reference"},
@@ -30,14 +30,14 @@ var runtimeExitCodes = []RuntimeExitCodeSpec{
 	{Code: ResultDivisionByZero, Name: "division_by_zero", ContractExitCode: contractstypes.ExitCodeDivisionByZero, ContractExitCodeName: "division_by_zero"},
 	{Code: ResultInvalidShift, Name: "invalid_shift", ContractExitCode: contractstypes.ExitCodeInvalidShift, ContractExitCodeName: "invalid_shift"},
 	{Code: ResultArithmeticUnderflow, Name: "arithmetic_underflow", ContractExitCode: contractstypes.ExitCodeArithmeticUnderflow, ContractExitCodeName: "arithmetic_underflow"},
-	{Code: ResultGasLimitExceeded, Name: "gas_limit_exceeded", ContractExitCode: contractstypes.ExitCodeGasLimitExceeded, ContractExitCodeName: "out_of_gas"},
+	{Code: ResultGasLimitExceeded, Name: "gas_limit_exceeded", ContractExitCode: contractstypes.ExitCodeGasLimitExceeded, ContractExitCodeName: "gas_limit_exceeded"},
 	{Code: ResultGasReservationFailed, Name: "gas_reservation_failed", ContractExitCode: contractstypes.ExitCodeGasReservationFailed, ContractExitCodeName: "gas_reservation_failed"},
 	{Code: ResultExecutionTimeout, Name: "execution_timeout", ContractExitCode: contractstypes.ExitCodeExecutionTimeout, ContractExitCodeName: "execution_timeout"},
 	{Code: ResultStackOverflow, Name: "stack_overflow", ContractExitCode: contractstypes.ExitCodeStackOverflow, ContractExitCodeName: "stack_overflow"},
 	{Code: ResultStackUnderflow, Name: "stack_underflow", ContractExitCode: contractstypes.ExitCodeStackUnderflow, ContractExitCodeName: "stack_underflow"},
 	{Code: ResultTypeCheckError, Name: "type_check_error", ContractExitCode: contractstypes.ExitCodeTypeCheckError, ContractExitCodeName: "type_check_error"},
 
-	{Code: ResultMessageRoutingFailed, Name: "message_routing_failed", ContractExitCode: contractstypes.ExitCodeMessageRoutingFailed, ContractExitCodeName: "message_routing_failed"},
+	{Code: ResultMessageRoutingFailed, Name: "message_routing_failed", ContractExitCode: contractstypes.ExitCodeRoutingFailed, ContractExitCodeName: "routing_failed"},
 	{Code: ResultQueueOverflow, Name: "queue_overflow", ContractExitCode: contractstypes.ExitCodeQueueOverflow, ContractExitCodeName: "queue_overflow"},
 	{Code: ResultShardUnavailable, Name: "shard_unavailable", ContractExitCode: contractstypes.ExitCodeShardUnavailable, ContractExitCodeName: "shard_unavailable"},
 	{Code: ResultInsufficientBalance, Name: "insufficient_balance", ContractExitCode: contractstypes.ExitCodeInsufficientBalance, ContractExitCodeName: "insufficient_balance"},
@@ -79,7 +79,7 @@ func ContractExitCodeForRuntime(code uint32, failedPhase string) uint32 {
 	case ResultLimitExceeded:
 		switch failedPhase {
 		case FailedPhaseExecution:
-			return contractstypes.ExitCodeGasLimitExceeded
+		return contractstypes.ExitCodeOutOfGas
 		case FailedPhaseStorage:
 			return contractstypes.ExitCodeStorageLimit
 		case FailedPhaseValidation:

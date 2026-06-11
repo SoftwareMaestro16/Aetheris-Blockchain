@@ -80,7 +80,4 @@ func TestPhase33ReputationCannotIncreaseWithoutStakeTimeExposure(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, claim.ReputationDelta)
 	require.Zero(t, claim.ReputationScore)
-	stake, err := k.StakeReputation(types.QueryStakeReputationRequest{Account: user})
-	require.NoError(t, err)
-	require.False(t, stake.Found)
 }

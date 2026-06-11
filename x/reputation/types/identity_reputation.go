@@ -45,14 +45,15 @@ const (
 // ---------------
 
 type IdentityReputation struct {
-	Account              string                `json:"account"`
-	Score                uint32                `json:"score"`
-	Confidence           uint32                `json:"confidence"`
-	LastUpdateHeight     uint64                `json:"last_update_height"`
-	LastUpdateTime       int64                 `json:"last_update_time"`
-	SignalCounters       IdentitySignalCounters `json:"signal_counters"`
-	StakeTimeAccumulator uint64                `json:"stake_time_accumulator"`
-	DecayEpoch           uint64                `json:"decay_epoch"`
+	Account                string                `json:"account"`
+	Score                  uint32                `json:"score"`
+	Confidence             uint32                `json:"confidence"`
+	LastUpdateHeight       uint64                `json:"last_update_height"`
+	LastUpdateTime         int64                 `json:"last_update_time"`
+	SignalCounters         IdentitySignalCounters `json:"signal_counters"`
+	StakeTimeAccumulator   uint64                `json:"stake_time_accumulator"`
+	ClaimedStakeTimeSeconds uint64               `json:"claimed_stake_time_seconds"`
+	DecayEpoch             uint64                `json:"decay_epoch"`
 }
 
 type IdentitySignalCounters struct {
@@ -70,14 +71,15 @@ type IdentitySignalCounters struct {
 
 func NewIdentityReputation(account string) *IdentityReputation {
 	return &IdentityReputation{
-		Account:              account,
-		Score:                IdentityScoreDefault,
-		Confidence:           ConfidenceDefault,
-		LastUpdateHeight:     0,
-		LastUpdateTime:       0,
-		SignalCounters:       IdentitySignalCounters{},
-		StakeTimeAccumulator: 0,
-		DecayEpoch:           0,
+		Account:                  account,
+		Score:                    IdentityScoreDefault,
+		Confidence:               ConfidenceDefault,
+		LastUpdateHeight:         0,
+		LastUpdateTime:           0,
+		SignalCounters:           IdentitySignalCounters{},
+		StakeTimeAccumulator:     0,
+		ClaimedStakeTimeSeconds:  0,
+		DecayEpoch:               0,
 	}
 }
 
@@ -382,8 +384,29 @@ func (r *IdentityReputation) RecordSpam(height uint64) {
 }
 
 func (r *IdentityReputation) RecordStakeTime(seconds uint64, height uint64) {
-	r.SignalCounters.StakeTimeSeconds += seconds
-	r.StakeTimeAccumulator += seconds
+	if seconds == 0 {
+		return
+	}
+	newSeconds := seconds
+	if r.ClaimedStakeTimeSeconds > 0 && seconds <= r.ClaimedStakeTimeSeconds {
+		return
+	}
+	if r.ClaimedStakeTimeSeconds > 0 && seconds > r.ClaimedStakeTimeSeconds {
+		newSeconds = seconds - r.ClaimedStakeTimeSeconds
+	}
+	r.SignalCounters.StakeTimeSeconds += newSeconds
+	r.StakeTimeAccumulator += newSeconds
+	r.ClaimedStakeTimeSeconds = seconds
+	r.LastUpdateHeight = height
+}
+
+func (r *IdentityReputation) RecordJailed(height uint64) {
+	r.SignalCounters.SlashEvents++
+	r.LastUpdateHeight = height
+}
+
+func (r *IdentityReputation) RecordUnfrozen(height uint64) {
+	r.SignalCounters.RecoveryEvents++
 	r.LastUpdateHeight = height
 }
 
@@ -477,15 +500,17 @@ func ValidateNonGatingEnforcement() error {
 // Validator score is NOT merged into a user's wallet reputation.
 
 type ValidatorScore struct {
-	ValidatorAddress   string  `json:"validator_address"`
-	UptimeScore        uint32  `json:"uptime_score"`
-	MissedBlocksPenalty uint32  `json:"missed_blocks_penalty"`
-	SlashingPenalty    uint32  `json:"slashing_penalty"`
-	CommissionBehavior uint32  `json:"commission_behavior"`
+	ValidatorAddress        string `json:"validator_address"`
+	UptimeScore             uint32 `json:"uptime_score"`
+	MissedBlocksPenalty     uint32 `json:"missed_blocks_penalty"`
+	SlashingPenalty         uint32 `json:"slashing_penalty"`
+	CommissionBehavior      uint32 `json:"commission_behavior"`
 	GovernanceParticipation uint32 `json:"governance_participation"`
-	PoolAllocationScore uint32 `json:"pool_allocation_score"`
-	TotalScore         uint32  `json:"total_score"`
-	LastUpdateHeight   uint64  `json:"last_update_height"`
+	PoolAllocationScore     uint32 `json:"pool_allocation_score"`
+	TotalScore              uint32 `json:"total_score"`
+	IsJailed                bool   `json:"is_jailed"`
+	IsSlashed               bool   `json:"is_slashed"`
+	LastUpdateHeight        uint64 `json:"last_update_height"`
 }
 
 func NewValidatorScore(validatorAddr string) *ValidatorScore {
@@ -503,6 +528,9 @@ func NewValidatorScore(validatorAddr string) *ValidatorScore {
 }
 
 func ComputeValidatorTotalScore(vs *ValidatorScore) uint32 {
+	if vs.IsJailed || vs.IsSlashed {
+		return 0
+	}
 	positive := vs.UptimeScore + vs.CommissionBehavior + vs.GovernanceParticipation + vs.PoolAllocationScore
 	negative := vs.MissedBlocksPenalty + vs.SlashingPenalty
 	if negative >= positive {
@@ -596,23 +624,27 @@ func GetIdentityProgressiveLimits(level ReputationLevel) IdentityProgressiveLimi
 // ---------------
 
 type ReputationClaim struct {
-	Account             string `json:"account"`
-	Score               uint32 `json:"score"`
-	Confidence          uint32 `json:"confidence"`
-	StakeTimeAccumulator uint64 `json:"stake_time_accumulator"`
-	DecayEpoch          uint64 `json:"decay_epoch"`
-	ClaimHeight         uint64 `json:"claim_height"`
-	ClaimHash           string `json:"claim_hash"`
+	Account                   string                `json:"account"`
+	Score                     uint32                `json:"score"`
+	Confidence                uint32                `json:"confidence"`
+	StakeTimeAccumulator      uint64                `json:"stake_time_accumulator"`
+	ClaimedStakeTimeSeconds   uint64                `json:"claimed_stake_time_seconds"`
+	DecayEpoch                uint64                `json:"decay_epoch"`
+	SignalCounters            IdentitySignalCounters `json:"signal_counters"`
+	ClaimHeight               uint64                `json:"claim_height"`
+	ClaimHash                 string                `json:"claim_hash"`
 }
 
 func (r *IdentityReputation) ExportClaim(height uint64) ReputationClaim {
 	claim := ReputationClaim{
-		Account:             r.Account,
-		Score:               r.Score,
-		Confidence:          r.Confidence,
-		StakeTimeAccumulator: r.StakeTimeAccumulator,
-		DecayEpoch:          r.DecayEpoch,
-		ClaimHeight:         height,
+		Account:                  r.Account,
+		Score:                    r.Score,
+		Confidence:               r.Confidence,
+		StakeTimeAccumulator:     r.StakeTimeAccumulator,
+		ClaimedStakeTimeSeconds:  r.ClaimedStakeTimeSeconds,
+		DecayEpoch:               r.DecayEpoch,
+		SignalCounters:           r.SignalCounters,
+		ClaimHeight:              height,
 	}
 	claim.ClaimHash = computeReputationClaimHash(claim)
 	return claim
@@ -624,32 +656,55 @@ func ImportReputationFromClaim(claim ReputationClaim) (*IdentityReputation, erro
 		return nil, fmt.Errorf("identity reputation: claim hash mismatch")
 	}
 	return &IdentityReputation{
-		Account:              claim.Account,
-		Score:                claim.Score,
-		Confidence:           claim.Confidence,
-		StakeTimeAccumulator: claim.StakeTimeAccumulator,
-		DecayEpoch:           claim.DecayEpoch,
-		SignalCounters:       IdentitySignalCounters{},
-		LastUpdateHeight:     claim.ClaimHeight,
+		Account:                  claim.Account,
+		Score:                    claim.Score,
+		Confidence:               claim.Confidence,
+		StakeTimeAccumulator:     claim.StakeTimeAccumulator,
+		ClaimedStakeTimeSeconds:  claim.ClaimedStakeTimeSeconds,
+		DecayEpoch:               claim.DecayEpoch,
+		SignalCounters:           claim.SignalCounters,
+		LastUpdateHeight:         claim.ClaimHeight,
 	}, nil
 }
 
 func computeReputationClaimHash(claim ReputationClaim) string {
 	type claimForHash struct {
-		Account              string `json:"account"`
-		Score               uint32 `json:"score"`
-		Confidence          uint32 `json:"confidence"`
-		StakeTimeAccumulator uint64 `json:"stake_time_accumulator"`
-		DecayEpoch          uint64 `json:"decay_epoch"`
-		ClaimHeight         uint64 `json:"claim_height"`
+		Account                   string                `json:"account"`
+		Score                     uint32                `json:"score"`
+		Confidence                uint32                `json:"confidence"`
+		StakeTimeAccumulator      uint64                `json:"stake_time_accumulator"`
+		ClaimedStakeTimeSeconds   uint64                `json:"claimed_stake_time_seconds"`
+		DecayEpoch                uint64                `json:"decay_epoch"`
+		SuccessfulTxs              uint64                `json:"successful_txs"`
+		FailedTxs                 uint64                `json:"failed_txs"`
+		ContractInteractions      uint64                `json:"contract_interactions"`
+		ContractFailures          uint64                `json:"contract_failures"`
+		SpamCount                  uint64                `json:"spam_count"`
+		StakeTimeSeconds           uint64                `json:"stake_time_seconds"`
+		UptimeBlocks               uint64                `json:"uptime_blocks"`
+		DomainRegistrations       uint64                `json:"domain_registrations"`
+		SlashEvents                uint64                `json:"slash_events"`
+		RecoveryEvents             uint64                `json:"recovery_events"`
+		ClaimHeight               uint64                `json:"claim_height"`
 	}
 	data, _ := json.Marshal(claimForHash{
-		Account:              claim.Account,
-		Score:               claim.Score,
-		Confidence:          claim.Confidence,
-		StakeTimeAccumulator: claim.StakeTimeAccumulator,
-		DecayEpoch:          claim.DecayEpoch,
-		ClaimHeight:         claim.ClaimHeight,
+		Account:                  claim.Account,
+		Score:                    claim.Score,
+		Confidence:               claim.Confidence,
+		StakeTimeAccumulator:     claim.StakeTimeAccumulator,
+		ClaimedStakeTimeSeconds:  claim.ClaimedStakeTimeSeconds,
+		DecayEpoch:               claim.DecayEpoch,
+		SuccessfulTxs:            claim.SignalCounters.SuccessfulTxs,
+		FailedTxs:               claim.SignalCounters.FailedTxs,
+		ContractInteractions:    claim.SignalCounters.ContractInteractions,
+		ContractFailures:        claim.SignalCounters.ContractFailures,
+		SpamCount:               claim.SignalCounters.SpamCount,
+		StakeTimeSeconds:         claim.SignalCounters.StakeTimeSeconds,
+		UptimeBlocks:            claim.SignalCounters.UptimeBlocks,
+		DomainRegistrations:     claim.SignalCounters.DomainRegistrations,
+		SlashEvents:             claim.SignalCounters.SlashEvents,
+		RecoveryEvents:          claim.SignalCounters.RecoveryEvents,
+		ClaimHeight:             claim.ClaimHeight,
 	})
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h)

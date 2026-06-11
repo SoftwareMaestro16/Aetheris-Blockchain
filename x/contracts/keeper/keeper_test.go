@@ -66,7 +66,7 @@ func TestAVMExitCodesAreSmallStableAndNamed(t *testing.T) {
 	require.Equal(t, "code_rejected", types.ExitCodeName(types.ExitCodeCodeRejected))
 	require.Equal(t, "internal_bounce", types.ExitCodeName(types.ExitCodeInternalBounce))
 	require.Less(t, types.ExitCodeInternalBounce, uint32(100))
-	require.Equal(t, "unknown", types.ExitCodeName(99))
+	require.Equal(t, "unknown", types.ExitCodeName(105))
 }
 
 func TestStoreCodeAcceptsCanonicalAVMBytecodeAndRejectsNondeterminism(t *testing.T) {

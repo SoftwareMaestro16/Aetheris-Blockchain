@@ -106,26 +106,12 @@ func (q queryServer) PoolAllocations(_ context.Context, req *types.QueryPoolAllo
 	return &res, nil
 }
 
-func (q queryServer) StakeReputation(_ context.Context, req *types.QueryStakeReputationRequest) (*types.QueryStakeReputationResponse, error) {
-	if req == nil {
-		return nil, errors.New("empty stake reputation query")
-	}
-	res, err := q.keeper.StakeReputation(*req)
-	if err != nil {
-		return nil, err
-	}
-	return &res, nil
+func (q queryServer) StakeReputation(_ context.Context, _ *types.QueryStakeReputationRequest) (*types.QueryStakeReputationResponse, error) {
+	return nil, errors.New("wallet-facing stake reputation query removed from nominator-pool; use x/reputation IdentityReputationQuery")
 }
 
-func (q queryServer) AccountReputation(_ context.Context, req *types.QueryAccountReputationRequest) (*types.QueryAccountReputationResponse, error) {
-	if req == nil {
-		return nil, errors.New("empty account reputation query")
-	}
-	res, err := q.keeper.AccountReputation(*req)
-	if err != nil {
-		return nil, err
-	}
-	return &res, nil
+func (q queryServer) AccountReputation(_ context.Context, _ *types.QueryAccountReputationRequest) (*types.QueryAccountReputationResponse, error) {
+	return nil, errors.New("wallet-facing account reputation query removed from nominator-pool; use x/reputation IdentityReputationQuery")
 }
 
 func (q queryServer) StakingRewards(_ context.Context, req *types.QueryStakingRewardsRequest) (*types.QueryStakingRewardsResponse, error) {

@@ -29,7 +29,7 @@ type FullGenesisState struct {
 	LiquidStakingState   nominatorpooltypes.State
 
 	ReputationVersion uint64
-	ReputationState   reputationtypes.ReputationState
+	ReputationState   reputationtypes.ConsolidatedReputationState
 
 	StorageRentVersion uint64
 	StorageRentParams  storagerenttypes.StorageRentParams
@@ -48,7 +48,7 @@ type FullGenesisWriter interface {
 }
 
 func DefaultFullGenesis() FullGenesisState {
-	reputationState, _ := reputationtypes.NewReputationState(reputationtypes.DefaultReputationParams())
+	reputationState := reputationtypes.NewConsolidatedReputationState(reputationtypes.DefaultReputationParams())
 	proofState, _ := proofregistrytypes.NewProofRegistryState(proofregistrytypes.DefaultHistoryWindow)
 	return FullGenesisState{
 		Version:                  prototype.CurrentGenesisVersion,
@@ -124,7 +124,7 @@ func NormalizeFullGenesis(gs FullGenesisState) FullGenesisState {
 	gs.Accounts = SortAccounts(gs.Accounts)
 	gs.ValidatorRegistryState = gs.ValidatorRegistryState.Normalize(gs.ValidatorRegistryParams)
 	gs.LiquidStakingState = gs.LiquidStakingState.Normalize(gs.LiquidStakingParams)
-	gs.ReputationState = reputationtypes.NormalizeReputationState(gs.ReputationState)
+	gs.ReputationState = reputationtypes.NormalizeConsolidatedState(gs.ReputationState)
 	gs.StorageRentState = gs.StorageRentState.Export()
 	gs.ProofMetadataState = normalizeProofMetadataState(gs.ProofMetadataState)
 	return gs

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
 	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
@@ -52,9 +51,9 @@ func TestFullGenesisExportImportPreservesReputationAndStorageRent(t *testing.T) 
 	exported, err := ExportFullGenesis(newFullGenesisStore(fullGenesisFixture(t)))
 	require.NoError(t, err)
 
-	require.Len(t, exported.ReputationState.Validators, 1)
-	require.Equal(t, uint16(40), exported.ReputationState.Validators[0].StakingScore)
-	require.Equal(t, uint64(9), exported.ReputationState.Validators[0].LastUpdatedEpoch)
+	require.Len(t, exported.ReputationState.ValidatorScores, 1)
+	require.Equal(t, uint32(500), exported.ReputationState.ValidatorScores[0].UptimeScore)
+	require.Equal(t, uint64(0), exported.ReputationState.ValidatorScores[0].LastUpdateHeight)
 	require.Len(t, exported.StorageRentState.Contracts, 1)
 	require.Equal(t, uint64(55), exported.StorageRentState.Contracts[0].RentDebt)
 
@@ -249,19 +248,15 @@ func liquidStakingPool(t *testing.T) nominatorpooltypes.NominatorPool {
 	}
 }
 
-func reputationState(t *testing.T) reputationtypes.ReputationState {
+func reputationState(t *testing.T) reputationtypes.ConsolidatedReputationState {
 	t.Helper()
-	state, err := reputationtypes.NewReputationState(reputationtypes.DefaultReputationParams())
-	require.NoError(t, err)
-	record := reputationtypes.ApplyComputedScore(reputationtypes.ReputationRecord{
-		Account:          sdk.AccAddress(bytes20(0x71)),
-		AgeScore:         10,
-		StakingScore:     40,
-		TxSuccessScore:   5,
-		LastUpdatedEpoch: 9,
-	})
-	state.Validators = []reputationtypes.ReputationRecord{record}
-	return reputationtypes.NormalizeReputationState(state)
+	params := reputationtypes.DefaultReputationParams()
+	state := reputationtypes.NewConsolidatedReputationState(params)
+	vs := reputationtypes.NewValidatorScore("4:0000000000000000000000007171717171717171717171717171717171717171")
+	vs.UptimeScore = 500
+	vs.TotalScore = reputationtypes.ComputeValidatorTotalScore(vs)
+	state.ValidatorScores = []reputationtypes.ValidatorScore{*vs}
+	return reputationtypes.NormalizeConsolidatedState(state)
 }
 
 func storageRentState() storagerenttypes.StorageRentState {

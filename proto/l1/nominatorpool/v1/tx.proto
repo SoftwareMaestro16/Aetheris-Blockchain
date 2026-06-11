@@ -151,7 +151,7 @@ message MsgDepositToStakingPool {
   string wallet_address = 2;
   uint64 amount = 3;
   uint64 height = 4;
-  string validator_address = 5;
+  string reserved_routing = 5;
   string official_contract = 6;
 }
 

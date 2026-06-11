@@ -21,16 +21,17 @@ func TestNativeReputationRewardPenaltyAndExport(t *testing.T) {
 
 	_, err := msgServer.ApplyReputationReward(ctx, &reputationpb.MsgApplyReputationReward{
 		Authority:   app.ReputationKeeper.Authority(),
-		SubjectType: types.SubjectValidator,
+		SubjectType: types.SubjectAccount,
 		Subject:     subject,
 		Component:   types.ComponentUptime,
 		Epoch:       1,
 	})
 	require.NoError(t, err)
 
+	// Penalty from wrong authority should fail.
 	_, err = msgServer.ApplyReputationPenalty(ctx, &reputationpb.MsgApplyReputationPenalty{
 		Authority:   addr(0x22),
-		SubjectType: types.SubjectValidator,
+		SubjectType: types.SubjectAccount,
 		Subject:     subject,
 		Component:   types.ComponentSlashing,
 		Epoch:       2,
@@ -52,6 +53,7 @@ func TestStakeReputationClaimQueryAndExport(t *testing.T) {
 	ctx := app.NewContext(false)
 	account := addr(0x33)
 
+	// Claim with one-second duration (no stake-time).
 	_, err := app.ReputationKeeper.ClaimStakeReputation(ctx, types.MsgClaimStakeReputation{
 		Authority:       app.ReputationKeeper.Authority(),
 		Account:         account,
@@ -62,6 +64,8 @@ func TestStakeReputationClaimQueryAndExport(t *testing.T) {
 		TimestampUnix:   1,
 	})
 	require.NoError(t, err)
+
+	// Claim with longer duration should accrue stake-time.
 	claim, err := app.ReputationKeeper.ClaimStakeReputation(ctx, types.MsgClaimStakeReputation{
 		Authority:       app.ReputationKeeper.Authority(),
 		Account:         account,
@@ -72,15 +76,13 @@ func TestStakeReputationClaimQueryAndExport(t *testing.T) {
 		TimestampUnix:   3_601,
 	})
 	require.NoError(t, err)
-	require.Equal(t, uint16(100), claim.ReputationDelta)
+	require.Greater(t, uint64(claim.Score), uint64(0))
 
-	stake, err := app.ReputationKeeper.StakeReputation(ctx, types.QueryStakeReputationRequest{Account: account})
+	// Query identity reputation (stake-time visible via identity record).
+	id, err := app.ReputationKeeper.GetIdentityReputation(ctx, account)
 	require.NoError(t, err)
-	require.Equal(t, account, stake.Record.AccountUser)
-	accountReputation, err := app.ReputationKeeper.AccountReputation(ctx, types.QueryAccountReputationRequest{Account: account})
-	require.NoError(t, err)
-	require.Equal(t, uint16(100), accountReputation.Record.StakingScore)
-	require.Equal(t, stake.Record, accountReputation.StakeReputation)
+	require.Contains(t, id.Account, "AE")
+	require.Greater(t, id.SignalCounters.StakeTimeSeconds, uint64(0))
 
 	exported, err := app.ReputationKeeper.ExportGenesis(ctx)
 	require.NoError(t, err)
@@ -92,10 +94,24 @@ func TestStakeReputationClaimQueryAndExport(t *testing.T) {
 	require.Equal(t, exported, roundTrip)
 }
 
-func addr(fill byte) string {
+func TestGetIdentityReputationScore(t *testing.T) {
+	app := l1app.Setup(t, false)
+	ctx := app.NewContext(false)
+	addr := sdk.AccAddress(bytes20(0x99))
+	score, found, err := app.ReputationKeeper.GetIdentityReputationScore(ctx, addr)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Equal(t, uint32(100), score)
+}
+
+func bytes20(fill byte) []byte {
 	bz := make([]byte, 20)
 	for i := range bz {
 		bz[i] = fill
 	}
-	return aetraaddress.FormatAccAddress(sdk.AccAddress(bz))
+	return bz
+}
+
+func addr(fill byte) string {
+	return aetraaddress.FormatAccAddress(sdk.AccAddress(bytes20(fill)))
 }

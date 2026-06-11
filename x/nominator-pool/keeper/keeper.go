@@ -507,8 +507,8 @@ func (k *Keeper) DepositToStakingPool(msg types.MsgDepositToStakingPool) (types.
 	if err := types.ValidateUserFacingAEAddress("staking pool depositor", msg.WalletAddress); err != nil {
 		return types.StakingPoolDepositReceipt{}, err
 	}
-	if msg.ValidatorAddress != "" {
-		return types.StakingPoolDepositReceipt{}, errors.New("staking pool deposit must not include a validator address")
+	if msg.ReservedRouting != "" {
+		return types.StakingPoolDepositReceipt{}, errors.New("staking pool deposit must not include a routing field")
 	}
 	if err := k.ensureActiveWallet(msg.WalletAddress, "staking pool deposit"); err != nil {
 		return types.StakingPoolDepositReceipt{}, err
@@ -1185,29 +1185,9 @@ func (k *Keeper) ClaimStakeReputation(msg types.MsgClaimStakeReputation) (types.
 	share.UpdatedHeight = msg.Height
 	next.State.PoolShares[shareIdx] = share
 
-	accIdx, accumulator, accFound := findStakeReputation(next.State.StakeReputationAccumulators, msg.OwnerAddress)
-	if !accFound {
-		accumulator = types.StakeReputationAccumulator{Account: msg.OwnerAddress}
-	}
 	scoreDelta, err := types.MulDivUint64(delta, uint64(k.genesis.Params.ReputationStakeWeightBps), uint64(types.MaxBasisPoints))
 	if err != nil {
 		return types.StakeReputationClaimReceipt{}, err
-	}
-	if delta > 0 || accFound {
-		accumulator.StakeWeightedSeconds, err = types.CheckedAddUint64(accumulator.StakeWeightedSeconds, delta)
-		if err != nil {
-			return types.StakeReputationClaimReceipt{}, err
-		}
-		accumulator.ReputationScore, err = types.CheckedAddUint64(accumulator.ReputationScore, scoreDelta)
-		if err != nil {
-			return types.StakeReputationClaimReceipt{}, err
-		}
-		accumulator.LastUpdatedHeight = msg.Height
-		if accFound {
-			next.State.StakeReputationAccumulators[accIdx] = accumulator
-		} else {
-			next.State.StakeReputationAccumulators = append(next.State.StakeReputationAccumulators, accumulator)
-		}
 	}
 	next.State = next.State.Normalize(next.Params)
 	if err := next.Validate(); err != nil {
@@ -1220,19 +1200,14 @@ func (k *Keeper) ClaimStakeReputation(msg types.MsgClaimStakeReputation) (types.
 	if err != nil {
 		return types.StakeReputationClaimReceipt{}, err
 	}
-	touchedKeys := []string{string(types.PoolShareKey(msg.PoolID, msg.OwnerAddress))}
-	if delta > 0 || accFound {
-		touchedKeys = append(touchedKeys, string(types.ReputationAccumulatorKey(msg.OwnerAddress)))
-	}
 	return types.StakeReputationClaimReceipt{
 		Account:         msg.OwnerAddress,
 		PoolID:          msg.PoolID,
 		ReputationDelta: scoreDelta,
-		ReputationScore: accumulator.ReputationScore,
 		Height:          msg.Height,
 		InternalMetadata: types.PoolStateMetadata{
 			OwnerRaw:    rawOwner,
-			TouchedKeys: touchedKeys,
+			TouchedKeys: []string{string(types.PoolShareKey(msg.PoolID, msg.OwnerAddress))},
 		},
 	}, nil
 }
@@ -1534,33 +1509,6 @@ func (k *Keeper) PoolAllocations(req types.QueryPoolAllocationsRequest) (types.Q
 		return types.QueryPoolAllocationsResponse{}, false
 	}
 	return types.QueryPoolAllocationsResponse{Allocations: types.SortValidatorRewardAllocations(pool.ValidatorAllocations)}, true
-}
-
-func (k Keeper) StakeReputation(req types.QueryStakeReputationRequest) (types.QueryStakeReputationResponse, error) {
-	if err := types.ValidateUserFacingAEAddress("stake reputation account", req.Account); err != nil {
-		return types.QueryStakeReputationResponse{}, err
-	}
-	_, accumulator, found := findStakeReputation(k.genesis.State.StakeReputationAccumulators, req.Account)
-	return types.QueryStakeReputationResponse{Accumulator: accumulator, Found: found}, nil
-}
-
-func (k Keeper) AccountReputation(req types.QueryAccountReputationRequest) (types.QueryAccountReputationResponse, error) {
-	if err := types.ValidateUserFacingAEAddress("account reputation account", req.Account); err != nil {
-		return types.QueryAccountReputationResponse{}, err
-	}
-	_, accumulator, found := findStakeReputation(k.genesis.State.StakeReputationAccumulators, req.Account)
-	response := types.QueryAccountReputationResponse{
-		Account:                req.Account,
-		HasStakeReputation:     found,
-		AccumulatorStateKey:    string(types.ReputationAccumulatorKey(req.Account)),
-		NonTransferableByToken: true,
-	}
-	if found {
-		response.ReputationScore = accumulator.ReputationScore
-		response.StakeWeightedSeconds = accumulator.StakeWeightedSeconds
-		response.LastUpdatedHeight = accumulator.LastUpdatedHeight
-	}
-	return response, nil
 }
 
 func (k Keeper) StakingRewards(req types.QueryStakingRewardsRequest) (types.QueryStakingRewardsResponse, error) {
@@ -1921,15 +1869,6 @@ func findRewardClaim(claims []types.RewardClaim, poolID string, owner string, ep
 		}
 	}
 	return -1, types.RewardClaim{}, false
-}
-
-func findStakeReputation(accumulators []types.StakeReputationAccumulator, account string) (int, types.StakeReputationAccumulator, bool) {
-	for idx, accumulator := range accumulators {
-		if accumulator.Account == account {
-			return idx, accumulator, true
-		}
-	}
-	return -1, types.StakeReputationAccumulator{}, false
 }
 
 func poolShareActiveStakeExposure(state types.State, pool types.NominatorPool, share types.PoolShare) (uint64, error) {

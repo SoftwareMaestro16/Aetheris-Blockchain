@@ -55,7 +55,7 @@ type ExecutionEnvelope struct {
 	ResolverDomain   string
 	ResolverRecord   *identitytypes.ResolverRecord
 	DomainRecord     *identitytypes.DomainRecord
-	ReputationRecord *reputationtypes.ReputationRecord
+	Identity         *reputationtypes.IdentityReputation
 	SenderStake      sdkmath.Int
 	BlockGasConsumed uint64
 	BlockTxCount     uint64
@@ -152,11 +152,11 @@ func DeliverTx(envelope ExecutionEnvelope, params PipelineParams) (PipelineResul
 		trace.Add(StageResolverLookup, "resolved domain target")
 		result.ResolvedTarget = resolved
 	}
-	if envelope.ReputationRecord != nil {
-		if err := reputationtypes.ValidateTxUsage(*envelope.ReputationRecord, uint32(envelope.SenderTxCount), true, true, params.ReputationPolicy); err != nil {
+	if envelope.Identity != nil {
+		if err := reputationtypes.ValidateIdentityTxUsage(envelope.Identity, uint32(envelope.SenderTxCount), true, true, params.ReputationPolicy); err != nil {
 			return PipelineResult{}, traceError(trace, err)
 		}
-		if err := reputationtypes.ValidateAsyncQueueUsage(*envelope.ReputationRecord, envelope.QueuedMessages, true, params.ReputationPolicy); err != nil {
+		if err := reputationtypes.ValidateIdentityAsyncQueueUsage(envelope.Identity, envelope.QueuedMessages, true, params.ReputationPolicy); err != nil {
 			return PipelineResult{}, traceError(trace, err)
 		}
 		trace.Add(StageReputationLimits, "reputation limits accepted")
@@ -212,8 +212,8 @@ func ValidateExecutionEnvelope(envelope ExecutionEnvelope, params PipelineParams
 	if err := memotypes.ValidateTxMetadata(envelope.Memo, params.MemoParams); err != nil {
 		return err
 	}
-	if envelope.ReputationRecord != nil {
-		if err := reputationtypes.ValidateReputationRecord(*envelope.ReputationRecord); err != nil {
+	if envelope.Identity != nil {
+		if err := reputationtypes.ValidateIdentityReputation(envelope.Identity); err != nil {
 			return err
 		}
 	}
@@ -274,10 +274,7 @@ func ValidateVMRoute(route string) error {
 }
 
 func reputationScore(envelope ExecutionEnvelope) uint8 {
-	if envelope.ReputationRecord == nil {
-		return 0
-	}
-	return envelope.ReputationRecord.Score
+	return uint8(reputationtypes.IdentityScore(envelope.Identity) / 100)
 }
 
 func traceError(trace ExecutionTrace, err error) error {

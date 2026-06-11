@@ -39,25 +39,12 @@ import (
 )
 
 // reputationReaderAdapter wraps the reputation module keeper as a feestypes.ReputationReader.
-// AWCE-1 temporary integration boundary: scales the reputation module's uint8 score [0..255]
-// to the fee module's uint32 score [0..10000].
 type reputationReaderAdapter struct {
 	Keeper reputationkeeper.Keeper
 }
 
 func (a reputationReaderAdapter) GetIdentityReputationScore(ctx context.Context, addr sdk.AccAddress) (uint32, bool, error) {
-	resp, err := a.Keeper.AccountReputation(ctx, reputationtypes.QueryAccountReputationRequest{
-		Account: addr.String(),
-	})
-	if err != nil {
-		return feestypes.ReputationNeutralScore, false, nil
-	}
-	// Scale from uint8 [0..255] to uint32 [0..10000].
-	score := uint32(resp.Record.Score) * 10000 / 255
-	if score > 10000 {
-		score = 10000
-	}
-	return score, true, nil
+	return a.Keeper.GetIdentityReputationScore(ctx, addr)
 }
 
 type NativeKeeperDeps struct {

@@ -64,15 +64,15 @@ func (am AppModule) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 }
 
 func (am AppModule) ValidateGenesis(cdc codec.JSONCodec, _ client.TxEncodingConfig, bz json.RawMessage) error {
-	var gs types.ReputationState
+	var gs types.ConsolidatedReputationState
 	if err := json.Unmarshal(bz, &gs); err != nil {
 		return fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err)
 	}
-	return types.NormalizeReputationState(gs).Validate()
+	return types.NormalizeConsolidatedState(gs).Validate()
 }
 
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, bz json.RawMessage) {
-	var gs types.ReputationState
+	var gs types.ConsolidatedReputationState
 	if err := json.Unmarshal(bz, &gs); err != nil {
 		panic(fmt.Errorf("failed to unmarshal %s genesis state: %w", types.ModuleName, err))
 	}

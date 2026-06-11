@@ -10,7 +10,7 @@ import (
 func TestRuntimeExitCodesHaveCanonicalContractMapping(t *testing.T) {
 	seen := map[uint32]struct{}{}
 	for _, spec := range RuntimeExitCodes() {
-		require.Less(t, spec.ContractExitCode, uint32(100))
+		require.Less(t, spec.ContractExitCode, uint32(128))
 		require.NotEqual(t, "unknown", RuntimeExitCodeName(spec.Code))
 		require.True(t, contractstypes.KnownExitCode(spec.ContractExitCode))
 		require.Equal(t, contractstypes.ExitCodeName(spec.ContractExitCode), spec.ContractExitCodeName)

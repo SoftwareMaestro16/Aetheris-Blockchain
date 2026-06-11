@@ -26,7 +26,6 @@ func TestStakingStateKeyGoldenValues(t *testing.T) {
 	require.Equal(t, "staking/pool_unbonding/pool-a/"+owner+"/req-1", string(PoolUnbondingKey("pool-a", owner, "req-1")))
 	require.Equal(t, "staking/pool_reward_index/pool-a", string(PoolRewardIndexKey("pool-a")))
 	require.Equal(t, "staking/reward_claim/pool-a/"+owner+"/00000000000000000009", string(RewardClaimKey("pool-a", owner, 9)))
-	require.Equal(t, "staking/reputation_accumulator/"+owner, string(ReputationAccumulatorKey(owner)))
 	require.Equal(t, "staking/snapshot/epoch/00000000000000000003", string(EpochSnapshotKey(3)))
 	require.Equal(t, "staking/snapshot/validator_set/00000000000000000123", string(ValidatorSetSnapshotKey(123)))
 }
@@ -147,14 +146,8 @@ func TestSnapshotExportIsDeterministicAndStateRoundTrips(t *testing.T) {
 			Status:         WithdrawalStatusPending,
 		}},
 		PoolRewardIndexes: []PoolRewardIndex{{PoolID: pool.PoolID, RewardIndex: 7, Epoch: 1}},
-		RewardClaims:      []RewardClaim{{PoolID: pool.PoolID, Owner: owner, Epoch: 1, Amount: 2}},
-		StakeReputationAccumulators: []StakeReputationAccumulator{{
-			Account:              owner,
-			StakeWeightedSeconds: 12,
-			LastUpdatedHeight:    5,
-			ReputationScore:      3,
-		}},
-		EpochStakingSnapshots: []EpochStakingSnapshot{{Epoch: 1, TotalActiveStake: 10, TotalPools: 1, ValidatorCount: 1, SnapshotHash: "hash-a"}},
+		RewardClaims:            []RewardClaim{{PoolID: pool.PoolID, Owner: owner, Epoch: 1, Amount: 2}},
+		EpochStakingSnapshots:   []EpochStakingSnapshot{{Epoch: 1, TotalActiveStake: 10, TotalPools: 1, ValidatorCount: 1, SnapshotHash: "hash-a"}},
 		ValidatorSetSnapshots: []ValidatorSetSnapshot{{HeightOrEpoch: 10, Validators: []string{validator.Address}, TotalPower: 10, SnapshotHash: "hash-b"}},
 	}
 	normalized := state.Normalize(params)

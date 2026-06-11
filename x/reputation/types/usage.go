@@ -203,3 +203,98 @@ func minU32(a, b uint32) uint32 {
 	}
 	return b
 }
+
+// ---------------
+// uint32 score variants (consolidated identity model)
+// ---------------
+
+func LimitsForIdentityScore(score uint32) IdentityProgressiveLimits {
+	return GetIdentityProgressiveLimits(ClassifyReputationLevel(score))
+}
+
+func ValidateIdentityTxUsage(identity *IdentityReputation, txsUsedThisBlock uint32, requiredFeePaid bool, baseValidationPassed bool, policy UsagePolicy) error {
+	if identity == nil {
+		return errors.New("identity reputation is required")
+	}
+	if err := ValidateIdentityReputation(identity); err != nil {
+		return err
+	}
+	if !baseValidationPassed {
+		return errors.New("base transaction validation must pass before reputation usage")
+	}
+	if !requiredFeePaid {
+		return errors.New("required protocol fee must be paid")
+	}
+	limit := LimitsForIdentityScore(identity.Score).MaxTxsPerBlock
+	if txsUsedThisBlock >= limit {
+		return fmt.Errorf("identity tx rate limit %d reached", limit)
+	}
+	return nil
+}
+
+func ValidateIdentityAsyncQueueUsage(identity *IdentityReputation, queuedMessages uint32, requiredFeePaid bool, policy UsagePolicy) error {
+	if identity == nil {
+		return errors.New("identity reputation is required")
+	}
+	if err := ValidateIdentityReputation(identity); err != nil {
+		return err
+	}
+	if !requiredFeePaid {
+		return errors.New("required protocol fee must be paid")
+	}
+	limit := LimitsForIdentityScore(identity.Score).MaxQueueMsgs
+	if queuedMessages >= limit {
+		return fmt.Errorf("identity async queue quota %d reached", limit)
+	}
+	return nil
+}
+
+func IdentityPriorityWeight(score uint32) uint32 {
+	switch ClassifyReputationLevel(score) {
+	case ReputationLevelRestricted:
+		return RestrictedPriorityWeight
+	case ReputationLevelNew:
+		return NewPriorityWeight
+	case ReputationLevelNormal:
+		return NormalPriorityWeight
+	case ReputationLevelTrusted:
+		return TrustedPriorityWeight
+	default:
+		return ElitePriorityWeight
+	}
+}
+
+func IdentityCostMultiplierBps(score uint32) uint32 {
+	switch ClassifyReputationLevel(score) {
+	case ReputationLevelRestricted:
+		return RestrictedCostMultiplierBps
+	case ReputationLevelNew:
+		return NewCostMultiplierBps
+	case ReputationLevelNormal:
+		return NormalCostMultiplierBps
+	case ReputationLevelTrusted:
+		return TrustedCostMultiplierBps
+	default:
+		return EliteCostMultiplierBps
+	}
+}
+
+func ApplyIdentityContractOutcome(identity *IdentityReputation, success bool, height uint64) {
+	if identity == nil {
+		return
+	}
+	if success {
+		identity.RecordContractInteraction(height)
+	} else {
+		identity.RecordContractFailure(height)
+	}
+}
+
+// IdentityScore extracts the uint32 score from an identity.
+// Returns 0 if nil.
+func IdentityScore(identity *IdentityReputation) uint32 {
+	if identity == nil {
+		return 0
+	}
+	return identity.Score
+}

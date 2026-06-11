@@ -1,7 +1,6 @@
 package avm
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 
@@ -531,7 +530,7 @@ type GasSafetyModel struct {
 	MaxGasPerInstruction    uint64
 	MaxGasTotal             uint64
 	MaxActionsPerExecution  uint32
-	GasReservationRatio     float64
+	GasReservationRatioBps  uint32
 	PriorityFeeCeiling      uint64
 }
 
@@ -540,7 +539,7 @@ func DefaultGasSafetyModel() GasSafetyModel {
 		MaxGasPerInstruction:   1000,
 		MaxGasTotal:          100_000_000,
 		MaxActionsPerExecution: 256,
-		GasReservationRatio:  0.1,
+		GasReservationRatioBps: 1000,
 		PriorityFeeCeiling:  1_000_000,
 	}
 }
@@ -1087,8 +1086,3 @@ func SeedCryptoRand(beacon []byte) uint64 {
 	return binary.BigEndian.Uint64(beacon[:8])
 }
 
-// SuppressUnusedImport prevents crypto/rand from being actually used at runtime.
-func SuppressUnusedImport() []byte {
-	_ = rand.Read
-	return nil
-}

@@ -51,10 +51,6 @@ func RewardClaimKey(poolID string, owner string, epoch uint64) []byte {
 	return []byte(fmt.Sprintf("staking/reward_claim/%s/%s/%020d", poolID, owner, epoch))
 }
 
-func ReputationAccumulatorKey(account string) []byte {
-	return []byte("staking/reputation_accumulator/" + account)
-}
-
 func EpochSnapshotKey(epoch uint64) []byte {
 	return []byte(fmt.Sprintf("staking/snapshot/epoch/%020d", epoch))
 }

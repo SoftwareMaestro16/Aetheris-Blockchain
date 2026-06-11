@@ -77,8 +77,9 @@ func TestDeliverTxIntegratesResolverReputationAsyncAndEvents(t *testing.T) {
 
 func TestDeliverTxRejectsLowReputationLimitsAndInvalidVMRoute(t *testing.T) {
 	envelope := testEnvelope()
-	low := reputationtypes.ApplyComputedScore(reputationtypes.ReputationRecord{Account: envelope.Sender, AgeScore: 10})
-	envelope.ReputationRecord = &low
+	identity := reputationtypes.NewIdentityReputation("AE" + envelope.Sender.String())
+	identity.Score = 100
+	envelope.Identity = identity
 	envelope.SenderTxCount = 1
 	_, err := DeliverTx(envelope, DefaultPipelineParams())
 	require.ErrorContains(t, err, "tx rate limit")
@@ -99,21 +100,19 @@ func TestDeterministicEventsSorted(t *testing.T) {
 }
 
 func testEnvelope() ExecutionEnvelope {
-	rep := reputationtypes.ApplyComputedScore(reputationtypes.ReputationRecord{
-		Account:        addr(1),
-		AgeScore:       60,
-		TxSuccessScore: 10,
-	})
+	identity := reputationtypes.NewIdentityReputation("AE" + addr(1).String())
+	identity.Score = 2000
+	identity.Confidence = 1000
 	return ExecutionEnvelope{
-		TxHash:           []byte("tx"),
-		Sender:           addr(1),
-		Receiver:         addr(2),
-		Route:            RouteBankTransfer,
-		GasLimit:         200_000,
-		Fee:              sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 10)),
-		Memo:             memotypes.TxMetadata{Memo: "note", MemoVisible: true},
-		ReputationRecord: &rep,
-		SenderStake:      sdkmath.NewInt(1_000_000_000),
+		TxHash:      []byte("tx"),
+		Sender:      addr(1),
+		Receiver:    addr(2),
+		Route:       RouteBankTransfer,
+		GasLimit:    200_000,
+		Fee:         sdk.NewCoins(sdk.NewInt64Coin(appparams.BaseDenom, 10)),
+		Memo:        memotypes.TxMetadata{Memo: "note", MemoVisible: true},
+		Identity:    identity,
+		SenderStake: sdkmath.NewInt(1_000_000_000),
 	}
 }
 
