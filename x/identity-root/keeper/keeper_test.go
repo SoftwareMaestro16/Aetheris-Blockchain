@@ -193,6 +193,27 @@ func TestNFTBindingRequiredWhenEnabled(t *testing.T) {
 	require.Equal(t, ownerA, record.NFTBinding.Owner)
 }
 
+func TestGetOwnerReturnsCorrectOwnerAfterRegisterAndTransfer(t *testing.T) {
+	k := setupKeeper(t)
+	record, err := k.RegisterName(types.MsgRegisterName{Owner: ownerA, Name: "alice", Height: 10})
+	require.NoError(t, err)
+	require.Equal(t, ownerA, record.Owner)
+
+	queried, found, err := k.NameRecord("alice")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, ownerA, queried.Owner)
+
+	transferred, err := k.TransferName(types.MsgTransferName{Owner: ownerA, Name: "alice", NewOwner: ownerB, Height: 20})
+	require.NoError(t, err)
+	require.Equal(t, ownerB, transferred.Owner)
+
+	queried, found, err = k.NameRecord("alice")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, ownerB, queried.Owner)
+}
+
 func TestDomainOwnerMustBeAEAddress(t *testing.T) {
 	k := setupKeeper(t)
 	_, err := k.RegisterName(types.MsgRegisterName{Owner: "owner-a", Name: "alice", Height: 10})

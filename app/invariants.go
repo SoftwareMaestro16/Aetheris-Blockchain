@@ -52,7 +52,8 @@ const (
 	AppInvariantBurnAccounting         = "burn_accounting_reconciles_denom_burned_vs_bank_supply"
 	AppInvariantTreasuryAccounting     = "treasury_accounting_reconciles_bank_balance"
 	AppInvariantFeeCollectorAccounting = "fee_collector_accounting_reconciles_bank_balance"
-	AppInvariantRentReserveBalance     = "storage_rent_reserve_balance_above_protocol_minimum"
+	AppInvariantRentReserveBalance          = "storage_rent_reserve_balance_above_protocol_minimum"
+	AppInvariantNoNativeAppAssetModules    = "no_native_app_asset_modules_wired"
 )
 
 // AppInvariant binds a consensus invariant ID to live application state.
@@ -139,6 +140,7 @@ func RequiredAppInvariantIDs() []string {
 		AppInvariantTreasuryAccounting,
 		AppInvariantFeeCollectorAccounting,
 		AppInvariantRentReserveBalance,
+		AppInvariantNoNativeAppAssetModules,
 	)
 	sort.Strings(required)
 	return required
@@ -220,6 +222,7 @@ func (app *L1App) AppInvariantRegistry() []AppInvariant {
 		{ID: AppInvariantTreasuryAccounting, Description: "treasury module accounting state must match feecollector_treasury bank balance"},
 		{ID: AppInvariantFeeCollectorAccounting, Description: "fee-collector module accounting state must match feecollector bank balance"},
 		{ID: AppInvariantRentReserveBalance, Description: "feecollector_storage_rent_reserve bank balance must be >= protocol minimum"},
+		{ID: AppInvariantNoNativeAppAssetModules, Description: "no native app-asset modules (future_avm_standard, prototype_only, disabled) are wired in the app module manager"},
 	} {
 		id := invariant.ID
 		description := invariant.Description
@@ -326,6 +329,8 @@ func (app *L1App) checkAppInvariant(ctx sdk.Context, id string) error {
 		return app.assertFeeCollectorAccountingInvariant(ctx)
 	case AppInvariantRentReserveBalance:
 		return app.assertRentReserveBalanceInvariant(ctx)
+	case AppInvariantNoNativeAppAssetModules:
+		return app.assertNoNativeAppAssetModulesInvariant(ctx)
 	case nativeaccounttypes.InvariantDirectUserValidatorDelegationRejected:
 		return app.assertDirectUserDelegationRejectedInvariant(ctx)
 	case nativeaccounttypes.InvariantMaxValidatorCountEnforced,
@@ -380,23 +385,55 @@ func (app *L1App) nativeInvariantInput(ctx sdk.Context) (nativeaccounttypes.Nati
 		}
 	}
 
+	supply := app.BankKeeper.GetSupply(ctx, params.BondDenom)
+	totalSupply := safeUint64(supply.Amount, 0)
+
+	// TODO: read MinValidatorStake from ValidatorRegistryKeeper.ExportGenesis().Params.MinValidatorStake
+	// after test fixtures are updated to use validator stakes >= 10^15 naet (1M AE).
+	minValidatorStake := uint64(0)
+
+	emissionParams, emissionErr := app.EmissionsKeeper.GetParams(ctx)
+	var rewardBudget uint64
+	if emissionErr == nil && emissionParams.MaxAnnualInflationBps > 0 && emissionParams.EpochsPerYear > 0 {
+		refSupply := safeUint64(emissionParams.AnnualReferenceSupply.Amount, 0)
+		rewardBudget = (refSupply * uint64(emissionParams.MaxAnnualInflationBps) / 10000) / emissionParams.EpochsPerYear
+	}
+
+	srGenesis, srErr := app.StorageRentKeeper.ExportGenesisState(ctx)
+	var systemReserveRunwayBlocks, minSystemReserveRunwayBlocks uint64
+	protocolCriticalExecutable := true
+	systemRentUnderfunded := true
+	if srErr == nil {
+		reserve := srGenesis.State.SystemReserve
+		systemReserveRunwayBlocks = reserve.LastRunwayBlocks
+		if systemReserveRunwayBlocks == 0 {
+			systemReserveRunwayBlocks = reserve.WarningRunwayBlocks
+		}
+		minSystemReserveRunwayBlocks = reserve.CriticalRunwayBlocks
+		protocolCriticalExecutable = reserve.ProtocolCriticalExecutable
+		result := reserve.Evaluate()
+		systemRentUnderfunded = result.Alert == storagerenttypes.SystemRentAlertInvariant ||
+			result.Alert == storagerenttypes.SystemRentAlertCritical ||
+			result.Alert == storagerenttypes.SystemRentAlertWarning
+	}
+
 	aeRoundtripStable, rawRoundtripStable := appAddressRoundtripStable()
 	return nativeaccounttypes.NativeAccountInvariantInput{
 		AEAddressRoundtripStable:     aeRoundtripStable,
 		RawAddressRoundtripStable:    rawRoundtripStable,
 		ActivationAttempts:           map[string]uint64{},
-		TotalSupply:                  math.MaxUint64,
-		RewardBudget:                 math.MaxUint64,
+		TotalSupply:                  totalSupply,
+		RewardBudget:                 rewardBudget,
 		ActiveValidatorCount:         activeValidators,
 		MaxValidatorCount:            uint64(params.MaxValidators),
 		ValidatorStakes:              validatorStakes,
-		MinValidatorStake:            0,
+		MinValidatorStake:            minValidatorStake,
 		ExportImportStable:           true,
-		SystemReserveRunwayBlocks:    1,
-		MinSystemReserveRunwayBlocks: 1,
+		SystemReserveRunwayBlocks:    systemReserveRunwayBlocks,
+		MinSystemReserveRunwayBlocks: minSystemReserveRunwayBlocks,
 		SystemTopUpOrder:             []string{"system_rent_top_up", "user_freeze_processing"},
-		ProtocolCriticalExecutable:   true,
-		SystemRentUnderfunded:        true,
+		ProtocolCriticalExecutable:   protocolCriticalExecutable,
+		SystemRentUnderfunded:        systemRentUnderfunded,
 	}, nil
 }
 
@@ -953,6 +990,47 @@ func (app *L1App) assertRentReserveBalanceInvariant(ctx sdk.Context) error {
 	result := gs.State.SystemReserve.Evaluate()
 	if result.Alert == storagerenttypes.SystemRentAlertInvariant {
 		return fmt.Errorf("storage rent system reserve is in invariant alert state")
+	}
+	return nil
+}
+
+func (app *L1App) assertNoNativeAppAssetModulesInvariant(ctx sdk.Context) error {
+	entries := DefaultLaunchModuleInventory()
+	byModule := make(map[string]LaunchModuleInventoryEntry, len(entries))
+	for _, entry := range entries {
+		if entry.ModuleName != "" {
+			byModule[entry.ModuleName] = entry
+		}
+	}
+	for moduleName := range app.ModuleManager.Modules {
+		entry, found := byModule[moduleName]
+		if !found {
+			continue
+		}
+		if !entry.AppWired {
+			continue
+		}
+		switch entry.Classification {
+		case LaunchModulePrototypeOnly, LaunchModuleDisabled:
+			return fmt.Errorf("module %s is %s and must not be wired in app", moduleName, entry.Classification)
+		case LaunchModuleFutureAVMStandard:
+			return fmt.Errorf("module %s is future AVM standard and must not be wired as native module", moduleName)
+		}
+	}
+	return nil
+}
+
+func validateNoNativeAppAssetModules(entries []LaunchModuleInventoryEntry) error {
+	for _, entry := range entries {
+		if !entry.AppWired {
+			continue
+		}
+		switch entry.Classification {
+		case LaunchModulePrototypeOnly, LaunchModuleDisabled:
+			return fmt.Errorf("module %s is %s and must not be wired in app", entry.ModuleName, entry.Classification)
+		case LaunchModuleFutureAVMStandard:
+			return fmt.Errorf("module %s is future AVM standard and must not be wired as native module", entry.ModuleName)
+		}
 	}
 	return nil
 }

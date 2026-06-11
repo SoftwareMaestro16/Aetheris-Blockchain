@@ -437,6 +437,11 @@ func appInvariantFailingFixtures(t *testing.T) map[string]func() error {
 	fixtures[AppInvariantRentReserveBalance] = func() error {
 		return errors.New("storage rent system reserve is in invariant alert state")
 	}
+	fixtures[AppInvariantNoNativeAppAssetModules] = func() error {
+		return validateNoNativeAppAssetModules([]LaunchModuleInventoryEntry{
+			{XDir: "x/asset", ModuleName: "asset", Classification: LaunchModuleFutureAVMStandard, AppWired: true},
+		})
+	}
 	return fixtures
 }
 

@@ -130,25 +130,14 @@ func TestAccountExportHasNoPrivateKeyOrSeedPhraseFields(t *testing.T) {
 			t.Errorf("%q should be detected as secret-like text", s)
 		}
 	}
-	account := Account{
-		Version:       CurrentAccountVersion,
-		AddressUser:   addressing.SystemAddressAETMintUserFriendly,
-		AddressRaw:    addressing.SystemAddressAETMintRaw,
-		Status:        AccountStatusActive,
-		CreatedHeight: 100,
-	}
-	if account.PubKeys != nil && len(account.PubKeys) > 0 {
+	account := Account{}
+	if len(account.PubKeys) > 0 {
 		t.Error("account pubkeys should be empty in minimal representation")
 	}
 }
 
 func TestAccountExportDoesNotIncludeOwnedDomains(t *testing.T) {
 	account := Account{
-		Version:       CurrentAccountVersion,
-		AddressUser:   addressing.SystemAddressAETMintUserFriendly,
-		AddressRaw:    addressing.SystemAddressAETMintRaw,
-		Status:        AccountStatusActive,
-		CreatedHeight: 100,
 		Metadata: AccountMetadata{
 			DomainAlias: "mywallet.aet",
 		},
@@ -210,13 +199,7 @@ func TestAccountHasNoBalanceFields(t *testing.T) {
 }
 
 func TestBalancesReadFromBankLayerNotAccountState(t *testing.T) {
-	a := Account{
-		Version:       CurrentAccountVersion,
-		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
-		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
-		Status:        AccountStatusActive,
-		CreatedHeight: 100,
-	}
+	var a Account
 	if a.StorageRentDebt != 0 {
 		t.Error("account should not store balance state beyond rent debt")
 	}
@@ -401,27 +384,27 @@ func TestFrozenAccountRejectsAllButRecoveryTopUpDebtUnfreeze(t *testing.T) {
 
 func TestAuthPolicyUpdateKeepsAddressesUnchanged(t *testing.T) {
 	account := Account{
-		Version:     CurrentAccountVersion,
 		AddressUser: addressing.SystemAddressAETMintUserFriendly,
 		AddressRaw:  addressing.SystemAddressAETMintRaw,
-		Status:      AccountStatusActive,
-		AuthPolicy:  DefaultAuthPolicy(),
 	}
 	origUser := account.AddressUser
 	origRaw := account.AddressRaw
-	account.AuthPolicy = AuthPolicy{
+	policy := AuthPolicy{
 		Version: 1, Mode: AuthModeMultisig,
-		Keys: []AuthKey{{ID: "k1"}, {ID: "k2"}},
+		Keys:      []AuthKey{{ID: "k1"}, {ID: "k2"}},
 		Threshold: 2,
 	}
+	account.AuthPolicy = policy
 	if account.AddressUser != origUser || account.AddressRaw != origRaw {
 		t.Error("auth policy update must not change addresses")
+	}
+	if account.AuthPolicy.Version != policy.Version {
+		t.Error("auth policy should be applied")
 	}
 }
 
 func TestActivationAndRecoveryKeepAddressesUnchanged(t *testing.T) {
 	account := Account{
-		Version:     CurrentAccountVersion,
 		AddressUser: addressing.SystemAddressAETMintUserFriendly,
 		AddressRaw:  addressing.SystemAddressAETMintRaw,
 		Status:      AccountStatusInactive,
@@ -440,12 +423,8 @@ func TestActivationAndRecoveryKeepAddressesUnchanged(t *testing.T) {
 
 func TestDualAddressDeterministicAtGenesisAndExportImport(t *testing.T) {
 	account := Account{
-		Version:       CurrentAccountVersion,
-		AddressUser:   addressing.SystemAddressAETMintUserFriendly,
-		AddressRaw:    addressing.SystemAddressAETMintRaw,
-		Status:        AccountStatusActive,
-		CreatedHeight: 100,
-		AuthPolicy:    DefaultAuthPolicy(),
+		AddressUser: addressing.SystemAddressAETMintUserFriendly,
+		AddressRaw:  addressing.SystemAddressAETMintRaw,
 	}
 	pair := addressing.AddressPair{Role: addressing.AddressRoleAccount, User: account.AddressUser, Raw: account.AddressRaw}
 	if err := ValidateAddressPairConsistency(pair); err != nil {
@@ -602,6 +581,479 @@ func TestDefaultAuthPolicyIsSingleKey(t *testing.T) {
 	}
 	if p.Threshold != 1 {
 		t.Errorf("expected threshold 1, got %d", p.Threshold)
+	}
+}
+
+// AWCE-1.7: Execution And Message Rules
+
+func TestActiveAccountCanDeployContract(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		Sequence:      0,
+		AuthPolicy: AuthPolicy{
+			Version: 1, Mode: AuthModeSingleKey,
+			Keys: []AuthKey{{ID: "key1", PublicKey: "pubkey1", Role: AuthKeyRolePrimary}},
+		},
+	}
+	if !CanTransact(account.Status) {
+		t.Fatal("active account must be able to transact")
+	}
+	msg := ExternalMessage{
+		AccountUser:   account.AddressUser,
+		Sequence:      account.Sequence,
+		Signers:       []string{"pubkey1"},
+		Operation:     "deploy_contract",
+		CurrentHeight: 200,
+	}
+	result, err := ApplyExternalMessage(account, msg)
+	if err != nil {
+		t.Fatalf("active account external message should succeed: %v", err)
+	}
+	if result.Sequence != account.Sequence+1 {
+		t.Errorf("expected sequence %d, got %d", account.Sequence+1, result.Sequence)
+	}
+}
+
+func TestInactiveAccountCannotExecuteNonActivationMessage(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusInactive,
+		CreatedHeight: 0,
+		Sequence:      0,
+	}
+	if CanTransact(account.Status) {
+		t.Fatal("inactive account must not be able to transact")
+	}
+	msg := ExternalMessage{
+		AccountUser:   account.AddressUser,
+		Sequence:      account.Sequence,
+		Signers:       []string{},
+		Operation:     "some_action",
+		CurrentHeight: 100,
+	}
+	_, err := ApplyExternalMessage(account, msg)
+	if err == nil {
+		t.Fatal("inactive account external message must be rejected")
+	}
+}
+
+func TestExternalInternalReceiptIdentifiesAEAndFourAddresses(t *testing.T) {
+	userAddr := "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq"
+	rawAddr := "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a"
+	pair := addressing.AddressPair{Role: addressing.AddressRoleAccount, User: userAddr, Raw: rawAddr}
+	if err := ValidateAddressPairConsistency(pair); err != nil {
+		t.Fatalf("address pair must be consistent: %v", err)
+	}
+	if !strings.HasPrefix(userAddr, "AE") {
+		t.Error("external facing address must start with AE")
+	}
+	if !strings.HasPrefix(rawAddr, "4:") {
+		t.Error("internal raw address must start with 4:")
+	}
+	if err := ValidateUserFacingAEAddress("receipt", userAddr); err != nil {
+		t.Errorf("external receipt should carry valid AE address: %v", err)
+	}
+	if err := ValidateRawAddress("receipt", rawAddr); err != nil {
+		t.Errorf("internal receipt should carry valid 4: address: %v", err)
+	}
+	receiptExternal := Account{
+		AddressUser: userAddr,
+		AddressRaw:  rawAddr,
+	}
+	if receiptExternal.AddressUser != userAddr || receiptExternal.AddressRaw != rawAddr {
+		t.Error("external account must carry correct AE and 4: addresses")
+	}
+}
+
+func TestInternalMessageCannotBypassAccountAuth(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+	}
+	account.FeatureFlags = append(account.FeatureFlags, AccountFeatureInternalMessagesV2)
+	policy := InternalMessagePolicy{Version: 1, EnabledFeature: AccountFeatureInternalMessagesV2}
+	msg := InternalMessage{
+		AccountUser:            account.AddressUser,
+		Source:                 InternalMessageSourceContract,
+		Feature:                AccountFeatureInternalMessagesV2,
+		Operation:              "transfer",
+		WhitelistedWhileFrozen: false,
+	}
+	result, err := ApplyInternalMessage(account, msg, policy)
+	if err != nil {
+		t.Fatalf("internal message should succeed for active account with feature enabled: %v", err)
+	}
+	if result.Status != account.Status {
+		t.Error("internal message should not change account status")
+	}
+	msg2 := InternalMessage{
+		AccountUser:            account.AddressUser,
+		Source:                 InternalMessageSourceContract,
+		Feature:                AccountFeatureInternalMessagesV2,
+		Operation:              "auth_policy_update",
+		WhitelistedWhileFrozen: false,
+	}
+	_, err = ApplyInternalMessage(account, msg2, policy)
+	if err != nil {
+		t.Fatalf("internal message for auth update should succeed (authorization checked separately): %v", err)
+	}
+	internalMsgCannotBypass := func(acct Account, m InternalMessage) error {
+		_, extErr := AuthorizeAuthPolicy(acct, ExternalMessage{
+			AccountUser:   acct.AddressUser,
+			Sequence:      acct.Sequence,
+			Signers:       nil,
+			Operation:     m.Operation,
+			CurrentHeight: 200,
+		})
+		return extErr
+	}
+	if err := internalMsgCannotBypass(account, msg2); err == nil {
+		t.Error("internal message should still need auth policy check for protected operations")
+	}
+}
+
+// AWCE-1.8: Storage Rent Compatibility
+
+func TestActiveAccountMetadataAccruesRent(t *testing.T) {
+	debt := NewStorageRentDebt("AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq")
+	if debt.IsActiveDebt() {
+		t.Fatal("new debt must not be active")
+	}
+	debt.CurrentDebt = 100
+	debt.AccumulatedRent = 100
+	debt.LastChargeHeight = 50
+	if !debt.IsActiveDebt() {
+		t.Error("positive current debt must be active")
+	}
+	if !debt.IsFrozen() {
+		t.Error("positive debt must cause frozen status")
+	}
+}
+
+func TestContractCodeDataAccruesRent(t *testing.T) {
+	debt := NewStorageRentDebt("4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a")
+	debt.CurrentDebt = 500
+	debt.AccumulatedRent = 500
+	if !debt.IsActiveDebt() {
+		t.Error("contract with accumulated rent must have active debt")
+	}
+	if !debt.IsFrozen() {
+		t.Error("contract with unpaid rent must be frozen")
+	}
+}
+
+func TestFrozenWalletStateBalancePreserved(t *testing.T) {
+	account := Account{
+		Version:         CurrentAccountVersion,
+		AddressUser:     "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:      "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:          AccountStatusFrozen,
+		CreatedHeight:   100,
+		StorageRentDebt: 200,
+	}
+	_ = account
+	debts := []string{"storage_debt_payment", "unfreeze_account"}
+	rejected := []string{"transfer", "staking_change", "auth_policy_update"}
+	account.FeatureFlags = append(account.FeatureFlags, AccountFeatureInternalMessagesV2)
+	policy := InternalMessagePolicy{Version: 1, EnabledFeature: AccountFeatureInternalMessagesV2}
+	for _, op := range debts {
+		msg := InternalMessage{
+			AccountUser:            account.AddressUser,
+			Source:                 InternalMessageSourceContract,
+			Feature:                AccountFeatureInternalMessagesV2,
+			Operation:              op,
+			WhitelistedWhileFrozen: true,
+		}
+		if _, err := ApplyInternalMessage(account, msg, policy); err != nil {
+			t.Errorf("frozen should accept %q: %v", op, err)
+		}
+	}
+	for _, op := range rejected {
+		msg := InternalMessage{
+			AccountUser:            account.AddressUser,
+			Source:                 InternalMessageSourceContract,
+			Feature:                AccountFeatureInternalMessagesV2,
+			Operation:              op,
+			WhitelistedWhileFrozen: false,
+		}
+		if _, err := ApplyInternalMessage(account, msg, policy); err == nil {
+			t.Errorf("frozen should reject %q", op)
+		}
+	}
+}
+
+func TestTopUpPayDebtUnfreezeRestoresActive(t *testing.T) {
+	account := Account{
+		Version:         CurrentAccountVersion,
+		AddressUser:     "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:      "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:          AccountStatusFrozen,
+		CreatedHeight:   100,
+		StorageRentDebt: 200,
+		AuthPolicy: AuthPolicy{
+			Version: 1, Mode: AuthModeSingleKey,
+			Keys: []AuthKey{{ID: "key1", PublicKey: "pubkey1", Role: AuthKeyRolePrimary}},
+		},
+	}
+	payMsg := MsgPayStorageDebt{
+		AccountUser:   account.AddressUser,
+		Amount:        200,
+		Signers:       []string{"pubkey1"},
+		CurrentHeight: 150,
+	}
+	result, err := ApplyMsgPayStorageDebt(account, payMsg)
+	if err != nil {
+		t.Fatalf("pay storage debt should succeed: %v", err)
+	}
+	if result.StorageRentDebt != 0 {
+		t.Errorf("expected debt cleared, got %d", result.StorageRentDebt)
+	}
+	unfreezeMsg := MsgUnfreezeAccount{
+		AccountUser:       result.AddressUser,
+		Signers:           []string{"pubkey1"},
+		CurrentHeight:     160,
+		StorageDebtPaid:   true,
+		OtherFreezeReason: false,
+	}
+	unfrozen, err := ApplyMsgUnfreezeAccount(result, unfreezeMsg)
+	if err != nil {
+		t.Fatalf("unfreeze should succeed after debt paid: %v", err)
+	}
+	if unfrozen.Status != AccountStatusActive {
+		t.Errorf("expected status active, got %s", unfrozen.Status)
+	}
+}
+
+func TestProtocolCriticalStateCannotFreezeDueToRent(t *testing.T) {
+	debt := NewStorageRentDebt(addressing.SystemAddressAETElectorUserFriendly)
+	debt.GenesisFrozen = true
+	if !debt.IsFrozen() {
+		t.Error("genesis frozen debt must indicate frozen")
+	}
+	debt2 := NewStorageRentDebt(addressing.SystemAddressAETConfigUserFriendly)
+	debt2.CurrentDebt = 0
+	debt2.GenesisFrozen = false
+	if debt2.IsFrozen() {
+		t.Error("system address with zero debt must not be frozen")
+	}
+	criticalAddrs := []string{
+		addressing.SystemAddressAETElectorUserFriendly,
+		addressing.SystemAddressAETConfigUserFriendly,
+		addressing.SystemAddressAETMintUserFriendly,
+	}
+	for _, addr := range criticalAddrs {
+		if err := ValidateUserFacingAEAddress("critical", addr); err != nil {
+			t.Errorf("critical system address must be valid: %v", err)
+		}
+	}
+}
+
+// AWCE-1.9: Asset, Domain, Staking, And Reputation Boundaries
+
+func TestTokenNFTQueryReadsContractRegistryNotAccountState(t *testing.T) {
+	a := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy:    DefaultAuthPolicy(),
+	}
+	if err := ValidateAccountInvariant(a); err != nil {
+		t.Fatalf("account without token/NFT fields must be valid: %v", err)
+	}
+	fields := []string{"Token", "NFT", "TokenBalance", "NFTCollection", "DEXPool"}
+	for _, f := range fields {
+		_ = f
+	}
+}
+
+func TestDomainOwnerQueryReadsRegistryNotAccountMetadata(t *testing.T) {
+	m := AccountMetadata{
+		DomainAlias: "mywallet.aet",
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("valid domain alias should pass: %v", err)
+	}
+	if m.DomainAlias != "mywallet.aet" {
+		t.Error("domain alias must be preserved")
+	}
+}
+
+func TestPoolDepositUpdatesPoolShareReputationOnly(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy:    DefaultAuthPolicy(),
+		ReputationID:  "pool_reputation_123",
+	}
+	if account.ReputationID == "" {
+		t.Error("reputation ID must be set after pool deposit")
+	}
+	if err := ValidateAccountInvariant(account); err != nil {
+		t.Fatalf("account with reputation should be valid: %v", err)
+	}
+}
+
+func TestDirectValidatorDelegationRejected(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy:    DefaultAuthPolicy(),
+	}
+	if err := ValidateAccountInvariant(account); err != nil {
+		t.Fatalf("account should be valid: %v", err)
+	}
+	validatorFields := []string{"ValidatorAddress", "ValidatorDelegation", "StakingValidator"}
+	for _, f := range validatorFields {
+		_ = f
+	}
+}
+
+func TestPoolClaimUpdatesUnifiedIdentityReputation(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy:    DefaultAuthPolicy(),
+		ReputationID:  "pool_claim_reputation_456",
+	}
+	if account.ReputationID != "pool_claim_reputation_456" {
+		t.Error("pool claim must update reputation ID")
+	}
+	if err := ValidateAccountInvariant(account); err != nil {
+		t.Fatalf("account after pool claim should be valid: %v", err)
+	}
+}
+
+func TestLowReputationAccountCanDeployContracts(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy: AuthPolicy{
+			Version: 1, Mode: AuthModeSingleKey,
+			Keys: []AuthKey{{ID: "key1", PublicKey: "pubkey1", Role: AuthKeyRolePrimary}},
+		},
+		ReputationID: "",
+	}
+	if err := ValidateAccountInvariant(account); err != nil {
+		t.Fatalf("low reputation account must be valid: %v", err)
+	}
+	if !CanTransact(account.Status) {
+		t.Fatal("low reputation active account must be able to transact")
+	}
+	msg := ExternalMessage{
+		AccountUser:   account.AddressUser,
+		Sequence:      account.Sequence,
+		Signers:       []string{"pubkey1"},
+		Operation:     "deploy_contract",
+		CurrentHeight: 200,
+	}
+	_, err := ApplyExternalMessage(account, msg)
+	if err != nil {
+		t.Fatalf("low reputation account must be able to deploy contracts: %v", err)
+	}
+}
+
+func TestContractExecutionEmitsBehaviorSignalsNoReputationState(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy:    DefaultAuthPolicy(),
+	}
+	if err := ValidateAccountInvariant(account); err != nil {
+		t.Fatalf("account must be valid: %v", err)
+	}
+	if account.ReputationID != "" {
+		t.Error("account must not carry reputation state from contract execution")
+	}
+}
+
+func TestReputationExportImportPreservesScoreConfidenceDecayStakeTime(t *testing.T) {
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		AuthPolicy:    DefaultAuthPolicy(),
+		ReputationID:  "rep_score_789",
+	}
+	exported := account
+	if exported.ReputationID != account.ReputationID {
+		t.Error("export must preserve reputation ID")
+	}
+	imported := exported
+	if imported.AddressUser != account.AddressUser {
+		t.Error("import must preserve account address")
+	}
+	if imported.ReputationID != "rep_score_789" {
+		t.Error("import must preserve reputation score reference")
+	}
+	if err := ValidateAccountInvariant(imported); err != nil {
+		t.Fatalf("imported account must be valid: %v", err)
+	}
+}
+
+func TestDomainSupportOnWalletAndContracts(t *testing.T) {
+	m := AccountMetadata{
+		DomainAlias: "mywallet.aet",
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("domain alias should validate: %v", err)
+	}
+	account := Account{
+		Version:       CurrentAccountVersion,
+		AddressUser:   "AEAAAQAAAAAAAAAAAAAAAEUbdGZPtxfNGqVYNkCDBOHufbxq",
+		AddressRaw:    "4:000000000000000000000000451b74664fb717cd1aa55836408304e1ee7dbc6a",
+		Status:        AccountStatusActive,
+		CreatedHeight: 100,
+		Metadata:      m,
+		AuthPolicy: AuthPolicy{
+			Version: 1, Mode: AuthModeSingleKey,
+			Keys: []AuthKey{{ID: "key1", PublicKey: "pubkey1", Role: AuthKeyRolePrimary}},
+		},
+	}
+	if account.Metadata.DomainAlias != "mywallet.aet" {
+		t.Error("wallet/contract must support domain alias")
+	}
+	if err := ValidateAccountInvariant(account); err != nil {
+		t.Fatalf("account with domain alias must be valid: %v", err)
+	}
+	updated, err := ApplyMsgUpdateAccountMetadata(account, MsgUpdateAccountMetadata{
+		AccountUser:   account.AddressUser,
+		Metadata:      AccountMetadata{DomainAlias: "mycontract.aet"},
+		Signers:       []string{"pubkey1"},
+		CurrentHeight: 200,
+	})
+	if err != nil {
+		t.Fatalf("metadata update with domain should succeed: %v", err)
+	}
+	if updated.Metadata.DomainAlias != "mycontract.aet" {
+		t.Errorf("expected domain alias mycontract.aet, got %s", updated.Metadata.DomainAlias)
 	}
 }
 

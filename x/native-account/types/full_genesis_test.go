@@ -8,7 +8,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sovereign-l1/l1/app/addressing"
 	nominatorpooltypes "github.com/sovereign-l1/l1/x/nominator-pool/types"
 	proofregistrytypes "github.com/sovereign-l1/l1/x/proofregistry/types"
 	reputationtypes "github.com/sovereign-l1/l1/x/reputation/types"
@@ -290,8 +289,4 @@ func proofMetadataState(t *testing.T) proofregistrytypes.ProofRegistryState {
 	state, err := proofregistrytypes.NewProofRegistryState(proofregistrytypes.DefaultHistoryWindow)
 	require.NoError(t, err)
 	return state
-}
-
-func aeAddress(fill byte) string {
-	return addressing.FormatAccAddress(sdk.AccAddress(bytes20(fill)))
 }
