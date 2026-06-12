@@ -24,7 +24,7 @@ const (
 
 	SignDocTypeURL	= "/cosmos.tx.v1beta1.Tx"
 
-	AWCE1FeatureKeyRotationV2	= "key_rotation_v2"
+	AWCE1FeatureRotationV2	= "rotation_v2"
 	AWCE1FeatureStorageRentV2	= "storage_rent_v2"
 	AWCE1FeatureRecoveryPolicyV2	= "recovery_policy_v2"
 	AWCE1FeatureAuthPolicyV2	= "auth_policy_v2"
