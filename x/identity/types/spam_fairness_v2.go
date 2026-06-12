@@ -1,7 +1,6 @@
 package types
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"sort"
@@ -456,11 +455,4 @@ func AuctionCommitmentMatchesChainDomainV2(name string, bidder sdk.AccAddress, b
 	return err == nil && expected == commitment
 }
 
-func auctionRevealForCommitmentV2(auction Auction, commitment AuctionCommitment) (AuctionReveal, bool) {
-	for _, reveal := range auction.Reveals {
-		if reveal.CommitmentHash == commitment.CommitmentHash && bytes.Equal(reveal.Bidder, commitment.Bidder) {
-			return cloneAuctionReveal(reveal), true
-		}
-	}
-	return AuctionReveal{}, false
-}
+

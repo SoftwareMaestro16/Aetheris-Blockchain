@@ -3,7 +3,6 @@ package types
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -728,8 +727,4 @@ func upsertDNLRoutingTable(tables []RoutingTable, table RoutingTable) []RoutingT
 	return normalizeRoutingTables(out)
 }
 
-func sortedRoutingProofs(proofs []RoutingStateProof) []RoutingStateProof {
-	out := append([]RoutingStateProof(nil), proofs...)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].ProofHash < out[j].ProofHash })
-	return out
-}
+

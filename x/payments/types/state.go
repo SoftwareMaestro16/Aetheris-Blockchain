@@ -203,13 +203,10 @@ func ComputeChannelOpenFeeFormula(state PaymentsState, channel ChannelRecord) (C
 	if !channel.ConditionalPayments {
 		conditionalSurcharge = sdkmath.ZeroInt()
 	}
-	virtualSurcharge, err := parseNonNegativeInt("payments virtual channel anchor surcharge", schedule.VirtualChannelAnchorSurcharge)
-	if err != nil {
+	if _, err := parseNonNegativeInt("payments virtual channel anchor surcharge", schedule.VirtualChannelAnchorSurcharge); err != nil {
 		return ChannelOpenFeeFormula{}, err
 	}
-	// Base channel opens are not virtual channel anchors; the configured anchor
-	// surcharge is reserved for virtual-channel anchor fee classes.
-	virtualSurcharge = sdkmath.ZeroInt()
+	virtualSurcharge := sdkmath.ZeroInt()
 	routingDeposit, err := parseNonNegativeInt("payments routing advertisement deposit", schedule.RoutingAdvertisementDeposit)
 	if err != nil {
 		return ChannelOpenFeeFormula{}, err

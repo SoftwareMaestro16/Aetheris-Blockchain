@@ -34,6 +34,7 @@ func NewInitializedApp(t *testing.T, chainID string) *l1app.L1App {
 		baseapp.SetChainID(chainID),
 	)
 	genesis := l1app.GenesisStateWithSingleValidator(t, app)
+	_ = genesis
 	stateBytes, err := json.MarshalIndent(genesis, "", " ")
 	require.NoError(t, err)
 	_, err = app.InitChain(&abci.RequestInitChain{

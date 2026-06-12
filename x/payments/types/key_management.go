@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	sdkmath "cosmossdk.io/math"
-
 	"github.com/sovereign-l1/l1/app/addressing"
 )
 
@@ -776,34 +774,4 @@ func normalizeSignedStateAuditLogs(logs []SignedStateAuditLog) []SignedStateAudi
 	return out
 }
 
-func signerStateAmountDelta(channel ChannelRecord, state ChannelState, signer string) (string, error) {
-	channel = channel.Normalize()
-	state = state.Normalize()
-	signer = strings.TrimSpace(signer)
-	current := sdkmath.ZeroInt()
-	next := sdkmath.ZeroInt()
-	for _, balance := range channel.LatestState.Normalize().Balances {
-		if balance.Participant == signer {
-			amount, err := parseNonNegativeInt("payments signer current balance", balance.Amount)
-			if err != nil {
-				return "", err
-			}
-			current = amount
-			break
-		}
-	}
-	for _, balance := range state.Balances {
-		if balance.Participant == signer {
-			amount, err := parseNonNegativeInt("payments signer next balance", balance.Amount)
-			if err != nil {
-				return "", err
-			}
-			next = amount
-			break
-		}
-	}
-	if current.GT(next) {
-		return current.Sub(next).String(), nil
-	}
-	return "0", nil
-}
+

@@ -31,6 +31,7 @@ func TestDefaultGenesisJSONIsDeterministic(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		app, genesis := setup(true, 5)
+		_ = genesis
 		genesisBytes, err := json.Marshal(genesis)
 		require.NoError(t, err)
 		require.Equal(t, firstBytes, genesisBytes, "default genesis JSON changed on iteration %d", i)

@@ -3,7 +3,6 @@ package types
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/sovereign-l1/l1/app/addressing"
@@ -369,8 +368,4 @@ func ComputeServiceCallbackReceiptEmissionHash(emission ServiceCallbackReceiptEm
 	return servicesHashParts("aetra-services-callback-receipt-emission-v1", emission.CallbackHash, emission.Receipt.ReceiptHash)
 }
 
-func normalizeUnifiedInteractionPlans(plans []UnifiedInteractionPlan) []UnifiedInteractionPlan {
-	out := append([]UnifiedInteractionPlan(nil), plans...)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CallID < out[j].CallID })
-	return out
-}
+

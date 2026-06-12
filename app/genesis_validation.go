@@ -21,21 +21,6 @@ func (app *L1App) validateAetraAuthGenesis(genesisState GenesisState) error {
 	return genesisvalidation.ValidateAuthGenesis(app.appCodec, genesisvalidation.State(genesisState))
 }
 
-func (app *L1App) validateAetraBankGenesis(genesisState GenesisState) error {
-	return genesisvalidation.ValidateBankGenesis(app.appCodec, genesisvalidation.State(genesisState))
-}
-
-func (app *L1App) validateAetraStakingGenesis(genesisState GenesisState) error {
-	return genesisvalidation.ValidateStakingGenesis(app.appCodec, genesisvalidation.State(genesisState), BondDenom)
-}
-
-func (app *L1App) validateAetraMintGenesis(genesisState GenesisState) error {
-	return genesisvalidation.ValidateMintGenesis(app.appCodec, genesisvalidation.State(genesisState))
-}
-
-func (app *L1App) validateAetraFeeGenesis(genesisState GenesisState) error {
-	return genesisvalidation.ValidateFeeGenesis(app.appCodec, genesisvalidation.State(genesisState))
-}
 
 func (app *L1App) ensureCoreGenesisCollections(ctx sdk.Context) error {
 	if err := ensureCollectionItem(ctx, app.MintKeeper.Params, appparams.AetraMintParams()); err != nil {

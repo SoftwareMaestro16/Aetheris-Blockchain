@@ -9,6 +9,3 @@ func NewVoteExtensionHandler() *VoteExtensionHandler {
 	return abcihandlers.NewVoteExtensionHandler()
 }
 
-func deterministicVoteExtensionData(height int64, hash []byte) []byte {
-	return abcihandlers.DeterministicVoteExtensionData(height, hash)
-}

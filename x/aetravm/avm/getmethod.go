@@ -69,7 +69,6 @@ type ABIMethodResolver struct {
 	methods     map[string]GetMethodABI
 	bySelector  map[[4]byte]GetMethodABI
 	byName      map[string]GetMethodABI
-	initialized bool
 }
 
 func NewABIMethodResolver() *ABIMethodResolver {
@@ -131,12 +130,11 @@ func (r *ABIMethodResolver) AllMethods() []GetMethodABI {
 // - No continuation mutation
 
 type QueryVM struct {
-	resolver   *ABIMethodResolver
-	snapshot   QuerySnapshot
-	gasLimit   uint64
-	gasUsed    uint64
-	proofMode  bool
-	readOnly   bool
+	resolver  *ABIMethodResolver
+	snapshot  QuerySnapshot
+	gasLimit  uint64
+	proofMode bool
+	readOnly  bool
 }
 
 func NewQueryVM(resolver *ABIMethodResolver, snapshot QuerySnapshot, gasLimit uint64) *QueryVM {

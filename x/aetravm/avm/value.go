@@ -880,7 +880,6 @@ func IsOptionNone(v RuntimeValue) bool {
 type ValueWriter struct {
 	builder *chunk.Builder
 	data    []byte
-	bitCnt  uint16
 	refs    []*chunk.Chunk
 }
 

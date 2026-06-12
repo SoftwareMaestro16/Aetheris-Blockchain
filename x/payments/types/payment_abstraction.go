@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	sdkmath "cosmossdk.io/math"
-
 	"github.com/sovereign-l1/l1/app/addressing"
 )
 
@@ -790,6 +788,4 @@ func sortPaymentNonceRecords(records []PaymentNonceRecord) {
 	})
 }
 
-func paymentAmountCovers(capacity, amount sdkmath.Int) bool {
-	return !capacity.LT(amount)
-}
+

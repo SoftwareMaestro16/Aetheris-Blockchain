@@ -141,8 +141,8 @@ func TestFeatureDisabledMainnetProfileHasNoActiveProductionShardingBehavior(t *t
 }
 
 func TestPrototypeGenesisInitializesRuntimeKeeperState(t *testing.T) {
-	app, genesis := setup(true, 5)
-	genesis = GenesisStateWithSingleValidator(t, app)
+	app, _ := setup(true, 5)
+	genesis := GenesisStateWithSingleValidator(t, app)
 	routingGenesis := routingkeeper.DefaultGenesis()
 	routingGenesis.Shards = []routingkeeper.ShardConfig{{ZoneID: routingtypes.ZoneFinancial, ActiveShards: 2}}
 	rawRoutingGenesis, err := json.Marshal(routingGenesis)

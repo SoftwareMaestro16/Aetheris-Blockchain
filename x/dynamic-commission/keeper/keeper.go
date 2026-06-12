@@ -12,13 +12,19 @@ import (
 )
 
 type Keeper struct {
-	cdc          codec.BinaryCodec
-	storeService corestore.KVStoreService
-	authority    string
+	cdc              codec.BinaryCodec
+	storeService     corestore.KVStoreService
+	authority        string
+	reputationKeeper types.ReputationKeeper
 }
 
 func NewKeeper(cdc codec.BinaryCodec, storeService corestore.KVStoreService, authority string) Keeper {
 	return Keeper{cdc: cdc, storeService: storeService, authority: authority}
+}
+
+func (k Keeper) WithReputationKeeper(rk types.ReputationKeeper) Keeper {
+	k.reputationKeeper = rk
+	return k
 }
 
 func (k Keeper) Authority() string { return k.authority }
@@ -84,6 +90,13 @@ func (k Keeper) SetBaseCommission(ctx context.Context, validator string, baseBps
 func (k Keeper) RecomputeEffectiveCommission(ctx context.Context, validator string, performanceScoreBps, reputationScoreBps uint32, jailed bool, height uint64) (types.ValidatorCommission, error) {
 	if height == 0 {
 		return types.ValidatorCommission{}, types.ErrInvalidCommission.Wrap("height must be positive")
+	}
+	if k.reputationKeeper != nil {
+		score, isJailed, err := k.reputationKeeper.GetValidatorTotalScore(ctx, validator)
+		if err == nil {
+			reputationScoreBps = score
+			jailed = jailed || isJailed
+		}
 	}
 	params, err := k.GetParams(ctx)
 	if err != nil {

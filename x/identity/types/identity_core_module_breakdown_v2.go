@@ -641,11 +641,6 @@ func (report *IdentityCoreInvariantReportV2) merge(other IdentityCoreInvariantRe
 	}
 }
 
-func (report *IdentityCoreInvariantReportV2) addIssueIf(condition bool, issue string) {
-	if condition {
-		report.addIssue(issue)
-	}
-}
 
 func (report *IdentityCoreInvariantReportV2) addIssue(issue string) {
 	report.Valid = false

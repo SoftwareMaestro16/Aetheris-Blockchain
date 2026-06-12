@@ -20,9 +20,10 @@ type GenesisState struct {
 }
 
 type Keeper struct {
-	genesis      GenesisState
-	storeService corestore.KVStoreService
-	runtimeCtx   context.Context
+	genesis          GenesisState
+	storeService     corestore.KVStoreService
+	runtimeCtx       context.Context
+	reputationKeeper types.ReputationKeeper
 }
 
 func NewKeeper() Keeper {
@@ -31,6 +32,11 @@ func NewKeeper() Keeper {
 
 func NewPersistentKeeper(storeService corestore.KVStoreService) Keeper {
 	return Keeper{genesis: DefaultGenesis(), storeService: storeService}
+}
+
+func (k Keeper) WithReputationKeeper(rk types.ReputationKeeper) Keeper {
+	k.reputationKeeper = rk
+	return k
 }
 
 func DefaultGenesis() GenesisState {
@@ -278,7 +284,22 @@ func (k Keeper) ValidatorPerformance(operator string) (types.ValidatorPerformanc
 	if err != nil || !found {
 		return types.ValidatorPerformance{}, found, err
 	}
-	return validator.Performance(), true, nil
+	perf := validator.Performance()
+	if score := k.effectiveReputationScore(operator); score > 0 {
+		perf.ReputationScore = score
+	}
+	return perf, true, nil
+}
+
+func (k Keeper) effectiveReputationScore(operator string) uint32 {
+	if k.reputationKeeper == nil || k.runtimeCtx == nil {
+		return 0
+	}
+	score, _, err := k.reputationKeeper.GetValidatorTotalScore(k.runtimeCtx, operator)
+	if err != nil {
+		return 0
+	}
+	return score
 }
 
 func (k Keeper) ValidatorSecurityStatus(operator string) (types.ValidatorSecurityStatus, bool, error) {

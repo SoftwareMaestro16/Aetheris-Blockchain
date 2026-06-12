@@ -200,16 +200,6 @@ func RenderLaunchModuleInventoryBoundarySummary(entries []LaunchModuleInventoryE
 	return b.String()
 }
 
-func launchInventoryAetraModuleNames(entries []LaunchModuleInventoryEntry) []string {
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.AppWired && entry.ModuleName != "" {
-			names = append(names, entry.ModuleName)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
 
 func normalizeXDir(dir string) string {
 	dir = strings.TrimSpace(strings.ReplaceAll(dir, "\\", "/"))

@@ -78,7 +78,7 @@ func TestAuctionRecordV2BuildsFromSealedAuctionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	state, _, err = RevealAuctionBid(state, auction.Name, addr(2), 150, "right", revealHeight+1)
 	require.NoError(t, err)
-	state, auction, err = FinalizeSealedAuction(state, auction.Name, auction.RevealEndHeight)
+	_, auction, err = FinalizeSealedAuction(state, auction.Name, auction.RevealEndHeight)
 	require.NoError(t, err)
 
 	finalRecord, err := BuildAuctionRecordV2(auction, 100, "domain.fees")

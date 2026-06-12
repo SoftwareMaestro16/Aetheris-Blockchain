@@ -198,27 +198,4 @@ func (t GasTable) Validate() error {
 	return nil
 }
 
-func gasMul(cost, units uint64) (uint64, bool) {
-	if cost != 0 && units > ^uint64(0)/cost {
-		return 0, true
-	}
-	return cost * units, false
-}
 
-func gasAdd(parts ...uint64) (uint64, bool) {
-	var total uint64
-	for _, part := range parts {
-		if part > ^uint64(0)-total {
-			return 0, true
-		}
-		total += part
-	}
-	return total, false
-}
-
-func gasPages(bytes uint64) uint64 {
-	if bytes == 0 {
-		return 0
-	}
-	return (bytes + 4095) / 4096
-}

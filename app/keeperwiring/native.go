@@ -47,6 +47,22 @@ func (a reputationReaderAdapter) GetIdentityReputationScore(ctx context.Context,
 	return a.Keeper.GetIdentityReputationScore(ctx, addr)
 }
 
+// validatorReputationAdapter wraps the reputation keeper as a dynamiccommissiontypes.ReputationKeeper.
+type validatorReputationAdapter struct {
+	Keeper reputationkeeper.Keeper
+}
+
+func (a validatorReputationAdapter) GetValidatorTotalScore(ctx context.Context, addr string) (uint32, bool, error) {
+	vs, err := a.Keeper.GetValidatorReputation(ctx, addr)
+	if err != nil {
+		return 0, false, err
+	}
+	if vs == nil {
+		return 0, false, nil
+	}
+	return vs.TotalScore, vs.IsJailed || vs.IsSlashed, nil
+}
+
 type NativeKeeperDeps struct {
 	AppCodec      codec.Codec
 	Keys          map[string]*storetypes.KVStoreKey
@@ -122,7 +138,7 @@ func NewNativeKeepers(deps NativeKeeperDeps) NativeKeepers {
 			deps.AppCodec,
 			runtime.NewKVStoreService(deps.Keys[dynamiccommissiontypes.StoreKey]),
 			deps.GovAuthority,
-		),
+		).WithReputationKeeper(validatorReputationAdapter{Keeper: repKeeper}),
 		StakeConcentrationKeeper: stakeconcentrationkeeper.NewKeeper(
 			deps.AppCodec,
 			runtime.NewKVStoreService(deps.Keys[stakeconcentrationtypes.StoreKey]),

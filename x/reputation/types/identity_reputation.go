@@ -163,7 +163,7 @@ func computeContractContribution(rep *IdentityReputation) uint32 {
 	if positive == 0 {
 		return 0
 	}
-	net := uint32(positive)
+	var net uint32
 	if negative > positive {
 		net = 0
 	} else {

@@ -96,7 +96,7 @@ func TestIdentitySpecSubdomainIssuanceRequiresParentOwner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dex.alice.aet", subdomain.Name)
 
-	next, _, err = SetIdentityResolver(next, "dex.alice.aet", addr(3), ResolverUpdate{Primary: addr(4)}, 12)
+	_, _, err = SetIdentityResolver(next, "dex.alice.aet", addr(3), ResolverUpdate{Primary: addr(4)}, 12)
 	require.NoError(t, err)
 }
 

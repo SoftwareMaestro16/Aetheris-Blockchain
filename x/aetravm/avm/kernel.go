@@ -1259,11 +1259,3 @@ func appendString(buf []byte, s string) []byte {
 	return buf
 }
 
-func sortMessagesByDeterministicOrder_actions(actions []Action) {
-	sort.SliceStable(actions, func(i, j int) bool {
-		if actions[i].Type != actions[j].Type {
-			return actions[i].Type < actions[j].Type
-		}
-		return actions[i].Target < actions[j].Target
-	})
-}

@@ -1,7 +1,6 @@
 package types
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -530,6 +529,4 @@ func normalizeZoneTransferRouteFees(values []ZoneTransferRouteFee) []ZoneTransfe
 	return out
 }
 
-func zoneTransferSameAddress(left sdk.AccAddress, right sdk.AccAddress) bool {
-	return bytes.Equal(left, right)
-}
+

@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"sort"
 
-	"github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/x/aetravm/async"
-	"lukechampine.com/blake3"
 )
 
 const (
@@ -311,38 +308,6 @@ func DecodeHostArgs(encoded []byte) ([][]byte, error) {
 		return nil, errors.New("AVM host args have trailing data")
 	}
 	return args, nil
-}
-
-func hostU64(value uint64) []byte {
-	var out [8]byte
-	binary.BigEndian.PutUint64(out[:], value)
-	return out[:]
-}
-
-func hostArgU64(arg []byte) uint64 {
-	return binary.BigEndian.Uint64(arg)
-}
-
-func hostHashSHA256(data []byte) []byte {
-	sum := sha256.Sum256(data)
-	return sum[:]
-}
-
-func hostHashBLAKE3(data []byte) []byte {
-	sum := blake3.Sum256(data)
-	return sum[:]
-}
-
-func hostVerifyEd25519(publicKey, signature, message []byte) bool {
-	return ed25519.Verify(ed25519.PublicKey(publicKey), message, signature)
-}
-
-func hostParseAetraAddress(text []byte) ([]byte, error) {
-	return addressing.Parse(string(text))
-}
-
-func hostFormatAetraAddress(raw []byte) (string, error) {
-	return addressing.FormatUserFriendly(raw)
 }
 
 // RandomBeacon produces deterministic entropy for contract-level randomness.

@@ -22,6 +22,7 @@ import (
 
 func TestDefaultGenesisInitExportValidateAcceptanceChain(t *testing.T) {
 	app, genesis := setup(true, 5)
+	_ = genesis
 	genesis = GenesisStateWithSingleValidator(t, app)
 	stateBytes, err := json.MarshalIndent(genesis, "", " ")
 	require.NoError(t, err)

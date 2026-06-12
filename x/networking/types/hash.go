@@ -1,7 +1,6 @@
 package types
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -102,19 +101,6 @@ func writeUint64(w interface{ Write([]byte) (int, error) }, value uint64) {
 	_, _ = w.Write(bz[:])
 }
 
-func compareString(left, right string) int {
-	return bytes.Compare([]byte(left), []byte(right))
-}
-
-func compareUint64(left, right uint64) int {
-	if left < right {
-		return -1
-	}
-	if left > right {
-		return 1
-	}
-	return 0
-}
 
 func cloneBytes(in []byte) []byte {
 	if len(in) == 0 {

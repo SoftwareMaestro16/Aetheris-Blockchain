@@ -155,7 +155,7 @@ func TestXServiceCallsRetryAndQueries(t *testing.T) {
 	retryIndex, err := NewServiceCallReplayIndex(25)
 	require.NoError(t, err)
 	original := testInteractionCall(t, ctx, descriptor, "submit", 7, "servicecalls/original")
-	retryIndex, err = AcceptUnifiedServiceCall(ctx, descriptor, retryIndex, original)
+	_, err = AcceptUnifiedServiceCall(ctx, descriptor, retryIndex, original)
 	require.NoError(t, err)
 
 	retry := testInteractionCall(t, ctx, descriptor, "submit", 8, "servicecalls/retry")

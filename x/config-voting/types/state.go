@@ -157,7 +157,6 @@ func (p ConfigVotingParams) Validate() error {
 	if p.EmergencyDelay > p.ExecutionDelay {
 		return errors.New("config voting emergency delay cannot exceed normal delay")
 	}
-	p.VetoAuthorities = normalizeStrings(p.VetoAuthorities)
 	return nil
 }
 
@@ -443,24 +442,6 @@ func SortVotes(votes []ConfigVote) {
 
 func SortSnapshot(snapshot []VotingPowerSnapshotEntry) {
 	sort.SliceStable(snapshot, func(i, j int) bool { return snapshot[i].Voter < snapshot[j].Voter })
-}
-
-func normalizeStrings(values []string) []string {
-	out := make([]string, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, found := seen[value]; found {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func cloneProposals(proposals []ConfigProposal) []ConfigProposal {

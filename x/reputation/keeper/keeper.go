@@ -196,7 +196,12 @@ func (k Keeper) AccountReputation(ctx context.Context, req types.QueryAccountRep
 
 // GetIdentityReputationScore returns the uint32 score for fee module integration.
 func (k Keeper) GetIdentityReputationScore(ctx context.Context, addr sdk.AccAddress) (uint32, bool, error) {
+	// Defensive: ensure addr is a valid AE address byte length before formatting.
 	if len(addr) == 0 {
+		return types.IdentityScoreDefault, false, nil
+	}
+	if !(len(addr) == 20 || len(addr) == 32) {
+		// Unknown/invalid address length; return default score rather than panicking in address formatting.
 		return types.IdentityScoreDefault, false, nil
 	}
 	state, err := k.GetState(ctx)
@@ -209,34 +214,6 @@ func (k Keeper) GetIdentityReputationScore(ctx context.Context, addr sdk.AccAddr
 		return types.IdentityScoreDefault, false, nil
 	}
 	return id.Score, true, nil
-}
-
-// ---------------
-// Helpers
-// ---------------
-
-func stakeRecordFromIdentity(id types.IdentityReputation) types.StakeReputationRecord {
-	return types.StakeReputationRecord{
-		AccountUser:          id.Account,
-		StakeWeightedSeconds: id.SignalCounters.StakeTimeSeconds,
-		ClaimedStakeWeightedSeconds: id.SignalCounters.StakeTimeSeconds,
-		ClaimedStakeReputation:     uint16(id.Score / 100),
-		NonTransferable:            true,
-		LastUpdatedUnix:            uint64(id.LastUpdateTime),
-	}
-}
-
-func repRecordFromIdentity(id types.IdentityReputation) types.ReputationRecord {
-	score := uint8(id.Score * 255 / types.IdentityScoreMax)
-	stakingScore := uint16(id.StakeTimeAccumulator / 3600)
-	return types.ReputationRecord{
-		Score:          score,
-		StakingScore:   stakingScore,
-		TxSuccessScore: uint16(id.SignalCounters.SuccessfulTxs),
-		ContractScore:  uint16(id.SignalCounters.ContractInteractions),
-		SpamPenalty:    uint16(id.SignalCounters.SpamCount),
-		SlashPenalty:   uint16(id.SignalCounters.SlashEvents),
-	}
 }
 
 func parseAddress(text string) (sdk.AccAddress, error) {

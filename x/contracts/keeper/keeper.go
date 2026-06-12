@@ -1077,8 +1077,7 @@ func (k *Keeper) InjectNativeStaking(msg types.MsgInjectNativeStaking) (types.Na
 	if err := types.EnsureContractLifecycleAction(contract, types.ContractLifecycleActionExecuteExternal); err != nil {
 		return types.NativeStakingInjectionRecord{}, err
 	}
-	contract, err := k.chargeContractRentAt(k.runtimeCtx, idx, contract, msg.Height)
-	if err != nil {
+	if _, err := k.chargeContractRentAt(k.runtimeCtx, idx, contract, msg.Height); err != nil {
 		return types.NativeStakingInjectionRecord{}, errors.New(types.ErrStorageRent + ": contract has storage rent debt")
 	}
 	if !hasCapability(k.genesis.State.StakingCapabilities, msg.CallerContractUser, msg.PoolID) {

@@ -10,12 +10,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/sovereign-l1/l1/app/addressing"
 	nativeaccountkeeper "github.com/sovereign-l1/l1/x/native-account/keeper"
 	nativeaccounttypes "github.com/sovereign-l1/l1/x/native-account/types"
 )
 
 func TestNativeAccountRegisteredAsFullAppModule(t *testing.T) {
 	app, genesis := setup(true, 5)
+	_ = genesis
 
 	require.Contains(t, app.ModuleManager.Modules, nativeaccounttypes.ModuleName)
 	require.Contains(t, app.keys, nativeaccounttypes.StoreKey)
@@ -315,6 +317,10 @@ func nativeAccountActivateViaRoute(t *testing.T, app *L1App, ctx sdk.Context, pu
 	account, found, err := app.NativeAccountKeeper.AccountByUser(ctx, pair.User)
 	require.NoError(t, err)
 	require.True(t, found)
+	// Ensure the activated account has spendable native tokens for tests that charge storage rent.
+	addr, err := addressing.ParseAccAddress(account.AddressUser)
+	require.NoError(t, err)
+	FundTestAddr(t, app, ctx, addr, sdk.NewCoins(sdk.NewInt64Coin(sdk.DefaultBondDenom, 1000000)))
 	return account
 }
 

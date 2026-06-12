@@ -863,6 +863,10 @@ func (p Params) Validate() error {
 	if err := validatePowerCapSchedule(p.ValidatorPowerCapSchedule); err != nil {
 		return err
 	}
+	// Double-sign slashing must tombstone validators; this policy is mandatory
+	if !p.DoubleSignTombstone {
+		return errors.New("double-sign slash must tombstone")
+	}
 	if p.OverflowRewardMultiplierMinBps > p.OverflowRewardMultiplierMaxBps || p.OverflowRewardMultiplierMaxBps > 3_000 {
 		return errors.New("nominator pool overflow reward multiplier must stay within 0-3000 bps")
 	}

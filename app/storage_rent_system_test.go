@@ -12,6 +12,7 @@ import (
 
 func TestStorageRentPrototypeModuleWiringAndGenesis(t *testing.T) {
 	app, genesis := setup(true, 5)
+	_ = genesis
 
 	require.NoError(t, app.ValidateAetraCoreWiringGate())
 	require.Contains(t, app.ModuleManager.Modules, storagerenttypes.ModuleName)

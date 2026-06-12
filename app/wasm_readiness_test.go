@@ -10,6 +10,7 @@ import (
 
 func TestDefaultAppDoesNotWireCosmWasmUntilFeatureGate(t *testing.T) {
 	app, genesis := setup(true, 5)
+	_ = genesis
 
 	require.NotContains(t, app.keys, wasmconfig.StoreKey)
 	require.NotContains(t, genesis, wasmconfig.ModuleName)

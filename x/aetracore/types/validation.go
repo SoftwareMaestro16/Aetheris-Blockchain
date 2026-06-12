@@ -49,10 +49,6 @@ func validateToken(fieldName, value string, maxLen int) error {
 	return nil
 }
 
-func validateCapabilities(capabilities []string) error {
-	return validateCapabilitiesForField("aetracore zone capability", capabilities)
-}
-
 func validateCapabilitiesForField(fieldName string, capabilities []string) error {
 	var previous string
 	seen := make(map[string]struct{}, len(capabilities))

@@ -369,13 +369,6 @@ func (s *StaticSecurityScanner) ScanControlFlow(blocks uint32, entryBlock uint32
 	return violations
 }
 
-func (s *StaticSecurityScanner) detectUnreachableBlocks(blockCount uint32, entryBlock uint32) []SecurityViolation {
-	violations := make([]SecurityViolation, 0)
-	_ = blockCount
-	_ = entryBlock
-	return violations
-}
-
 func (s *StaticSecurityScanner) ScanTypeCoercions(instructions []byte) []SecurityViolation {
 	violations := make([]SecurityViolation, 0)
 	_ = instructions

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	sdkmath "cosmossdk.io/math"
 )
 
 const (
@@ -529,22 +527,4 @@ func compareRoutingSafetyPath(left, right RoutingSafetyPath) int {
 	return 0
 }
 
-func conservedValue(original, bounced, burned string) (bool, error) {
-	originalInt, err := parsePerformanceNonNegativeInt("original value", original)
-	if err != nil {
-		return false, err
-	}
-	bouncedInt, err := parsePerformanceNonNegativeInt("bounced value", bounced)
-	if err != nil {
-		return false, err
-	}
-	burnedInt, err := parsePerformanceNonNegativeInt("burned value", burned)
-	if err != nil {
-		return false, err
-	}
-	return bouncedInt.Add(burnedInt).LTE(originalInt), nil
-}
 
-func nonNegativeInt(value string) (sdkmath.Int, error) {
-	return parsePerformanceNonNegativeInt("safety value", value)
-}

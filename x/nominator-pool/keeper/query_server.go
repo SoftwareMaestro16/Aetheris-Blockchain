@@ -29,7 +29,29 @@ func (q queryServer) NominatorPools(_ context.Context, req *types.QueryNominator
 	if req == nil {
 		return nil, errors.New("empty nominator pools query")
 	}
-	return &types.QueryNominatorPoolsResponse{Pools: q.keeper.NominatorPools()}, nil
+	all := q.keeper.NominatorPools()
+	total := uint64(len(all))
+	// apply offset
+	off := req.Offset
+tlimit := req.Limit
+	if tlimit == 0 {
+		// default to return all
+		tlimit = total
+	}
+	if off >= total {
+		return &types.QueryNominatorPoolsResponse{Pools: []types.NominatorPool{}, NextOffset: 0, Total: total}, nil
+	}
+	end := off + tlimit
+	if end > total {
+		end = total
+	}
+	// slice and compute next offset
+	res := all[off:end]
+	next := uint64(0)
+	if end < total {
+		next = end
+	}
+	return &types.QueryNominatorPoolsResponse{Pools: res, NextOffset: next, Total: total}, nil
 }
 
 func (q queryServer) PoolDelegator(_ context.Context, req *types.QueryPoolDelegatorRequest) (*types.QueryPoolDelegatorResponse, error) {

@@ -13,6 +13,9 @@ ROADMAP_V4.md
 TO_AUDIT.md
 UPDATES_V2.md
 
+# Lint output
+staticcheck.out
+
 # Secrets and private config
 .env
 .env.*

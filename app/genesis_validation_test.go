@@ -151,8 +151,8 @@ func TestGenesisRejectsDuplicateAndMalformedAccounts(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			app, genesis := setup(true, 5)
-			genesis = GenesisStateWithSingleValidator(t, app)
+			app, _ := setup(true, 5)
+			genesis := GenesisStateWithSingleValidator(t, app)
 			tc.mutate(app, genesis)
 			requireGenesisValidationError(t, app, genesis, tc.errMatch)
 		})
@@ -254,8 +254,8 @@ func TestGenesisRejectsInvalidCoreBankAndStakingState(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			app, genesis := setup(true, 5)
-			genesis = GenesisStateWithSingleValidator(t, app)
+			app, _ := setup(true, 5)
+			genesis := GenesisStateWithSingleValidator(t, app)
 			tc.mutate(app, genesis)
 			requireGenesisValidationError(t, app, genesis, tc.errMatch)
 		})

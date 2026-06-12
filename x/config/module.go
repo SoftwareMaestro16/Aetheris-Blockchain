@@ -41,10 +41,13 @@ func (AppModule) IsOnePerModuleType()                                         {}
 func (AppModule) IsAppModule()                                                {}
 func (AppModule) Name() string                                                { return types.ModuleName }
 func (AppModule) RegisterLegacyAminoCodec(*codec.LegacyAmino)                 {}
-func (AppModule) RegisterInterfaces(codectypes.InterfaceRegistry)             {}
+func (AppModule) RegisterInterfaces(registry codectypes.InterfaceRegistry) { types.RegisterInterfaces(registry) }
 func (AppModule) RegisterGRPCGatewayRoutes(client.Context, *runtime.ServeMux) {}
 
 func (am AppModule) RegisterServices(cfg module.Configurator) {
+	// Register Msg and Query servers
+	types.RegisterMsgServer(cfg.MsgServer(), keeper.NewGRPCMsgServer(am.keeper))
+	types.RegisterQueryServer(cfg.QueryServer(), keeper.NewGRPCQueryServer(am.keeper))
 	if err := cfg.RegisterMigration(types.ModuleName, 1, func(ctx sdk.Context) error {
 		return am.keeper.Migrate1to2State(ctx)
 	}); err != nil {
@@ -83,8 +86,14 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, _ codec.JSONCodec) json.RawMe
 }
 
 func (AppModule) ConsensusVersion() uint64    { return ConsensusVersion }
-func (AppModule) GetTxCmd() *cobra.Command    { return nil }
-func (AppModule) GetQueryCmd() *cobra.Command { return nil }
+func (AppModule) GetTxCmd() *cobra.Command {
+	// Minimal non-nil tx cmd for tests; full CLI commands are not required here.
+	return &cobra.Command{Use: types.ModuleName}
+}
+
+func (AppModule) GetQueryCmd() *cobra.Command {
+	return &cobra.Command{Use: types.ModuleName}
+}
 
 func mustMarshalGenesis(moduleName string, value any) json.RawMessage {
 	bz, err := json.Marshal(value)

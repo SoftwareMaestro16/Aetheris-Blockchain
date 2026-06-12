@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	sdkmath "cosmossdk.io/math"
@@ -353,12 +352,6 @@ func validateReceipts(receipts []ExecutionReceipt) error {
 		last = key
 	}
 	return nil
-}
-
-func sortReceipts(receipts []ExecutionReceipt) {
-	sort.SliceStable(receipts, func(i, j int) bool {
-		return receiptSortKey(receipts[i]) < receiptSortKey(receipts[j])
-	})
 }
 
 func receiptSortKey(receipt ExecutionReceipt) string {

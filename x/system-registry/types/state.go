@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-
 	"github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/x/internal/prototype"
 )
@@ -503,9 +501,6 @@ func PrivilegedCallAllowed(entity SystemEntity) bool {
 	return entity.Status == StatusActive || (entity.Status == StatusPaused && entity.PrivilegedCallsAllowedWhilePaused)
 }
 
-func moduleAccount(moduleName string) string {
-	return addressing.FormatAccAddress(authtypes.NewModuleAddress(moduleName))
-}
 
 func validateAcyclic(byName map[string]SystemEntity) error {
 	visiting := map[string]bool{}

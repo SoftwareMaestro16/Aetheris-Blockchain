@@ -57,29 +57,6 @@ func (c DeployCapabilityMask) IsEmpty() bool {
 
 var AllDeployCapabilities = DeployCapabilityMask{Flags: ^uint64(0)}
 
-func executionCapsToDeployCaps(m CapabilityMask) DeployCapabilityMask {
-	var f uint64
-	if m.Storage {
-		f |= uint64(DeployCapStorage)
-	}
-	if m.Messaging {
-		f |= uint64(DeployCapMessaging)
-	}
-	if m.Crypto {
-		f |= uint64(DeployCapHostFunc)
-	}
-	return DeployCapabilityMask{Flags: f}
-}
-
-func deployCapsToExecutionCaps(f DeployCapabilityMask) CapabilityMask {
-	return CapabilityMask{
-		Crypto:    f.Has(DeployCapHostFunc),
-		Chain:     f.Has(DeployCapMessaging),
-		Messaging: f.Has(DeployCapMessaging),
-		Storage:   f.Has(DeployCapStorage),
-	}
-}
-
 // ---------------
 // Contract Deployment State
 // ---------------

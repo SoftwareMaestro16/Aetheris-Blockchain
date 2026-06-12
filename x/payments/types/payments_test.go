@@ -270,7 +270,7 @@ func TestPaymentAPISurfaceMessagesQueriesAndSettlementViews(t *testing.T) {
 	require.Equal(t, proofID, queriedProof.Evidence.ProofID)
 	require.Equal(t, "3", queriedProof.Reward.Amount)
 
-	state, fraud, result, err = ApplyPaymentAPISurfaceMessage(state, fraud, MsgFinalizeClose{Signer: alice, Request: FinalSettlementRequest{
+	state, _, result, err = ApplyPaymentAPISurfaceMessage(state, fraud, MsgFinalizeClose{Signer: alice, Request: FinalSettlementRequest{
 		ChannelID:     channel.ChannelID,
 		CurrentHeight: 50,
 	}})

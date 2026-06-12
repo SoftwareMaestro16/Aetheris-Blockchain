@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	sdkmath "cosmossdk.io/math"
-
 	"github.com/sovereign-l1/l1/app/addressing"
 )
 
@@ -1119,6 +1117,4 @@ func ApplyChannelFeeAccumulator(acc ChannelFeeAccumulator, settlement Settlement
 	return next, nil
 }
 
-func channelModuleAmount(value string) (sdkmath.Int, error) {
-	return parseNonNegativeInt("payments channel module amount", value)
-}
+

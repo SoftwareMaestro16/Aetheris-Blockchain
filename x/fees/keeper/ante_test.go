@@ -56,15 +56,6 @@ func (tx feeTx) FeeGranter() []byte {
 	return nil
 }
 
-// minValidFee returns the minimum fee coin required by the full formula for a feeTx
-// with the given gas amount and no messages/bytes using the default params.
-// Formula: max(min=1, base=1) + gas*1(per_gas) = 1 + gas
-func minValidFee(gas uint64) sdk.Coins {
-	// With default formula params: base=max(1,1)=1, gas_fee=gas*1, bytes=0, msgs=0
-	amount := sdkmath.NewInt(1).Add(sdkmath.NewIntFromUint64(gas))
-	return sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, amount.Int64()))
-}
-
 type sigFeeTx struct {
 	feeTx
 	signers [][]byte

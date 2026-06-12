@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"cosmossdk.io/log/v2"
 	"github.com/spf13/cast"
 
@@ -43,7 +45,24 @@ import (
 	aetraaddress "github.com/sovereign-l1/l1/app/addressing"
 	"github.com/sovereign-l1/l1/app/keeperconfig"
 	"github.com/sovereign-l1/l1/app/keeperwiring"
+	reputationkeeper "github.com/sovereign-l1/l1/x/reputation/keeper"
 )
+
+// validatorRegistryReputationAdapter wraps the reputation keeper for validator-registry usage.
+type validatorRegistryReputationAdapter struct {
+	Keeper reputationkeeper.Keeper
+}
+
+func (a validatorRegistryReputationAdapter) GetValidatorTotalScore(ctx context.Context, addr string) (uint32, bool, error) {
+	vs, err := a.Keeper.GetValidatorReputation(ctx, addr)
+	if err != nil {
+		return 0, false, err
+	}
+	if vs == nil {
+		return 0, false, nil
+	}
+	return vs.TotalScore, vs.IsJailed || vs.IsSlashed, nil
+}
 
 func (app *L1App) initKeepers(
 	appCodec codec.Codec,
@@ -227,6 +246,9 @@ func (app *L1App) initKeepers(
 	app.MintAuthorityKeeper = nativeKeepers.MintAuthorityKeeper
 	app.DelegatorProtectionKeeper = nativeKeepers.DelegatorProtectionKeeper
 	app.ReputationKeeper = nativeKeepers.ReputationKeeper
+	app.ValidatorRegistryKeeper = app.ValidatorRegistryKeeper.WithReputationKeeper(
+		validatorRegistryReputationAdapter{Keeper: app.ReputationKeeper},
+	)
 	app.PerformanceKeeper = nativeKeepers.PerformanceKeeper
 	app.DynamicCommissionKeeper = nativeKeepers.DynamicCommissionKeeper
 	app.StakeConcentrationKeeper = nativeKeepers.StakeConcentrationKeeper
