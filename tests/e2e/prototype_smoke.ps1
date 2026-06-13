@@ -19,7 +19,7 @@ param(
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
   [string]$Node = "",
-  [string]$Fees = "1000naet",
+  [string]$Fees = "300000naet",
   [string]$WrongFees = "1000testtoken",
   [string]$FactorySubdenom = "smokegold",
   [string]$DelegationAmount = "5000000naet",

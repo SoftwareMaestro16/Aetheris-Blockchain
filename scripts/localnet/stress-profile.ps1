@@ -10,7 +10,7 @@ param(
   [string]$ToKey = "node1",
   [int]$ToNodeIndex = 1,
   [string]$Amount = "1naet",
-  [string]$Fees = "1000naet",
+  [string]$Fees = "300000naet",
   [ValidateSet("sync", "async")]
   [string]$BroadcastMode = "sync",
   [ValidateSet("rpc", "cli")]

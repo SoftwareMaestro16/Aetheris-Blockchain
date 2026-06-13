@@ -12,7 +12,7 @@ import (
 const (
 	BasisPoints			= uint64(10_000)
 	DefaultBaseFeeAmount		= MinDefaultFeeAmount
-	DefaultMaxFeeAmount		= "1000"
+	DefaultMaxFeeAmount		= "5000000"
 	DefaultTargetUtilizationBps	= uint32(5_000)
 	DefaultCongestionBps		= uint32(8_000)
 	DefaultMaxTxGas			= uint64(1_000_000)

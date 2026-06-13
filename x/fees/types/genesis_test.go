@@ -19,7 +19,7 @@ func TestDefaultParamsValidate(t *testing.T) {
 	if params.MinFeeAmount != "1" {
 		t.Fatalf("expected min fee amount 1, got %q", params.MinFeeAmount)
 	}
-	if params.BaseFeeAmount != "1" || params.MaxFeeAmount != "1000" {
+	if params.BaseFeeAmount != "1" || params.MaxFeeAmount != "5000000" {
 		t.Fatalf("expected capped low-fee defaults, got base=%q max=%q", params.BaseFeeAmount, params.MaxFeeAmount)
 	}
 	if params.FeeCollectorModule != FeeCollectorModuleName {
@@ -190,7 +190,7 @@ func TestQuoteFeeIncludesEconomicControlSurface(t *testing.T) {
 func TestValidateAdmissionRejectsSpamWithoutUnboundedFeeEscalation(t *testing.T) {
 	params := DefaultParams()
 	quote, err := ValidateAdmission(params, AdmissionInput{
-		Fee:			sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 1000)),
+		Fee:			sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 5000000)),
 		GasLimit:		params.MaxTxGas,
 		BlockGasConsumed:	params.MaxBlockGas - params.MaxTxGas,
 		BlockTxCount:		1,
@@ -200,12 +200,12 @@ func TestValidateAdmissionRejectsSpamWithoutUnboundedFeeEscalation(t *testing.T)
 	if err != nil {
 		t.Fatalf("max capped fee should be accepted at full utilization: %v", err)
 	}
-	if !quote.AtHardCap || quote.RequiredFee.Amount.Int64() != 1000 {
+	if !quote.AtHardCap || quote.RequiredFee.Amount.Int64() != 5000000 {
 		t.Fatalf("expected hard cap quote, got %+v", quote)
 	}
 
 	_, err = ValidateAdmission(params, AdmissionInput{
-		Fee:			sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 1001)),
+		Fee:			sdk.NewCoins(sdk.NewInt64Coin(BondDenom, 5000001)),
 		GasLimit:		100_000,
 		BlockGasConsumed:	0,
 		BlockTxCount:		1,

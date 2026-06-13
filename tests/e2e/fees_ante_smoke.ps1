@@ -16,7 +16,7 @@ param(
   [bool]$EnableAPI = $true,
   [bool]$EnableGRPC = $true,
   [bool]$EnableRPC = $true,
-  [string]$AcceptedFees = "1000naet",
+  [string]$AcceptedFees = "300000naet",
   [string]$WrongFees = "1000testtoken",
   [string]$MultiDenomFees = "1000naet,1testtoken"
 )
@@ -180,11 +180,11 @@ try {
   Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home -Fees $MultiDenomFees -ExpectFailure -ExpectedLog $wrongFeeError | Out-Null
   Write-Host "bank send with mixed fee denoms is rejected"
 
-  Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home -Fees "0naet" | Out-Null
-  Write-Host "bank send with zero naet fee is accepted by prototype localnet"
+  Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home -Fees "0naet" -ExpectFailure -ExpectedLog "fee must be at least" | Out-Null
+  Write-Host "bank send with zero naet fee is rejected by fee formula"
 
-  Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home -Fees "" | Out-Null
-  Write-Host "bank send with empty fee list is accepted by prototype localnet min-gas-prices"
+  Send-SignedTx -ActionArgs @("tx", "bank", "send", "node0", $node1, "1naet") -FromHome $node0Home -Fees "" -ExpectFailure -ExpectedLog "fee must be at least" | Out-Null
+  Write-Host "bank send with empty fee list is rejected by fee formula"
 
   Send-SignedTx -ActionArgs @("tx", "contract-assets", "create-denom", "gold") -FromHome $node0Home -Fees $AcceptedFees | Out-Null
   $factoryDenom = "factory/$node0/gold"

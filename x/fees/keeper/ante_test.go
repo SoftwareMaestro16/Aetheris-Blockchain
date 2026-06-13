@@ -435,13 +435,17 @@ func TestAnteHandlerDecoratorRejectsOverHardFeeCap(t *testing.T) {
 	app := l1app.Setup(t, false)
 	ctx := app.NewContext(false).WithBlockHeight(1)
 
+	params := types.DefaultParams()
+	params.MaxFeeAmount = "1000"
+	require.NoError(t, app.FeesKeeper.SetParams(ctx, params))
+
 	called := false
 	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
 		called = true
 		return ctx, nil
 	}
 
-	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1001))}, false)
+	_, err := app.FeesKeeper.AnteHandlerDecorator(next)(ctx, feeTx{fees: sdk.NewCoins(sdk.NewInt64Coin(types.BondDenom, 1001)), gas: 1}, false)
 	require.ErrorIs(t, err, types.ErrInvalidFee)
 	require.Contains(t, err.Error(), "fee must not exceed hard cap")
 	require.False(t, called)

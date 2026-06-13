@@ -15,7 +15,7 @@ param(
   [string]$TimeoutCommit = "1s",
   [string]$LogLevel = "info",
   [string]$FactorySubdenom = "exportgold",
-  [string]$Fees = "1000naet"
+  [string]$Fees = "300000naet"
 )
 
 $ErrorActionPreference = "Stop"
